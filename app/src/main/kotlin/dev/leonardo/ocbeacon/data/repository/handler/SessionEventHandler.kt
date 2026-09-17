@@ -28,6 +28,17 @@ class SessionEventHandler @Inject constructor() : SseEventHandler {
 
     companion object {
         private const val TAG = "SessionEventHandler"
+
+        // #9（用户需求 2026-09-17）：scratch 目录的会话不进会话列表/跟踪面——
+        // 大型部署上 /tmp 洪泛会话（bench/临时脚本）淹没列表并推高内存足迹。
+        // 目录等于前缀去尾或以 前缀/ 开头才算命中（/tmpfoo 不误伤）。
+        private val SCRATCH_DIR_PREFIXES = listOf("/tmp", "/var/tmp", "/private/tmp", "/dev/shm")
+
+        fun isScratchSession(session: Session): Boolean {
+            val dir = session.directory.trimEnd('/')
+            if (dir.isEmpty()) return false
+            return SCRATCH_DIR_PREFIXES.any { p -> dir == p || dir.startsWith("$p/") }
+        }
     }
 
     private val _serverSessions = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
@@ -121,6 +132,7 @@ class SessionEventHandler @Inject constructor() : SseEventHandler {
     }
 
     private fun handleSessionCreated(event: SseEvent.SessionCreated, serverId: String) {
+        if (isScratchSession(event.info)) return  // #9
         trackSession(serverId, event.info.id)
         _sessions.update { current ->
             val idx = current.indexOfFirst { it.id == event.info.id }
@@ -135,6 +147,7 @@ class SessionEventHandler @Inject constructor() : SseEventHandler {
     private fun handleSessionUpdated(event: SseEvent.SessionUpdated, serverId: String) {
         // #152：per-event INFO 补 DEBUG 门控（#40 残留漏网——SessionUpdated 高频触发）
         if (BuildConfig.DEBUG) AppLogger.d(TAG, "SessionUpdated: id=${event.info.id} title=${event.info.title}")
+        if (isScratchSession(event.info)) return  // #9
         trackSession(serverId, event.info.id)
         // #134（D2-L54）：locallyClearedReverts.remove 是副作用——原实现位于
         // _sessions.update lambda 内，CAS 重试会重复执行。移出 lambda：
@@ -303,14 +316,16 @@ class SessionEventHandler @Inject constructor() : SseEventHandler {
     // ============ 批量操作 ============
 
     fun setSessions(serverId: String, newSessions: List<Session>) {
-        val sessionIds = newSessions.map { it.id }.toSet()
+        // #9：scratch 目录会话在入口处过滤（列表 + 跟踪面均不收录）
+        val visible = newSessions.filterNot { isScratchSession(it) }
+        val sessionIds = visible.map { it.id }.toSet()
         _serverSessions.update { current ->
             val existing = current[serverId] ?: emptySet()
             current + (serverId to (existing + sessionIds))
         }
         _sessions.update { current ->
             val updated = current.toMutableList()
-            for (session in newSessions) {
+            for (session in visible) {
                 val idx = updated.indexOfFirst { it.id == session.id }
                 if (idx >= 0) {
                     updated[idx] = session
