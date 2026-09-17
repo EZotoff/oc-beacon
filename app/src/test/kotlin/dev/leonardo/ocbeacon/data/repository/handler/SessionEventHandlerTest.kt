@@ -357,4 +357,40 @@ class SessionEventHandlerTest {
         assertTrue(handler.sessionErrors.value["s1"].isNullOrEmpty())
         assertTrue("s1" !in handler.sessionErrors.value)
     }
+
+// ============ #9：scratch 目录会话过滤（2026-09-17 用户实报） ============
+
+@Test
+fun `setSessions filters out tmp scratch sessions`() = runTest {
+    val keep = testSession("s_keep").copy(directory = "/home/ezotoff/proj")
+    val scratch = testSession("s_tmp").copy(directory = "/tmp/voice-bridge-e2e.NHexEN")
+    val scratchRoot = testSession("s_tmproot").copy(directory = "/tmp")
+    val prefixTrap = testSession("s_trap").copy(directory = "/tmpfoo/real")  // 不误伤
+
+    handler.setSessions("server1", listOf(keep, scratch, scratchRoot, prefixTrap))
+
+    val ids = handler.sessions.value.map { it.id }
+    assertTrue(ids.contains("s_keep"))
+    assertTrue(ids.contains("s_trap"))
+    assertFalse(ids.contains("s_tmp"))
+    assertFalse(ids.contains("s_tmproot"))
+}
+
+@Test
+fun `session created in scratch dir is not tracked or listed`() = runTest {
+    val scratch = testSession("s_tmp").copy(directory = "/tmp/opencode/build")
+    handler.handle(SseEvent.SessionCreated(scratch), "server1")
+
+    assertTrue(handler.sessions.value.isEmpty())
+    assertTrue(handler.serverSessions.value["server1"].isNullOrEmpty())
+}
+
+@Test
+fun `session created in normal dir is tracked`() = runTest {
+    val normal = testSession("s_ok").copy(directory = "/home/ezotoff/proj")
+    handler.handle(SseEvent.SessionCreated(normal), "server1")
+
+    assertEquals(listOf(normal), handler.sessions.value)
+    assertEquals(setOf("s_ok"), handler.serverSessions.value["server1"])
+}
 }
