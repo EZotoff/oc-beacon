@@ -192,6 +192,21 @@ class SessionNotificationCoordinatorTest {
     }
 
     @Test
+    fun idleChildSpawnedViaSseButMissingFromSnapshotDoesNotNotify() = runTest {
+        // 2026-09-16 回归（用户实报）：刚派生的 sub-agent 尚未进 sessions 快照，
+        // 旧实现 isChildSession 只查快照 → 子会话轮次完成误发通知。
+        // 修复后 SessionCreated/Updated 流内登记的子会话（liveChildSessions）同样静默。
+        background()
+        every { appNotificationManager.checkNewAssistantMessage("server1", "sess1") } returns "msg_a1"
+
+        // 模拟 spawn：SessionCreated 流事件（快照仍为空，不包含该子会话）
+        coordinator.processEvent(server, SseEvent.SessionCreated(info = session("sess1", parentId = "ses_parent")))
+        coordinator.processEvent(server, idle())
+
+        assertTrue(port.calls.isEmpty())
+    }
+
+    @Test
     fun idleChildSessionNeitherNotifiesNorPlays() = runTest {
         // Q3：子智能体会话轮次完成既不通知也不响（三态全部静默）
         sessionsFlow.value = listOf(session("sess1", parentId = "ses_parent"))

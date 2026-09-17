@@ -40,6 +40,9 @@ import javax.inject.Singleton
 private const val TAG = "SseConnManager"
 private const val RECONNECT_BASE_DELAY_MS = 1_000L
 private const val RECONNECT_MAX_DELAY_MS = 30_000L
+
+/** 2026-09-16 OOM 根治：单次断连恢复最多回填的活跃会话数（硬上限兜底）。 */
+private const val RECOVER_MAX_SESSIONS = 25
 private const val RECONNECT_BACKOFF_FACTOR = 2.0
 private const val COOLDOWN_CHECK_INTERVAL_MS = 30_000L
 
@@ -584,11 +587,28 @@ class SseConnectionManager @Inject constructor(
      * 阶段 2：从服务器同步会话状态——仅将 idle 会话标记为 idle。
      */
     private suspend fun recoverMessages(server: ServerConfig, conn: ServerConnection) {
-        val sessionIds = eventDispatcher.serverSessions.value[server.id] ?: return
-        if (sessionIds.isEmpty()) return
+        val allSessionIds = eventDispatcher.serverSessions.value[server.id] ?: return
+        if (allSessionIds.isEmpty()) return
 
-        // 阶段 1：恢复消息（REST 作为真相源）
-        AppLogger.i(TAG, "[${server.displayName}] Recovering messages for ${sessionIds.size} sessions")
+        // 2026-09-16 OOM 根治（模拟器复现实证：386 会话 × 全量 REST 拉取 → 
+        // 堆 16MB→576MB OOM 崩溃，直播流处理饿死 → 会话内输出不可见）：
+        // #142 的目的是补「断连窗口内错过的流式内容」——只有**非空闲**会话
+        //（Busy/Asking/Retry，FSM 已由 #296/#278 双路保护）才可能在断连期间
+        // 有错过的新消息；空闲会话的历史早已在本地缓存，REST 重拉只会把内存
+        // 打爆（大型部署上会话数已过千，全量扫 = OOM 必然）。
+        // 硬上限兜底：即使大量会话同时活跃也不超过 RECOVER_MAX_SESSIONS 个。
+        val statuses = sessionStateRepository.statusFlow.value
+        val sessionIds = allSessionIds.filter { sid ->
+            val status = statuses[sid]
+            status != null && status !is dev.leonardo.ocbeacon.domain.model.SessionStatus.Idle
+        }.take(RECOVER_MAX_SESSIONS)
+        if (sessionIds.isEmpty()) {
+            AppLogger.d(TAG, "[${server.displayName}] Recover skipped: no active sessions to backfill")
+            return
+        }
+
+        // 阶段 1：恢复消息（REST 作为真相源；仅活跃会话）
+        AppLogger.i(TAG, "[${server.displayName}] Recovering messages for ${sessionIds.size} active sessions (of ${allSessionIds.size} known)")
         var recoveredCount = 0
         for (sessionId in sessionIds) {
             try {

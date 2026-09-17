@@ -56,6 +56,12 @@ class AppNotificationManager @Inject constructor(
 ) {
     private val TAG = "AppNotificationMgr"
 
+    /** synthetic 后台任务通知前缀（与 SyntheticNotificationCard 解析口径一致）。 */
+    private val SYNTHETIC_TASK_NOTICE_PREFIX = Regex(
+        "^Background task (?:completed|failed):",
+        RegexOption.IGNORE_CASE,
+    )
+
     private val systemNotificationManager: NotificationManager by lazy {
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
@@ -504,6 +510,14 @@ class AppNotificationManager @Inject constructor(
 
         // 检查是否有文本输出
         val parts = eventDispatcher.parts.value[latestAssistant.id] ?: return null
+        // 2026-09-16（用户实报）：synthetic 后台任务通知不构成「新输出」——
+        // 服务器把 "Background task completed/failed: …" 写进父会话 transcript，
+        // 旧逻辑视为最新 assistant 文本 → 每个后台子任务完成都推送一次。
+        // 此类通知由 SyntheticNotificationCard 在会话内渲染，不推送。
+        val isSyntheticTaskNotice = parts.any { part ->
+            part is Part.Text && SYNTHETIC_TASK_NOTICE_PREFIX.containsMatchIn(part.text)
+        }
+        if (isSyntheticTaskNotice) return null
         val hasTextOutput = parts.any { part ->
             when (part) {
                 is Part.Text -> part.text.isNotBlank()
