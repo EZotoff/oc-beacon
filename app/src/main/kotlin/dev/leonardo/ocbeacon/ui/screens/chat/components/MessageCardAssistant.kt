@@ -57,6 +57,7 @@ import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalHapticFeedbackEnabled
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalShowTurnDividers
 import dev.leonardo.ocbeacon.ui.screens.chat.util.agentColor
 import dev.leonardo.ocbeacon.ui.screens.chat.util.formatDuration
+import dev.leonardo.ocbeacon.util.DateFormatters
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
 import dev.leonardo.ocbeacon.ui.theme.ChatDensity
 import dev.leonardo.ocbeacon.ui.theme.LocalChatDensity
@@ -242,6 +243,17 @@ internal fun MessageCardAssistant(
                     } else if (!isStreaming && (durationMs ?: 0L) > 0) {
                         Text(
                             text = formatDuration(durationMs!!),
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT)
+                        )
+                    }
+                    // 完成时刻（2026-09-17，对齐 opencode TUI turn-summary 时间戳补丁）：
+                    // 流式结束且拿到 completed 时刻 → 追加 "HH:mm"（跨天含日期），与耗时并列。
+                    if (!isStreaming && renderableTurn.completedTimeMs != null) {
+                        Text(
+                            text = remember(renderableTurn.completedTimeMs) {
+                                DateFormatters.turnCompletionTimestamp(renderableTurn.completedTimeMs)
+                            },
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT)
                         )
@@ -929,6 +941,16 @@ private fun ChunkStatsBar(
         if ((durationMs ?: 0L) > 0) {
             Text(
                 text = formatDuration(durationMs!!),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
+            )
+        }
+        // 完成时刻（2026-09-17，对齐 opencode TUI turn-summary 时间戳补丁）。
+        if (renderableTurn.completedTimeMs != null) {
+            Text(
+                text = remember(renderableTurn.completedTimeMs) {
+                    DateFormatters.turnCompletionTimestamp(renderableTurn.completedTimeMs)
+                },
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
             )

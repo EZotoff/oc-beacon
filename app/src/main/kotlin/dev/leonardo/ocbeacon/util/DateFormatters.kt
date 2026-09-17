@@ -35,6 +35,23 @@ object DateFormatters {
         }
     }
 
+    /**
+     * 回合完成时刻（2026-09-17 用户需求，对齐 opencode TUI turn-summary 时间戳补丁）：
+     * 当天 → "HH:mm"；非当天 → "yyyy-MM-dd HH:mm"（todayTimeOrDateTime 语义）。
+     * 调用方 remember(timeMs) 按时间戳缓存结果。
+     */
+    fun turnCompletionTimestamp(timeMs: Long, nowMs: Long = System.currentTimeMillis(), locale: Locale = Locale.getDefault()): String {
+        val cal = java.util.Calendar.getInstance(locale).apply { timeInMillis = timeMs }
+        val now = java.util.Calendar.getInstance(locale).apply { timeInMillis = nowMs }
+        val sameDay = cal.get(java.util.Calendar.YEAR) == now.get(java.util.Calendar.YEAR) &&
+            cal.get(java.util.Calendar.DAY_OF_YEAR) == now.get(java.util.Calendar.DAY_OF_YEAR)
+        return if (sameDay) {
+            SimpleDateFormat("HH:mm", locale).format(java.util.Date(timeMs))
+        } else {
+            SimpleDateFormat("yyyy-MM-dd HH:mm", locale).format(java.util.Date(timeMs))
+        }
+    }
+
     /** "MM-dd HH:mm"（Locale.getDefault()）——快速导航/上下文详情。 */
     fun monthDayHourMinute(locale: Locale = Locale.getDefault()): SimpleDateFormat =
         SimpleDateFormat("MM-dd HH:mm", locale)

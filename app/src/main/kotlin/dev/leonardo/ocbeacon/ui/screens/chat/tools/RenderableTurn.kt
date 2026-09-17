@@ -26,6 +26,8 @@ data class RenderableTurn(
     val agentName: String?,
     val modelId: String?,
     val durationMs: Long?,
+    /** turn 全部完成后：末条 assistant 消息的 completed 时刻（epoch-ms）；流式中为 null（对齐 opencode TUI 时间戳补丁）。 */
+    val completedTimeMs: Long?,
     val turnStartMs: Long?,
     val stepFinishes: List<Part.StepFinish>,
     val taskAgentName: String?,
@@ -200,6 +202,13 @@ fun computeRenderableTurn(
         null
     }
 
+    // 完成时刻 —— 末条 completed（与 durationMs 同条件：全部 completed 才有值）。
+    val completedTimeMs: Long? = if (turnStartMs != null && completedTimes.size == assistantsForMeta.size) {
+        completedTimes.max()
+    } else {
+        null
+    }
+
     // 用于 token 统计的 StepFinish
     val stepFinishes = if (isTurnLast) {
         ordered.flatMap { msg -> msg.parts.filterIsInstance<Part.StepFinish>() }
@@ -229,6 +238,7 @@ fun computeRenderableTurn(
         agentName = agentName,
         modelId = modelId,
         durationMs = durationMs,
+        completedTimeMs = completedTimeMs,
         turnStartMs = turnStartMs,
         stepFinishes = stepFinishes,
         taskAgentName = taskAgentName,
