@@ -154,4 +154,31 @@ class AppNotificationSyntheticTaskTest {
         )
         assertEquals("msg1", manager.computeNewAssistantMessageId("sess1"))
     }
+
+    @Test
+    fun `boulder system directive trigger suppresses push`() {
+        // 2026-09-18 用户实报：OMO boulder continuation 以 `[SYSTEM DIRECTIVE: …` 用户消息
+        // 注入唤醒 agent —— 真实回复触发推送。机器指令注入的轮次不推送。
+        messagesFlow.value = mapOf("sess1" to listOf(user("u0"), assistant("msg1")))
+        partsFlow.value = mapOf(
+            "u0" to listOf(
+                textPart("p0", "[SYSTEM DIRECTIVE: OH-MY-OPENCODE - BOULDER CONTINUATION]\n\nYou have an active work plan with incomplete tasks. Continue working.", messageId = "u0"),
+            ),
+            "msg1" to listOf(textPart("p1", "Continuing with task 3.", messageId = "msg1")),
+        )
+        assertNull(manager.computeNewAssistantMessageId("sess1"))
+    }
+
+    @Test
+    fun `user message mentioning directive mid-text still notifies`() {
+        // 正文中间提及（非开头）不构成注入 → 照常通知。
+        messagesFlow.value = mapOf("sess1" to listOf(user("u0"), assistant("msg1")))
+        partsFlow.value = mapOf(
+            "u0" to listOf(
+                textPart("p0", "Why do I keep seeing [SYSTEM DIRECTIVE: ...] messages?", messageId = "u0"),
+            ),
+            "msg1" to listOf(textPart("p1", "That marker comes from OMO continuation.", messageId = "msg1")),
+        )
+        assertEquals("msg1", manager.computeNewAssistantMessageId("sess1"))
+    }
 }

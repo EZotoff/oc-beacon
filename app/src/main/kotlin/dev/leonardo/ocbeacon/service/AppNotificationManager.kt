@@ -69,6 +69,13 @@ class AppNotificationManager @Inject constructor(
         RegexOption.IGNORE_CASE,
     )
 
+    /** 2026-09-18（用户实报，仍是推送源头）：OMO boulder continuation 以用户消息注入的
+     * 系统指令——文本以 `[SYSTEM DIRECTIVE:` 开头（无 synthetic 旗标）。注入唤醒
+     * agent 产生真实回复 → 触发 response-ready 推送。机器注入指令永不人工输入。 */
+    private val SYSTEM_DIRECTIVE_MARKER = Regex(
+        "^\\[SYSTEM DIRECTIVE:",
+    )
+
     private val systemNotificationManager: NotificationManager by lazy {
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
@@ -541,7 +548,8 @@ class AppNotificationManager @Inject constructor(
             val isTaskNoticeTrigger = triggerParts.any { part ->
                 part is Part.Text && (
                     (part.synthetic == true && SYNTHETIC_TASK_NOTICE_PREFIX.containsMatchIn(part.text)) ||
-                    BACKGROUND_TASK_MARKER.containsMatchIn(part.text)
+                    BACKGROUND_TASK_MARKER.containsMatchIn(part.text) ||
+                    SYSTEM_DIRECTIVE_MARKER.containsMatchIn(part.text)
                 )
             }
             if (isTaskNoticeTrigger) return null
