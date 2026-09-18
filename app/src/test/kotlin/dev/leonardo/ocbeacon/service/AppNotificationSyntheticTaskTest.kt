@@ -170,6 +170,59 @@ class AppNotificationSyntheticTaskTest {
     }
 
     @Test
+    fun `reminder-injected task result ready trigger suppresses push`() {
+        // 2026-09-19（Oracle 诊断，用户实报仍推送）：真实注入头部是
+        // `[BACKGROUND TASK RESULT READY]`，旧正则只匹配 COMPLETED|FAILED → 绕过。
+        messagesFlow.value = mapOf("sess1" to listOf(user("u0"), assistant("msg1")))
+        partsFlow.value = mapOf(
+            "u0" to listOf(
+                textPart("p0", "<system-reminder>\n[BACKGROUND TASK RESULT READY]\n**Description:** dig prior sessions</system-reminder>", messageId = "u0"),
+            ),
+            "msg1" to listOf(textPart("p1", "Dig complete, reporting.", messageId = "msg1")),
+        )
+        assertNull(manager.computeNewAssistantMessageId("sess1"))
+    }
+
+    @Test
+    fun `reminder-injected task retrying trigger suppresses push`() {
+        messagesFlow.value = mapOf("sess1" to listOf(user("u0"), assistant("msg1")))
+        partsFlow.value = mapOf(
+            "u0" to listOf(
+                textPart("p0", "<system-reminder>\n[BACKGROUND TASK RETRYING]\n**ID:** `bg_x`</system-reminder>", messageId = "u0"),
+            ),
+            "msg1" to listOf(textPart("p1", "Noted, waiting for retry.", messageId = "msg1")),
+        )
+        assertNull(manager.computeNewAssistantMessageId("sess1"))
+    }
+
+    @Test
+    fun `synthetic part with arbitrary text suppresses push`() {
+        // 任何 synthetic 旗标的触发 part 都是机器注入（重启续跑提示等），与文本无关。
+        messagesFlow.value = mapOf("sess1" to listOf(user("u0"), assistant("msg1")))
+        partsFlow.value = mapOf(
+            "u0" to listOf(
+                textPart("p0", "Continuing after server restart — your session was snapshotted.", messageId = "u0")
+                    .copy(synthetic = true),
+            ),
+            "msg1" to listOf(textPart("p1", "Resuming work.", messageId = "msg1")),
+        )
+        assertNull(manager.computeNewAssistantMessageId("sess1"))
+    }
+
+    @Test
+    fun `leading whitespace system directive trigger suppresses push`() {
+        // 注入文本可能带前置空白/换行 —— 旧正则锚定字节 0 会绕过。
+        messagesFlow.value = mapOf("sess1" to listOf(user("u0"), assistant("msg1")))
+        partsFlow.value = mapOf(
+            "u0" to listOf(
+                textPart("p0", "\n\n[SYSTEM DIRECTIVE: OH-MY-OPENCODE - RALPH LOOP]\nContinue the loop.", messageId = "u0"),
+            ),
+            "msg1" to listOf(textPart("p1", "Looping.", messageId = "msg1")),
+        )
+        assertNull(manager.computeNewAssistantMessageId("sess1"))
+    }
+
+    @Test
     fun `user message mentioning directive mid-text still notifies`() {
         // 正文中间提及（非开头）不构成注入 → 照常通知。
         messagesFlow.value = mapOf("sess1" to listOf(user("u0"), assistant("msg1")))

@@ -62,18 +62,20 @@ class AppNotificationManager @Inject constructor(
         RegexOption.IGNORE_CASE,
     )
 
-    /** 2026-09-18：system-reminder 注入的后台任务完成/失败标记（用户消息文本内，
-     * 无 synthetic 旗标——`<system-reminder>\n[BACKGROUND TASK COMPLETED]…`）。 */
+    /** 2026-09-18：system-reminder 注入的后台任务标记（用户消息文本内，无 synthetic 旗标）。
+     * 2026-09-19（Oracle 诊断，仍推送）：真实注入头部不止 COMPLETED|FAILED ——
+     * RESULT READY / RETRYING / CANCELLED / INTERRUPTED / ERROR 全家族都命中。 */
     private val BACKGROUND_TASK_MARKER = Regex(
-        "\\[BACKGROUND TASK (?:COMPLETED|FAILED)]",
+        "\\[BACKGROUND TASK [^]]*]",
         RegexOption.IGNORE_CASE,
     )
 
     /** 2026-09-18（用户实报，仍是推送源头）：OMO boulder continuation 以用户消息注入的
      * 系统指令——文本以 `[SYSTEM DIRECTIVE:` 开头（无 synthetic 旗标）。注入唤醒
-     * agent 产生真实回复 → 触发 response-ready 推送。机器注入指令永不人工输入。 */
+     * agent 产生真实回复 → 触发 response-ready 推送。机器注入指令永不人工输入。
+     * 2026-09-19：容忍前置空白/换行（注入包装不保证字节 0 锚定）。 */
     private val SYSTEM_DIRECTIVE_MARKER = Regex(
-        "^\\[SYSTEM DIRECTIVE:",
+        "^\\s*\\[SYSTEM DIRECTIVE:",
     )
 
     private val systemNotificationManager: NotificationManager by lazy {
@@ -547,7 +549,10 @@ class AppNotificationManager @Inject constructor(
             val triggerParts = eventDispatcher.parts.value[triggerUserMessage.id].orEmpty()
             val isTaskNoticeTrigger = triggerParts.any { part ->
                 part is Part.Text && (
-                    (part.synthetic == true && SYNTHETIC_TASK_NOTICE_PREFIX.containsMatchIn(part.text)) ||
+                    // 2026-09-19：synthetic 旗标是机器注入的信号，与文本无关
+                    // （重启续跑、OMO 注入等生产方都应打旗标；见 restart-with-continuation.sh）。
+                    part.synthetic == true ||
+                    SYNTHETIC_TASK_NOTICE_PREFIX.containsMatchIn(part.text) ||
                     BACKGROUND_TASK_MARKER.containsMatchIn(part.text) ||
                     SYSTEM_DIRECTIVE_MARKER.containsMatchIn(part.text)
                 )
