@@ -62,6 +62,13 @@ class AppNotificationManager @Inject constructor(
         RegexOption.IGNORE_CASE,
     )
 
+    /** 2026-09-18：system-reminder 注入的后台任务完成/失败标记（用户消息文本内，
+     * 无 synthetic 旗标——`<system-reminder>\n[BACKGROUND TASK COMPLETED]…`）。 */
+    private val BACKGROUND_TASK_MARKER = Regex(
+        "\\[BACKGROUND TASK (?:COMPLETED|FAILED)]",
+        RegexOption.IGNORE_CASE,
+    )
+
     private val systemNotificationManager: NotificationManager by lazy {
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
@@ -518,6 +525,27 @@ class AppNotificationManager @Inject constructor(
             part is Part.Text && SYNTHETIC_TASK_NOTICE_PREFIX.containsMatchIn(part.text)
         }
         if (isSyntheticTaskNotice) return null
+        // 2026-09-18（用户实报，仍推送）：后台任务完成还会以 **用户消息** 注入父会话
+        // （`<system-reminder>\n[BACKGROUND TASK COMPLETED]…`，part 无 synthetic 旗标）。
+        // 注入会唤醒父会话 agent 产生真实 assistant 回复——上面的 assistant-parts
+        // 过滤永远匹配不上 → 每条后台任务完成仍推送一次。改为检查触发本轮的
+        // 触发用户消息（latestAssistant 之前最近一条 user）：是后台任务完成/失败
+        // 通告（synthetic 前缀或 reminder 标记）则本轮不推送。
+        val triggerUserMessage = sessionMessages
+            .asReversed()
+            .dropWhile { it.id != latestAssistant.id }
+            .drop(1)
+            .firstOrNull { it is Message.User } as? Message.User
+        if (triggerUserMessage != null) {
+            val triggerParts = eventDispatcher.parts.value[triggerUserMessage.id].orEmpty()
+            val isTaskNoticeTrigger = triggerParts.any { part ->
+                part is Part.Text && (
+                    (part.synthetic == true && SYNTHETIC_TASK_NOTICE_PREFIX.containsMatchIn(part.text)) ||
+                    BACKGROUND_TASK_MARKER.containsMatchIn(part.text)
+                )
+            }
+            if (isTaskNoticeTrigger) return null
+        }
         val hasTextOutput = parts.any { part ->
             when (part) {
                 is Part.Text -> part.text.isNotBlank()

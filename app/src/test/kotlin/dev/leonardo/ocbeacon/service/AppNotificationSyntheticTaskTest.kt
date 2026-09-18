@@ -51,6 +51,10 @@ class AppNotificationSyntheticTaskTest {
         id = id, sessionId = sessionId, time = TimeInfo(created = 0), parentId = "p1",
     )
 
+    private fun user(id: String, sessionId: String = "sess1") = Message.User(
+        id = id, sessionId = sessionId, time = TimeInfo(created = 0),
+    )
+
     private fun textPart(id: String, text: String, messageId: String = "msg1") = Part.Text(
         id = id, sessionId = "sess1", messageId = messageId, text = text,
     )
@@ -92,6 +96,62 @@ class AppNotificationSyntheticTaskTest {
             "msg1" to listOf(textPart("p1", "All done.", messageId = "msg1")),
         )
         // 最新 assistant 是 msg1（真实回复）→ 通知
+        assertEquals("msg1", manager.computeNewAssistantMessageId("sess1"))
+    }
+
+    @Test
+    fun `reminder-injected task completed trigger suppresses push`() {
+        // 2026-09-18：服务器以用户消息注入 `<system-reminder>\n[BACKGROUND TASK COMPLETED]…`
+        // （part 无 synthetic 旗标），注入唤醒父 agent 产生真实回复 → 旧过滤不匹配仍推送。
+        messagesFlow.value = mapOf("sess1" to listOf(user("u0"), assistant("msg1")))
+        partsFlow.value = mapOf(
+            "u0" to listOf(
+                textPart("p0", "<system-reminder>\n[BACKGROUND TASK COMPLETED]\n**ID:** `bg_87cad0d1`\n**Description:** explore</system-reminder>", messageId = "u0"),
+            ),
+            "msg1" to listOf(textPart("p1", "Acknowledged, continuing.", messageId = "msg1")),
+        )
+        assertNull(manager.computeNewAssistantMessageId("sess1"))
+    }
+
+    @Test
+    fun `reminder-injected task failed trigger suppresses push`() {
+        messagesFlow.value = mapOf("sess1" to listOf(user("u0"), assistant("msg1")))
+        partsFlow.value = mapOf(
+            "u0" to listOf(
+                textPart("p0", "<system-reminder>\n[BACKGROUND TASK FAILED]\n**ID:** `bg_x`</system-reminder>", messageId = "u0"),
+            ),
+            "msg1" to listOf(textPart("p1", "Task failed, investigating.", messageId = "msg1")),
+        )
+        assertNull(manager.computeNewAssistantMessageId("sess1"))
+    }
+
+    @Test
+    fun `synthetic user message trigger suppresses push`() {
+        messagesFlow.value = mapOf("sess1" to listOf(user("u0"), assistant("msg1")))
+        partsFlow.value = mapOf(
+            "u0" to listOf(
+                textPart("p0", "Background task completed: run-benchmarks", messageId = "u0")
+                    .copy(synthetic = true),
+            ),
+            "msg1" to listOf(textPart("p1", "Continuing.", messageId = "msg1")),
+        )
+        assertNull(manager.computeNewAssistantMessageId("sess1"))
+    }
+
+    @Test
+    fun `real user turn still notifies after reminder history`() {
+        // 背景 task 通告在更早轮次；本轮由真实用户消息触发 → 照常通知。
+        messagesFlow.value = mapOf(
+            "sess1" to listOf(user("u0"), assistant("msg0"), user("u1"), assistant("msg1")),
+        )
+        partsFlow.value = mapOf(
+            "u0" to listOf(
+                textPart("p0", "<system-reminder>\n[BACKGROUND TASK COMPLETED]\n**ID:** `bg_old`</system-reminder>", messageId = "u0"),
+            ),
+            "msg0" to listOf(textPart("p01", "Acknowledged.", messageId = "msg0")),
+            "u1" to listOf(textPart("p1", "Please run the full suite now.", messageId = "u1")),
+            "msg1" to listOf(textPart("p11", "All green.", messageId = "msg1")),
+        )
         assertEquals("msg1", manager.computeNewAssistantMessageId("sess1"))
     }
 }
