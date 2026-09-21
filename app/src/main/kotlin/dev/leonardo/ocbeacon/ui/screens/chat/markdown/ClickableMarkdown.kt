@@ -18,6 +18,7 @@ import com.mikepenz.markdown.annotator.AnnotatorSettings
 import com.mikepenz.markdown.annotator.buildMarkdownAnnotatedString
 import com.mikepenz.markdown.utils.getUnescapedTextInNode
 import dev.leonardo.ocbeacon.domain.model.LinkClassifier
+import dev.leonardo.ocbeacon.logging.AppLogger
 import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.ast.findChildOfType
@@ -26,6 +27,28 @@ internal sealed interface ClickableItem {
     val text: String
     data class Link(override val text: String, val url: String) : ClickableItem
     data class CodePath(override val text: String) : ClickableItem
+}
+
+/** 2026-09-21 崩溃取证标签（诊断页可按 MDGuard 检索）。 */
+private const val MD_GUARD_TAG = "MDGuard"
+
+/**
+ * 流式 AST/内容越界防护（2026-09-21 崩溃取证）。
+ *
+ * dev 流式试点（StreamingMarkdownPilot）下出现 content 快照与非空节点 offset
+ * 失配的模型对（实测 content="" + node[0,26/58/2]），getTextInNode 抛
+ * StringIndexOutOfBoundsException 击穿进程（单日 3 次，栈均经
+ * buildClickableMarkdown）。静态审计 + 0.7.9 解析器 fuzz 未能复现来源
+ * → 渲染前防御 + 取证日志，越界降级纯文本。
+ */
+internal fun markdownNodeInBounds(node: ASTNode, content: CharSequence): Boolean {
+    if (node.startOffset < 0 || node.endOffset > content.length || node.startOffset > node.endOffset) {
+        return false
+    }
+    node.children.forEach { child ->
+        if (!markdownNodeInBounds(child, content)) return false
+    }
+    return true
 }
 
 internal data class ClickableMarkdownResult(
@@ -78,6 +101,40 @@ private fun extractClickableItems(content: String, node: ASTNode): List<Clickabl
  * 3. 在匹配的代码路径上叠加下划线 + [linkColor] 样式。
  */
 internal fun buildClickableMarkdown(
+    content: String,
+    node: ASTNode,
+    style: TextStyle,
+    annotatorSettings: AnnotatorSettings,
+    linkColor: Color,
+): ClickableMarkdownResult {
+    // 2026-09-21 崩溃防护：越界模型对（content 快照与节点 offset 失配）降级
+    // 纯文本并记录取证字段——三处崩溃栈均经此入口（text/paragraph/heading1/
+    // 表格单元格四路共用）。
+    if (!markdownNodeInBounds(node, content)) {
+        AppLogger.e(
+            MD_GUARD_TAG,
+            "bounds violation: content=${content.length}ch node=${node.type} " +
+                "[${node.startOffset},${node.endOffset}] children=${node.children.size} " +
+                "-> plain text fallback",
+        )
+        return ClickableMarkdownResult(AnnotatedString(content), emptyList(), emptyList())
+    }
+    return try {
+        buildClickableMarkdownImpl(content, node, style, annotatorSettings, linkColor)
+    } catch (e: StringIndexOutOfBoundsException) {
+        // 兜底：预检未覆盖的 annotator 内部索引运算（防御性，不应触达）
+        AppLogger.e(
+            MD_GUARD_TAG,
+            "SIOOBE despite bounds check: content=${content.length}ch node=${node.type} " +
+                "[${node.startOffset},${node.endOffset}] children=${node.children.size} " +
+                "-> plain text fallback",
+            e,
+        )
+        ClickableMarkdownResult(AnnotatedString(content), emptyList(), emptyList())
+    }
+}
+
+private fun buildClickableMarkdownImpl(
     content: String,
     node: ASTNode,
     style: TextStyle,

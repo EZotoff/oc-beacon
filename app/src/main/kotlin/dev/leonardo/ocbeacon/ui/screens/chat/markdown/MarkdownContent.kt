@@ -46,6 +46,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOn
 
+import dev.leonardo.ocbeacon.logging.AppLogger
 import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
 import dev.leonardo.ocbeacon.ui.theme.ChatDensity
@@ -501,7 +502,19 @@ internal fun MarkdownContent(
                 // MarkdownHeader 的 MarkdownText(contentChildType=ATX_CONTENT) 一致）。
                 val h1Text = remember(model.content, model.node) {
                     val atx = model.node.children.firstOrNull { it.type == MarkdownTokenTypes.ATX_CONTENT }
-                    val raw = (atx ?: model.node).getUnescapedTextInNode(model.content).toString()
+                    val target = atx ?: model.node
+                    // 2026-09-21 崩溃防护：越界配对降级空串（buildClickableMarkdown 同款防御，
+                    // 见 markdownNodeInBounds）——result 已降级纯文本，此处仅标题文本兜底。
+                    val raw = if (markdownNodeInBounds(target, model.content)) {
+                        target.getUnescapedTextInNode(model.content).toString()
+                    } else {
+                        AppLogger.e(
+                            "MDGuard",
+                            "h1 bounds violation: content=${model.content.length}ch " +
+                                "node=${target.type} [${target.startOffset},${target.endOffset}]",
+                        )
+                        ""
+                    }
                     raw.trim().trimStart('#').trim()
                 }
                 var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
