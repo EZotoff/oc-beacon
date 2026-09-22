@@ -121,6 +121,20 @@ class SessionListShellStateTest {
         }
     }
 
+    @Test
+    fun `viewMode defaults to folder grouping`() = runTest {
+        val vm = createViewModel()
+
+        assertEquals(SessionViewMode.FOLDER, vm.viewMode.value)
+    }
+
+    @Test
+    fun `viewMode restores explicit recent selection`() = runTest {
+        val vm = createViewModel(SessionViewMode.RECENT)
+
+        assertEquals(SessionViewMode.RECENT, vm.viewMode.value)
+    }
+
     /**
      * #23 核心收益护栏：外壳状态翻转（_isRefreshing/_error）不应触发 contentState 重算。
      *
@@ -143,11 +157,12 @@ class SessionListShellStateTest {
         }
     }
 
-    private fun createViewModel(): SessionListViewModel {
+    private fun createViewModel(viewMode: SessionViewMode? = null): SessionListViewModel {
         val savedStateHandle = androidx.lifecycle.SavedStateHandle(
-            mapOf(
-                "serverId" to "srv1"
-            )
+            buildMap {
+                put("serverId", "srv1")
+                viewMode?.let { put("viewMode", it.name) }
+            }
         )
         return SessionListViewModel(
             sseConnectionManager = sseConnectionManager,

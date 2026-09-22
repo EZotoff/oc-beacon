@@ -207,7 +207,7 @@ class SessionListViewModel @Inject constructor(
     private val _viewMode = MutableStateFlow(
         savedStateHandle.get<String>("viewMode")?.let {
             runCatching { SessionViewMode.valueOf(it) }.getOrNull()
-        } ?: SessionViewMode.RECENT
+        } ?: SessionViewMode.FOLDER
     )
     val viewMode: StateFlow<SessionViewMode> = _viewMode.asStateFlow()
 
