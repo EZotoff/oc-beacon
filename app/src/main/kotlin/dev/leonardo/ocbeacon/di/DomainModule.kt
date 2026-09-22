@@ -15,6 +15,7 @@ import dev.leonardo.ocbeacon.data.repository.SessionRepositoryImpl
 import dev.leonardo.ocbeacon.data.repository.SettingsRepositoryImpl
 import dev.leonardo.ocbeacon.data.repository.SessionTagRepositoryImpl
 import dev.leonardo.ocbeacon.data.repository.SessionStateService
+import dev.leonardo.ocbeacon.data.repository.SupervisorRepositoryImpl
 import dev.leonardo.ocbeacon.data.repository.VcsRepositoryImpl
 import dev.leonardo.ocbeacon.data.local.MessageStore
 import dev.leonardo.ocbeacon.domain.repository.AgentRepository
@@ -31,6 +32,7 @@ import dev.leonardo.ocbeacon.domain.repository.SessionRepository
 import dev.leonardo.ocbeacon.domain.repository.SettingsRepository
 import dev.leonardo.ocbeacon.domain.repository.SessionTagRepository
 import dev.leonardo.ocbeacon.domain.repository.SessionStateRepository
+import dev.leonardo.ocbeacon.domain.repository.SupervisorRepository
 import dev.leonardo.ocbeacon.domain.repository.VcsRepository
 
 @Module
@@ -76,6 +78,9 @@ abstract class DomainModule {
 
     @Binds
     abstract fun bindFileRepository(impl: FileRepositoryImpl): FileRepository
+
+    @Binds
+    abstract fun bindSupervisorRepository(impl: SupervisorRepositoryImpl): SupervisorRepository
 
     @Binds
     abstract fun bindVcsRepository(impl: VcsRepositoryImpl): VcsRepository
