@@ -32,6 +32,12 @@ service/         Android 前台服务
   SseConnectionManager.kt       连接/重连（指数退避）
   AppNotificationManager.kt     通知渠道与事件通知
   SessionNotificationCoordinator.kt  抑制当前活跃会话的通知
+  SupervisorNotificationManager.kt  Supervisor 通知渠道与投递（事项/健康）
+  SupervisorPollCoordinator.kt      轮询编排（拉取→diff→通知→持久化已见状态；JVM 单测）
+
+work/            WorkManager 后台任务
+  SupervisorPollWorker.kt   周期轮询 worker（15 分钟，Hilt 注入）
+  SupervisorPollScheduler.kt 唯一周期任务调度（KEEP 策略）
 
 ui/
   theme/              设计令牌系统（详见 docs/ui-conventions.md）
@@ -47,6 +53,7 @@ ui/
     util/            聊天专用工具
   screens/home/      HomeScreen + 服务器卡片
   screens/supervisor/ Project Supervisor 摘要（健康、待处理事项、最近决策；下拉刷新）
+                     后台 WorkManager 轮询新事项/健康失败 → 本地通知，点击直达本页
   screens/sessions/  SessionListScreen + CrossServerSessionsScreen + 组件
   screens/settings/  SettingsScreen + 选择器对话框 + DiagnosticsScreen
   screens/server/    服务器设置/提供商/模型过滤
