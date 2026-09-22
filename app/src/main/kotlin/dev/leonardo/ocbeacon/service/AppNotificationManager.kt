@@ -56,6 +56,28 @@ class AppNotificationManager @Inject constructor(
 ) {
     private val TAG = "AppNotificationMgr"
 
+    /** synthetic 后台任务通知前缀（与 SyntheticNotificationCard 解析口径一致）。 */
+    private val SYNTHETIC_TASK_NOTICE_PREFIX = Regex(
+        "^Background task (?:completed|failed):",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /** 2026-09-18：system-reminder 注入的后台任务标记（用户消息文本内，无 synthetic 旗标）。
+     * 2026-09-19（Oracle 诊断，仍推送）：真实注入头部不止 COMPLETED|FAILED ——
+     * RESULT READY / RETRYING / CANCELLED / INTERRUPTED / ERROR 全家族都命中。 */
+    private val BACKGROUND_TASK_MARKER = Regex(
+        "\\[BACKGROUND TASK [^]]*]",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /** 2026-09-18（用户实报，仍是推送源头）：OMO boulder continuation 以用户消息注入的
+     * 系统指令——文本以 `[SYSTEM DIRECTIVE:` 开头（无 synthetic 旗标）。注入唤醒
+     * agent 产生真实回复 → 触发 response-ready 推送。机器注入指令永不人工输入。
+     * 2026-09-19：容忍前置空白/换行（注入包装不保证字节 0 锚定）。 */
+    private val SYSTEM_DIRECTIVE_MARKER = Regex(
+        "^\\s*\\[SYSTEM DIRECTIVE:",
+    )
+
     private val systemNotificationManager: NotificationManager by lazy {
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
@@ -516,6 +538,39 @@ class AppNotificationManager @Inject constructor(
 
         // 检查是否有文本输出
         val parts = eventDispatcher.parts.value[latestAssistant.id] ?: return null
+        // 2026-09-16（用户实报）：synthetic 后台任务通知不构成「新输出」——
+        // 服务器把 "Background task completed/failed: …" 写进父会话 transcript，
+        // 旧逻辑视为最新 assistant 文本 → 每个后台子任务完成都推送一次。
+        // 此类通知由 SyntheticNotificationCard 在会话内渲染，不推送。
+        val isSyntheticTaskNotice = parts.any { part ->
+            part is Part.Text && SYNTHETIC_TASK_NOTICE_PREFIX.containsMatchIn(part.text)
+        }
+        if (isSyntheticTaskNotice) return null
+        // 2026-09-18（用户实报，仍推送）：后台任务完成还会以 **用户消息** 注入父会话
+        // （`<system-reminder>\n[BACKGROUND TASK COMPLETED]…`，part 无 synthetic 旗标）。
+        // 注入会唤醒父会话 agent 产生真实 assistant 回复——上面的 assistant-parts
+        // 过滤永远匹配不上 → 每条后台任务完成仍推送一次。改为检查触发本轮的
+        // 触发用户消息（latestAssistant 之前最近一条 user）：是后台任务完成/失败
+        // 通告（synthetic 前缀或 reminder 标记）则本轮不推送。
+        val triggerUserMessage = sessionMessages
+            .asReversed()
+            .dropWhile { it.id != latestAssistant.id }
+            .drop(1)
+            .firstOrNull { it is Message.User } as? Message.User
+        if (triggerUserMessage != null) {
+            val triggerParts = eventDispatcher.parts.value[triggerUserMessage.id].orEmpty()
+            val isTaskNoticeTrigger = triggerParts.any { part ->
+                part is Part.Text && (
+                    // 2026-09-19：synthetic 旗标是机器注入的信号，与文本无关
+                    // （重启续跑、OMO 注入等生产方都应打旗标；见 restart-with-continuation.sh）。
+                    part.synthetic == true ||
+                    SYNTHETIC_TASK_NOTICE_PREFIX.containsMatchIn(part.text) ||
+                    BACKGROUND_TASK_MARKER.containsMatchIn(part.text) ||
+                    SYSTEM_DIRECTIVE_MARKER.containsMatchIn(part.text)
+                )
+            }
+            if (isTaskNoticeTrigger) return null
+        }
         val hasTextOutput = parts.any { part ->
             when (part) {
                 is Part.Text -> part.text.isNotBlank()

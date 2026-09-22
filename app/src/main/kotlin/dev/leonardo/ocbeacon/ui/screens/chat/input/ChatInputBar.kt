@@ -33,6 +33,8 @@ import dev.leonardo.ocbeacon.ui.screens.chat.RevertedDraftPayload
 import dev.leonardo.ocbeacon.ui.screens.chat.util.ImageAttachment
 import dev.leonardo.ocbeacon.ui.screens.chat.util.SlashCommand
 import dev.leonardo.ocbeacon.ui.screens.chat.util.SlashCommandRegistry
+import dev.leonardo.ocbeacon.ui.screens.chat.util.insertSlashCommandAt
+import dev.leonardo.ocbeacon.ui.screens.chat.util.slashQueryAt
 import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
 import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
@@ -85,6 +87,9 @@ internal fun ChatInputBar(
     fileSearchResults: List<String> = emptyList(),
     confirmedFilePaths: Set<String> = emptySet(),
     onFileSelected: (String) -> Unit = {},
+    // 2026-09-16（用户需求）：不再由建议点选触发——选择一律插入输入框；
+    // 参数保留以兼容现有调用方（ChatScreenBottomBar），当前无调用点。
+    @Suppress("UNUSED_PARAMETER")
     onSlashCommand: (SlashCommand) -> Unit = {},
     inputMode: ChatInputMode = ChatInputMode.NORMAL,
     onInputModeChange: (ChatInputMode) -> Unit = {},
@@ -145,13 +150,25 @@ internal fun ChatInputBar(
     }
 
     // 斜杠命令建议（#276：DSH 无 command 域——能力位关停整块面板）
-    val showSlashSuggestions = slashCommandsSupported && !isShellMode && text.startsWith("/") && !text.contains(" ")
-    val slashQuery = if (showSlashSuggestions) text.removePrefix("/").lowercase() else ""
-    val filteredCommands = if (showSlashSuggestions) {
-        allCommands.filter { cmd ->
-            slashQuery.isEmpty() || cmd.name.lowercase().contains(slashQuery)
-        }
-    } else emptyList()
+    // 2026-09-16（用户需求）：触发条件从「整串以 / 开头」放宽为「光标所在
+    // 空白分隔词以 / 开头」——中段输入也可呼出建议。
+    val slashQuery = if (slashCommandsSupported && !isShellMode) {
+        slashQueryAt(text, textFieldValue.selection.start)
+    } else null
+    val showSlashSuggestions = slashQuery != null
+    val filteredCommands = slashQuery?.let { q ->
+        allCommands.filter { cmd -> q.isEmpty() || cmd.name.lowercase().contains(q) }
+    } ?: emptyList()
+
+    /** 选中建议后：把光标处的 slash token 整体替换为完整命令文本，光标落在插入尾部。 */
+    fun insertSlashToken(cmdText: String) {
+        val insertion = insertSlashCommandAt(
+            text = text,
+            cursor = textFieldValue.selection.start.coerceIn(0, text.length),
+            commandText = cmdText,
+        )
+        onTextFieldValueChange(TextFieldValue(insertion.text, TextRange(insertion.cursor)))
+    }
 
     Column(
         modifier = Modifier
@@ -172,18 +189,12 @@ internal fun ChatInputBar(
             SlashCommandSuggestions(
                 commands = filteredCommands,
                 onSkillClick = { cmd ->
-                    val skillText = "/${cmd.name} "
-                    onTextFieldValueChange(TextFieldValue(skillText, TextRange(skillText.length)))
+                    insertSlashToken("/${cmd.name} ")
                 },
                 onCommandClick = { cmd ->
-                    if (cmd.requiresInput) {
-                        // DSH commands/list input.hint 非空：填入输入框待用户补参数（对齐 Web 选即填）
-                        val cmdText = "/" + cmd.name + " "
-                        onTextFieldValueChange(TextFieldValue(cmdText, TextRange(cmdText.length)))
-                    } else {
-                        onTextFieldValueChange(TextFieldValue(""))
-                        onSlashCommand(cmd)
-                    }
+                    // 2026-09-16（用户需求）：选择命令=插入输入框（替换光标处
+                    // slash token），一律不直接执行/发送——发送交给用户按发送键。
+                    insertSlashToken("/${cmd.name} ")
                 }
             )
         }

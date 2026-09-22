@@ -124,8 +124,20 @@ class SessionNotificationCoordinator @Inject constructor(
             is SseEvent.QuestionAsked -> maybeNotify { onQuestionAsked(server, event) }
             is SseEvent.SessionError -> maybeNotify { onSessionError(server, event) }
             is SseEvent.MessageUpdated -> onMessageUpdated(server, event)
+            // 2026-09-16 子会话判定补漏：新建/更新事件即时登记子会话——
+            // 刚派生的 sub-agent 尚未进 eventDispatcher.sessions 快照时，
+            // isChildSession 只查快照会漏判 → 子会话轮次完成误发通知。
+            is SseEvent.SessionCreated -> trackLiveChildSession(event.info)
+            is SseEvent.SessionUpdated -> trackLiveChildSession(event.info)
             else -> { }
         }
+    }
+
+    /** 运行期子会话登记表（SSE 流内 parentID 非空即登记；与快照判定互补）。 */
+    private val liveChildSessions: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    private fun trackLiveChildSession(info: dev.leonardo.ocbeacon.domain.model.Session) {
+        if (info.parentId != null) liveChildSessions.add(info.id)
     }
 
     // ============ 分支策略 ============
@@ -317,9 +329,10 @@ class SessionNotificationCoordinator @Inject constructor(
     private fun bubbleToParentSession(sessionId: String): String =
         parentSessionIdOf(sessionId) ?: sessionId
 
-    /** 会话是否为子智能体会话（已设置 parentID，子会话不应触发面向用户的通知）。 */
+    /** 会话是否为子智能体会话（已设置 parentID，子会话不应触发面向用户的通知）。
+     * 双源判定：事件流运行期登记（spawn 竞态窗口内可靠）+ 会话快照 parentID。 */
     private fun isChildSession(sessionId: String): Boolean =
-        parentSessionIdOf(sessionId) != null
+        sessionId in liveChildSessions || parentSessionIdOf(sessionId) != null
 
     private fun parentSessionIdOf(sessionId: String): String? =
         sessions.firstOrNull { it.id == sessionId }?.parentId

@@ -29,7 +29,8 @@ import dev.leonardo.ocbeacon.ui.screens.chat.util.SlashCommand
  *
  * @param commands 要显示的过滤后的斜杠命令。
  * @param onSkillClick 点击技能类命令时调用 —— 由调用方处理输入文本更新。
- * @param onCommandClick 点击非技能命令时调用 —— 由调用方清空文本并触发命令。
+ * @param onCommandClick 点击非技能命令时调用 —— 2026-09-16（用户需求）：
+ *   同样由调用方插入输入框（不再直接执行/发送）。
  */
 @Composable
 internal fun SlashCommandSuggestions(

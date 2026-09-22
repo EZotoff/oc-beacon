@@ -37,3 +37,44 @@ internal object SlashCommandRegistry {
         )
     }
 }
+/**
+ * 2026-09-16（用户需求）：光标所在 slash token 触发建议——
+ * 旧实现仅当整串以 "/" 开头才弹建议；现在光标所在的空白分隔词以 "/"
+ * 开头即触发（中段输入可用），查询词 = "/" 后到光标的部分。
+ *
+ * @return "/" 之后的查询词（已小写）；光标不在 slash token 内时 null。
+ */
+internal fun slashQueryAt(text: String, cursor: Int): String? {
+    val range = slashTokenRangeAt(text, cursor) ?: return null
+    return text.substring(range.first + 1, cursor).lowercase()
+}
+
+/**
+ * 光标所在 slash token 的完整字符区间（含 "/"，覆盖光标左右直到空白）。
+ * 查询仅看 slash→光标；点选命令时用完整区间替换，避免光标在词中间时残留后缀。
+ */
+internal fun slashTokenRangeAt(text: String, cursor: Int): IntRange? {
+    if (cursor !in 0..text.length) return null
+    var start = cursor
+    while (start > 0 && !text[start - 1].isWhitespace()) start--
+    val prefix = text.substring(start, cursor)
+    if (!prefix.startsWith("/")) return null
+    var endExclusive = cursor
+    while (endExclusive < text.length && !text[endExclusive].isWhitespace()) endExclusive++
+    return IntRange(start, endExclusive - 1)
+}
+
+internal data class SlashCommandInsertion(val text: String, val cursor: Int)
+
+/** 用完整命令替换光标所在 slash token；不发送。 */
+internal fun insertSlashCommandAt(text: String, cursor: Int, commandText: String): SlashCommandInsertion {
+    val range = slashTokenRangeAt(text, cursor)
+    val start = range?.first ?: text.length
+    var endExclusive = range?.last?.plus(1) ?: text.length
+    // commandText 自带尾随空格：若 token 后已有单个空格则一并吞掉，避免双空格。
+    if (commandText.endsWith(' ') && endExclusive < text.length && text[endExclusive] == ' ') {
+        endExclusive++
+    }
+    val newText = text.replaceRange(start, endExclusive, commandText)
+    return SlashCommandInsertion(newText, start + commandText.length)
+}
