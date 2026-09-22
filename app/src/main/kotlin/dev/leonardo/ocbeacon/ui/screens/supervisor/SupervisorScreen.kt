@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -21,6 +22,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -40,32 +42,68 @@ import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 import java.time.Duration
 import java.time.Instant
 
+enum class SupervisorDestination {
+    OPEN_ITEMS,
+    DECISIONS_LOG,
+}
+
 @Composable
 fun SupervisorRoute(
+    destination: SupervisorDestination,
     onNavigateBack: () -> Unit,
+    onNavigateToOtherDestination: () -> Unit,
     viewModel: SupervisorViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    SupervisorScreen(state = state, onNavigateBack = onNavigateBack, onRefresh = viewModel::refresh)
+    SupervisorScreen(
+        state = state,
+        destination = destination,
+        onNavigateBack = onNavigateBack,
+        onNavigateToOtherDestination = onNavigateToOtherDestination,
+        onRefresh = viewModel::refresh,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SupervisorScreen(
     state: SupervisorUiState,
+    destination: SupervisorDestination,
     onNavigateBack: () -> Unit,
+    onNavigateToOtherDestination: () -> Unit,
     onRefresh: () -> Unit,
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.supervisor_title)) },
+                title = {
+                    Text(
+                        stringResource(
+                            if (destination == SupervisorDestination.OPEN_ITEMS) {
+                                R.string.supervisor_open_items
+                            } else {
+                                R.string.supervisor_recent_decisions
+                            }
+                        )
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
                     }
                 },
                 actions = {
+                    TextButton(onClick = onNavigateToOtherDestination) {
+                        Text(
+                            stringResource(
+                                if (destination == SupervisorDestination.OPEN_ITEMS) {
+                                    R.string.supervisor_recent_decisions
+                                } else {
+                                    R.string.supervisor_open_items
+                                }
+                            )
+                        )
+                    }
                     IconButton(onClick = onRefresh) {
                         Icon(Icons.Default.Refresh, stringResource(R.string.workspace_refresh))
                     }
@@ -81,7 +119,10 @@ internal fun SupervisorScreen(
             when {
                 state.isLoading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 state.loadFailed && state.snapshot == null -> LoadFailure(onRefresh)
-                state.snapshot != null -> Digest(state.snapshot)
+                state.snapshot != null -> when (destination) {
+                    SupervisorDestination.OPEN_ITEMS -> OpenItems(state)
+                    SupervisorDestination.DECISIONS_LOG -> DecisionsLog(state)
+                }
             }
         }
     }
@@ -100,19 +141,28 @@ private fun LoadFailure(onRetry: () -> Unit) {
 }
 
 @Composable
-private fun Digest(snapshot: SupervisorSnapshot) {
+private fun OpenItems(state: SupervisorUiState) {
+    val snapshot = checkNotNull(state.snapshot)
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(SpacingTokens.LG.dp),
         verticalArrangement = Arrangement.spacedBy(SpacingTokens.MD.dp),
     ) {
         item { GlanceHeader(snapshot) }
-        item { SectionTitle(R.string.supervisor_open_items) }
-        if (snapshot.attentionItems.isEmpty()) item { EmptyText(R.string.supervisor_no_open_items) }
-        items(snapshot.attentionItems, key = { it.id }) { AttentionCard(it) }
-        item { SectionTitle(R.string.supervisor_recent_decisions) }
-        if (snapshot.recentDecisions.isEmpty()) item { EmptyText(R.string.supervisor_no_decisions) }
-        items(snapshot.recentDecisions, key = { "${it.decidedAt}:${it.action}:${it.project}" }) { DecisionCard(it) }
+        if (state.openItems.isEmpty()) item { EmptyText(R.string.supervisor_no_open_items) }
+        items(state.openItems, key = { it.id }) { AttentionCard(it) }
+    }
+}
+
+@Composable
+private fun DecisionsLog(state: SupervisorUiState) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(SpacingTokens.LG.dp),
+        verticalArrangement = Arrangement.spacedBy(SpacingTokens.MD.dp),
+    ) {
+        if (state.decisions.isEmpty()) item { EmptyText(R.string.supervisor_no_decisions) }
+        items(state.decisions, key = { "${it.decidedAt}:${it.action}:${it.project}" }) { DecisionCard(it) }
     }
 }
 
@@ -147,7 +197,14 @@ private fun MetricRow(first: String, second: String) {
 private fun AttentionCard(item: SupervisorAttentionItem) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(SpacingTokens.MD.dp)) {
-            Text(item.question, style = MaterialTheme.typography.titleMedium)
+            // AR-glance minimal card: single-line ellipsized headline only.
+            // Full detail remains in the backend queue (queue.json) — never on the card.
+            Text(
+                item.question,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Text("${project(item.project)} · ${age(item.createdAt)}", style = MaterialTheme.typography.bodySmall)
         }
     }
@@ -183,9 +240,6 @@ private fun age(timestamp: String): String {
         else -> "${minutes / 1_440}d"
     }
 }
-
-@Composable
-private fun SectionTitle(resource: Int) = Text(stringResource(resource), style = MaterialTheme.typography.titleLarge)
 
 @Composable
 private fun EmptyText(resource: Int) = Text(stringResource(resource), color = MaterialTheme.colorScheme.onSurfaceVariant)
