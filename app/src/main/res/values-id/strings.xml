@@ -812,4 +812,15 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="crash_notice_body_no_time">Terjadi crash tak terduga pada sesi terakhir. Detailnya tersedia di diagnostik.</string>
     <string name="crash_notice_view">Lihat</string>
     <string name="crash_notice_dismiss">Tutup</string>
+    <string name="supervisor_title">Pengawas Proyek</string>
+    <string name="supervisor_roots">%1$d proyek</string>
+    <string name="supervisor_failing">%1$d gagal</string>
+    <string name="supervisor_error_peak">puncak %1$d galat</string>
+    <string name="supervisor_open_count">%1$d terbuka</string>
+    <string name="supervisor_open_items">Item terbuka</string>
+    <string name="supervisor_recent_decisions">Keputusan terbaru</string>
+    <string name="supervisor_no_open_items">Tidak ada item terbuka</string>
+    <string name="supervisor_no_decisions">Tidak ada keputusan terbaru</string>
+    <string name="supervisor_unknown_project">Proyek tidak dikenal</string>
+    <string name="supervisor_load_failed">Ringkasan pengawas tidak dapat dimuat</string>
 </resources>

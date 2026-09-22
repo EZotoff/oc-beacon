@@ -889,4 +889,15 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="crash_notice_body_no_time">An unexpected crash occurred during the last session. Details are available in diagnostics.</string>
     <string name="crash_notice_view">View</string>
     <string name="crash_notice_dismiss">Dismiss</string>
+    <string name="supervisor_title">Project Supervisor</string>
+    <string name="supervisor_roots">%1$d roots</string>
+    <string name="supervisor_failing">%1$d failing</string>
+    <string name="supervisor_error_peak">%1$d error peak</string>
+    <string name="supervisor_open_count">%1$d open</string>
+    <string name="supervisor_open_items">Open items</string>
+    <string name="supervisor_recent_decisions">Recent decisions</string>
+    <string name="supervisor_no_open_items">No open items</string>
+    <string name="supervisor_no_decisions">No recent decisions</string>
+    <string name="supervisor_unknown_project">Unknown project</string>
+    <string name="supervisor_load_failed">Could not load the supervisor digest</string>
 </resources>

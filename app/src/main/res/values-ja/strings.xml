@@ -806,4 +806,15 @@
     <string name="crash_notice_body_no_time">前回のセッションで予期しないクラッシュが発生しました。詳細は診断で確認できます。</string>
     <string name="crash_notice_view">表示</string>
     <string name="crash_notice_dismiss">閉じる</string>
+    <string name="supervisor_title">プロジェクトスーパーバイザー</string>
+    <string name="supervisor_roots">%1$d プロジェクト</string>
+    <string name="supervisor_failing">%1$d 件失敗</string>
+    <string name="supervisor_error_peak">エラー最大 %1$d 件</string>
+    <string name="supervisor_open_count">未処理 %1$d 件</string>
+    <string name="supervisor_open_items">未処理項目</string>
+    <string name="supervisor_recent_decisions">最近の判断</string>
+    <string name="supervisor_no_open_items">未処理項目はありません</string>
+    <string name="supervisor_no_decisions">最近の判断はありません</string>
+    <string name="supervisor_unknown_project">不明なプロジェクト</string>
+    <string name="supervisor_load_failed">スーパーバイザー概要を読み込めませんでした</string>
 </resources>

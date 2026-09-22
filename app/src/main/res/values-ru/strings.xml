@@ -815,4 +815,15 @@
     <string name="crash_notice_body_no_time">В прошлом сеансе произошёл неожиданный сбой. Подробности — в разделе диагностики.</string>
     <string name="crash_notice_view">Открыть</string>
     <string name="crash_notice_dismiss">Скрыть</string>
+    <string name="supervisor_title">Супервизор проектов</string>
+    <string name="supervisor_roots">Проектов: %1$d</string>
+    <string name="supervisor_failing">С ошибками: %1$d</string>
+    <string name="supervisor_error_peak">Пик ошибок: %1$d</string>
+    <string name="supervisor_open_count">Открыто: %1$d</string>
+    <string name="supervisor_open_items">Открытые вопросы</string>
+    <string name="supervisor_recent_decisions">Недавние решения</string>
+    <string name="supervisor_no_open_items">Нет открытых вопросов</string>
+    <string name="supervisor_no_decisions">Нет недавних решений</string>
+    <string name="supervisor_unknown_project">Неизвестный проект</string>
+    <string name="supervisor_load_failed">Не удалось загрузить сводку супервизора</string>
 </resources>

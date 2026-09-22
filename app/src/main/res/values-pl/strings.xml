@@ -814,4 +814,15 @@ Tokeny: ~%4$d -&gt; ~%5$d</string>
     <string name="crash_notice_body_no_time">W poprzedniej sesji wystąpił nieoczekiwany błąd. Szczegóły znajdziesz w diagnostyce.</string>
     <string name="crash_notice_view">Zobacz</string>
     <string name="crash_notice_dismiss">Odrzuć</string>
+    <string name="supervisor_title">Nadzorca projektu</string>
+    <string name="supervisor_roots">%1$d projektów</string>
+    <string name="supervisor_failing">%1$d z błędami</string>
+    <string name="supervisor_error_peak">szczyt %1$d błędów</string>
+    <string name="supervisor_open_count">%1$d otwartych</string>
+    <string name="supervisor_open_items">Otwarte pozycje</string>
+    <string name="supervisor_recent_decisions">Ostatnie decyzje</string>
+    <string name="supervisor_no_open_items">Brak otwartych pozycji</string>
+    <string name="supervisor_no_decisions">Brak ostatnich decyzji</string>
+    <string name="supervisor_unknown_project">Nieznany projekt</string>
+    <string name="supervisor_load_failed">Nie udało się wczytać podsumowania nadzorcy</string>
 </resources>

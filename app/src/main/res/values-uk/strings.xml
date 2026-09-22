@@ -814,4 +814,15 @@
     <string name="crash_notice_body_no_time">У попередньому сеансі стався неочікуваний збій. Подробиці — у розділі діагностики.</string>
     <string name="crash_notice_view">Переглянути</string>
     <string name="crash_notice_dismiss">Закрити</string>
+    <string name="supervisor_title">Наглядач проєктів</string>
+    <string name="supervisor_roots">Проєктів: %1$d</string>
+    <string name="supervisor_failing">З помилками: %1$d</string>
+    <string name="supervisor_error_peak">Пік помилок: %1$d</string>
+    <string name="supervisor_open_count">Відкрито: %1$d</string>
+    <string name="supervisor_open_items">Відкриті питання</string>
+    <string name="supervisor_recent_decisions">Останні рішення</string>
+    <string name="supervisor_no_open_items">Немає відкритих питань</string>
+    <string name="supervisor_no_decisions">Немає останніх рішень</string>
+    <string name="supervisor_unknown_project">Невідомий проєкт</string>
+    <string name="supervisor_load_failed">Не вдалося завантажити зведення наглядача</string>
 </resources>

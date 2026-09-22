@@ -51,6 +51,7 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
     onNavigateToDiagnostics: () -> Unit = {},
+    onNavigateToSupervisor: (serverId: String) -> Unit = {},
     viewModel: HomeViewModel
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -195,6 +196,7 @@ fun HomeScreen(
                                     onOpenSessions = {
                                         onNavigateToSessions(server.id)
                                     },
+                                    onOpenSupervisor = { onNavigateToSupervisor(server.id) },
                                     onServerSettings = {
                                         onNavigateToServerSettings(server.id)
                                     },
@@ -267,6 +269,7 @@ fun HomeScreen(
                                     onOpenSessions = {
                                         onNavigateToSessions(server.id)
                                     },
+                                    onOpenSupervisor = { onNavigateToSupervisor(server.id) },
                                     onServerSettings = {
                                         onNavigateToServerSettings(server.id)
                                     },

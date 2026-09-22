@@ -809,4 +809,15 @@
     <string name="crash_notice_body_no_time">上次运行出现意外崩溃，可在诊断中查看详情。</string>
     <string name="crash_notice_view">查看</string>
     <string name="crash_notice_dismiss">忽略</string>
+    <string name="supervisor_title">项目监督器</string>
+    <string name="supervisor_roots">%1$d 个项目</string>
+    <string name="supervisor_failing">%1$d 个异常</string>
+    <string name="supervisor_error_peak">错误峰值 %1$d</string>
+    <string name="supervisor_open_count">%1$d 个待处理</string>
+    <string name="supervisor_open_items">待处理事项</string>
+    <string name="supervisor_recent_decisions">最近决策</string>
+    <string name="supervisor_no_open_items">没有待处理事项</string>
+    <string name="supervisor_no_decisions">没有最近决策</string>
+    <string name="supervisor_unknown_project">未知项目</string>
+    <string name="supervisor_load_failed">无法加载监督器摘要</string>
 </resources>

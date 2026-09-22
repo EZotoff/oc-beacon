@@ -806,4 +806,15 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="crash_notice_body_no_time">Die App ist bei der letzten Sitzung unerwartet abgestürzt. Details findest du in der Diagnose.</string>
     <string name="crash_notice_view">Ansehen</string>
     <string name="crash_notice_dismiss">Verwerfen</string>
+    <string name="supervisor_title">Projekt-Supervisor</string>
+    <string name="supervisor_roots">%1$d Projekte</string>
+    <string name="supervisor_failing">%1$d fehlerhaft</string>
+    <string name="supervisor_error_peak">%1$d Fehlerspitze</string>
+    <string name="supervisor_open_count">%1$d offen</string>
+    <string name="supervisor_open_items">Offene Punkte</string>
+    <string name="supervisor_recent_decisions">Letzte Entscheidungen</string>
+    <string name="supervisor_no_open_items">Keine offenen Punkte</string>
+    <string name="supervisor_no_decisions">Keine aktuellen Entscheidungen</string>
+    <string name="supervisor_unknown_project">Unbekanntes Projekt</string>
+    <string name="supervisor_load_failed">Supervisor-Übersicht konnte nicht geladen werden</string>
 </resources>

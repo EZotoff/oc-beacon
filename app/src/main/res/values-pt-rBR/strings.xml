@@ -806,4 +806,15 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="crash_notice_body_no_time">Ocorreu um encerramento inesperado na última sessão. Veja os detalhes nos diagnósticos.</string>
     <string name="crash_notice_view">Ver</string>
     <string name="crash_notice_dismiss">Dispensar</string>
+    <string name="supervisor_title">Supervisor do projeto</string>
+    <string name="supervisor_roots">%1$d projetos</string>
+    <string name="supervisor_failing">%1$d com falha</string>
+    <string name="supervisor_error_peak">pico de %1$d erros</string>
+    <string name="supervisor_open_count">%1$d abertos</string>
+    <string name="supervisor_open_items">Itens abertos</string>
+    <string name="supervisor_recent_decisions">Decisões recentes</string>
+    <string name="supervisor_no_open_items">Nenhum item aberto</string>
+    <string name="supervisor_no_decisions">Nenhuma decisão recente</string>
+    <string name="supervisor_unknown_project">Projeto desconhecido</string>
+    <string name="supervisor_load_failed">Não foi possível carregar o resumo do supervisor</string>
 </resources>

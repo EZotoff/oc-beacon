@@ -806,4 +806,15 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="crash_notice_body_no_time">Si è verificato un arresto anomalo imprevisto nell\'ultima sessione. Dettagli nella sezione diagnostica.</string>
     <string name="crash_notice_view">Visualizza</string>
     <string name="crash_notice_dismiss">Ignora</string>
+    <string name="supervisor_title">Supervisore del progetto</string>
+    <string name="supervisor_roots">%1$d progetti</string>
+    <string name="supervisor_failing">%1$d non riusciti</string>
+    <string name="supervisor_error_peak">picco di %1$d errori</string>
+    <string name="supervisor_open_count">%1$d aperti</string>
+    <string name="supervisor_open_items">Elementi aperti</string>
+    <string name="supervisor_recent_decisions">Decisioni recenti</string>
+    <string name="supervisor_no_open_items">Nessun elemento aperto</string>
+    <string name="supervisor_no_decisions">Nessuna decisione recente</string>
+    <string name="supervisor_unknown_project">Progetto sconosciuto</string>
+    <string name="supervisor_load_failed">Impossibile caricare il riepilogo del supervisore</string>
 </resources>

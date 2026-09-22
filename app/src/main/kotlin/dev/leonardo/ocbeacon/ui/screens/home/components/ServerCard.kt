@@ -32,6 +32,7 @@ internal fun ServerCard(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onOpenSessions: () -> Unit,
+    onOpenSupervisor: () -> Unit,
     onServerSettings: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
@@ -129,6 +130,11 @@ internal fun ServerCard(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isConnected && server.serverType == dev.leonardo.ocbeacon.domain.model.ServerType.OpenCode) {
+                        IconButton(onClick = onOpenSupervisor) {
+                            Icon(Icons.Default.Dashboard, contentDescription = stringResource(R.string.supervisor_title))
+                        }
+                    }
                     if (showServerSettings) {
                         IconButton(onClick = onServerSettings) {
                             Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.server_settings_title))

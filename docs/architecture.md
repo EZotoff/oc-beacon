@@ -9,7 +9,7 @@ Clean Architecture, 3 layers. **Dependency direction: UI → Domain ← Data.**
 ```
 domain/          Pure Kotlin, 无 Android 依赖
   model/         40+ 数据类与值类型（SseEvent, Message, Part, Session, AppSettings, SessionCategory, FavoriteSessionSnapshot 等）
-  repository/    14 个接口（Agent, Chat, Draft, File, Mcp, Provider, Server, ServerConfig, ServerConnection, Session, SessionState, Settings, Terminal, Vcs）
+  repository/    15 个接口（含只读 Supervisor 摘要；其余按 Agent/Chat/File/Session 等领域拆分）
   usecase/       25 个 UseCase — ViewModel 调用它们，而非直接调 API
 
 data/            Android 相关实现
@@ -21,6 +21,7 @@ data/            Android 相关实现
                  + DiagnosticLogDatabase/Repository (SQLite, 自动清理, 隐私脱敏)
                  + CrossServerSessionsAggregator（基于 REST 的按服务器会话聚合）
   update/        应用内 GitHub Release 更新检查（UpdateRepository, 3 级回退）
+                  SupervisorRepositoryImpl 复用 OpenCode 文件 API，只读聚合 supervisor 状态文件
 
 logging/         AppLogger — 全局持久化日志（Channel→SQLite, 崩溃捕获, 脱敏）
 
@@ -45,6 +46,7 @@ ui/
     tools/           工具调用可展开卡片
     util/            聊天专用工具
   screens/home/      HomeScreen + 服务器卡片
+  screens/supervisor/ Project Supervisor 摘要（健康、待处理事项、最近决策；下拉刷新）
   screens/sessions/  SessionListScreen + CrossServerSessionsScreen + 组件
   screens/settings/  SettingsScreen + 选择器对话框 + DiagnosticsScreen
   screens/server/    服务器设置/提供商/模型过滤

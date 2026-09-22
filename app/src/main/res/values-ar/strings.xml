@@ -822,4 +822,15 @@
     <string name="crash_notice_body_no_time">حدث تعطل غير متوقع في الجلسة السابقة. التفاصيل متاحة في قسم التشخيص.</string>
     <string name="crash_notice_view">عرض</string>
     <string name="crash_notice_dismiss">تجاهل</string>
+    <string name="supervisor_title">مشرف المشاريع</string>
+    <string name="supervisor_roots">%1$d مشاريع</string>
+    <string name="supervisor_failing">%1$d متعطلة</string>
+    <string name="supervisor_error_peak">ذروة الأخطاء %1$d</string>
+    <string name="supervisor_open_count">%1$d مفتوحة</string>
+    <string name="supervisor_open_items">العناصر المفتوحة</string>
+    <string name="supervisor_recent_decisions">القرارات الأخيرة</string>
+    <string name="supervisor_no_open_items">لا توجد عناصر مفتوحة</string>
+    <string name="supervisor_no_decisions">لا توجد قرارات حديثة</string>
+    <string name="supervisor_unknown_project">مشروع غير معروف</string>
+    <string name="supervisor_load_failed">تعذر تحميل ملخص المشرف</string>
 </resources>

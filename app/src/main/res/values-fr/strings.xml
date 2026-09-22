@@ -804,4 +804,15 @@
     <string name="crash_notice_body_no_time">Un plantage inattendu s\'est produit lors de la dernière session. Détails dans les diagnostics.</string>
     <string name="crash_notice_view">Voir</string>
     <string name="crash_notice_dismiss">Ignorer</string>
+    <string name="supervisor_title">Superviseur de projet</string>
+    <string name="supervisor_roots">%1$d projets</string>
+    <string name="supervisor_failing">%1$d en échec</string>
+    <string name="supervisor_error_peak">pic de %1$d erreurs</string>
+    <string name="supervisor_open_count">%1$d ouverts</string>
+    <string name="supervisor_open_items">Éléments ouverts</string>
+    <string name="supervisor_recent_decisions">Décisions récentes</string>
+    <string name="supervisor_no_open_items">Aucun élément ouvert</string>
+    <string name="supervisor_no_decisions">Aucune décision récente</string>
+    <string name="supervisor_unknown_project">Projet inconnu</string>
+    <string name="supervisor_load_failed">Impossible de charger le résumé du superviseur</string>
 </resources>

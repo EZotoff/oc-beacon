@@ -17,6 +17,7 @@ fun HomeRoute(
     onNavigateToSettings: () -> Unit,
     onNavigateToAbout: () -> Unit,
     onNavigateToDiagnostics: () -> Unit = {},
+    onNavigateToSupervisor: (serverId: String) -> Unit,
 ) {
     val viewModel: HomeViewModel = hiltViewModel()
     HomeScreen(
@@ -27,5 +28,6 @@ fun HomeRoute(
         onNavigateToSettings = onNavigateToSettings,
         onNavigateToAbout = onNavigateToAbout,
         onNavigateToDiagnostics = onNavigateToDiagnostics,
+        onNavigateToSupervisor = onNavigateToSupervisor,
     )
 }

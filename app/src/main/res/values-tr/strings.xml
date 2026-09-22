@@ -806,4 +806,15 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="crash_notice_body_no_time">Son oturumda beklenmeyen bir çökme yaşandı. Ayrıntılar tanılama bölümünde.</string>
     <string name="crash_notice_view">Görüntüle</string>
     <string name="crash_notice_dismiss">Kapat</string>
+    <string name="supervisor_title">Proje Denetçisi</string>
+    <string name="supervisor_roots">%1$d proje</string>
+    <string name="supervisor_failing">%1$d başarısız</string>
+    <string name="supervisor_error_peak">%1$d hata zirvesi</string>
+    <string name="supervisor_open_count">%1$d açık</string>
+    <string name="supervisor_open_items">Açık öğeler</string>
+    <string name="supervisor_recent_decisions">Son kararlar</string>
+    <string name="supervisor_no_open_items">Açık öğe yok</string>
+    <string name="supervisor_no_decisions">Son karar yok</string>
+    <string name="supervisor_unknown_project">Bilinmeyen proje</string>
+    <string name="supervisor_load_failed">Denetçi özeti yüklenemedi</string>
 </resources>

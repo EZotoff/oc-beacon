@@ -37,6 +37,7 @@ import dev.leonardo.ocbeacon.ui.screens.server.ServerModelFilterRoute
 import dev.leonardo.ocbeacon.ui.screens.server.ServerProvidersRoute
 import dev.leonardo.ocbeacon.ui.screens.server.ServerSettingsRoute
 import dev.leonardo.ocbeacon.ui.screens.settings.SettingsRoute
+import dev.leonardo.ocbeacon.ui.screens.supervisor.SupervisorRoute
 import dev.leonardo.ocbeacon.ui.screens.webview.WebViewScreen
 import dev.leonardo.ocbeacon.ui.screens.workspace.WorkspaceRoute
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -267,10 +268,20 @@ fun NavGraph(
                     // #154a：崩溃横幅「查看」→ 诊断页
                     navController.navigate(DiagnosticsNav.route)
                 },
+                onNavigateToSupervisor = { serverId ->
+                    navController.navigate(SupervisorNav.createRoute(serverId))
+                },
                 onNavigateToAbout = {
                     navController.navigate(AboutNav.route)
                 }
             )
+        }
+
+        composable(
+            route = SupervisorNav.routePattern,
+            arguments = SupervisorNav.navArguments,
+        ) {
+            SupervisorRoute(onNavigateBack = { navController.popBackStack() })
         }
 
         // ============ 设置页 ============
