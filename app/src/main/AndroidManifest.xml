@@ -69,6 +69,19 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- WorkManager 按需初始化（OpenCodeApp 实现 Configuration.Provider）：
+             移除 androidx.startup 默认初始化器，改由 Hilt 注入 worker 工厂。 -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
     </application>
 
 </manifest>

@@ -14,6 +14,10 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.android.HiltAndroidApp
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
+import dev.leonardo.ocbeacon.work.SupervisorPollScheduler
+import javax.inject.Inject
 import dagger.hilt.components.SingletonComponent
 import dev.leonardo.ocbeacon.data.repository.DiagnosticLogRepository
 import dev.leonardo.ocbeacon.data.repository.SettingsDataStore
@@ -60,7 +64,16 @@ private fun Application.crashLogDir(): File {
  * Hilt 依赖注入的入口
  */
 @HiltAndroidApp
-class OpenCodeApp : Application() {
+class OpenCodeApp : Application(), Configuration.Provider {
+
+    /** WorkManager 按需初始化：Hilt 注入 worker 工厂（@HiltWorker）。 */
+    @Inject
+    lateinit var workerFactory: HiltWorkerFactory
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setWorkerFactory(workerFactory)
+            .build()
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -80,6 +93,11 @@ class OpenCodeApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+
+        // ---- Supervisor 后台轮询（WorkManager 周期任务，15 分钟）----
+        // 唯一周期任务 + KEEP 策略：应用重启不重置排期；失败安全（worker 恒 success）。
+        runCatching { SupervisorPollScheduler.schedule(this) }
+            .onFailure { AppLogger.e(TAG, "Supervisor poll scheduling failed", it) }
 
         // ---- 331365999 家族机制级根因修复（2026-08-29，见 journal 二十八轮）----
         // foundation 1.11.x 的 prefetch pausable 预组合在含非局部 return 的

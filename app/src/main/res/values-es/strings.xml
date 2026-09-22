@@ -817,4 +817,9 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_no_decisions">No hay decisiones recientes</string>
     <string name="supervisor_unknown_project">Proyecto desconocido</string>
     <string name="supervisor_load_failed">No se pudo cargar el resumen del supervisor</string>
+    <string name="notification_channel_supervisor">Supervisor</string>
+    <string name="notification_channel_supervisor_desc">Escaladas y preguntas que requieren atención</string>
+    <string name="supervisor_notification_root_failing_title">Supervisor: %1$d root(s) con fallos</string>
+    <string name="supervisor_notification_error_peak_title">Supervisor: pico de errores en aumento</string>
+    <string name="supervisor_notification_error_peak">Pico de errores: %1$d</string>
 </resources>

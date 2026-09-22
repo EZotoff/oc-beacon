@@ -1,6 +1,7 @@
 package dev.leonardo.ocbeacon.ui.screens.supervisor
 
 import androidx.lifecycle.SavedStateHandle
+import dev.leonardo.ocbeacon.data.repository.SupervisorSnapshotCache
 import dev.leonardo.ocbeacon.domain.model.SupervisorSnapshot
 import dev.leonardo.ocbeacon.domain.repository.SupervisorRepository
 import dev.leonardo.ocbeacon.ui.navigation.routes.ServerRouteParams
@@ -24,6 +25,7 @@ import org.junit.Test
 class SupervisorViewModelTest {
     private val dispatcher = UnconfinedTestDispatcher()
     private val repository: SupervisorRepository = mockk()
+    private val cache = SupervisorSnapshotCache()
     private val snapshot = SupervisorSnapshot(2, 1, 4, emptyList(), emptyList())
 
     @Before
@@ -40,7 +42,7 @@ class SupervisorViewModelTest {
     fun `initial load exposes supervisor snapshot`() = runTest {
         coEvery { repository.load("server-1") } returns Result.success(snapshot)
 
-        val viewModel = SupervisorViewModel(savedStateHandle(), repository)
+        val viewModel = SupervisorViewModel(savedStateHandle(), repository, cache)
 
         assertEquals(snapshot, viewModel.uiState.value.snapshot)
         assertFalse(viewModel.uiState.value.isLoading)
@@ -50,7 +52,7 @@ class SupervisorViewModelTest {
     @Test
     fun `pull refresh reloads current server`() = runTest {
         coEvery { repository.load("server-1") } returns Result.success(snapshot)
-        val viewModel = SupervisorViewModel(savedStateHandle(), repository)
+        val viewModel = SupervisorViewModel(savedStateHandle(), repository, cache)
 
         viewModel.refresh()
 

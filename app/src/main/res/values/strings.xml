@@ -900,4 +900,9 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_no_decisions">No recent decisions</string>
     <string name="supervisor_unknown_project">Unknown project</string>
     <string name="supervisor_load_failed">Could not load the supervisor digest</string>
+    <string name="notification_channel_supervisor">Supervisor</string>
+    <string name="notification_channel_supervisor_desc">Escalations and questions needing attention</string>
+    <string name="supervisor_notification_root_failing_title">Supervisor: %1$d root(s) failing</string>
+    <string name="supervisor_notification_error_peak_title">Supervisor: error peak rising</string>
+    <string name="supervisor_notification_error_peak">Error peak: %1$d</string>
 </resources>

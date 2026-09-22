@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.leonardo.ocbeacon.data.repository.SupervisorSnapshotCache
 import dev.leonardo.ocbeacon.domain.model.SupervisorSnapshot
 import dev.leonardo.ocbeacon.domain.repository.SupervisorRepository
 import dev.leonardo.ocbeacon.ui.navigation.routes.ServerRouteParams
@@ -25,9 +26,14 @@ data class SupervisorUiState(
 class SupervisorViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: SupervisorRepository,
+    private val cache: SupervisorSnapshotCache,
 ) : ViewModel() {
     private val serverId: String = checkNotNull(savedStateHandle[ServerRouteParams.PARAM_SERVER_ID])
-    private val _uiState = MutableStateFlow(SupervisorUiState())
+    // 后台轮询最近一次成功快照作为初始值：同步后打开即为最新，离线仍可展示。
+    private val _uiState = MutableStateFlow(
+        cache.get(serverId)?.let { SupervisorUiState(snapshot = it, isLoading = false) }
+            ?: SupervisorUiState(),
+    )
     val uiState: StateFlow<SupervisorUiState> = _uiState.asStateFlow()
 
     init {

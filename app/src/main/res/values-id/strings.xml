@@ -823,4 +823,9 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_no_decisions">Tidak ada keputusan terbaru</string>
     <string name="supervisor_unknown_project">Proyek tidak dikenal</string>
     <string name="supervisor_load_failed">Ringkasan pengawas tidak dapat dimuat</string>
+    <string name="notification_channel_supervisor">Supervisor</string>
+    <string name="notification_channel_supervisor_desc">Eskalasi dan pertanyaan yang butuh perhatian</string>
+    <string name="supervisor_notification_root_failing_title">Supervisor: %1$d root gagal</string>
+    <string name="supervisor_notification_error_peak_title">Supervisor: puncak error naik</string>
+    <string name="supervisor_notification_error_peak">Puncak error: %1$d</string>
 </resources>

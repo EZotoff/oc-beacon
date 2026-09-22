@@ -78,6 +78,7 @@ fun NavGraph(
     windowSizeClass: WindowSizeClass,
     deepLinkFlow: MutableSharedFlow<SessionDeepLink>,
     debugChannelFlow: MutableSharedFlow<String>,
+    supervisorNavFlow: MutableSharedFlow<String>,
     sharedImagesFlow: SharedFlow<List<Uri>>,
     settingsRepository: SettingsRepository,
     serverRepository: ServerRepository,
@@ -183,6 +184,15 @@ fun NavGraph(
             debugChannelFlow.resetReplayCache()
             AppLogger.i(TAG, "Debug channel → SessionList for server $serverId")
             navController.navigate(SessionListNav.createRoute(serverId)) { launchSingleTop = true }
+        }
+    }
+
+    // Supervisor 通知点击：直达该服务器的摘要页
+    LaunchedEffect(Unit) {
+        supervisorNavFlow.collect { serverId ->
+            supervisorNavFlow.resetReplayCache()
+            AppLogger.i(TAG, "Supervisor notification → digest for server $serverId")
+            navController.navigate(SupervisorNav.createRoute(serverId)) { launchSingleTop = true }
         }
     }
 

@@ -144,11 +144,23 @@ class AppNotificationManager @Inject constructor(
                 enableLights(true)
             }
 
+            val supervisorChannel = NotificationChannel(
+                NotificationChannels.SUPERVISOR,
+                appContext.getString(R.string.notification_channel_supervisor),
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = appContext.getString(R.string.notification_channel_supervisor_desc)
+                setShowBadge(true)
+                enableVibration(true)
+                enableLights(true)
+            }
+
             systemNotificationManager.createNotificationChannel(connectionChannel)
             systemNotificationManager.createNotificationChannel(tasksChannel)
             systemNotificationManager.createNotificationChannel(tasksSilentChannel)
             systemNotificationManager.createNotificationChannel(permissionsChannel)
             systemNotificationManager.createNotificationChannel(questionsChannel)
+            systemNotificationManager.createNotificationChannel(supervisorChannel)
         }
     }
 

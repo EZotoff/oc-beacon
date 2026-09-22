@@ -817,4 +817,9 @@
     <string name="supervisor_no_decisions">最近の判断はありません</string>
     <string name="supervisor_unknown_project">不明なプロジェクト</string>
     <string name="supervisor_load_failed">スーパーバイザー概要を読み込めませんでした</string>
+    <string name="notification_channel_supervisor">スーパーバイザー</string>
+    <string name="notification_channel_supervisor_desc">注意が必要なエスカレーションと質問</string>
+    <string name="supervisor_notification_root_failing_title">スーパーバイザー: %1$d 件のルートが失敗</string>
+    <string name="supervisor_notification_error_peak_title">スーパーバイザー: エラー最大値が上昇</string>
+    <string name="supervisor_notification_error_peak">エラー最大値: %1$d</string>
 </resources>

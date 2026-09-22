@@ -825,4 +825,9 @@ Tokeny: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_no_decisions">Brak ostatnich decyzji</string>
     <string name="supervisor_unknown_project">Nieznany projekt</string>
     <string name="supervisor_load_failed">Nie udało się wczytać podsumowania nadzorcy</string>
+    <string name="notification_channel_supervisor">Supervisor</string>
+    <string name="notification_channel_supervisor_desc">Eskalacje i pytania wymagające uwagi</string>
+    <string name="supervisor_notification_root_failing_title">Supervisor: %1$d katalogów z błędami</string>
+    <string name="supervisor_notification_error_peak_title">Supervisor: szczyt błędów rośnie</string>
+    <string name="supervisor_notification_error_peak">Szczyt błędów: %1$d</string>
 </resources>

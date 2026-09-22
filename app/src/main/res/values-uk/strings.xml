@@ -825,4 +825,9 @@
     <string name="supervisor_no_decisions">Немає останніх рішень</string>
     <string name="supervisor_unknown_project">Невідомий проєкт</string>
     <string name="supervisor_load_failed">Не вдалося завантажити зведення наглядача</string>
+    <string name="notification_channel_supervisor">Супервізор</string>
+    <string name="notification_channel_supervisor_desc">Ескалації та питання, що потребують уваги</string>
+    <string name="supervisor_notification_root_failing_title">Супервізор: проєктів з помилками: %1$d</string>
+    <string name="supervisor_notification_error_peak_title">Супервізор: пік помилок зростає</string>
+    <string name="supervisor_notification_error_peak">Пік помилок: %1$d</string>
 </resources>

@@ -16,4 +16,5 @@ object NotificationChannels {
     const val TASKS_SILENT = "opencode_tasks_silent"
     const val PERMISSIONS = "opencode_permissions"
     const val QUESTIONS = "opencode_questions"
+    const val SUPERVISOR = "opencode_supervisor"
 }

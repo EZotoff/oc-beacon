@@ -32,6 +32,7 @@ import dev.leonardo.ocbeacon.domain.model.AppSettings
 import dev.leonardo.ocbeacon.domain.model.DebugProfile
 import dev.leonardo.ocbeacon.domain.model.ServerConfig
 import dev.leonardo.ocbeacon.service.OpenCodeConnectionService
+import dev.leonardo.ocbeacon.service.SupervisorNotificationManager
 import dev.leonardo.ocbeacon.util.applyAppLanguage
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
@@ -93,6 +94,12 @@ class MainActivity : ComponentActivity() {
      * replay=1 保证冷启动（NavGraph 尚未收集）时不丢失。
      */
     private val _debugChannelNavFlow = MutableSharedFlow<String>(replay = 1)
+
+    /**
+     * Supervisor 通知点击产生的导航事件（携带 serverId）。
+     * NavGraph 订阅并直达该服务器的 Supervisor 摘要页；replay=1 保证冷启动不丢失。
+     */
+    private val _supervisorNavFlow = MutableSharedFlow<String>(replay = 1)
 
     /**
      * 用于通过 ACTION_SEND / ACTION_SEND_MULTIPLE 接收图片的 SharedFlow。
@@ -162,6 +169,8 @@ class MainActivity : ComponentActivity() {
         handleShareIntent(intent)
         // #132 调试通道：外部参数直达（debug 构建专用）
         handleDebugProfileIntent(intent)
+        // 处理启动 Activity 的 Supervisor 通知点击
+        handleSupervisorIntent(intent)
 
         // 2026-08-20 竞态取证埋点（debug_race extra；release 也生效——概率 bug
         // 需在用户日常环境复现取证，故不设 BuildConfig.DEBUG 门）
@@ -232,6 +241,7 @@ class MainActivity : ComponentActivity() {
                             windowSizeClass = windowSizeClass,
                             deepLinkFlow = _deepLinkFlow,
                             debugChannelFlow = _debugChannelNavFlow,
+                            supervisorNavFlow = _supervisorNavFlow,
                             sharedImagesFlow = sharedImagesFlow,
                             settingsRepository = settingsRepository,
                             serverRepository = serverRepository,
@@ -269,6 +279,8 @@ class MainActivity : ComponentActivity() {
         handleShareIntent(intent)
         // #132 调试通道：外部参数直达（debug 构建专用）
         handleDebugProfileIntent(intent)
+        // 当 Activity 已在运行时处理 Supervisor 通知点击
+        handleSupervisorIntent(intent)
     }
     
     private fun handleSessionIntent(intent: Intent?) {
@@ -287,6 +299,17 @@ class MainActivity : ComponentActivity() {
                 sessionId = sessionId
             )
         )
+    }
+
+    /**
+     * 处理 Supervisor 通知点击：发射 serverId 到 [supervisorNavFlow]，
+     * NavGraph 导航到该服务器的摘要页。
+     */
+    private fun handleSupervisorIntent(intent: Intent?) {
+        if (intent?.action != SupervisorNotificationManager.ACTION_OPEN_SUPERVISOR) return
+        val serverId = intent.getStringExtra(SupervisorNotificationManager.EXTRA_SERVER_ID) ?: return
+        AppLogger.i(TAG, "Supervisor deep-link: serverId=$serverId")
+        _supervisorNavFlow.tryEmit(serverId)
     }
 
     /**

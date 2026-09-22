@@ -53,9 +53,15 @@ class SupervisorRepositoryImpl @Inject constructor(
                         project = projectName(item.target.root),
                         createdAt = item.priority.createdAt,
                         stakes = item.priority.stakes,
+                        actionClass = item.actionClass,
+                        escalationKind = item.escalationKind.orEmpty(),
                     )
                 },
             recentDecisions = decisions,
+            failingRoots = status.rootHealth
+                .filterValues { it.state == "failing" }
+                .keys
+                .toList(),
         )
     }
 
@@ -90,6 +96,8 @@ class SupervisorRepositoryImpl @Inject constructor(
         val target: TargetDto,
         val priority: PriorityDto,
         val lifecycle: List<LifecycleDto> = emptyList(),
+        val actionClass: String = "",
+        val escalationKind: String? = null,
     )
 
     @Serializable

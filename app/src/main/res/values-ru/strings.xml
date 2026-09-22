@@ -826,4 +826,9 @@
     <string name="supervisor_no_decisions">Нет недавних решений</string>
     <string name="supervisor_unknown_project">Неизвестный проект</string>
     <string name="supervisor_load_failed">Не удалось загрузить сводку супервизора</string>
+    <string name="notification_channel_supervisor">Супервизор</string>
+    <string name="notification_channel_supervisor_desc">Эскалации и вопросы, требующие внимания</string>
+    <string name="supervisor_notification_root_failing_title">Супервизор: проектов с ошибками: %1$d</string>
+    <string name="supervisor_notification_error_peak_title">Супервизор: рост пика ошибок</string>
+    <string name="supervisor_notification_error_peak">Пик ошибок: %1$d</string>
 </resources>

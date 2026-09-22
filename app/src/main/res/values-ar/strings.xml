@@ -833,4 +833,9 @@
     <string name="supervisor_no_decisions">لا توجد قرارات حديثة</string>
     <string name="supervisor_unknown_project">مشروع غير معروف</string>
     <string name="supervisor_load_failed">تعذر تحميل ملخص المشرف</string>
+    <string name="notification_channel_supervisor">المشرف</string>
+    <string name="notification_channel_supervisor_desc">التصعيدات والأسئلة التي تحتاج إلى انتباه</string>
+    <string name="supervisor_notification_root_failing_title">المشرف: %1$d جذر فاشل</string>
+    <string name="supervisor_notification_error_peak_title">المشرف: ذروة الأخطاء ترتفع</string>
+    <string name="supervisor_notification_error_peak">ذروة الأخطاء: %1$d</string>
 </resources>

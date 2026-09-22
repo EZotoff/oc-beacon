@@ -817,4 +817,9 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_no_decisions">Son karar yok</string>
     <string name="supervisor_unknown_project">Bilinmeyen proje</string>
     <string name="supervisor_load_failed">Denetçi özeti yüklenemedi</string>
+    <string name="notification_channel_supervisor">Süpervizör</string>
+    <string name="notification_channel_supervisor_desc">Dikkat gerektiren yükseltmeler ve sorular</string>
+    <string name="supervisor_notification_root_failing_title">Süpervizör: %1$d kök başarısız</string>
+    <string name="supervisor_notification_error_peak_title">Süpervizör: hata zirvesi yükseliyor</string>
+    <string name="supervisor_notification_error_peak">Hata zirvesi: %1$d</string>
 </resources>

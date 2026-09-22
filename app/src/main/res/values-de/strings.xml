@@ -817,4 +817,9 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_no_decisions">Keine aktuellen Entscheidungen</string>
     <string name="supervisor_unknown_project">Unbekanntes Projekt</string>
     <string name="supervisor_load_failed">Supervisor-Übersicht konnte nicht geladen werden</string>
+    <string name="notification_channel_supervisor">Supervisor</string>
+    <string name="notification_channel_supervisor_desc">Eskalationen und Fragen, die Aufmerksamkeit erfordern</string>
+    <string name="supervisor_notification_root_failing_title">Supervisor: %1$d Root(s) fehlerhaft</string>
+    <string name="supervisor_notification_error_peak_title">Supervisor: Fehlerspitze steigt</string>
+    <string name="supervisor_notification_error_peak">Fehlerspitze: %1$d</string>
 </resources>

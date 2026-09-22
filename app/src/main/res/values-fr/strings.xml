@@ -815,4 +815,9 @@
     <string name="supervisor_no_decisions">Aucune décision récente</string>
     <string name="supervisor_unknown_project">Projet inconnu</string>
     <string name="supervisor_load_failed">Impossible de charger le résumé du superviseur</string>
+    <string name="notification_channel_supervisor">Superviseur</string>
+    <string name="notification_channel_supervisor_desc">Escalades et questions nécessitant une attention</string>
+    <string name="supervisor_notification_root_failing_title">Superviseur : %1$d racine(s) en échec</string>
+    <string name="supervisor_notification_error_peak_title">Superviseur : pic d\'erreurs en hausse</string>
+    <string name="supervisor_notification_error_peak">Pic d\'erreurs : %1$d</string>
 </resources>
