@@ -15,7 +15,7 @@ class SupervisorScreenTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun digest_renders_glance_items_and_decisions() {
+    fun open_items_destination_renders_glance_and_attention_only() {
         val snapshot = SupervisorSnapshot(
             rootsMonitored = 6,
             rootsFailing = 1,
@@ -32,7 +32,9 @@ class SupervisorScreenTest {
             OpenCodeTheme {
                 SupervisorScreen(
                     state = SupervisorUiState(snapshot = snapshot, isLoading = false),
+                    destination = SupervisorDestination.OPEN_ITEMS,
                     onNavigateBack = {},
+                    onNavigateToOtherDestination = {},
                     onRefresh = {},
                 )
             }
@@ -40,7 +42,37 @@ class SupervisorScreenTest {
 
         composeRule.onNodeWithText("6 roots").assertIsDisplayed()
         composeRule.onNodeWithText("Choose the release path").assertIsDisplayed()
+        composeRule.onNodeWithText("Operator input is required").assertDoesNotExist()
+    }
+
+    @Test
+    fun decisions_destination_renders_decisions_only() {
+        val snapshot = SupervisorSnapshot(
+            rootsMonitored = 6,
+            rootsFailing = 1,
+            errorsPeak = 4,
+            attentionItems = listOf(
+                SupervisorAttentionItem("att_1", "Choose the release path", "oc-beacon", "2026-09-22T09:00:00Z", 4),
+            ),
+            recentDecisions = listOf(
+                SupervisorDecision("ESCALATE", "oc-beacon", "Operator input is required", "2026-09-22T09:30:00Z"),
+            ),
+        )
+
+        composeRule.setContent {
+            OpenCodeTheme {
+                SupervisorScreen(
+                    state = SupervisorUiState(snapshot = snapshot, isLoading = false),
+                    destination = SupervisorDestination.DECISIONS_LOG,
+                    onNavigateBack = {},
+                    onNavigateToOtherDestination = {},
+                    onRefresh = {},
+                )
+            }
+        }
+
         composeRule.onNodeWithText("ESCALATE").assertIsDisplayed()
         composeRule.onNodeWithText("Operator input is required").assertIsDisplayed()
+        composeRule.onNodeWithText("Choose the release path").assertDoesNotExist()
     }
 }

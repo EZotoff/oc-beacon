@@ -3,6 +3,8 @@ package dev.leonardo.ocbeacon.ui.screens.supervisor
 import androidx.lifecycle.SavedStateHandle
 import dev.leonardo.ocbeacon.data.repository.SupervisorSnapshotCache
 import dev.leonardo.ocbeacon.domain.model.SupervisorSnapshot
+import dev.leonardo.ocbeacon.domain.model.SupervisorAttentionItem
+import dev.leonardo.ocbeacon.domain.model.SupervisorDecision
 import dev.leonardo.ocbeacon.domain.repository.SupervisorRepository
 import dev.leonardo.ocbeacon.ui.navigation.routes.ServerRouteParams
 import io.mockk.coEvery
@@ -58,6 +60,19 @@ class SupervisorViewModelTest {
 
         coVerify(exactly = 2) { repository.load("server-1") }
         assertTrue(viewModel.uiState.value.snapshot === snapshot)
+    }
+
+    @Test
+    fun `ui state exposes destination-specific collections`() {
+        val item = SupervisorAttentionItem("att-1", "Choose", "app", "2026-09-22T09:00:00Z", 1)
+        val decision = SupervisorDecision("CONTINUE", "app", "Safe", "2026-09-22T09:05:00Z")
+        val state = SupervisorUiState(
+            snapshot = SupervisorSnapshot(1, 0, 0, listOf(item), listOf(decision)),
+            isLoading = false,
+        )
+
+        assertEquals(listOf(item), state.openItems)
+        assertEquals(listOf(decision), state.decisions)
     }
 
     private fun savedStateHandle() = SavedStateHandle(

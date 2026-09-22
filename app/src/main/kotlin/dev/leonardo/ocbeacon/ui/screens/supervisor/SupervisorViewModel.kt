@@ -20,7 +20,10 @@ data class SupervisorUiState(
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val loadFailed: Boolean = false,
-)
+) {
+    val openItems get() = snapshot?.attentionItems.orEmpty()
+    val decisions get() = snapshot?.recentDecisions.orEmpty()
+}
 
 @HiltViewModel
 class SupervisorViewModel @Inject constructor(

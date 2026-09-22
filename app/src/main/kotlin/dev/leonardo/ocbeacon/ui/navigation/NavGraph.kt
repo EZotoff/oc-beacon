@@ -38,6 +38,7 @@ import dev.leonardo.ocbeacon.ui.screens.server.ServerProvidersRoute
 import dev.leonardo.ocbeacon.ui.screens.server.ServerSettingsRoute
 import dev.leonardo.ocbeacon.ui.screens.settings.SettingsRoute
 import dev.leonardo.ocbeacon.ui.screens.supervisor.SupervisorRoute
+import dev.leonardo.ocbeacon.ui.screens.supervisor.SupervisorDestination
 import dev.leonardo.ocbeacon.ui.screens.webview.WebViewScreen
 import dev.leonardo.ocbeacon.ui.screens.workspace.WorkspaceRoute
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -192,7 +193,7 @@ fun NavGraph(
         supervisorNavFlow.collect { serverId ->
             supervisorNavFlow.resetReplayCache()
             AppLogger.i(TAG, "Supervisor notification → digest for server $serverId")
-            navController.navigate(SupervisorNav.createRoute(serverId)) { launchSingleTop = true }
+            navController.navigate(SupervisorNav.createOpenItemsRoute(serverId)) { launchSingleTop = true }
         }
     }
 
@@ -279,7 +280,7 @@ fun NavGraph(
                     navController.navigate(DiagnosticsNav.route)
                 },
                 onNavigateToSupervisor = { serverId ->
-                    navController.navigate(SupervisorNav.createRoute(serverId))
+                    navController.navigate(SupervisorNav.createOpenItemsRoute(serverId))
                 },
                 onNavigateToAbout = {
                     navController.navigate(AboutNav.route)
@@ -288,10 +289,33 @@ fun NavGraph(
         }
 
         composable(
-            route = SupervisorNav.routePattern,
+            route = SupervisorNav.openItemsRoutePattern,
             arguments = SupervisorNav.navArguments,
-        ) {
-            SupervisorRoute(onNavigateBack = { navController.popBackStack() })
+        ) { entry ->
+            val serverId = SupervisorNav.serverId(entry)
+            SupervisorRoute(
+                destination = SupervisorDestination.OPEN_ITEMS,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToOtherDestination = {
+                    navController.navigate(SupervisorNav.createDecisionsLogRoute(serverId))
+                },
+            )
+        }
+        composable(
+            route = SupervisorNav.decisionsLogRoutePattern,
+            arguments = SupervisorNav.navArguments,
+        ) { entry ->
+            val serverId = SupervisorNav.serverId(entry)
+            SupervisorRoute(
+                destination = SupervisorDestination.DECISIONS_LOG,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToOtherDestination = {
+                    navController.navigate(SupervisorNav.createOpenItemsRoute(serverId)) {
+                        popUpTo(SupervisorNav.openItemsRoutePattern) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
+            )
         }
 
         // ============ 设置页 ============
