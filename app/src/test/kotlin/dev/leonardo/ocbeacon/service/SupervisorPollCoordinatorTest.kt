@@ -42,8 +42,8 @@ class SupervisorPollCoordinatorTest {
 
         coordinator().poll("s1")
 
-        verify(exactly = 1) { notifications.notifyAttentionItem("s1", match { it.id == "b" }) }
-        verify(exactly = 0) { notifications.notifyAttentionItem("s1", match { it.id == "a" }) }
+        coVerify(exactly = 1) { notifications.notifyAttentionItem("s1", match { it.id == "b" }) }
+        coVerify(exactly = 0) { notifications.notifyAttentionItem("s1", match { it.id == "a" }) }
         coVerify { seenStore.saveSeenItemIds("s1", setOf("a", "b")) }
         verify { cache.put("s1", snapshot) }
     }
@@ -64,7 +64,7 @@ class SupervisorPollCoordinatorTest {
 
         coordinator().poll("s1")
 
-        verify { notifications.notifyRootHealth("s1", listOf("/work/b"), 0, false) }
+        coVerify { notifications.notifyRootHealth("s1", listOf("/work/b"), 0, false) }
     }
 
     @Test
@@ -82,7 +82,7 @@ class SupervisorPollCoordinatorTest {
 
         coordinator().poll("s1")
 
-        verify { notifications.notifyRootHealth("s1", emptyList(), 9, true) }
+        coVerify { notifications.notifyRootHealth("s1", emptyList(), 9, true) }
     }
 
     @Test
@@ -101,8 +101,8 @@ class SupervisorPollCoordinatorTest {
 
         coordinator().poll("s1")
 
-        verify(exactly = 0) { notifications.notifyAttentionItem(any(), any()) }
-        verify(exactly = 0) { notifications.notifyRootHealth(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { notifications.notifyAttentionItem(any(), any()) }
+        coVerify(exactly = 0) { notifications.notifyRootHealth(any(), any(), any(), any()) }
     }
 
     @Test
@@ -111,8 +111,8 @@ class SupervisorPollCoordinatorTest {
 
         coordinator().poll("s1")
 
-        verify(exactly = 0) { notifications.notifyAttentionItem(any(), any()) }
-        verify(exactly = 0) { notifications.notifyRootHealth(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { notifications.notifyAttentionItem(any(), any()) }
+        coVerify(exactly = 0) { notifications.notifyRootHealth(any(), any(), any(), any()) }
         coVerify(exactly = 0) { seenStore.saveSeenItemIds(any(), any()) }
         coVerify(exactly = 0) { seenStore.saveHealthSnapshot(any(), any()) }
         verify(exactly = 0) { cache.put(any(), any()) }

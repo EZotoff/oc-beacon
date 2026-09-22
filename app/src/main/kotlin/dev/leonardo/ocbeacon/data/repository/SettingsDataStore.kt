@@ -57,6 +57,10 @@ class SettingsDataStore @Inject constructor(
         private val RECONNECT_MODE_KEY = stringPreferencesKey("reconnect_mode")
         private val KEEP_SCREEN_ON_KEY = booleanPreferencesKey("keep_screen_on")
         private val SILENT_NOTIFICATIONS_KEY = booleanPreferencesKey("silent_notifications")
+        /** Supervisor 通知声音编码：null=系统默认，""=静音，其余=铃声 URI。 */
+        private val SUPERVISOR_SOUND_URI_KEY = stringPreferencesKey("supervisor_notification_sound_uri")
+        /** Supervisor 渠道版本号（声音变更时 +1，用于换 ID 重建渠道）。默认 1=基础渠道。 */
+        private val SUPERVISOR_CHANNEL_VERSION_KEY = intPreferencesKey("supervisor_notification_channel_version")
         private val COMPRESS_IMAGE_ATTACHMENTS_KEY = booleanPreferencesKey("compress_image_attachments")
         private val IMAGE_ATTACHMENT_MAX_LONG_SIDE_KEY = intPreferencesKey("image_attachment_max_long_side")
         private val IMAGE_ATTACHMENT_WEBP_QUALITY_KEY = intPreferencesKey("image_attachment_webp_quality")
@@ -289,6 +293,18 @@ class SettingsDataStore @Inject constructor(
     /** 通知是否静默（无声音/振动）。默认：false。 */
     val silentNotifications: Flow<Boolean> = prefFlow(SILENT_NOTIFICATIONS_KEY, false)
     suspend fun setSilentNotifications(enabled: Boolean) = setPref(SILENT_NOTIFICATIONS_KEY, enabled)
+
+    /** Supervisor 通知声音编码（null=默认，""=静音，其余=URI）。默认：null。 */
+    val supervisorSoundUri: Flow<String?> = dataStore.data.map { it[SUPERVISOR_SOUND_URI_KEY] }
+    suspend fun setSupervisorSoundUri(uri: String?) {
+        dataStore.edit { prefs ->
+            if (uri == null) prefs.remove(SUPERVISOR_SOUND_URI_KEY) else prefs[SUPERVISOR_SOUND_URI_KEY] = uri
+        }
+    }
+
+    /** Supervisor 渠道版本号。默认：1（基础渠道）。 */
+    val supervisorChannelVersion: Flow<Int> = prefFlow(SUPERVISOR_CHANNEL_VERSION_KEY, 1)
+    suspend fun setSupervisorChannelVersion(version: Int) = setPref(SUPERVISOR_CHANNEL_VERSION_KEY, version)
 
     /** 初始加载的消息数量。默认：30。 */
     val initialMessageCount: Flow<Int> = prefFlow(INITIAL_MESSAGE_COUNT_KEY, 30)

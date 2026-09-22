@@ -332,6 +332,11 @@
     <string name="settings_notif_test_desc">Надсилає реальне сповіщення для перевірки банера та звуку. Якщо нічого не з’явилося, пристрій може заглушати застосунок (наприклад, MIUI типово вимикає спливаючі сповіщення) — увімкніть у системних налаштуваннях сповіщень нижче.</string>
     <string name="settings_notif_system">Системні налаштування сповіщень</string>
     <string name="settings_notif_system_desc">Керуйте банером, звуком і вібрацією за каналами в системних налаштуваннях</string>
+    <string name="settings_supervisor_sound">Звук сповіщення супервізора</string>
+    <string name="settings_supervisor_sound_desc">Звук для ескалацій супервізора та попереджень про стан</string>
+    <string name="settings_supervisor_sound_default">За замовчуванням</string>
+    <string name="settings_supervisor_sound_silent">Без звуку</string>
+    <string name="a11y_settings_supervisor_sound">Звук сповіщення супервізора</string>
     <string name="notification_test_title">Тестове сповіщення</string>
     <string name="notification_test_body">Якщо ви бачите це сповіщення, доставка працює.</string>
     <string name="a11y_settings_notif_test">Надіслати тестове сповіщення</string>

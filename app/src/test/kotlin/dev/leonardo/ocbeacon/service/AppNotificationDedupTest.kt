@@ -34,6 +34,7 @@ class AppNotificationDedupTest {
             CoroutineScope(SupervisorJob() + Dispatchers.Default),
             // C9-B：Context 构造注入（本测试不触发通知投递，relaxed mock 即可）
             mockk<android.content.Context>(relaxed = true),
+            mockk(relaxed = true),
         )
     }
 

@@ -16,7 +16,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Supervisor 后台轮询的本地通知投递（专用渠道 [NotificationChannels.SUPERVISOR]）。
+ * Supervisor 后台轮询的本地通知投递（专用渠道 [NotificationChannels.SUPERVISOR]，
+ * 实际 ID 由 [SupervisorChannelManager] 版本化派生）。
  *
  * 两种通知形态：
  * - 每个新开放事项一条（标题=问题，正文=项目 · 年龄），点击进入该服务器的摘要页；
@@ -28,16 +29,18 @@ import javax.inject.Singleton
 @Singleton
 class SupervisorNotificationManager @Inject constructor(
     @ApplicationContext private val appContext: Context,
+    private val channelManager: SupervisorChannelManager,
 ) {
     private val manager: NotificationManager by lazy {
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
 
     /** 新开放事项通知：标题取问题文本，正文为「项目 · 年龄」。 */
-    fun notifyAttentionItem(serverId: String, item: SupervisorAttentionItem) {
+    suspend fun notifyAttentionItem(serverId: String, item: SupervisorAttentionItem) {
+        channelManager.ensureChannel()
         val title = item.question.ifBlank { appContext.getString(R.string.supervisor_title) }
         val text = "${projectLabel(item.project)} · ${age(item.createdAt)}"
-        val notification = NotificationCompat.Builder(appContext, NotificationChannels.SUPERVISOR)
+        val notification = NotificationCompat.Builder(appContext, channelManager.currentChannelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
@@ -54,12 +57,13 @@ class SupervisorNotificationManager @Inject constructor(
      * root 健康通知：新进入 failing 的 root 与/或错误峰值上升。
      * 固定 id——同一服务器的健康通知只保留最新一条。
      */
-    fun notifyRootHealth(
+    suspend fun notifyRootHealth(
         serverId: String,
         failingRoots: List<String>,
         errorsPeak: Int,
         peakIncreased: Boolean,
     ) {
+        channelManager.ensureChannel()
         val title = if (failingRoots.isNotEmpty()) {
             appContext.getString(R.string.supervisor_notification_root_failing_title, failingRoots.size)
         } else {
@@ -74,7 +78,7 @@ class SupervisorNotificationManager @Inject constructor(
                 append(appContext.getString(R.string.supervisor_notification_error_peak, errorsPeak))
             }
         }
-        val notification = NotificationCompat.Builder(appContext, NotificationChannels.SUPERVISOR)
+        val notification = NotificationCompat.Builder(appContext, channelManager.currentChannelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(body)

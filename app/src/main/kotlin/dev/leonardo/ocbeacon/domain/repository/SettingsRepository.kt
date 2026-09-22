@@ -50,6 +50,18 @@ interface SettingsRepository {
     /** 通知是否静默（无声音/振动）。默认：false。（同上 + 提示音策略镜像） */
     fun silentNotifications(): Flow<Boolean>
 
+    /** Supervisor 通知声音编码（null=默认，""=静音，其余=URI）。默认：null。（SupervisorChannelManager） */
+    fun supervisorSoundUri(): Flow<String?>
+
+    /** Supervisor 渠道版本号（声音变更时 +1）。默认：1。（SupervisorChannelManager） */
+    fun supervisorChannelVersion(): Flow<Int>
+
+    /** 持久化 Supervisor 通知声音编码（null=默认，""=静音，其余=URI）。 */
+    suspend fun setSupervisorSoundUri(uri: String?)
+
+    /** 持久化 Supervisor 渠道版本号。 */
+    suspend fun setSupervisorChannelVersion(version: Int)
+
     /** 是否自动批准权限请求。默认：false。（OpenCodeConnectionService） */
     fun autoAllowPermissions(): Flow<Boolean>
 

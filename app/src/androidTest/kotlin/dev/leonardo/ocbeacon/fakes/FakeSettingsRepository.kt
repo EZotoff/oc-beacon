@@ -49,6 +49,18 @@ class FakeSettingsRepository @Inject constructor() : SettingsRepository {
 
     override fun silentNotifications(): Flow<Boolean> = silentNotificationsState
 
+    // Supervisor 通知声音 / 渠道版本（接口新增成员的 Fake 实现）
+    val supervisorSoundUriState = MutableStateFlow<String?>(null)
+    val supervisorChannelVersionState = MutableStateFlow(1)
+    override fun supervisorSoundUri(): Flow<String?> = supervisorSoundUriState
+    override fun supervisorChannelVersion(): Flow<Int> = supervisorChannelVersionState
+    override suspend fun setSupervisorSoundUri(uri: String?) {
+        supervisorSoundUriState.value = uri
+    }
+    override suspend fun setSupervisorChannelVersion(version: Int) {
+        supervisorChannelVersionState.value = version
+    }
+
     override fun autoAllowPermissions(): Flow<Boolean> = autoAllowPermissionsState
 
     override fun reconnectMode(): Flow<String> = reconnectModeState

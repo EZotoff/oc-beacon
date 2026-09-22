@@ -20,6 +20,7 @@ class NotificationChannelsTest {
         assertEquals("opencode_tasks_silent", NotificationChannels.TASKS_SILENT)
         assertEquals("opencode_permissions", NotificationChannels.PERMISSIONS)
         assertEquals("opencode_questions", NotificationChannels.QUESTIONS)
+        assertEquals("opencode_supervisor", NotificationChannels.SUPERVISOR)
     }
 
     @Test

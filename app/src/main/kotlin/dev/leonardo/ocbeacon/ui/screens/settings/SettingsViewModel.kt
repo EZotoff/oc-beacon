@@ -7,6 +7,8 @@ import dev.leonardo.ocbeacon.data.local.ArchiveBucketDao
 import dev.leonardo.ocbeacon.data.local.ArchiveStats
 import dev.leonardo.ocbeacon.data.repository.PermissionAutoApprover
 import dev.leonardo.ocbeacon.service.AppNotificationManager
+import dev.leonardo.ocbeacon.service.SupervisorChannelManager
+import dev.leonardo.ocbeacon.service.SupervisorSound
 import dev.leonardo.ocbeacon.domain.model.AppSettings
 import dev.leonardo.ocbeacon.domain.model.AutoApproveRule
 import dev.leonardo.ocbeacon.domain.usecase.GetSettingsFlowUseCase
@@ -34,6 +36,7 @@ class SettingsViewModel @Inject constructor(
     private val updateSettingsUseCase: UpdateSettingsUseCase,
     private val autoApprover: PermissionAutoApprover,
     private val appNotificationManager: AppNotificationManager,
+    private val supervisorChannelManager: SupervisorChannelManager,
     private val archiveBucketDao: ArchiveBucketDao,
 ) : ViewModel() {
 
@@ -63,6 +66,9 @@ class SettingsViewModel @Inject constructor(
     val imageAttachmentMaxLongSide = settings.map { it.imageAttachmentMaxLongSide }.stateIn(viewModelScope, SharingStarted.Eagerly, 1440)
     val imageAttachmentWebpQuality = settings.map { it.imageAttachmentWebpQuality }.stateIn(viewModelScope, SharingStarted.Eagerly, 60)
     val silentNotifications = settings.map { it.silentNotifications }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    /** Supervisor 通知声音编码（null=默认，""=静音，其余=URI）。 */
+    val supervisorSoundUri: StateFlow<String?> = supervisorChannelManager.soundUriFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val terminalFontSize = settings.map { it.terminalFontSize }.stateIn(viewModelScope, SharingStarted.Eagerly, 13f)
 
     // --- 权限自动批准规则 ---
@@ -178,6 +184,11 @@ class SettingsViewModel @Inject constructor(
 
     fun setSilentNotifications(enabled: Boolean) {
         updateSetting { it.copy(silentNotifications = enabled) }
+    }
+
+    /** 选择 Supervisor 通知声音：版本 +1 重建渠道并持久化。 */
+    fun setSupervisorSound(sound: SupervisorSound) {
+        viewModelScope.launch { supervisorChannelManager.applySound(sound) }
     }
 
     /**

@@ -324,6 +324,11 @@
     <string name="settings_notif_test_desc">Envía una notificación real para verificar banners y sonido. Si no aparece nada, es posible que el dispositivo silencie la app (p. ej., MIUI desactiva las notificaciones flotantes por defecto): actívala en los ajustes de notificaciones del sistema.</string>
     <string name="settings_notif_system">Ajustes de notificaciones del sistema</string>
     <string name="settings_notif_system_desc">Gestiona banner, sonido y vibración por canal en los ajustes del sistema</string>
+    <string name="settings_supervisor_sound">Sonido de notificación del supervisor</string>
+    <string name="settings_supervisor_sound_desc">Sonido para escalaciones del supervisor y alertas de estado</string>
+    <string name="settings_supervisor_sound_default">Predeterminado</string>
+    <string name="settings_supervisor_sound_silent">Silencio</string>
+    <string name="a11y_settings_supervisor_sound">Sonido de notificación del supervisor</string>
     <string name="notification_test_title">Prueba de notificación</string>
     <string name="notification_test_body">Si ves esta notificación, la entrega funciona.</string>
     <string name="a11y_settings_notif_test">Enviar notificación de prueba</string>

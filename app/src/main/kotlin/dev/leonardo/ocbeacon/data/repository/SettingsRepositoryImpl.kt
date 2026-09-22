@@ -39,6 +39,14 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override fun silentNotifications(): Flow<Boolean> = dataRepo.silentNotifications
 
+    override fun supervisorSoundUri(): Flow<String?> = dataRepo.supervisorSoundUri
+
+    override fun supervisorChannelVersion(): Flow<Int> = dataRepo.supervisorChannelVersion
+
+    override suspend fun setSupervisorSoundUri(uri: String?) = dataRepo.setSupervisorSoundUri(uri)
+
+    override suspend fun setSupervisorChannelVersion(version: Int) = dataRepo.setSupervisorChannelVersion(version)
+
     override fun autoAllowPermissions(): Flow<Boolean> = dataRepo.autoAllowPermissions
 
     override fun reconnectMode(): Flow<String> = dataRepo.reconnectMode

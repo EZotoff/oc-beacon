@@ -324,6 +324,11 @@
     <string name="settings_notif_test_desc">Banner ve sesi doğrulamak için gerçek bir bildirim gönderir. Hiçbir şey görünmüyorsa cihaz uygulamayı sessize almış olabilir (örn. MIUI varsayılan olarak yüzen bildirimleri kapatır) — aşağıdaki sistem bildirim ayarlarından etkinleştirin.</string>
     <string name="settings_notif_system">Sistem bildirim ayarları</string>
     <string name="settings_notif_system_desc">Sistem ayarlarından kanal bazında banner, ses ve titreşimi yönetin</string>
+    <string name="settings_supervisor_sound">Süpervizör bildirim sesi</string>
+    <string name="settings_supervisor_sound_desc">Süpervizör eskalasyonları ve durum uyarıları için ses</string>
+    <string name="settings_supervisor_sound_default">Varsayılan</string>
+    <string name="settings_supervisor_sound_silent">Sessiz</string>
+    <string name="a11y_settings_supervisor_sound">Süpervizör bildirim sesi</string>
     <string name="notification_test_title">Bildirim testi</string>
     <string name="notification_test_body">Bu bildirimi görebiliyorsanız teslimat çalışıyor.</string>
     <string name="a11y_settings_notif_test">Test bildirimi gönder</string>

@@ -340,6 +340,11 @@
     <string name="settings_notif_test_desc">يرسل إشعارًا حقيقيًا للتحقق من الشعار والصوت. إذا لم يظهر شيء، فقد يكون الجهاز كاتمًا للتطبيق (مثلًا MIUI يعطّل الإشعارات العائمة افتراضيًا) — فعّلها من إعدادات إشعارات النظام أدناه.</string>
     <string name="settings_notif_system">إعدادات إشعارات النظام</string>
     <string name="settings_notif_system_desc">إدارة الشعار والصوت والاهتزاز لكل قناة في إعدادات النظام</string>
+    <string name="settings_supervisor_sound">صوت إشعار المشرف</string>
+    <string name="settings_supervisor_sound_desc">صوت تنبيهات المشرف والتنبيهات الصحية</string>
+    <string name="settings_supervisor_sound_default">افتراضي</string>
+    <string name="settings_supervisor_sound_silent">صامت</string>
+    <string name="a11y_settings_supervisor_sound">صوت إشعار المشرف</string>
     <string name="notification_test_title">اختبار الإشعار</string>
     <string name="notification_test_body">إذا كنت ترى هذا الإشعار، فالتسليم يعمل.</string>
     <string name="a11y_settings_notif_test">إرسال إشعار اختباري</string>

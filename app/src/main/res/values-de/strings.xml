@@ -324,6 +324,11 @@
     <string name="settings_notif_test_desc">Sendet eine echte Benachrichtigung, um Banner und Ton zu prüfen. Erscheint nichts, schaltet das Gerät die App möglicherweise stumm (z. B. MIUI deaktiviert Floating-Benachrichtigungen standardmäßig) — unten in den Systembenachrichtigungen aktivieren.</string>
     <string name="settings_notif_system">Systembenachrichtigungen</string>
     <string name="settings_notif_system_desc">Banner, Ton und Vibration pro Kanal in den Systemeinstellungen verwalten</string>
+    <string name="settings_supervisor_sound">Benachrichtigungston für Supervisor</string>
+    <string name="settings_supervisor_sound_desc">Ton für Supervisor-Eskalationen und Gesundheitswarnungen</string>
+    <string name="settings_supervisor_sound_default">Standard</string>
+    <string name="settings_supervisor_sound_silent">Lautlos</string>
+    <string name="a11y_settings_supervisor_sound">Benachrichtigungston für Supervisor</string>
     <string name="notification_test_title">Benachrichtigungstest</string>
     <string name="notification_test_body">Wenn du diese Benachrichtigung siehst, funktioniert die Zustellung.</string>
     <string name="a11y_settings_notif_test">Testbenachrichtigung senden</string>

@@ -324,6 +324,11 @@
     <string name="settings_notif_test_desc">Invia una notifica reale per verificare banner e suono. Se non compare nulla, il dispositivo potrebbe silenziare l\'app (es. MIUI disattiva le notifiche a comparsa per impostazione predefinita) — attivale nelle impostazioni di notifica di sistema.</string>
     <string name="settings_notif_system">Impostazioni notifiche di sistema</string>
     <string name="settings_notif_system_desc">Gestisci banner, suono e vibrazione per canale nelle impostazioni di sistema</string>
+    <string name="settings_supervisor_sound">Suono notifica supervisore</string>
+    <string name="settings_supervisor_sound_desc">Suono per escalation del supervisore e avvisi di stato</string>
+    <string name="settings_supervisor_sound_default">Predefinito</string>
+    <string name="settings_supervisor_sound_silent">Silenzioso</string>
+    <string name="a11y_settings_supervisor_sound">Suono notifica supervisore</string>
     <string name="notification_test_title">Test di notifica</string>
     <string name="notification_test_body">Se vedi questa notifica, la consegna funziona.</string>
     <string name="a11y_settings_notif_test">Invia notifica di test</string>

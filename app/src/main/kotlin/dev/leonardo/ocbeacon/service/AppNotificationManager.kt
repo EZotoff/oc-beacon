@@ -53,6 +53,7 @@ class AppNotificationManager @Inject constructor(
     // NotificationManager 所有权从调用方（Service/VM）收归本类；Context 经
     // Hilt @ApplicationContext 注入（applicationContext 与原 Service this 语义等价）
     @ApplicationContext private val appContext: Context,
+    private val supervisorChannelManager: SupervisorChannelManager,
 ) {
     private val TAG = "AppNotificationMgr"
 
@@ -166,23 +167,15 @@ class AppNotificationManager @Inject constructor(
                 enableLights(true)
             }
 
-            val supervisorChannel = NotificationChannel(
-                NotificationChannels.SUPERVISOR,
-                appContext.getString(R.string.notification_channel_supervisor),
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = appContext.getString(R.string.notification_channel_supervisor_desc)
-                setShowBadge(true)
-                enableVibration(true)
-                enableLights(true)
-            }
+            // Supervisor 渠道由 SupervisorChannelManager 版本化创建（声音可变需换 ID 重建）
 
             systemNotificationManager.createNotificationChannel(connectionChannel)
             systemNotificationManager.createNotificationChannel(tasksChannel)
             systemNotificationManager.createNotificationChannel(tasksSilentChannel)
             systemNotificationManager.createNotificationChannel(permissionsChannel)
             systemNotificationManager.createNotificationChannel(questionsChannel)
-            systemNotificationManager.createNotificationChannel(supervisorChannel)
+            // Supervisor 渠道版本化创建（声音可变）——委托给 SupervisorChannelManager
+            appScope.launch { supervisorChannelManager.ensureChannel() }
         }
     }
 
