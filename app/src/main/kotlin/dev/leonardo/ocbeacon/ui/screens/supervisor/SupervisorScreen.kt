@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -196,7 +197,14 @@ private fun MetricRow(first: String, second: String) {
 private fun AttentionCard(item: SupervisorAttentionItem) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(SpacingTokens.MD.dp)) {
-            Text(item.question, style = MaterialTheme.typography.titleMedium)
+            // AR-glance minimal card: single-line ellipsized headline only.
+            // Full detail remains in the backend queue (queue.json) — never on the card.
+            Text(
+                item.question,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Text("${project(item.project)} · ${age(item.createdAt)}", style = MaterialTheme.typography.bodySmall)
         }
     }
