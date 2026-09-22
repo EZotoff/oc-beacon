@@ -216,6 +216,11 @@ dependencies {
     // 提供 androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel（代码已全部迁移，无需 navigation 专用 API）
     implementation("androidx.hilt:hilt-lifecycle-viewmodel-compose:1.4.0")
 
+    // WorkManager 后台轮询（Supervisor 通知）：周期任务 + Hilt worker 工厂
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
+    implementation("androidx.hilt:hilt-work:1.4.0")
+    ksp("androidx.hilt:hilt-compiler:1.4.0")
+
     // Ktor 客户端（OkHttp 引擎，确保 SSE 流式传输的正确支持）
     val ktorVersion = "3.5.2"
     implementation("io.ktor:ktor-client-core:$ktorVersion")
