@@ -341,6 +341,7 @@
     <string name="settings_notif_system">إعدادات إشعارات النظام</string>
     <string name="settings_notif_system_desc">إدارة الشعار والصوت والاهتزاز لكل قناة في إعدادات النظام</string>
     <string name="settings_supervisor_sound">صوت إشعار المشرف</string>
+    <string name="settings_turn_sound">صوت إشعارات اكتمال الدور</string>
     <string name="settings_supervisor_sound_desc">صوت تنبيهات المشرف والتنبيهات الصحية</string>
     <string name="settings_supervisor_sound_default">افتراضي</string>
     <string name="settings_supervisor_sound_silent">صامت</string>

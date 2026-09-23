@@ -17,91 +17,105 @@ import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Supervisor 通知渠道生命周期（版本化重建）。
- *
- * Android 约束：渠道声音创建后不可变。用户改声音时本类把版本号 +1，
- * 用新 ID 建渠道（携带新声音）、删除旧渠道、持久化版本与声音编码。
- * 通知投递方读取 [currentChannelId] 保证发到当前渠道。
- *
- * 版本/声音编码语义见 [SupervisorChannelVersioning]。
- */
-@Singleton
-class SupervisorChannelManager @Inject constructor(
-    @ApplicationContext private val appContext: Context,
-    private val settingsRepository: SettingsRepository,
+class VersionedSoundChannel(
+    private val context: Context,
+    private val baseId: String,
+    private val name: Int,
+    private val description: Int,
+    val soundUriFlow: Flow<String?>,
+    private val versionFlow: Flow<Int>,
+    private val save: suspend (Int, String?) -> Unit,
 ) {
     private val manager: NotificationManager by lazy {
-        appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
     private val mutex = Mutex()
-
-    /** 当前生效的渠道 ID（进程内缓存，[ensureChannel]/[applySound] 更新）。 */
-    @Volatile
-    var currentChannelId: String = SupervisorChannelVersioning.BASE_CHANNEL_ID
+    @Volatile var currentChannelId: String = baseId
         private set
-
     private var initialized = false
 
-    /** 当前持久化的声音编码（null=默认，""=静音，其余=URI）。 */
-    val soundUriFlow: Flow<String?> get() = settingsRepository.supervisorSoundUri()
+    suspend fun ensureChannel() = mutex.withLock {
+        if (initialized) return@withLock
+        val spec = ChannelVersioning.specFor(baseId, versionFlow.first(), soundUriFlow.first())
+        createChannel(spec, null)
+        currentChannelId = spec.id
+        initialized = true
+    }
 
-    /** 启动/首次通知前确保渠道存在（幂等，进程内缓存）。 */
-    suspend fun ensureChannel() {
-        mutex.withLock {
-            if (initialized) return
-            val version = settingsRepository.supervisorChannelVersion().first()
-            val stored = settingsRepository.supervisorSoundUri().first()
-            val spec = SupervisorChannelVersioning.specFor(version, stored)
-            createChannel(spec)
-            currentChannelId = spec.id
-            initialized = true
+    suspend fun applySound(sound: ChannelSound) = mutex.withLock {
+        val currentVersion = versionFlow.first()
+        val oldId = ChannelVersioning.channelId(baseId, currentVersion)
+        val old = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) manager.getNotificationChannel(oldId) else null
+        val next = ChannelVersioning.nextVersion(currentVersion)
+        val encoded = ChannelVersioning.encodeSound(sound)
+        val spec = ChannelVersioning.specFor(baseId, next, encoded)
+        createChannel(spec, old)
+        save(next, encoded)
+        currentChannelId = spec.id
+        initialized = true
+        ChannelVersioning.obsoleteChannelId(baseId, currentVersion, next)?.let {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) manager.deleteNotificationChannel(it)
         }
     }
 
-    /** 用户选择新声音：版本 +1 → 建新渠道 → 删旧渠道 → 持久化。 */
-    suspend fun applySound(sound: SupervisorSound) {
-        mutex.withLock {
-            val currentVersion = settingsRepository.supervisorChannelVersion().first()
-            val targetVersion = SupervisorChannelVersioning.nextVersion(currentVersion)
-            val encoded = SupervisorChannelVersioning.encodeSound(sound)
-            val spec = SupervisorChannelVersioning.specFor(targetVersion, encoded)
-            createChannel(spec)
-            SupervisorChannelVersioning.obsoleteChannelId(currentVersion, targetVersion)
-                ?.let { manager.deleteNotificationChannel(it) }
-            settingsRepository.setSupervisorChannelVersion(targetVersion)
-            settingsRepository.setSupervisorSoundUri(encoded)
-            currentChannelId = spec.id
-            initialized = true
-        }
-    }
-
-    private fun createChannel(spec: SupervisorChannelSpec) {
+    private fun createChannel(spec: ChannelSpec, old: NotificationChannel?) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val channel = NotificationChannel(
-            spec.id,
-            appContext.getString(R.string.notification_channel_supervisor),
-            NotificationManager.IMPORTANCE_HIGH,
-        ).apply {
-            description = appContext.getString(R.string.notification_channel_supervisor_desc)
-            setShowBadge(true)
-            enableVibration(true)
-            enableLights(true)
+        val defaults = ChannelProperties(
+            NotificationManager.IMPORTANCE_HIGH, true, null, android.app.Notification.VISIBILITY_PRIVATE,
+            context.getString(description), true, true, 0,
+        )
+        val properties = preservedChannelProperties(old?.let {
+            ChannelProperties(it.importance, it.shouldVibrate(), it.vibrationPattern,
+                it.lockscreenVisibility, it.description, it.canShowBadge(), it.shouldShowLights(), it.lightColor)
+        }, defaults)
+        val channel = NotificationChannel(spec.id, context.getString(name), properties.importance).apply {
+            this.description = properties.description
+            lockscreenVisibility = properties.lockscreenVisibility
+            setShowBadge(properties.showBadge)
+            enableVibration(properties.vibrate)
+            properties.vibrationPattern?.let { vibrationPattern = it }
+            enableLights(properties.lights)
+            lightColor = properties.lightColor
+            val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
             when (val sound = spec.sound) {
-                SupervisorSound.Default -> setSound(
-                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
-                    notificationAudioAttributes(),
-                )
-                SupervisorSound.Silent -> setSound(null, null)
-                is SupervisorSound.Custom -> setSound(Uri.parse(sound.uri), notificationAudioAttributes())
+                ChannelSound.Default -> setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), attributes)
+                ChannelSound.Silent -> setSound(null, null)
+                is ChannelSound.Custom -> setSound(Uri.parse(sound.uri), attributes)
             }
         }
         manager.createNotificationChannel(channel)
     }
+}
 
-    private fun notificationAudioAttributes(): AudioAttributes =
-        AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
+@Singleton
+class SupervisorChannelManager @Inject constructor(
+    @ApplicationContext context: Context,
+    settings: SettingsRepository,
+) {
+    private val channel = VersionedSoundChannel(context, NotificationChannels.SUPERVISOR,
+        R.string.notification_channel_supervisor, R.string.notification_channel_supervisor_desc,
+        settings.supervisorSoundUri(), settings.supervisorChannelVersion()) { version, uri ->
+        settings.setSupervisorChannelSound(version, uri)
+    }
+    val currentChannelId get() = channel.currentChannelId
+    val soundUriFlow get() = channel.soundUriFlow
+    suspend fun ensureChannel() = channel.ensureChannel()
+    suspend fun applySound(sound: ChannelSound) = channel.applySound(sound)
+}
+
+@Singleton
+class TurnChannelManager @Inject constructor(
+    @ApplicationContext context: Context,
+    settings: SettingsRepository,
+) {
+    private val channel = VersionedSoundChannel(context, NotificationChannels.TASKS,
+        R.string.notification_channel_tasks, R.string.notification_channel_tasks_desc,
+        settings.turnSoundUri(), settings.turnChannelVersion()) { version, uri ->
+        settings.setTurnChannelSound(version, uri)
+    }
+    val currentChannelId get() = channel.currentChannelId
+    val soundUriFlow get() = channel.soundUriFlow
+    suspend fun ensureChannel() = channel.ensureChannel()
+    suspend fun applySound(sound: ChannelSound) = channel.applySound(sound)
 }

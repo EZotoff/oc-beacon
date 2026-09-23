@@ -41,6 +41,7 @@ class CancelSessionNotificationsTest {
             CoroutineScope(SupervisorJob() + Dispatchers.Default),
             appContext,
             mockk(relaxed = true),
+            mockk<TurnChannelManager>(relaxed = true),
         )
     }
 

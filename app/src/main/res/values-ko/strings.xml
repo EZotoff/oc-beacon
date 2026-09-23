@@ -325,6 +325,7 @@
     <string name="settings_notif_system">시스템 알림 설정</string>
     <string name="settings_notif_system_desc">시스템 설정에서 채널별 배너, 소리, 진동 관리</string>
     <string name="settings_supervisor_sound">슈퍼바이저 알림음</string>
+    <string name="settings_turn_sound">턴 완료 알림음</string>
     <string name="settings_supervisor_sound_desc">슈퍼바이저 에스컬레이션 및 상태 경고 알림음</string>
     <string name="settings_supervisor_sound_default">기본</string>
     <string name="settings_supervisor_sound_silent">무음</string>

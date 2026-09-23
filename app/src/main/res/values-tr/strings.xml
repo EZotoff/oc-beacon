@@ -325,6 +325,7 @@
     <string name="settings_notif_system">Sistem bildirim ayarları</string>
     <string name="settings_notif_system_desc">Sistem ayarlarından kanal bazında banner, ses ve titreşimi yönetin</string>
     <string name="settings_supervisor_sound">Süpervizör bildirim sesi</string>
+    <string name="settings_turn_sound">Tur tamamlanma bildirim sesi</string>
     <string name="settings_supervisor_sound_desc">Süpervizör eskalasyonları ve durum uyarıları için ses</string>
     <string name="settings_supervisor_sound_default">Varsayılan</string>
     <string name="settings_supervisor_sound_silent">Sessiz</string>

@@ -49,6 +49,7 @@ class FeedbackDedupIsolationTest {
             appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
             appContext = mockk<android.content.Context>(relaxed = true),
             supervisorChannelManager = mockk(relaxed = true),
+            turnChannelManager = mockk(relaxed = true),
         )
     }
 

@@ -54,6 +54,7 @@ class AppNotificationManager @Inject constructor(
     // Hilt @ApplicationContext 注入（applicationContext 与原 Service this 语义等价）
     @ApplicationContext private val appContext: Context,
     private val supervisorChannelManager: SupervisorChannelManager,
+    private val turnChannelManager: TurnChannelManager,
 ) {
     private val TAG = "AppNotificationMgr"
 
@@ -122,17 +123,6 @@ class AppNotificationManager @Inject constructor(
                 setShowBadge(false)
             }
 
-            val tasksChannel = NotificationChannel(
-                NOTIFICATION_CHANNEL_TASKS_ID,
-                appContext.getString(R.string.notification_channel_tasks),
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = appContext.getString(R.string.notification_channel_tasks_desc)
-                setShowBadge(true)
-                enableVibration(true)
-                enableLights(true)
-            }
-
             val tasksSilentChannel = NotificationChannel(
                 NOTIFICATION_CHANNEL_TASKS_SILENT_ID,
                 appContext.getString(R.string.notification_channel_tasks_silent),
@@ -170,12 +160,12 @@ class AppNotificationManager @Inject constructor(
             // Supervisor 渠道由 SupervisorChannelManager 版本化创建（声音可变需换 ID 重建）
 
             systemNotificationManager.createNotificationChannel(connectionChannel)
-            systemNotificationManager.createNotificationChannel(tasksChannel)
             systemNotificationManager.createNotificationChannel(tasksSilentChannel)
             systemNotificationManager.createNotificationChannel(permissionsChannel)
             systemNotificationManager.createNotificationChannel(questionsChannel)
             // Supervisor 渠道版本化创建（声音可变）——委托给 SupervisorChannelManager
             appScope.launch { supervisorChannelManager.ensureChannel() }
+            appScope.launch { turnChannelManager.ensureChannel() }
         }
     }
 
@@ -268,9 +258,10 @@ class AppNotificationManager @Inject constructor(
      * 因此唯一可靠的自检是端到端投递 + 用户感知确认；未看到横幅时引导用户去
      * 系统通知设置打开对应渠道的悬浮通知。
      */
-    fun sendSelfTestNotification() {
+    suspend fun sendSelfTestNotification() {
         // 幂等建渠道：连接服务未启动（从未添加过服务器）时渠道可能尚不存在
         createNotificationChannels()
+        turnChannelManager.ensureChannel()
 
         val intent = Intent(appContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -280,7 +271,7 @@ class AppNotificationManager @Inject constructor(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val notification = NotificationCompat.Builder(appContext, NOTIFICATION_CHANNEL_TASKS_ID)
+        val notification = NotificationCompat.Builder(appContext, turnChannelManager.currentChannelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(appContext.getString(R.string.notification_test_title))
             .setContentText(appContext.getString(R.string.notification_test_body))
@@ -291,7 +282,7 @@ class AppNotificationManager @Inject constructor(
 
         // 固定 id：重复自检互相替换，不堆积
         systemNotificationManager.notify(stableHash("selftest"), notification)
-        AppLogger.i(TAG, "Self-test notification posted on channel " + NOTIFICATION_CHANNEL_TASKS_ID)
+        AppLogger.i(TAG, "Self-test notification posted on channel " + turnChannelManager.currentChannelId)
     }
 
     fun updatePersistentNotification(
@@ -321,7 +312,8 @@ class AppNotificationManager @Inject constructor(
 
         val pendingIntent = createSessionPendingIntent(server, sessionId, sessionId.hashCode())
         val silent = settingsRepository.silentNotifications().first()
-        val channelId = if (silent) NOTIFICATION_CHANNEL_TASKS_SILENT_ID else NOTIFICATION_CHANNEL_TASKS_ID
+        if (!silent) turnChannelManager.ensureChannel()
+        val channelId = if (silent) NOTIFICATION_CHANNEL_TASKS_SILENT_ID else turnChannelManager.currentChannelId
         val notifId = eventNotificationId(server.id, sessionId, 0)
 
         val builder = NotificationCompat.Builder(appContext, channelId)
@@ -467,7 +459,7 @@ class AppNotificationManager @Inject constructor(
         }
     }
 
-    fun showErrorNotification(
+    suspend fun showErrorNotification(
         server: ServerConfig,
         sessionId: String?,
         error: String
@@ -488,7 +480,8 @@ class AppNotificationManager @Inject constructor(
         val notifId = eventNotificationId(server.id, sessionId, 3000)
         val pendingIntent = createSessionPendingIntent(server, sessionId, notifId)
 
-        val notification = NotificationCompat.Builder(appContext, NOTIFICATION_CHANNEL_TASKS_ID)
+        turnChannelManager.ensureChannel()
+        val notification = NotificationCompat.Builder(appContext, turnChannelManager.currentChannelId)
             .setContentTitle(title)
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_notification)

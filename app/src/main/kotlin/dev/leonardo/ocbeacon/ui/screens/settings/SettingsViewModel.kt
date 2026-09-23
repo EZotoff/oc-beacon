@@ -8,7 +8,8 @@ import dev.leonardo.ocbeacon.data.local.ArchiveStats
 import dev.leonardo.ocbeacon.data.repository.PermissionAutoApprover
 import dev.leonardo.ocbeacon.service.AppNotificationManager
 import dev.leonardo.ocbeacon.service.SupervisorChannelManager
-import dev.leonardo.ocbeacon.service.SupervisorSound
+import dev.leonardo.ocbeacon.service.ChannelSound
+import dev.leonardo.ocbeacon.service.TurnChannelManager
 import dev.leonardo.ocbeacon.domain.model.AppSettings
 import dev.leonardo.ocbeacon.domain.model.AutoApproveRule
 import dev.leonardo.ocbeacon.domain.usecase.GetSettingsFlowUseCase
@@ -37,6 +38,7 @@ class SettingsViewModel @Inject constructor(
     private val autoApprover: PermissionAutoApprover,
     private val appNotificationManager: AppNotificationManager,
     private val supervisorChannelManager: SupervisorChannelManager,
+    private val turnChannelManager: TurnChannelManager,
     private val archiveBucketDao: ArchiveBucketDao,
 ) : ViewModel() {
 
@@ -68,6 +70,8 @@ class SettingsViewModel @Inject constructor(
     val silentNotifications = settings.map { it.silentNotifications }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     /** Supervisor 通知声音编码（null=默认，""=静音，其余=URI）。 */
     val supervisorSoundUri: StateFlow<String?> = supervisorChannelManager.soundUriFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val turnSoundUri: StateFlow<String?> = turnChannelManager.soundUriFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val terminalFontSize = settings.map { it.terminalFontSize }.stateIn(viewModelScope, SharingStarted.Eagerly, 13f)
 
@@ -187,8 +191,12 @@ class SettingsViewModel @Inject constructor(
     }
 
     /** 选择 Supervisor 通知声音：版本 +1 重建渠道并持久化。 */
-    fun setSupervisorSound(sound: SupervisorSound) {
+    fun setSupervisorSound(sound: ChannelSound) {
         viewModelScope.launch { supervisorChannelManager.applySound(sound) }
+    }
+
+    fun setTurnSound(sound: ChannelSound) {
+        viewModelScope.launch { turnChannelManager.applySound(sound) }
     }
 
     /**
@@ -197,7 +205,7 @@ class SettingsViewModel @Inject constructor(
      */
     fun sendTestNotification() {
         // C9-B：Context/NotificationManager 所有权收归 AppNotificationManager 构造
-        appNotificationManager.sendSelfTestNotification()
+        viewModelScope.launch { appNotificationManager.sendSelfTestNotification() }
     }
 
     fun setCompressImageAttachments(enabled: Boolean) {

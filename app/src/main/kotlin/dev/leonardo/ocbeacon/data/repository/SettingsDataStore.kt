@@ -61,6 +61,8 @@ class SettingsDataStore @Inject constructor(
         private val SUPERVISOR_SOUND_URI_KEY = stringPreferencesKey("supervisor_notification_sound_uri")
         /** Supervisor 渠道版本号（声音变更时 +1，用于换 ID 重建渠道）。默认 1=基础渠道。 */
         private val SUPERVISOR_CHANNEL_VERSION_KEY = intPreferencesKey("supervisor_notification_channel_version")
+        private val TURN_SOUND_URI_KEY = stringPreferencesKey("turn_notification_sound_uri")
+        private val TURN_CHANNEL_VERSION_KEY = intPreferencesKey("turn_notification_channel_version")
         private val COMPRESS_IMAGE_ATTACHMENTS_KEY = booleanPreferencesKey("compress_image_attachments")
         private val IMAGE_ATTACHMENT_MAX_LONG_SIDE_KEY = intPreferencesKey("image_attachment_max_long_side")
         private val IMAGE_ATTACHMENT_WEBP_QUALITY_KEY = intPreferencesKey("image_attachment_webp_quality")
@@ -305,6 +307,23 @@ class SettingsDataStore @Inject constructor(
     /** Supervisor 渠道版本号。默认：1（基础渠道）。 */
     val supervisorChannelVersion: Flow<Int> = prefFlow(SUPERVISOR_CHANNEL_VERSION_KEY, 1)
     suspend fun setSupervisorChannelVersion(version: Int) = setPref(SUPERVISOR_CHANNEL_VERSION_KEY, version)
+
+    val turnSoundUri: Flow<String?> = dataStore.data.map { it[TURN_SOUND_URI_KEY] }
+    val turnChannelVersion: Flow<Int> = prefFlow(TURN_CHANNEL_VERSION_KEY, 1)
+
+    suspend fun setTurnChannelSound(version: Int, uri: String?) {
+        dataStore.edit { prefs ->
+            prefs[TURN_CHANNEL_VERSION_KEY] = version
+            if (uri == null) prefs.remove(TURN_SOUND_URI_KEY) else prefs[TURN_SOUND_URI_KEY] = uri
+        }
+    }
+
+    suspend fun setSupervisorChannelSound(version: Int, uri: String?) {
+        dataStore.edit { prefs ->
+            prefs[SUPERVISOR_CHANNEL_VERSION_KEY] = version
+            if (uri == null) prefs.remove(SUPERVISOR_SOUND_URI_KEY) else prefs[SUPERVISOR_SOUND_URI_KEY] = uri
+        }
+    }
 
     /** 初始加载的消息数量。默认：30。 */
     val initialMessageCount: Flow<Int> = prefFlow(INITIAL_MESSAGE_COUNT_KEY, 30)

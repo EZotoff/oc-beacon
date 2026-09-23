@@ -463,6 +463,7 @@
     <string name="settings_notif_system">System notification settings</string>
     <string name="settings_notif_system_desc">Manage per-channel banner, sound and vibration in system settings</string>
     <string name="settings_supervisor_sound">Supervisor notification sound</string>
+    <string name="settings_turn_sound">Turn notifications sound</string>
     <string name="settings_supervisor_sound_desc">Sound for supervisor escalations and health alerts</string>
     <string name="settings_supervisor_sound_default">Default</string>
     <string name="settings_supervisor_sound_silent">Silent</string>

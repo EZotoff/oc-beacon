@@ -333,6 +333,7 @@
     <string name="settings_notif_system">Ustawienia powiadomień systemu</string>
     <string name="settings_notif_system_desc">Zarządzaj banerem, dźwiękiem i wibracjami dla każdego kanału w ustawieniach systemu</string>
     <string name="settings_supervisor_sound">Dźwięk powiadomienia supervisora</string>
+    <string name="settings_turn_sound">Dźwięk powiadomień o ukończeniu tury</string>
     <string name="settings_supervisor_sound_desc">Dźwięk eskalacji supervisora i alertów kondycji</string>
     <string name="settings_supervisor_sound_default">Domyślny</string>
     <string name="settings_supervisor_sound_silent">Wyciszony</string>

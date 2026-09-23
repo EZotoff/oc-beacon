@@ -36,6 +36,7 @@ class FindUserMessagesTest {
             CoroutineScope(SupervisorJob() + Dispatchers.Default),
             mockk<android.content.Context>(relaxed = true),
             mockk(relaxed = true),
+            mockk<TurnChannelManager>(relaxed = true),
         )
     }
 

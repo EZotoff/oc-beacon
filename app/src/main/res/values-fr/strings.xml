@@ -325,6 +325,7 @@
     <string name="settings_notif_system">Paramètres de notification système</string>
     <string name="settings_notif_system_desc">Gérer bannière, son et vibration par canal dans les paramètres système</string>
     <string name="settings_supervisor_sound">Son de notification du superviseur</string>
+    <string name="settings_turn_sound">Son des notifications de fin de tour</string>
     <string name="settings_supervisor_sound_desc">Son pour les escalades du superviseur et les alertes d\'état</string>
     <string name="settings_supervisor_sound_default">Par défaut</string>
     <string name="settings_supervisor_sound_silent">Silencieux</string>

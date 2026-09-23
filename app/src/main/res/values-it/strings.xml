@@ -325,6 +325,7 @@
     <string name="settings_notif_system">Impostazioni notifiche di sistema</string>
     <string name="settings_notif_system_desc">Gestisci banner, suono e vibrazione per canale nelle impostazioni di sistema</string>
     <string name="settings_supervisor_sound">Suono notifica supervisore</string>
+    <string name="settings_turn_sound">Suono notifiche di fine turno</string>
     <string name="settings_supervisor_sound_desc">Suono per escalation del supervisore e avvisi di stato</string>
     <string name="settings_supervisor_sound_default">Predefinito</string>
     <string name="settings_supervisor_sound_silent">Silenzioso</string>

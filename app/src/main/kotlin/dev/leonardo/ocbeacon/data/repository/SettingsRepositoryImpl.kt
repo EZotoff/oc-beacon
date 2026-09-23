@@ -47,6 +47,11 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setSupervisorChannelVersion(version: Int) = dataRepo.setSupervisorChannelVersion(version)
 
+    override fun turnSoundUri(): Flow<String?> = dataRepo.turnSoundUri
+    override fun turnChannelVersion(): Flow<Int> = dataRepo.turnChannelVersion
+    override suspend fun setTurnChannelSound(version: Int, uri: String?) = dataRepo.setTurnChannelSound(version, uri)
+    override suspend fun setSupervisorChannelSound(version: Int, uri: String?) = dataRepo.setSupervisorChannelSound(version, uri)
+
     override fun autoAllowPermissions(): Flow<Boolean> = dataRepo.autoAllowPermissions
 
     override fun reconnectMode(): Flow<String> = dataRepo.reconnectMode

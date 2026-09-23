@@ -342,6 +342,7 @@
     <string name="settings_notif_system">系统通知设置</string>
     <string name="settings_notif_system_desc">在系统设置中管理各渠道的横幅、声音与振动</string>
     <string name="settings_supervisor_sound">监督器通知声音</string>
+    <string name="settings_turn_sound">轮次完成通知声音</string>
     <string name="settings_supervisor_sound_desc">监督器升级与健康警报的声音</string>
     <string name="settings_supervisor_sound_default">默认</string>
     <string name="settings_supervisor_sound_silent">静音</string>

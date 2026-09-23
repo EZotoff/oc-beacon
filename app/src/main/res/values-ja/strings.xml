@@ -325,6 +325,7 @@
     <string name="settings_notif_system">システムの通知設定</string>
     <string name="settings_notif_system_desc">システム設定でチャネルごとのバナー・サウンド・バイブレーションを管理</string>
     <string name="settings_supervisor_sound">スーパーバイザー通知音</string>
+    <string name="settings_turn_sound">ターン完了の通知音</string>
     <string name="settings_supervisor_sound_desc">スーパーバイザーのエスカレーションとヘルスアラートの通知音</string>
     <string name="settings_supervisor_sound_default">デフォルト</string>
     <string name="settings_supervisor_sound_silent">サイレント</string>

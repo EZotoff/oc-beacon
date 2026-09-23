@@ -325,6 +325,7 @@
     <string name="settings_notif_system">Systembenachrichtigungen</string>
     <string name="settings_notif_system_desc">Banner, Ton und Vibration pro Kanal in den Systemeinstellungen verwalten</string>
     <string name="settings_supervisor_sound">Benachrichtigungston für Supervisor</string>
+    <string name="settings_turn_sound">Benachrichtigungston für abgeschlossene Turns</string>
     <string name="settings_supervisor_sound_desc">Ton für Supervisor-Eskalationen und Gesundheitswarnungen</string>
     <string name="settings_supervisor_sound_default">Standard</string>
     <string name="settings_supervisor_sound_silent">Lautlos</string>

@@ -333,6 +333,7 @@
     <string name="settings_notif_system">Системні налаштування сповіщень</string>
     <string name="settings_notif_system_desc">Керуйте банером, звуком і вібрацією за каналами в системних налаштуваннях</string>
     <string name="settings_supervisor_sound">Звук сповіщення супервізора</string>
+    <string name="settings_turn_sound">Звук сповіщень про завершення ходу</string>
     <string name="settings_supervisor_sound_desc">Звук для ескалацій супервізора та попереджень про стан</string>
     <string name="settings_supervisor_sound_default">За замовчуванням</string>
     <string name="settings_supervisor_sound_silent">Без звуку</string>

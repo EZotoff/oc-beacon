@@ -62,6 +62,11 @@ interface SettingsRepository {
     /** 持久化 Supervisor 渠道版本号。 */
     suspend fun setSupervisorChannelVersion(version: Int)
 
+    fun turnSoundUri(): Flow<String?>
+    fun turnChannelVersion(): Flow<Int>
+    suspend fun setTurnChannelSound(version: Int, uri: String?)
+    suspend fun setSupervisorChannelSound(version: Int, uri: String?)
+
     /** 是否自动批准权限请求。默认：false。（OpenCodeConnectionService） */
     fun autoAllowPermissions(): Flow<Boolean>
 

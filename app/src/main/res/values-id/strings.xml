@@ -261,6 +261,7 @@
     <string name="settings_notif_system">Setelan notifikasi sistem</string>
     <string name="settings_notif_system_desc">Kelola banner, suara, dan getaran per saluran di setelan sistem</string>
     <string name="settings_supervisor_sound">Suara notifikasi Supervisor</string>
+    <string name="settings_turn_sound">Suara notifikasi giliran selesai</string>
     <string name="settings_supervisor_sound_desc">Suara untuk eskalasi supervisor dan peringatan kesehatan</string>
     <string name="settings_supervisor_sound_default">Default</string>
     <string name="settings_supervisor_sound_silent">Senyap</string>

@@ -30,7 +30,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.leonardo.ocbeacon.R
-import dev.leonardo.ocbeacon.service.SupervisorSound
+import dev.leonardo.ocbeacon.service.ChannelSound
 import dev.leonardo.ocbeacon.ui.screens.settings.SettingsViewModel
 import dev.leonardo.ocbeacon.ui.screens.settings.components.SectionHeader
 import dev.leonardo.ocbeacon.ui.theme.ListItemTokens
@@ -78,55 +78,10 @@ fun NotificationsSection(viewModel: SettingsViewModel) {
         modifier = Modifier.clickable { viewModel.setSilentNotifications(!silentNotifications) }.padding(ListItemTokens.ContentPaddingMedium)
     )
 
-    // Supervisor 通知声音（渠道声音创建后不可变 → 选择后换 ID 重建渠道）
+    val turnSound by viewModel.turnSoundUri.collectAsStateWithLifecycle()
     val supervisorSound by viewModel.supervisorSoundUri.collectAsStateWithLifecycle()
-    val supervisorSoundValue = supervisorSound
-    val defaultNotificationUri = remember {
-        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-    }
-    val soundPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val picked = result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
-            val sound = when {
-                picked == null -> SupervisorSound.Silent
-                picked == defaultNotificationUri -> SupervisorSound.Default
-                else -> SupervisorSound.Custom(picked.toString())
-            }
-            viewModel.setSupervisorSound(sound)
-        }
-    }
-    val supervisorSoundLabel = when {
-        supervisorSoundValue == null -> stringResource(R.string.settings_supervisor_sound_default)
-        supervisorSoundValue.isEmpty() -> stringResource(R.string.settings_supervisor_sound_silent)
-        else -> runCatching {
-            RingtoneManager.getRingtone(context, Uri.parse(supervisorSoundValue))?.getTitle(context)
-        }.getOrNull() ?: supervisorSoundValue
-    }
-    ListItem(
-        headlineContent = { Text(stringResource(R.string.settings_supervisor_sound)) },
-        supportingContent = { Text(supervisorSoundLabel) },
-        leadingContent = {
-            Icon(Icons.Default.MusicNote, contentDescription = stringResource(R.string.a11y_settings_supervisor_sound))
-        },
-        modifier = Modifier.clickable {
-            val existingUri = when {
-                supervisorSoundValue == null -> defaultNotificationUri
-                supervisorSoundValue.isEmpty() -> null
-                else -> Uri.parse(supervisorSoundValue)
-            }
-            val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_NOTIFICATION)
-                putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, context.getString(R.string.settings_supervisor_sound))
-                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
-                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
-                putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, defaultNotificationUri)
-                putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, existingUri)
-            }
-            soundPickerLauncher.launch(intent)
-        }.padding(ListItemTokens.ContentPaddingMedium)
-    )
+    SoundPickerRow(R.string.settings_turn_sound, turnSound, viewModel::setTurnSound)
+    SoundPickerRow(R.string.settings_supervisor_sound, supervisorSound, viewModel::setSupervisorSound)
 
     // 通知自检（验收①根因收尾）：厂商（MIUI 等）对旁装载应用默认关悬浮通知且标准 API 查不到，
     // 唯一可靠自检 = 真实投递 + 用户感知确认
@@ -157,4 +112,55 @@ fun NotificationsSection(viewModel: SettingsViewModel) {
     )
 
     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+}
+
+@Composable
+private fun SoundPickerRow(title: Int, soundValue: String?, onSelect: (ChannelSound) -> Unit) {
+    val context = LocalContext.current
+    val defaultNotificationUri = remember {
+        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+    }
+    val soundPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val picked = result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+            val sound = when {
+                picked == null -> ChannelSound.Silent
+                picked == defaultNotificationUri -> ChannelSound.Default
+                else -> ChannelSound.Custom(picked.toString())
+            }
+            onSelect(sound)
+        }
+    }
+    val soundLabel = when {
+        soundValue == null -> stringResource(R.string.settings_supervisor_sound_default)
+        soundValue.isEmpty() -> stringResource(R.string.settings_supervisor_sound_silent)
+        else -> runCatching {
+            RingtoneManager.getRingtone(context, Uri.parse(soundValue))?.getTitle(context)
+        }.getOrNull() ?: soundValue
+    }
+    ListItem(
+        headlineContent = { Text(stringResource(title)) },
+        supportingContent = { Text(soundLabel) },
+        leadingContent = {
+            Icon(Icons.Default.MusicNote, contentDescription = stringResource(title))
+        },
+        modifier = Modifier.clickable {
+            val existingUri = when {
+                soundValue == null -> defaultNotificationUri
+                soundValue.isEmpty() -> null
+                else -> Uri.parse(soundValue)
+            }
+            val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_NOTIFICATION)
+                putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, context.getString(title))
+                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
+                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, defaultNotificationUri)
+                putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, existingUri)
+            }
+            soundPickerLauncher.launch(intent)
+        }.padding(ListItemTokens.ContentPaddingMedium)
+    )
 }
