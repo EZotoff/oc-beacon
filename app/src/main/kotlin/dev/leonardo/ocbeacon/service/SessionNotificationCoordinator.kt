@@ -23,6 +23,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val TAG = "SessionNotifCoord"
+private const val SSE_IDLE_PATH = "path=sse-idle"
 
 /** D2-L30（#112）：response-ready 收敛检查次数与间隔（无输出会话最坏多等 750ms）。 */
 private const val RESPONSE_READY_ATTEMPTS = 3
@@ -143,6 +144,7 @@ class SessionNotificationCoordinator @Inject constructor(
     // ============ 分支策略 ============
 
     private suspend fun onSessionIdle(server: ServerConfig, event: SseEvent.SessionIdle) {
+        AppLogger.d(TAG, "[${server.displayName}] Idle received sessionId=${event.sessionId}")
         // #294（回放期通知风暴 + heads-up 劫持）：DSH 冷启回放把历史 turn/end
         // 重放给新订阅者——缓存未命中被误判「新完成」→ 7 分钟 57 条通知轰炸 +
         // MIUI heads-up 横幅劫持顶栏点按（2026-09-01 真机两次实锤）。事件携带
@@ -160,7 +162,11 @@ class SessionNotificationCoordinator @Inject constructor(
         //（策略镜像系统通知：渠道/铃声档/DND/开关，见 InSessionFeedbackPlayer）
         val inSession = sessionFocusHolder.shouldSuppress(server.id, event.sessionId)
         // 子智能体会话轮次完成既不通知也不响（Q3，与通知口径一致）
-        if (isChildSession(event.sessionId)) return
+        if (isChildSession(event.sessionId)) {
+            val source = if (event.sessionId in liveChildSessions) "live" else "snapshot"
+            AppLogger.d(TAG, "[${server.displayName}] $SSE_IDLE_PATH Child idle suppressed sessionId=${event.sessionId} child=$source")
+            return
+        }
         if (!settingsRepository.notificationsEnabled().first()) return
 
         // 给 reducer 片刻时间接收后续的 message/part 事件。
@@ -192,6 +198,7 @@ class SessionNotificationCoordinator @Inject constructor(
         }
 
         if (inSession) {
+            AppLogger.i(TAG, "[${server.displayName}] $SSE_IDLE_PATH Session idle -> Response ready sessionId=${event.sessionId} kind=in-session-sound child=none")
             // 成功完成的轮次 → 重置该会话错误 streak（Q10）+ 播提示音
             actions.onTurnCompleted(server.id, event.sessionId)
             actions.playInSessionSound(
@@ -203,7 +210,7 @@ class SessionNotificationCoordinator @Inject constructor(
             return
         }
 
-        AppLogger.i(TAG, "[${server.displayName}] Session idle -> Response ready for ${event.sessionId}")
+        AppLogger.i(TAG, "[${server.displayName}] $SSE_IDLE_PATH Session idle -> Response ready sessionId=${event.sessionId} kind=notification child=none")
         // 成功完成的轮次 → 重置该会话错误 streak（通知侧同语义，R4）
         actions.onTurnCompleted(server.id, event.sessionId)
         actions.showTurnComplete(server, event.sessionId)
