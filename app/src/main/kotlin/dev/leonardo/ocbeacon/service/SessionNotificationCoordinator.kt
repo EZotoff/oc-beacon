@@ -9,6 +9,7 @@ import dev.leonardo.ocbeacon.domain.model.QuestionState
 import dev.leonardo.ocbeacon.domain.model.ServerConfig
 import dev.leonardo.ocbeacon.domain.model.Session
 import dev.leonardo.ocbeacon.domain.model.SseEvent
+import dev.leonardo.ocbeacon.domain.repository.SessionRepository
 import dev.leonardo.ocbeacon.domain.repository.SettingsRepository
 import dev.leonardo.ocbeacon.domain.usecase.ManagePermissionUseCase
 import dev.leonardo.ocbeacon.logging.AppLogger
@@ -19,6 +20,8 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
@@ -83,6 +86,10 @@ interface NotificationActionPort {
     fun fallbackQuestionText(): String
 }
 
+interface SessionInfoPort {
+    suspend fun parentIdOf(serverId: String, sessionId: String): String?
+}
+
 /**
  * 会话通知协调器（C9，2026-08-26 架构走查）：SSE 事件 → 通知路由策略的单一决策点。
  *
@@ -111,9 +118,12 @@ class SessionNotificationCoordinator @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val eventDispatcher: EventDispatcher,
     private val managePermissionUseCase: ManagePermissionUseCase,
+    private val sessionInfo: SessionInfoPort,
 ) {
     private val receiptSeq = AtomicLong()
     private val busyReceiptSeq = ConcurrentHashMap<String, Long>()
+    private val knownChildVerdicts = ConcurrentHashMap<String, Boolean>()
+    private val childLookupMutex = Mutex()
 
     /** 事件派发器的会话表快照（子会话判定/冒泡/auto-allow directory 解析的数据源）。 */
     private val sessions: List<Session> get() = eventDispatcher.sessions.value
@@ -178,9 +188,13 @@ class SessionNotificationCoordinator @Inject constructor(
         //（策略镜像系统通知：渠道/铃声档/DND/开关，见 InSessionFeedbackPlayer）
         val inSession = sessionFocusHolder.shouldSuppress(server.id, event.sessionId)
         // 子智能体会话轮次完成既不通知也不响（Q3，与通知口径一致）
-        if (isChildSession(event.sessionId)) {
-            val source = if (event.sessionId in liveChildSessions) "live" else "snapshot"
-            AppLogger.d(TAG, "[${server.displayName}] $SSE_IDLE_PATH Child idle suppressed sessionId=${event.sessionId} child=$source")
+        val childSource = when {
+            isChildSession(event.sessionId) -> if (event.sessionId in liveChildSessions) "live" else "snapshot"
+            childFromRest(server.id, event.sessionId) -> "rest"
+            else -> null
+        }
+        if (childSource != null) {
+            AppLogger.d(TAG, "[${server.displayName}] $SSE_IDLE_PATH Child idle suppressed sessionId=${event.sessionId} child=$childSource")
             return
         }
         if (!settingsRepository.notificationsEnabled().first()) return
@@ -363,6 +377,16 @@ class SessionNotificationCoordinator @Inject constructor(
     private fun isChildSession(sessionId: String): Boolean =
         sessionId in liveChildSessions || parentSessionIdOf(sessionId) != null
 
+    private suspend fun childFromRest(serverId: String, sessionId: String): Boolean {
+        knownChildVerdicts[sessionId]?.let { return it }
+        return childLookupMutex.withLock {
+            knownChildVerdicts[sessionId] ?: (sessionInfo.parentIdOf(serverId, sessionId) != null).also { child ->
+                knownChildVerdicts[sessionId] = child
+                if (child) liveChildSessions.add(sessionId)
+            }
+        }
+    }
+
     private fun parentSessionIdOf(sessionId: String): String? =
         sessions.firstOrNull { it.id == sessionId }?.parentId
 }
@@ -373,6 +397,18 @@ class SessionNotificationCoordinator @Inject constructor(
 abstract class NotificationActionPortModule {
     @Binds
     abstract fun bindNotificationActionPort(impl: ServiceNotificationActionPort): NotificationActionPort
+
+    @Binds
+    abstract fun bindSessionInfoPort(impl: RepositorySessionInfoPort): SessionInfoPort
+}
+
+@Singleton
+class RepositorySessionInfoPort @Inject constructor(
+    private val sessionRepository: SessionRepository,
+) : SessionInfoPort {
+    override suspend fun parentIdOf(serverId: String, sessionId: String): String? =
+        runCatching { sessionRepository.getSession(serverId, sessionId).getOrNull()?.parentId }
+            .getOrNull()
 }
 
 /**

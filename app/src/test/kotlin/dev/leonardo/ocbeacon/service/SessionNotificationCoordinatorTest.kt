@@ -43,6 +43,7 @@ class SessionNotificationCoordinatorTest {
     private val managePermissionUseCase = mockk<ManagePermissionUseCase>()
     private val focusHolder = SessionFocusHolder()
     private val port = RecordingPort()
+    private val sessionInfo = RecordingSessionInfoPort()
 
     private lateinit var coordinator: SessionNotificationCoordinator
 
@@ -62,6 +63,7 @@ class SessionNotificationCoordinatorTest {
             settingsRepository = settingsRepository,
             eventDispatcher = eventDispatcher,
             managePermissionUseCase = managePermissionUseCase,
+            sessionInfo = sessionInfo,
         )
     }
 
@@ -285,6 +287,64 @@ class SessionNotificationCoordinatorTest {
         coordinator.processEvent(server, idle())
 
         assertTrue(port.calls.isEmpty())
+    }
+
+    @Test
+    fun idleMissingSnapshotUsesRestParentIdToSuppressChild() = runTest {
+        background()
+        sessionInfo.parentId = "parent-1"
+        every { appNotificationManager.checkNewAssistantMessage("server1", "sess1") } returns "msg_a1"
+
+        coordinator.processEvent(server, idle())
+
+        assertTrue(port.calls.isEmpty())
+        assertEquals(1, sessionInfo.calls)
+    }
+
+    @Test
+    fun idleRestChildVerdictSurvivesAnotherIdle() = runTest {
+        background()
+        sessionInfo.parentId = "parent-1"
+
+        coordinator.processEvent(server, idle())
+        coordinator.processEvent(server, idle())
+
+        assertTrue(port.calls.isEmpty())
+        assertEquals(1, sessionInfo.calls)
+    }
+
+    @Test
+    fun idleKnownChildDoesNotFetchRest() = runTest {
+        background()
+        sessionsFlow.value = listOf(session("sess1", parentId = "parent-1"))
+
+        coordinator.processEvent(server, idle())
+
+        assertTrue(port.calls.isEmpty())
+        assertEquals(0, sessionInfo.calls)
+    }
+
+    @Test
+    fun idleRestTopLevelStillNotifies() = runTest {
+        background()
+        every { appNotificationManager.checkNewAssistantMessage("server1", "sess1") } returns "msg_a1"
+
+        coordinator.processEvent(server, idle())
+
+        assertEquals(listOf("onTurnCompleted:server1:sess1", "showTurnComplete:sess1"), port.calls)
+        assertEquals(1, sessionInfo.calls)
+    }
+
+    @Test
+    fun idleRestNegativeResultIsCachedOnNextIdle() = runTest {
+        background()
+        every { appNotificationManager.checkNewAssistantMessage("server1", "sess1") } returns "msg_a1"
+
+        coordinator.processEvent(server, idle())
+        coordinator.processEvent(server, idle())
+
+        assertEquals(1, sessionInfo.calls)
+        assertEquals(2, port.calls.count { it == "showTurnComplete:sess1" })
     }
 
     @Test
@@ -528,6 +588,16 @@ class SessionNotificationCoordinatorTest {
     // ============ fake 端口 ============
 
     /** 记录动作序列的 fake（streak 语义镜像 ErrorStreakTracker：首条 true、连发 false）。 */
+    private class RecordingSessionInfoPort : SessionInfoPort {
+        var parentId: String? = null
+        var calls = 0
+
+        override suspend fun parentIdOf(serverId: String, sessionId: String): String? {
+            calls++
+            return parentId
+        }
+    }
+
     private class RecordingPort : NotificationActionPort {
         val calls = mutableListOf<String>()
         private var streakActive = false
