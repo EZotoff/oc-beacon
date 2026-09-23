@@ -9,6 +9,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.leonardo.ocbeacon.MainActivity
 import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.domain.model.SupervisorAttentionItem
+import dev.leonardo.ocbeacon.logging.AppLogger
 import dev.leonardo.ocbeacon.util.PathUtils
 import java.time.Duration
 import java.time.Instant
@@ -51,6 +52,7 @@ class SupervisorNotificationManager @Inject constructor(
             .setGroup("supervisor_$serverId")
             .build()
         manager.notify(notificationId(serverId, item.id), notification)
+        AppLogger.i("SupervisorNotif", "path=supervisor-poll serverId=$serverId itemId=${item.id} kind=attention")
     }
 
     /**
@@ -89,6 +91,7 @@ class SupervisorNotificationManager @Inject constructor(
             .setGroup("supervisor_$serverId")
             .build()
         manager.notify(notificationId(serverId, ROOT_HEALTH_KEY), notification)
+        AppLogger.i("SupervisorNotif", "path=supervisor-poll serverId=$serverId failingRoots=${failingRoots.size} errorsPeak=$errorsPeak kind=root-health")
     }
 
     private fun supervisorPendingIntent(serverId: String, requestCode: Int): PendingIntent {
