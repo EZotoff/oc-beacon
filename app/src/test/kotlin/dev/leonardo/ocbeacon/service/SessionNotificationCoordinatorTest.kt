@@ -5,6 +5,7 @@ import dev.leonardo.ocbeacon.domain.model.Message
 import dev.leonardo.ocbeacon.domain.model.ServerConfig
 import dev.leonardo.ocbeacon.domain.model.Session
 import dev.leonardo.ocbeacon.domain.model.SseEvent
+import dev.leonardo.ocbeacon.domain.model.SessionStatus
 import dev.leonardo.ocbeacon.domain.model.TimeInfo
 import dev.leonardo.ocbeacon.domain.repository.SettingsRepository
 import dev.leonardo.ocbeacon.domain.usecase.ManagePermissionUseCase
@@ -13,6 +14,9 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -28,6 +32,7 @@ import org.junit.Test
  * [SessionNotificationCoordinator] 为纯 Kotlin：端口注入 fake（动作序列断言），
  * AppNotificationManager/SettingsRepository/EventDispatcher/UseCase 注入 mock。
  */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class SessionNotificationCoordinatorTest {
 
     private val server = ServerConfig(id = "server1", url = "http://10.0.2.2:4199", name = "TestServer")
@@ -102,6 +107,71 @@ class SessionNotificationCoordinatorTest {
         coordinator.processEvent(server, idle())
 
         assertEquals(listOf("onTurnCompleted:server1:sess1", "showTurnComplete:sess1"), port.calls)
+    }
+
+    @Test
+    fun busyAfterIdleSuppressesBackgroundPushAndCompletion() = runTest {
+        background()
+        every { appNotificationManager.checkNewAssistantMessage("server1", "sess1") } returns "msg_a1"
+
+        val idleJob = launch { coordinator.processEvent(server, idle()) }
+        advanceTimeBy(250)
+        coordinator.processEvent(server, SseEvent.SessionStatus("sess1", SessionStatus.Busy))
+        advanceTimeBy(2_000)
+        idleJob.join()
+
+        assertTrue(port.calls.isEmpty())
+    }
+
+    @Test
+    fun idleWithoutLaterBusyStillPushesAfterSettle() = runTest {
+        background()
+        every { appNotificationManager.checkNewAssistantMessage("server1", "sess1") } returns "msg_a1"
+
+        val idleJob = launch { coordinator.processEvent(server, idle()) }
+        advanceTimeBy(250)
+        assertTrue(port.calls.isEmpty())
+        advanceTimeBy(500)
+        idleJob.join()
+
+        assertEquals(listOf("onTurnCompleted:server1:sess1", "showTurnComplete:sess1"), port.calls)
+    }
+
+    @Test
+    fun busyBeforeIdleDoesNotSuppressCompletion() = runTest {
+        background()
+        every { appNotificationManager.checkNewAssistantMessage("server1", "sess1") } returns "msg_a1"
+
+        coordinator.processEvent(server, SseEvent.SessionStatus("sess1", SessionStatus.Busy))
+        coordinator.processEvent(server, idle())
+
+        assertEquals(listOf("onTurnCompleted:server1:sess1", "showTurnComplete:sess1"), port.calls)
+    }
+
+    @Test
+    fun busyAfterIdleCompletionDoesNotRetroactivelySuppressSound() = runTest {
+        focusOn("sess1")
+        every { appNotificationManager.computeNewAssistantMessageId("sess1") } returns "msg_a1"
+
+        coordinator.processEvent(server, idle())
+        coordinator.processEvent(server, SseEvent.SessionStatus("sess1", SessionStatus.Busy))
+        runCurrent()
+
+        assertEquals(listOf("onTurnCompleted:server1:sess1", "sound:TURN_COMPLETE:sess1:msg_a1"), port.calls)
+    }
+
+    @Test
+    fun busyAfterIdleSuppressesInSessionSound() = runTest {
+        focusOn("sess1")
+        every { appNotificationManager.computeNewAssistantMessageId("sess1") } returns "msg_a1"
+
+        val idleJob = launch { coordinator.processEvent(server, idle()) }
+        advanceTimeBy(250)
+        coordinator.processEvent(server, SseEvent.SessionStatus("sess1", SessionStatus.Busy))
+        advanceTimeBy(2_000)
+        idleJob.join()
+
+        assertTrue(port.calls.isEmpty())
     }
 
     @Test

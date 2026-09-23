@@ -19,6 +19,8 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,6 +30,9 @@ private const val SSE_IDLE_PATH = "path=sse-idle"
 /** D2-L30（#112）：response-ready 收敛检查次数与间隔（无输出会话最坏多等 750ms）。 */
 private const val RESPONSE_READY_ATTEMPTS = 3
 private const val RESPONSE_READY_INTERVAL_MS = 250L
+
+/** Server idle may precede another LLM round's busy status; if device logs show a later busy escapes this window, lengthen it or make it configurable. */
+private const val IDLE_SETTLE_RECHECK_MS = 500L
 
 /** #294：事件陈旧阈值——超过此时龄的 idle 完成不通知（回放的历史事件时龄以小时/天计，实时事件 <1s）。 */
 private const val STALE_EVENT_NOTIFY_MS = 5 * 60_000L
@@ -107,6 +112,8 @@ class SessionNotificationCoordinator @Inject constructor(
     private val eventDispatcher: EventDispatcher,
     private val managePermissionUseCase: ManagePermissionUseCase,
 ) {
+    private val receiptSeq = AtomicLong()
+    private val busyReceiptSeq = ConcurrentHashMap<String, Long>()
 
     /** 事件派发器的会话表快照（子会话判定/冒泡/auto-allow directory 解析的数据源）。 */
     private val sessions: List<Session> get() = eventDispatcher.sessions.value
@@ -119,8 +126,10 @@ class SessionNotificationCoordinator @Inject constructor(
      * 调用，此处仅路由到通知逻辑。
      */
     suspend fun processEvent(server: ServerConfig, event: SseEvent) {
+        val seq = receiptSeq.incrementAndGet()
         when (event) {
-            is SseEvent.SessionIdle -> onSessionIdle(server, event)
+            is SseEvent.SessionIdle -> onSessionIdle(server, event, seq)
+            is SseEvent.SessionStatus -> onSessionStatus(server, event, seq)
             is SseEvent.PermissionAsked -> maybeNotify { onPermissionAsked(server, event) }
             is SseEvent.QuestionAsked -> maybeNotify { onQuestionAsked(server, event) }
             is SseEvent.SessionError -> maybeNotify { onSessionError(server, event) }
@@ -141,9 +150,16 @@ class SessionNotificationCoordinator @Inject constructor(
         if (info.parentId != null) liveChildSessions.add(info.id)
     }
 
+    private fun onSessionStatus(server: ServerConfig, event: SseEvent.SessionStatus, seq: Long) {
+        if (event.status is dev.leonardo.ocbeacon.domain.model.SessionStatus.Busy) {
+            busyReceiptSeq.merge(event.sessionId, seq, ::maxOf)
+            AppLogger.d(TAG, "[${server.displayName}] Busy received sessionId=${event.sessionId}")
+        }
+    }
+
     // ============ 分支策略 ============
 
-    private suspend fun onSessionIdle(server: ServerConfig, event: SseEvent.SessionIdle) {
+    private suspend fun onSessionIdle(server: ServerConfig, event: SseEvent.SessionIdle, idleSeq: Long) {
         AppLogger.d(TAG, "[${server.displayName}] Idle received sessionId=${event.sessionId}")
         // #294（回放期通知风暴 + heads-up 劫持）：DSH 冷启回放把历史 turn/end
         // 重放给新订阅者——缓存未命中被误判「新完成」→ 7 分钟 57 条通知轰炸 +
@@ -194,6 +210,12 @@ class SessionNotificationCoordinator @Inject constructor(
             if (BuildConfig.DEBUG) {
                 AppLogger.d(TAG, "[${server.displayName}] Skip response-ready: no assistant text output (${event.sessionId})")
             }
+            return
+        }
+
+        delay(IDLE_SETTLE_RECHECK_MS)
+        if ((busyReceiptSeq[event.sessionId] ?: Long.MIN_VALUE) > idleSeq) {
+            AppLogger.i(TAG, "[${server.displayName}] $SSE_IDLE_PATH Suppressed: session returned to busy (mid-work drain) sessionId=${event.sessionId}")
             return
         }
 
