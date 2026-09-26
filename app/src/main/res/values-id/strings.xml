@@ -826,6 +826,11 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_open_items">Item terbuka</string>
     <string name="supervisor_recent_decisions">Keputusan terbaru</string>
     <string name="supervisor_no_open_items">Tidak ada item terbuka</string>
+    <string name="supervisor_reply_expand">Balas item ini</string>
+    <string name="supervisor_reply_collapse">Sembunyikan balasan</string>
+    <string name="supervisor_reply_hint">Balas</string>
+    <string name="supervisor_reply_send">Kirim balasan</string>
+    <string name="supervisor_reply_failed">Gagal mengirim balasan</string>
     <string name="supervisor_no_decisions">Tidak ada keputusan terbaru</string>
     <string name="supervisor_unknown_project">Proyek tidak dikenal</string>
     <string name="supervisor_load_failed">Ringkasan pengawas tidak dapat dimuat</string>

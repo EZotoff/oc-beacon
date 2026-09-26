@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.ui.text.style.TextOverflow
@@ -25,9 +26,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -61,6 +68,7 @@ fun SupervisorRoute(
         onNavigateBack = onNavigateBack,
         onNavigateToOtherDestination = onNavigateToOtherDestination,
         onRefresh = viewModel::refresh,
+        onReply = viewModel::sendReply,
     )
 }
 
@@ -72,6 +80,7 @@ internal fun SupervisorScreen(
     onNavigateBack: () -> Unit,
     onNavigateToOtherDestination: () -> Unit,
     onRefresh: () -> Unit,
+    onReply: (SupervisorAttentionItem, String) -> Unit = { _, _ -> },
 ) {
     Scaffold(
         topBar = {
@@ -120,7 +129,7 @@ internal fun SupervisorScreen(
                 state.isLoading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 state.loadFailed && state.snapshot == null -> LoadFailure(onRefresh)
                 state.snapshot != null -> when (destination) {
-                    SupervisorDestination.OPEN_ITEMS -> OpenItems(state)
+                    SupervisorDestination.OPEN_ITEMS -> OpenItems(state, onReply)
                     SupervisorDestination.DECISIONS_LOG -> DecisionsLog(state)
                 }
             }
@@ -141,7 +150,10 @@ private fun LoadFailure(onRetry: () -> Unit) {
 }
 
 @Composable
-private fun OpenItems(state: SupervisorUiState) {
+private fun OpenItems(
+    state: SupervisorUiState,
+    onReply: (SupervisorAttentionItem, String) -> Unit,
+) {
     val snapshot = checkNotNull(state.snapshot)
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -150,7 +162,14 @@ private fun OpenItems(state: SupervisorUiState) {
     ) {
         item { GlanceHeader(snapshot) }
         if (state.openItems.isEmpty()) item { EmptyText(R.string.supervisor_no_open_items) }
-        items(state.openItems, key = { it.id }) { AttentionCard(it) }
+        items(state.openItems, key = { it.id }) { item ->
+            AttentionCard(
+                item = item,
+                replyInFlight = item.id in state.replyInFlight,
+                replyFailed = item.id in state.replyFailed,
+                onReply = onReply,
+            )
+        }
     }
 }
 
@@ -194,7 +213,18 @@ private fun MetricRow(first: String, second: String) {
 }
 
 @Composable
-private fun AttentionCard(item: SupervisorAttentionItem) {
+private fun AttentionCard(
+    item: SupervisorAttentionItem,
+    replyInFlight: Boolean,
+    replyFailed: Boolean,
+    onReply: (SupervisorAttentionItem, String) -> Unit,
+) {
+    var expanded by rememberSaveable(item.id) { mutableStateOf(false) }
+    var draft by rememberSaveable(item.id) { mutableStateOf("") }
+    // 发送成功（inFlight 熄灭且未失败）即清空草稿。
+    LaunchedEffect(item.id, replyInFlight, replyFailed) {
+        if (!replyInFlight && !replyFailed) draft = ""
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(SpacingTokens.MD.dp)) {
             // AR-glance minimal card: single-line ellipsized headline only.
@@ -206,6 +236,41 @@ private fun AttentionCard(item: SupervisorAttentionItem) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text("${project(item.project)} · ${age(item.createdAt)}", style = MaterialTheme.typography.bodySmall)
+            if (item.root.isNotBlank()) {
+                TextButton(onClick = { expanded = !expanded }) {
+                    Text(
+                        stringResource(
+                            if (expanded) R.string.supervisor_reply_collapse else R.string.supervisor_reply_expand
+                        )
+                    )
+                }
+                if (expanded) {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !replyInFlight,
+                        placeholder = { Text(stringResource(R.string.supervisor_reply_hint)) },
+                        trailingIcon = {
+                            IconButton(
+                                onClick = { onReply(item, draft) },
+                                enabled = !replyInFlight && draft.isNotBlank(),
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.supervisor_reply_send))
+                            }
+                        },
+                        singleLine = false,
+                        maxLines = 4,
+                    )
+                    if (replyFailed) {
+                        Text(
+                            stringResource(R.string.supervisor_reply_failed),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
         }
     }
 }

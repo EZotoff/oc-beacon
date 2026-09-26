@@ -818,6 +818,11 @@
     <string name="supervisor_open_items">Éléments ouverts</string>
     <string name="supervisor_recent_decisions">Décisions récentes</string>
     <string name="supervisor_no_open_items">Aucun élément ouvert</string>
+    <string name="supervisor_reply_expand">Répondre à cet élément</string>
+    <string name="supervisor_reply_collapse">Masquer la réponse</string>
+    <string name="supervisor_reply_hint">Répondre</string>
+    <string name="supervisor_reply_send">Envoyer la réponse</string>
+    <string name="supervisor_reply_failed">Échec de l\'envoi de la réponse</string>
     <string name="supervisor_no_decisions">Aucune décision récente</string>
     <string name="supervisor_unknown_project">Projet inconnu</string>
     <string name="supervisor_load_failed">Impossible de charger le résumé du superviseur</string>

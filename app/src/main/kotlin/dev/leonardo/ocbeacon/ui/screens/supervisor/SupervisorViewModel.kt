@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.leonardo.ocbeacon.data.repository.SupervisorSnapshotCache
 import dev.leonardo.ocbeacon.domain.model.SupervisorSnapshot
+import dev.leonardo.ocbeacon.domain.model.BeaconReply
+import dev.leonardo.ocbeacon.domain.model.SupervisorAttentionItem
 import dev.leonardo.ocbeacon.domain.repository.SupervisorRepository
 import dev.leonardo.ocbeacon.ui.navigation.routes.ServerRouteParams
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,6 +22,9 @@ data class SupervisorUiState(
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val loadFailed: Boolean = false,
+    /** Seam 4 回复发送中/已失败的卡片项 ID（发送成功即移出）。 */
+    val replyInFlight: Set<String> = emptySet(),
+    val replyFailed: Set<String> = emptySet(),
 ) {
     val openItems get() = snapshot?.attentionItems.orEmpty()
     val decisions get() = snapshot?.recentDecisions.orEmpty()
@@ -60,6 +65,29 @@ class SupervisorViewModel @Inject constructor(
                 .onFailure {
                     _uiState.update { state ->
                         state.copy(isLoading = false, isRefreshing = false, loadFailed = true)
+                    }
+                }
+        }
+    }
+
+    /** Seam 4 beacon reply ingress：把卡片回复作为关联信封事件发送。 */
+    fun sendReply(item: SupervisorAttentionItem, text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || item.root.isBlank()) return
+        if (item.id in _uiState.value.replyInFlight) return
+        _uiState.update {
+            it.copy(replyInFlight = it.replyInFlight + item.id, replyFailed = it.replyFailed - item.id)
+        }
+        viewModelScope.launch {
+            repository.sendReply(serverId, item.root, BeaconReply.text(trimmed, explicitItemID = item.id))
+                .onSuccess {
+                    _uiState.update { state ->
+                        state.copy(replyInFlight = state.replyInFlight - item.id, replyFailed = state.replyFailed - item.id)
+                    }
+                }
+                .onFailure {
+                    _uiState.update { state ->
+                        state.copy(replyInFlight = state.replyInFlight - item.id, replyFailed = state.replyFailed + item.id)
                     }
                 }
         }

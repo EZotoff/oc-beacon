@@ -836,6 +836,11 @@
     <string name="supervisor_open_items">العناصر المفتوحة</string>
     <string name="supervisor_recent_decisions">القرارات الأخيرة</string>
     <string name="supervisor_no_open_items">لا توجد عناصر مفتوحة</string>
+    <string name="supervisor_reply_expand">الرد على هذا العنصر</string>
+    <string name="supervisor_reply_collapse">إخفاء الرد</string>
+    <string name="supervisor_reply_hint">رد</string>
+    <string name="supervisor_reply_send">إرسال الرد</string>
+    <string name="supervisor_reply_failed">فشل إرسال الرد</string>
     <string name="supervisor_no_decisions">لا توجد قرارات حديثة</string>
     <string name="supervisor_unknown_project">مشروع غير معروف</string>
     <string name="supervisor_load_failed">تعذر تحميل ملخص المشرف</string>

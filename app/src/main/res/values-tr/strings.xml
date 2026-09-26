@@ -820,6 +820,11 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_open_items">Açık öğeler</string>
     <string name="supervisor_recent_decisions">Son kararlar</string>
     <string name="supervisor_no_open_items">Açık öğe yok</string>
+    <string name="supervisor_reply_expand">Bu öğeye yanıt ver</string>
+    <string name="supervisor_reply_collapse">Yanıtı gizle</string>
+    <string name="supervisor_reply_hint">Yanıtla</string>
+    <string name="supervisor_reply_send">Yanıt gönder</string>
+    <string name="supervisor_reply_failed">Yanıt gönderilemedi</string>
     <string name="supervisor_no_decisions">Son karar yok</string>
     <string name="supervisor_unknown_project">Bilinmeyen proje</string>
     <string name="supervisor_load_failed">Denetçi özeti yüklenemedi</string>

@@ -828,6 +828,11 @@ Tokeny: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_open_items">Otwarte pozycje</string>
     <string name="supervisor_recent_decisions">Ostatnie decyzje</string>
     <string name="supervisor_no_open_items">Brak otwartych pozycji</string>
+    <string name="supervisor_reply_expand">Odpowiedz na ten element</string>
+    <string name="supervisor_reply_collapse">Ukryj odpowiedź</string>
+    <string name="supervisor_reply_hint">Odpowiedz</string>
+    <string name="supervisor_reply_send">Wyślij odpowiedź</string>
+    <string name="supervisor_reply_failed">Nie udało się wysłać odpowiedzi</string>
     <string name="supervisor_no_decisions">Brak ostatnich decyzji</string>
     <string name="supervisor_unknown_project">Nieznany projekt</string>
     <string name="supervisor_load_failed">Nie udało się wczytać podsumowania nadzorcy</string>

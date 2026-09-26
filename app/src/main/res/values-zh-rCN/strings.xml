@@ -823,6 +823,11 @@
     <string name="supervisor_open_items">待处理事项</string>
     <string name="supervisor_recent_decisions">最近决策</string>
     <string name="supervisor_no_open_items">没有待处理事项</string>
+    <string name="supervisor_reply_expand">回复此项</string>
+    <string name="supervisor_reply_collapse">收起回复</string>
+    <string name="supervisor_reply_hint">回复</string>
+    <string name="supervisor_reply_send">发送回复</string>
+    <string name="supervisor_reply_failed">回复发送失败</string>
     <string name="supervisor_no_decisions">没有最近决策</string>
     <string name="supervisor_unknown_project">未知项目</string>
     <string name="supervisor_load_failed">无法加载监督器摘要</string>

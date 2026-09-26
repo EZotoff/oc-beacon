@@ -829,6 +829,11 @@
     <string name="supervisor_open_items">Открытые вопросы</string>
     <string name="supervisor_recent_decisions">Недавние решения</string>
     <string name="supervisor_no_open_items">Нет открытых вопросов</string>
+    <string name="supervisor_reply_expand">Ответить на этот вопрос</string>
+    <string name="supervisor_reply_collapse">Скрыть ответ</string>
+    <string name="supervisor_reply_hint">Ответить</string>
+    <string name="supervisor_reply_send">Отправить ответ</string>
+    <string name="supervisor_reply_failed">Не удалось отправить ответ</string>
     <string name="supervisor_no_decisions">Нет недавних решений</string>
     <string name="supervisor_unknown_project">Неизвестный проект</string>
     <string name="supervisor_load_failed">Не удалось загрузить сводку супервизора</string>

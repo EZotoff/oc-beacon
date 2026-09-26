@@ -820,6 +820,11 @@
     <string name="supervisor_open_items">未処理項目</string>
     <string name="supervisor_recent_decisions">最近の判断</string>
     <string name="supervisor_no_open_items">未処理項目はありません</string>
+    <string name="supervisor_reply_expand">この項目に返信</string>
+    <string name="supervisor_reply_collapse">返信を隠す</string>
+    <string name="supervisor_reply_hint">返信</string>
+    <string name="supervisor_reply_send">返信を送信</string>
+    <string name="supervisor_reply_failed">返信の送信に失敗しました</string>
     <string name="supervisor_no_decisions">最近の判断はありません</string>
     <string name="supervisor_unknown_project">不明なプロジェクト</string>
     <string name="supervisor_load_failed">スーパーバイザー概要を読み込めませんでした</string>

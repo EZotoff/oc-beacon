@@ -820,6 +820,11 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_open_items">Itens abertos</string>
     <string name="supervisor_recent_decisions">Decisões recentes</string>
     <string name="supervisor_no_open_items">Nenhum item aberto</string>
+    <string name="supervisor_reply_expand">Responder a este item</string>
+    <string name="supervisor_reply_collapse">Ocultar resposta</string>
+    <string name="supervisor_reply_hint">Responder</string>
+    <string name="supervisor_reply_send">Enviar resposta</string>
+    <string name="supervisor_reply_failed">Falha ao enviar a resposta</string>
     <string name="supervisor_no_decisions">Nenhuma decisão recente</string>
     <string name="supervisor_unknown_project">Projeto desconhecido</string>
     <string name="supervisor_load_failed">Não foi possível carregar o resumo do supervisor</string>

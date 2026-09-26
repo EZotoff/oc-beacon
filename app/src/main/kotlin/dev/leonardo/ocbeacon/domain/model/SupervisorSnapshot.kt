@@ -20,6 +20,8 @@ data class SupervisorAttentionItem(
     val actionClass: String = "",
     /** 升级类别（DECISION/INFORMATION/APPROVAL）——ESCALATE(APPROVAL) 最高优先级。 */
     val escalationKind: String = "",
+    /** 完整 root 路径——Seam 4 回复信封按 root 寻址 per-root 收件箱会话。 */
+    val root: String = "",
 )
 
 data class SupervisorDecision(

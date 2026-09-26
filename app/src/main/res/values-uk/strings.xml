@@ -828,6 +828,11 @@
     <string name="supervisor_open_items">Відкриті питання</string>
     <string name="supervisor_recent_decisions">Останні рішення</string>
     <string name="supervisor_no_open_items">Немає відкритих питань</string>
+    <string name="supervisor_reply_expand">Відповісти на це питання</string>
+    <string name="supervisor_reply_collapse">Сховати відповідь</string>
+    <string name="supervisor_reply_hint">Відповісти</string>
+    <string name="supervisor_reply_send">Надіслати відповідь</string>
+    <string name="supervisor_reply_failed">Не вдалося надіслати відповідь</string>
     <string name="supervisor_no_decisions">Немає останніх рішень</string>
     <string name="supervisor_unknown_project">Невідомий проєкт</string>
     <string name="supervisor_load_failed">Не вдалося завантажити зведення наглядача</string>

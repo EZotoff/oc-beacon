@@ -903,6 +903,11 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_open_items">Open items</string>
     <string name="supervisor_recent_decisions">Recent decisions</string>
     <string name="supervisor_no_open_items">No open items</string>
+    <string name="supervisor_reply_expand">Reply to this item</string>
+    <string name="supervisor_reply_collapse">Hide reply</string>
+    <string name="supervisor_reply_hint">Reply</string>
+    <string name="supervisor_reply_send">Send reply</string>
+    <string name="supervisor_reply_failed">Reply failed to send</string>
     <string name="supervisor_no_decisions">No recent decisions</string>
     <string name="supervisor_unknown_project">Unknown project</string>
     <string name="supervisor_load_failed">Could not load the supervisor digest</string>
