@@ -74,6 +74,11 @@ class SseClientV2 @Inject constructor(
     private val json: Json,
     private val httpClient: io.ktor.client.HttpClient
 ) {
+    /** #448：本实例累计跳过的坏帧数（parse 失败）——诊断观测（对齐 V1 客户端）。 */
+    @Volatile
+    var skippedFrameCount: Int = 0
+        private set
+
     /**
      * 2026-08-15（research/06 P0）：durable.seq 游标回调——每条含 durable 信封
      * 的事件到达时上报（aggregateId, seq），供消费方（EventDispatcher 装配）
@@ -149,6 +154,16 @@ class SseClientV2 @Inject constructor(
                 throw SseConnectionException("V2 HTTP $statusCode")
             }
 
+            // #448 嗅探：200 但非 event-stream = 对面不是 SSE 端点（SPA fallback /
+            // 反代错误页）——升格为协议不匹配异常，不再以 0 事件静默完成
+            val v2ContentType = response.headers["content-type"] ?: ""
+            if (!v2ContentType.substringBefore(';').trim().equals("text/event-stream", ignoreCase = true)) {
+                AppLogger.e(TAG, "V2 SSE endpoint returned non-event-stream content-type '$v2ContentType' (status $statusCode)")
+                throw dev.leonardo.ocbeacon.data.api.SseProtocolMismatchException(
+                    "Expected text/event-stream but got '$v2ContentType' (HTTP $statusCode) — endpoint is not an SSE stream"
+                )
+            }
+
             val channel = response.bodyAsChannel()
             var lastActivity = System.currentTimeMillis()
             var eventCount = 0
@@ -201,7 +216,13 @@ class SseClientV2 @Inject constructor(
                         }
                     }
                 } catch (e: Exception) {
-                    AppLogger.e(TAG, "V2 parse error: ${frame.take(200)}", e)
+                    // #448：坏帧跳过计数（对齐 V1 客户端——单帧坏不致死但要可观测）
+                    skippedFrameCount++
+                    if (skippedFrameCount % 50 == 1) {
+                        AppLogger.w(TAG, "V2 SSE skipped " + skippedFrameCount + " bad frames so far (last: " + frame.take(80) + ": " + e.message + ")")
+                    } else {
+                        AppLogger.e(TAG, "V2 parse error: " + frame.take(200), e)
+                    }
                 }
             }
 
@@ -310,6 +331,11 @@ class SseClientV2 @Inject constructor(
         val root = try {
             json.parseToJsonElement(data).jsonObject
         } catch (e: Exception) {
+            // #448：坏帧（非 JSON）计数——原静默 null 让「线在吐坏数据」不可观测
+            skippedFrameCount++
+            if (skippedFrameCount % 50 == 1) {
+                AppLogger.w(TAG, "V2 SSE skipped " + skippedFrameCount + " bad frames so far (last: " + data.take(80) + ": " + e.message + ")")
+            }
             return null
         }
 

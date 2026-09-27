@@ -151,6 +151,14 @@ class SseClient @Inject constructor(
     private val httpClient: HttpClient,
     private val json: Json
 ) {
+    /**
+     * #448：本实例累计跳过的坏帧数（parse 失败）——诊断观测（日志汇总 +
+     * 测试断言）。实例生命周期 = 注入单例，连接层据此感知「线在对吐坏数据」。
+     */
+    @Volatile
+    var skippedFrameCount: Int = 0
+        private set
+
     private val parsers: List<SseEventParser> = listOf(
         MiscEventParser(),
         SessionEventParser(json),
@@ -207,6 +215,16 @@ class SseClient @Inject constructor(
                 throw SseConnectionException("HTTP $statusCode")
             }
 
+            // #448 嗅探：200 但非 event-stream = 对面不是 SSE 端点（SPA fallback /
+            // 反代错误页）——升格为协议不匹配异常，不再以 0 事件静默完成
+            val v1ContentType = response.headers["content-type"] ?: ""
+            if (!v1ContentType.substringBefore(';').trim().equals("text/event-stream", ignoreCase = true)) {
+                AppLogger.e(TAG, "SSE endpoint returned non-event-stream content-type '$v1ContentType' (status $statusCode)")
+                throw SseProtocolMismatchException(
+                    "Expected text/event-stream but got '$v1ContentType' (HTTP $statusCode) — endpoint is not an SSE stream"
+                )
+            }
+
             val channel = response.bodyAsChannel()
             var lastHeartbeat = System.currentTimeMillis()
             val buffer = mutableListOf<ByteArray>()
@@ -245,7 +263,14 @@ class SseClient @Inject constructor(
                                 }
                             }
                         } catch (e: Exception) {
-                            AppLogger.e(TAG, "Parse error: ${data.take(200)}", e)
+                            // #448：坏帧跳过要有计数——单帧坏不致死（既有语义），
+                            // 但静默吞掉让「整条线在吐 HTML/坏数据」不可观测。
+                            skippedFrameCount++
+                            if (skippedFrameCount % 50 == 1) {
+                                AppLogger.w(TAG, "SSE skipped " + skippedFrameCount + " bad frames so far (last: " + data.take(80) + ": " + e.message + ")")
+                            } else {
+                                AppLogger.e(TAG, "Parse error: " + data.take(200), e)
+                            }
                         }
                         buffer.clear()
                     }
@@ -355,6 +380,13 @@ class SseReadTimeoutTracker(
     /** 是否当前处于冷却期内。 */
     fun isInCooldown(): Boolean = System.currentTimeMillis() < cooldownUntilMs
 
+    /**
+     * #448（2026-09-27）：冷却剩余毫秒（非冷却期恒 0）——连接层进入冷却时
+     * 据此排程 reconnectAt，UI 倒计时才能反映真实冷却等待（原：冻结在旧
+     * 退避排程 → 卡 0 五分钟）。
+     */
+    fun cooldownRemainingMs(): Long = (cooldownUntilMs - System.currentTimeMillis()).coerceAtLeast(0L)
+
     /** 完全重置跟踪器（同时清除超时计数和冷却状态）。 */
     fun reset() {
         consecutiveTimeouts = 0
@@ -364,6 +396,16 @@ class SseReadTimeoutTracker(
 
 /** SSE 返回 401 时抛出 */
 class SseAuthException(message: String) : Exception(message)
+
+/**
+ * #448（2026-09-27）：SSE 端点返回非 event-stream 内容时抛出。
+ *
+ * 真机取证（v2.0.18 + V1 线面误连）：SPA fallback 以 200 text/html 应答 →
+ * 读循环零事件、body 放完「流正常完成」→ 被当读超时计数 → 5 次后 5min 冷却
+ * → 重连条幅常驻 + 倒计时冻结。此异常把「对面根本不在说 SSE」升格为显式
+ * 配置/版本类错误——调用方（SseConnectionManager）据此不计冷却、长退避。
+ */
+class SseProtocolMismatchException(message: String) : Exception(message)
 
 /** 非 2xx SSE 响应时抛出 */
 class SseConnectionException(message: String) : Exception(message)

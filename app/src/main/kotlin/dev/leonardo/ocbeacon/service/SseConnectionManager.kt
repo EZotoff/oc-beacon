@@ -454,13 +454,16 @@ class SseConnectionManager @Inject constructor(
             // 修复：独立 hasConnectedOnce 标志——本次循环内曾成功连接过，
             // 后续每次重连都执行 recoverMessages（REST 快照补漏）。
             var hasConnectedOnce = false
+            // #448：本轮尝试是否遭遇协议不匹配（长退避标志）
+            var protocolMismatch = false
 
             while (isActive) {
                 attempt++
+                protocolMismatch = false
 
                 // 若处于冷却中，等待并跳过重连尝试
                 if (tracker.isInCooldown()) {
-                    if (BuildConfig.DEBUG) AppLogger.d(TAG, "[${server.displayName}] SSE in cooldown, waiting ${COOLDOWN_CHECK_INTERVAL_MS}ms")
+                    if (BuildConfig.DEBUG) AppLogger.d(TAG, "[${server.displayName}] SSE in cooldown, remaining ${tracker.cooldownRemainingMs()}ms")
                     delay(COOLDOWN_CHECK_INTERVAL_MS)
                     continue
                 }
@@ -618,6 +621,12 @@ class SseConnectionManager @Inject constructor(
                         // 冷却代价付清后重新累积，防「5min 冷却→1 次超时→再冷却」永续）
                         val timeouts = tracker.consecutiveTimeouts
                         tracker.enterCooldown()
+                        // #448（2026-09-27）：冷却排程——倒计时数据源改为冷却结束
+                        // 时刻（原：冻结在旧退避排程 → UI「N 秒后重试」卡 0 五分钟，
+                        // 用户报告「一直倒计时」观感的一部分）。
+                        _reconnectAt.update {
+                            it + (server.id to System.currentTimeMillis() + tracker.cooldownRemainingMs())
+                        }
                         AppLogger.w(TAG, "[${server.displayName}] Entering SSE cooldown after $timeouts consecutive timeouts")
                     } else {
                         tracker.recordTimeout()
@@ -625,6 +634,13 @@ class SseConnectionManager @Inject constructor(
                 } catch (e: CancellationException) {
                     if (BuildConfig.DEBUG) AppLogger.d(TAG, "[${server.displayName}] SSE job cancelled, not reconnecting")
                     throw e
+                } catch (e: dev.leonardo.ocbeacon.data.api.SseProtocolMismatchException) {
+                    // #448：对面不在说 SSE（SPA fallback / 反代错误页）——配置/版本
+                    // 类错误，重试不能自愈。不计读超时（#402 的冷却是「读超时」代价
+                    // 语义，此形态不沾），长退避限频 + 明确日志（对齐 #436 httpRejected）。
+                    AppLogger.w(TAG, "[${server.displayName}] SSE protocol mismatch: ${e.message} — retrying with long backoff (not a network error)")
+                    updateServerConnected(server.id, false)
+                    protocolMismatch = true
                 } catch (e: Exception) {
                     // #152：连接失败带 throwable（原缺——审计 7 处之一）；e→d 避免与 :337 双记（同一异常两连发）
                     if (BuildConfig.DEBUG) AppLogger.d(TAG, "[${server.displayName}] SSE connection failed: ${e.message}", e)
@@ -648,8 +664,9 @@ class SseConnectionManager @Inject constructor(
                 if (!connections.containsKey(server.id)) break
 
                 val delayMs = backoffWithSchedule(server.id, attempt)
-                if (BuildConfig.DEBUG) AppLogger.d(TAG, "[${server.displayName}] Reconnecting in ${delayMs}ms (attempt #$attempt)")
-                delay(delayMs)
+                val waitMs = if (protocolMismatch) maxOf(REJECTED_PROBE_RETRY_MS, delayMs) else delayMs
+                if (BuildConfig.DEBUG) AppLogger.d(TAG, "[${server.displayName}] Reconnecting in ${waitMs}ms (attempt #$attempt${if (protocolMismatch) ", protocol-mismatch" else ""})")
+                delay(waitMs)
             }
     }
 
