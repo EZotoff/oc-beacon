@@ -16,14 +16,14 @@
 #     uiautomator dump 陈旧文件误判，三者在 2026-08-25 #222 E2E 中连续踩坑；
 #   - 一条命令得到确定的起点：已连接指定服务器 + 停在会话列表。
 #
-# 密码来源: /persistent/home/leo-tkp/.config/opencode/service.json 的 password 字段
-#   （AGENTS.md「验证与测试」节同源）。可用 OCBEACEN_SERVICE_JSON 覆盖路径。
+# 密码来源: ~/.config/opencode/service.json 的 password 字段（AGENTS.md「验证与测试」节同源；
+#   2026-09-27 机器迁移后旧 /persistent 路径已不存在）。可用 OCBEACEN_SERVICE_JSON 覆盖路径。
 
 set -eu
 
 SERIAL=${1:-e69a99d8}
 PKG=${2:-dev.leonardo.ocbeacon.dev}
-SERVICE_JSON=${OCBEACEN_SERVICE_JSON:-/persistent/home/leo-tkp/.config/opencode/service.json}
+SERVICE_JSON=${OCBEACEN_SERVICE_JSON:-$HOME/.config/opencode/service.json}
 
 PW=$(python3 -c "import json; print(json.load(open('$SERVICE_JSON'))['password'])")
 if [ -z "$PW" ]; then echo "ERROR: password empty from $SERVICE_JSON" >&2; exit 1; fi
