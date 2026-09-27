@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#455**（2026-09-27 #454 v1 真机 IME 换行注入后 prompt 未）。
+**编号**：全局递增，不回收。下一编号：**#456**（2026-09-27 #455 统计栏视觉微调：间距对齐 user 侧 + ag）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。
 
@@ -66,11 +66,7 @@
 
 ## P1 — 核心功能需求
 
-- [~] **#453 思考卡计时块级冻结 + 工具卡累积计时** `chat` `dsh` `timing`
-  - DSH block-end 整帧忽略→part 终态化拖到 turn/end,思考块完毕后正文流式期间思考卡计时虚涨;新增 MessagePartTimePatch(ordinal 后缀扫描定位)块级及时冻结
-  - 工具卡族补累积计时:ToolState.Pending+time/V2·DSH 映射填充/mergePart time 继承/ToolCardScaffold 行尾走动+冻结槽(12 卡接线);无锚不显示不伪造
-
-- [ ] **#452 新会话首条消息发送后不上屏：播种消息数据就绪但渲染门等到首个 SSE 事件** `chat` `render`
+- [~] **#452 新会话首条消息发送后不上屏：播种消息数据就绪但渲染门等到首个 SSE 事件** `chat` `render`
   - 真机取证：[send-seed] +0.4s 数据层已有（msgs=2、Room upsert n=2），列表像素空白至 ~+3.5s（首个 SSE 事件+~1.5s），用户气泡从不单独出现（总与助手骨架一起上屏）。
   - 免费服务首事件延迟大时窗口拉长到 10-90s（用户 17:21 实测 turn 89s）——完全解释「第一条消息没上屏」与重进后长时间空白观感。
   - 重进复现（空闲/流式中途）均无空白：缓存即时+REST 0.4-1.5s；replaceSessionMessages 已有空列表守卫；loading 仅在消息也为空时清空——数据层无嫌疑，嫌疑在 displayItems→LazyColumn 之间的渲染管线（readiness/turn 重建/会话状态门）。
@@ -175,18 +171,10 @@
 
 ## P2 — 优化与锦上添花
 
-- [ ] **#451 FAB 菜单透明度状态机+默认 1/8 高度** `uiux` `chat`
-  - 默认位置改为容器高 1/8（非底部原位）；透明度：闲置 30%。
-  - 浮空态：仅点击立即不透明；滑动开始 3s 后 1s 过渡回 30%。
-  - 拉底钉住态：内容滑动（fling+触摸）立即不透明；停滑 3s 后 1s 过渡回 30%。
-  - 复用 FabEdgeSlideState（offsetYPx==0 判钉底）；滚动信号接 ChatScrollController isScrollInProgress。
-
-- [~] **#448 SseClient.parseEvent 对非 JSON 帧零容错(单帧即断流)** `network` `robustness`
-  - 收到 HTML/裸 0 等非 JSON 对象帧时 parseEvent 直接抛异常并关闭整条流(单帧即断),心跳/注释帧未显式忽略
-  - 建议:跳过该帧+计数上报;与 P1 SSE 长连接随机断连卡疑同源族群,接手对照
-  - 取证:handoff-oc-beacon-card-intervention.md §10.2(2026-09-27),真机代理实验日志复现
-  - 勘误(2026-09-27 核码):现码 V1(SseClient.kt L238-249)/V2(SseClientV2.kt L178-205) parse 均 per-frame try-catch,坏帧跳过不断流——卡片『单帧即断』不成立于当前代码;§10.2 实测『断流』真因=服务器返回非 SSE 有限 body(HTML)→逐帧 Parse error+零事件+body 结束即断+重连循环。真实缺口=非 SSE 响应无快检(content-type/首帧嗅探)、坏帧无计数上报——与 #447 探测器同族,接手时对照
-  - 2026-09-27 已实现：非 event-stream 嗅探（SseProtocolMismatchException，不计冷却长退避）+ 坏帧跳过计数（V1/V2 客户端，50 帧汇总）+ 冷却倒计时排程（reconnectAt=冷却结束时刻）。
+- [~] **#455 统计栏视觉微调：间距对齐 user 侧 + agent 徽标边框化** `uiux` `chat`
+  - assistant 正文→统计栏间距原 SM 8dp（compact XS 4dp），user 气泡外置统计栏 4dp（compact 2dp）——两侧不一致（2026-09-27 用户报告）
+  - 修复：MessageSectionScaffold 尾部间距独立 tailGap（4dp/2dp 与 UserBubbleExternalActions 严格一致），正文内部 parts 间距解耦不动
+  - AgentTag 去实底背景改 1dp 边框（tagColor@MUTED + 同色文字）——扁平消息层下实底徽标不协调（用户裁决）
 
 - [ ] **#442 高度引擎根修二期：R2分片增量化(滑动p90 12ms)+cadence收编+flush深拆+终审待复核项** `perf` `refactor`
   - 终审判定：R1批次已锁 A2 贴底5ms/A1回归/A4全项；滑动p90 19-27 未达12——R2分片(稳定块缓存/尾块单测)是 O(内容)→O(尾块) 唯一路径。
