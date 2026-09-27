@@ -307,6 +307,9 @@ fun NavGraph(
                 onNavigateToOtherDestination = {
                     navController.navigate(SupervisorNav.createDecisionsLogRoute(serverId))
                 },
+                onOpenDetail = { itemId ->
+                    navController.navigate(SupervisorNav.createDetailRoute(serverId, itemId))
+                },
             )
         }
         composable(
@@ -317,6 +320,7 @@ fun NavGraph(
             SupervisorRoute(
                 destination = SupervisorDestination.DECISIONS_LOG,
                 onNavigateBack = { navController.popBackStack() },
+                onOpenDetail = { },
                 onNavigateToOtherDestination = {
                     navController.navigate(SupervisorNav.createOpenItemsRoute(serverId)) {
                         popUpTo(SupervisorNav.openItemsRoutePattern) { inclusive = false }

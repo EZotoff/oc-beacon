@@ -26,6 +26,8 @@ data class SupervisorUiState(
     /** Seam 4 回复发送中/已失败的卡片项 ID（发送成功即移出）。 */
     val replyInFlight: Set<String> = emptySet(),
     val replyFailed: Set<String> = emptySet(),
+    /** 已成功回复的卡片项 ID（展示「Replied」状态芯片；与 Detail 共用此存储）。 */
+    val replySent: Set<String> = emptySet(),
     /** root 健康通知落地时 true：Open Items 顶部渲染标注健康上下文。 */
     val healthContext: Boolean = false,
 ) {
@@ -80,18 +82,26 @@ class SupervisorViewModel @Inject constructor(
         if (trimmed.isEmpty() || item.root.isBlank()) return
         if (item.id in _uiState.value.replyInFlight) return
         _uiState.update {
-            it.copy(replyInFlight = it.replyInFlight + item.id, replyFailed = it.replyFailed - item.id)
+            it.copy(replyInFlight = it.replyInFlight + item.id, replyFailed = it.replyFailed - item.id, replySent = it.replySent - item.id)
         }
         viewModelScope.launch {
             repository.sendReply(serverId, item.root, BeaconReply.text(trimmed, explicitItemID = item.id))
                 .onSuccess {
                     _uiState.update { state ->
-                        state.copy(replyInFlight = state.replyInFlight - item.id, replyFailed = state.replyFailed - item.id)
+                        state.copy(
+                            replyInFlight = state.replyInFlight - item.id,
+                            replyFailed = state.replyFailed - item.id,
+                            replySent = state.replySent + item.id,
+                        )
                     }
                 }
                 .onFailure {
                     _uiState.update { state ->
-                        state.copy(replyInFlight = state.replyInFlight - item.id, replyFailed = state.replyFailed + item.id)
+                        state.copy(
+                            replyInFlight = state.replyInFlight - item.id,
+                            replyFailed = state.replyFailed + item.id,
+                            replySent = state.replySent - item.id,
+                        )
                     }
                 }
         }
