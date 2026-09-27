@@ -144,4 +144,39 @@ class OperatorViewFreshnessTest {
             (ev.read(image(cards = 21)) as OperatorViewReadOutcome.Frozen).reason,
         )
     }
+
+    @Test
+    fun `card missing a required field freezes with invalid schema never live`() {
+        val ev = evaluator()
+        // TS zod schema 要求必填字段存在（z.string()/z.array() 无 min，但不可缺键）。
+        val droppings = listOf(
+            "\"id\":\"item-1\",",
+            "\"rootLabel\":\"oc-beacon\",",
+            "\"sessionLabel\":\"ses\",",
+            "\"reasonText\":\"why\",",
+            "\"premiseTexts\":[\"p1\"],",
+            "\"ageSeconds\":10,",
+            "\"severity\":\"B\",",
+            "\"jumpAvailable\":true,",
+        )
+        for (drop in droppings) {
+            val malformed = image().replace(drop, "")
+            val outcome = ev.read(malformed)
+            assertTrue("missing [$drop] should not be live", outcome is OperatorViewReadOutcome.Frozen)
+            assertEquals(FreezeReason.INVALID_SCHEMA, (outcome as OperatorViewReadOutcome.Frozen).reason)
+        }
+    }
+
+    @Test
+    fun `blank id and missing top-level field freeze with invalid schema`() {
+        val ev = evaluator()
+        assertEquals(
+            FreezeReason.INVALID_SCHEMA,
+            (ev.read(image().replace("\"item-1\"", "\"\"")) as OperatorViewReadOutcome.Frozen).reason,
+        )
+        assertEquals(
+            FreezeReason.INVALID_SCHEMA,
+            (ev.read(image().replace("\"schemaVersion\":1,", "")) as OperatorViewReadOutcome.Frozen).reason,
+        )
+    }
 }

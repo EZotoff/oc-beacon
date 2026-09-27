@@ -17,7 +17,7 @@ internal data class SupervisorOpenTarget(
  * - 过滤：仅 APPROVAL/DECISION 推送（缺省/INFORMATION/未知值一律不推——fail-safe 静默）；
  * - 身份：通知 id 与 pending-intent requestCode 都按 (serverId, itemId) 稳定 hash 派生，
  *   跨轮询替换而非堆积；
- * - root 健康：固定 key 派生 id + 固定 requestCode（同服务器只保留最新一条）。
+ * - root 健康：固定 key 派生 id + 按 serverId 派生的 requestCode（同服务器只保留最新一条）。
  */
 internal object SupervisorPushSpec {
 
@@ -39,6 +39,10 @@ internal object SupervisorPushSpec {
     fun rootHealthNotificationId(serverId: String): Int =
         stableHash(serverId, ROOT_HEALTH_KEY)
 
+    /** Per-server requestCode：extras 不区分 PendingIntent，requestCode 必须按 serverId 派生。 */
+    fun rootHealthRequestCode(serverId: String): Int =
+        stableHash(serverId, ROOT_HEALTH_KEY)
+
     /** FNV-1a 32 位稳定 hash（与 AppNotificationManager 同款，跨进程一致）。 */
     fun stableHash(vararg parts: String): Int {
         var hash = 0x811c9dc5.toInt()
@@ -51,5 +55,4 @@ internal object SupervisorPushSpec {
     }
 
     const val ROOT_HEALTH_KEY = "root-health"
-    const val ROOT_HEALTH_REQUEST_CODE = 0x5A17
 }

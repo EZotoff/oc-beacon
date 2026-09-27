@@ -114,7 +114,7 @@ class SupervisorNotificationManager @Inject constructor(
             .setContentIntent(
                 supervisorPendingIntent(
                     SupervisorPushSpec.rootHealthTarget(serverId),
-                    SupervisorPushSpec.ROOT_HEALTH_REQUEST_CODE,
+                    SupervisorPushSpec.rootHealthRequestCode(serverId),
                 ),
             )
             .setAutoCancel(true)

@@ -129,15 +129,27 @@ class SupervisorNotificationManagerTest {
     }
 
     @Test
-    fun `root health keeps fixed id and request code with health context and no item id`() = runTest {
+    fun `root health keeps per-server id and request code with health context and no item id`() = runTest {
         manager().notifyRootHealth("s1", failingRoots = listOf("/work/x"), errorsPeak = 0, peakIncreased = false)
 
         verify {
             notificationManager.notify(SupervisorPushSpec.rootHealthNotificationId("s1"), any())
         }
         verify {
-            PendingIntent.getActivity(any(), SupervisorPushSpec.ROOT_HEALTH_REQUEST_CODE, any(), any())
+            PendingIntent.getActivity(any(), SupervisorPushSpec.rootHealthRequestCode("s1"), any(), any())
         }
+    }
+
+    @Test
+    fun `root health request codes differ across servers`() = runTest {
+        manager().notifyRootHealth("s1", failingRoots = listOf("/work/x"), errorsPeak = 0, peakIncreased = false)
+        manager().notifyRootHealth("s2", failingRoots = listOf("/work/y"), errorsPeak = 0, peakIncreased = false)
+
+        val rc1 = SupervisorPushSpec.rootHealthRequestCode("s1")
+        val rc2 = SupervisorPushSpec.rootHealthRequestCode("s2")
+        assertNotEquals(rc1, rc2)
+        verify { PendingIntent.getActivity(any(), rc1, any(), any()) }
+        verify { PendingIntent.getActivity(any(), rc2, any(), any()) }
     }
 
     @Test

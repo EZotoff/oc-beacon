@@ -1,12 +1,14 @@
 package dev.leonardo.ocbeacon.ui.screens.supervisor
 
 import androidx.lifecycle.SavedStateHandle
+import dev.leonardo.ocbeacon.data.repository.SupervisorReplyStateStore
 import dev.leonardo.ocbeacon.data.repository.SupervisorSnapshotCache
 import dev.leonardo.ocbeacon.domain.model.SupervisorSnapshot
 import dev.leonardo.ocbeacon.domain.model.SupervisorAttentionItem
 import dev.leonardo.ocbeacon.domain.model.SupervisorDecision
 import dev.leonardo.ocbeacon.domain.repository.SupervisorRepository
 import dev.leonardo.ocbeacon.ui.navigation.routes.ServerRouteParams
+import dev.leonardo.ocbeacon.ui.navigation.routes.SupervisorNav
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -28,6 +30,7 @@ class SupervisorViewModelTest {
     private val dispatcher = UnconfinedTestDispatcher()
     private val repository: SupervisorRepository = mockk()
     private val cache = SupervisorSnapshotCache()
+    private val replyStore = SupervisorReplyStateStore()
     private val snapshot = SupervisorSnapshot(2, 1, 4, emptyList(), emptyList())
 
     @Before
@@ -44,7 +47,8 @@ class SupervisorViewModelTest {
     fun `initial load exposes supervisor snapshot`() = runTest {
         coEvery { repository.load("server-1") } returns Result.success(snapshot)
 
-        val viewModel = SupervisorViewModel(savedStateHandle(), repository, cache)
+        val viewModel = SupervisorViewModel(savedStateHandle(), repository, cache, replyStore)
+
 
         assertEquals(snapshot, viewModel.uiState.value.snapshot)
         assertFalse(viewModel.uiState.value.isLoading)
@@ -54,7 +58,7 @@ class SupervisorViewModelTest {
     @Test
     fun `pull refresh reloads current server`() = runTest {
         coEvery { repository.load("server-1") } returns Result.success(snapshot)
-        val viewModel = SupervisorViewModel(savedStateHandle(), repository, cache)
+        val viewModel = SupervisorViewModel(savedStateHandle(), repository, cache, replyStore)
 
         viewModel.refresh()
 
@@ -81,7 +85,7 @@ class SupervisorViewModelTest {
         val snapshotWithItem = SupervisorSnapshot(1, 0, 0, listOf(item), emptyList())
         coEvery { repository.load("server-1") } returns Result.success(snapshotWithItem)
         coEvery { repository.sendReply("server-1", "/work/app", any()) } returns Result.success(Unit)
-        val viewModel = SupervisorViewModel(savedStateHandle(), repository, cache)
+        val viewModel = SupervisorViewModel(savedStateHandle(), repository, cache, replyStore)
 
         viewModel.sendReply(item, "use Qdrant")
 
@@ -98,7 +102,7 @@ class SupervisorViewModelTest {
         val snapshotWithItem = SupervisorSnapshot(1, 0, 0, listOf(item), emptyList())
         coEvery { repository.load("server-1") } returns Result.success(snapshotWithItem)
         coEvery { repository.sendReply("server-1", "/work/app", any()) } returns Result.failure(java.io.IOException("offline"))
-        val viewModel = SupervisorViewModel(savedStateHandle(), repository, cache)
+        val viewModel = SupervisorViewModel(savedStateHandle(), repository, cache, replyStore)
 
         viewModel.sendReply(item, "use Qdrant")
 
@@ -110,12 +114,36 @@ class SupervisorViewModelTest {
     fun `sendReply ignores blank text or missing root`() = runTest {
         val item = SupervisorAttentionItem("att-1", "Choose", "app", "2026-09-22T09:00:00Z", 1)
         coEvery { repository.load("server-1") } returns Result.success(snapshot)
-        val viewModel = SupervisorViewModel(savedStateHandle(), repository, cache)
+        val viewModel = SupervisorViewModel(savedStateHandle(), repository, cache, replyStore)
 
         viewModel.sendReply(item, "   ")
 
         coVerify(exactly = 0) { repository.sendReply(any(), any(), any()) }
     }
+    @Test
+    fun `detail viewmodel reply is visible as replied chip in list viewmodel`() = runTest {
+        val item = SupervisorAttentionItem("att-1", "Choose", "app", "2026-09-22T09:00:00Z", 1, root = "/work/app")
+        coEvery { repository.load("server-1") } returns Result.success(SupervisorSnapshot(1, 0, 0, listOf(item), emptyList()))
+        coEvery { repository.sendReply("server-1", "/work/app", any()) } returns Result.success(Unit)
+        val list = SupervisorViewModel(savedStateHandle(), repository, cache, replyStore)
+        val detail = SupervisorDetailViewModel(
+            SavedStateHandle(
+                mapOf(
+                    ServerRouteParams.PARAM_SERVER_ID to "server-1",
+                    SupervisorNav.PARAM_ITEM_ID to "att-1",
+                ),
+            ),
+            repository,
+            cache,
+            replyStore,
+        )
+
+        detail.sendReply("use Qdrant")
+
+        assertEquals(setOf("att-1"), list.uiState.value.replySent)
+        assertTrue(list.uiState.value.replyInFlight.isEmpty())
+    }
+
 
     private fun savedStateHandle() = SavedStateHandle(
         mapOf(ServerRouteParams.PARAM_SERVER_ID to "server-1"),

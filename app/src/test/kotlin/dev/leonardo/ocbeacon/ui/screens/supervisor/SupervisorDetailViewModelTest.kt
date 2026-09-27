@@ -1,6 +1,7 @@
 package dev.leonardo.ocbeacon.ui.screens.supervisor
 
 import androidx.lifecycle.SavedStateHandle
+import dev.leonardo.ocbeacon.data.repository.SupervisorReplyStateStore
 import dev.leonardo.ocbeacon.data.repository.SupervisorSnapshotCache
 import dev.leonardo.ocbeacon.domain.model.BeaconReply
 import dev.leonardo.ocbeacon.domain.model.SupervisorAttentionItem
@@ -32,6 +33,7 @@ class SupervisorDetailViewModelTest {
     private val dispatcher = UnconfinedTestDispatcher()
     private val repository: SupervisorRepository = mockk()
     private val cache = SupervisorSnapshotCache()
+    private val replyStore = SupervisorReplyStateStore()
 
     private val item = SupervisorAttentionItem(
         id = "att_1",
@@ -131,6 +133,7 @@ class SupervisorDetailViewModelTest {
         ),
         repository = repository,
         cache = cache,
+        replyStateStore = replyStore,
     )
 
     private fun snapshot(stale: Boolean) = SupervisorSnapshot(

@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.leonardo.ocbeacon.data.repository.SupervisorReplyStateStore
 import dev.leonardo.ocbeacon.data.repository.SupervisorSnapshotCache
 import dev.leonardo.ocbeacon.domain.model.SupervisorSnapshot
 import dev.leonardo.ocbeacon.domain.model.BeaconReply
@@ -23,10 +24,10 @@ data class SupervisorUiState(
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val loadFailed: Boolean = false,
-    /** Seam 4 回复发送中/已失败的卡片项 ID（发送成功即移出）。 */
+    /** Seam 4 回复发送中/已失败的卡片项 ID（发送成功即移出；镜像自共享 [SupervisorReplyStateStore]）。 */
     val replyInFlight: Set<String> = emptySet(),
     val replyFailed: Set<String> = emptySet(),
-    /** 已成功回复的卡片项 ID（展示「Replied」状态芯片；与 Detail 共用此存储）。 */
+    /** 已成功回复的卡片项 ID（展示「Replied」状态芯片；Detail 页回复同样计入）。 */
     val replySent: Set<String> = emptySet(),
     /** root 健康通知落地时 true：Open Items 顶部渲染标注健康上下文。 */
     val healthContext: Boolean = false,
@@ -40,6 +41,7 @@ class SupervisorViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: SupervisorRepository,
     private val cache: SupervisorSnapshotCache,
+    private val replyStateStore: SupervisorReplyStateStore,
 ) : ViewModel() {
     private val serverId: String = checkNotNull(savedStateHandle[ServerRouteParams.PARAM_SERVER_ID])
     private val healthContext: Boolean = savedStateHandle[SupervisorNav.PARAM_HEALTH_CONTEXT] ?: false
@@ -51,6 +53,22 @@ class SupervisorViewModel @Inject constructor(
     val uiState: StateFlow<SupervisorUiState> = _uiState.asStateFlow()
 
     init {
+        // 共享回复状态单一来源：Detail 页发起的回复同样驱动本列表的「Replied」芯片。
+        viewModelScope.launch {
+            replyStateStore.phases.collect { phases ->
+                val mine = phases.filterKeys { it.startsWith("$serverId\u0000") }
+                _uiState.update { state ->
+                    state.copy(
+                        replyInFlight = mine.filterValues { it == SupervisorReplyStateStore.Phase.IN_FLIGHT }.keys
+                            .mapTo(mutableSetOf()) { it.substringAfter('\u0000') },
+                        replyFailed = mine.filterValues { it == SupervisorReplyStateStore.Phase.FAILED }.keys
+                            .mapTo(mutableSetOf()) { it.substringAfter('\u0000') },
+                        replySent = mine.filterValues { it == SupervisorReplyStateStore.Phase.SENT }.keys
+                            .mapTo(mutableSetOf()) { it.substringAfter('\u0000') },
+                    )
+                }
+            }
+        }
         refresh()
     }
 
@@ -66,7 +84,17 @@ class SupervisorViewModel @Inject constructor(
         viewModelScope.launch {
             repository.load(serverId)
                 .onSuccess { snapshot ->
-                    _uiState.value = SupervisorUiState(snapshot = snapshot, isLoading = false, healthContext = healthContext)
+                    _uiState.update { state ->
+                        SupervisorUiState(
+                            snapshot = snapshot,
+                            isLoading = false,
+                            isRefreshing = false,
+                            healthContext = healthContext,
+                            replyInFlight = state.replyInFlight,
+                            replyFailed = state.replyFailed,
+                            replySent = state.replySent,
+                        )
+                    }
                 }
                 .onFailure {
                     _uiState.update { state ->
@@ -76,34 +104,16 @@ class SupervisorViewModel @Inject constructor(
         }
     }
 
-    /** Seam 4 beacon reply ingress：把卡片回复作为关联信封事件发送。 */
+    /** Seam 4 beacon reply ingress：把卡片回复作为关联信封事件发送（状态写穿共享 store）。 */
     fun sendReply(item: SupervisorAttentionItem, text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || item.root.isBlank()) return
-        if (item.id in _uiState.value.replyInFlight) return
-        _uiState.update {
-            it.copy(replyInFlight = it.replyInFlight + item.id, replyFailed = it.replyFailed - item.id, replySent = it.replySent - item.id)
-        }
+        if (replyStateStore.phase(serverId, item.id) == SupervisorReplyStateStore.Phase.IN_FLIGHT) return
+        replyStateStore.markInFlight(serverId, item.id)
         viewModelScope.launch {
             repository.sendReply(serverId, item.root, BeaconReply.text(trimmed, explicitItemID = item.id))
-                .onSuccess {
-                    _uiState.update { state ->
-                        state.copy(
-                            replyInFlight = state.replyInFlight - item.id,
-                            replyFailed = state.replyFailed - item.id,
-                            replySent = state.replySent + item.id,
-                        )
-                    }
-                }
-                .onFailure {
-                    _uiState.update { state ->
-                        state.copy(
-                            replyInFlight = state.replyInFlight - item.id,
-                            replyFailed = state.replyFailed + item.id,
-                            replySent = state.replySent - item.id,
-                        )
-                    }
-                }
+                .onSuccess { replyStateStore.markSent(serverId, item.id) }
+                .onFailure { replyStateStore.markFailed(serverId, item.id) }
         }
     }
 }

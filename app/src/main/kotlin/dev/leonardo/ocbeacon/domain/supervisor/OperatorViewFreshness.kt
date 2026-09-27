@@ -56,8 +56,11 @@ class OperatorViewFreshness(
         if (view.lastSeq < 0L) return false
         if (runCatching { Instant.parse(view.producedAt) }.isFailure) return false
         if (view.cards.size > READER_MAX_CARDS) return false
+        // 值约束镜像 TS zod：id min(1)；ageSeconds 非负；severity 枚举 A–D；
+        // jumpAvailable 字面 true。字段存在性由 DTO 去默认值 + MissingFieldException
+        // 保证（reasonText/rootLabel/sessionLabel/premiseTexts 存在但允许空串，同 TS z.string()）。
         return view.cards.all { card ->
-            card.id.isNotBlank() &&
+            card.id.isNotEmpty() &&
                 card.ageSeconds >= 0L &&
                 card.severity in SEVERITIES &&
                 card.jumpAvailable
@@ -96,13 +99,14 @@ class OperatorViewFreshness(
      * 调用方必须重新 read()，跳变绝不延长有效期。
      */
     fun validity(wallNowMs: Long, monoNowMs: Long): OperatorViewReadOutcome {
-        if (!anchored || lastGood == null) return frozen(FreezeReason.READ_ERROR)
+        val good = lastGood ?: return frozen(FreezeReason.READ_ERROR)
+        if (!anchored) return frozen(FreezeReason.READ_ERROR)
         if (monoNowMs - anchorMonoMs > READ_STALE_AGE_MS) return frozen(FreezeReason.STALE)
         val extrapolatedWall = anchorWallMs + (monoNowMs - anchorMonoMs)
         if (kotlin.math.abs(wallNowMs - extrapolatedWall) > READ_CLOCK_JUMP_MS) {
             return frozen(FreezeReason.CLOCK_JUMP)
         }
-        return OperatorViewReadOutcome.Live(lastGood!!)
+        return OperatorViewReadOutcome.Live(good)
     }
 
     private fun frozen(reason: FreezeReason): OperatorViewReadOutcome =
