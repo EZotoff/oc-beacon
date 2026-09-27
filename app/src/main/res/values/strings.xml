@@ -924,6 +924,9 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_detail_section_answer">Answer</string>
     <string name="supervisor_view_details">View details</string>
     <string name="supervisor_reply_state_sent">Replied</string>
+    <string name="supervisor_push_title_approval">%1$s needs your approval</string>
+    <string name="supervisor_push_title_decision">Decision needed in %1$s</string>
+    <string name="supervisor_push_body">%1$s · %2$s · %3$s</string>
     <string name="supervisor_load_failed">Could not load the supervisor digest</string>
     <string name="notification_channel_supervisor">Supervisor</string>
     <string name="notification_channel_supervisor_desc">Escalations and questions needing attention</string>

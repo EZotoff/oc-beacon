@@ -36,28 +36,54 @@ class SupervisorNotificationManager @Inject constructor(
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
 
-    /** 新开放事项通知：标题取问题文本，正文为「项目 · 年龄」。 */
+    /** 新开放事项推送：仅 APPROVAL/DECISION（过滤见 [SupervisorPushSpec]），三层内容全部来自已发布字段。 */
     suspend fun notifyAttentionItem(serverId: String, item: SupervisorAttentionItem) {
+        if (!SupervisorPushSpec.shouldNotify(item)) return
         channelManager.ensureChannel()
-        val title = item.question.ifBlank { appContext.getString(R.string.supervisor_title) }
-        val text = "${projectLabel(item.project)} · ${age(item.createdAt)}"
+        val project = projectLabel(item.project)
+        val reason = item.reasonText.ifBlank { item.question }
+        val title = if (item.escalationKind == "APPROVAL") {
+            appContext.getString(R.string.supervisor_push_title_approval, project)
+        } else {
+            appContext.getString(R.string.supervisor_push_title_decision, project)
+        }
+        val text = appContext.getString(
+            R.string.supervisor_push_body,
+            item.sessionLabel.ifBlank { project },
+            age(item.createdAt),
+            reason.take(PUSH_BODY_REASON_CHARS),
+        )
+        val bigText = buildString {
+            append(appContext.getString(R.string.supervisor_detail_section_what_happened)).append('\n')
+            append(project)
+            if (item.sessionLabel.isNotBlank()) append(" · ").append(item.sessionLabel)
+            append(" · ").append(age(item.createdAt))
+            append("\n\n")
+            append(appContext.getString(R.string.supervisor_detail_section_judgment)).append('\n')
+            append(reason)
+        }
         val notification = NotificationCompat.Builder(appContext, channelManager.currentChannelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setContentIntent(supervisorPendingIntent(serverId, item.id.hashCode(), itemId = item.id))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(
+                supervisorPendingIntent(
+                    SupervisorPushSpec.attentionTarget(serverId, item.id),
+                    SupervisorPushSpec.attentionRequestCode(serverId, item.id),
+                ),
+            )
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setGroup("supervisor_$serverId")
             .build()
-        manager.notify(notificationId(serverId, item.id), notification)
+        manager.notify(SupervisorPushSpec.attentionNotificationId(serverId, item.id), notification)
         AppLogger.i("SupervisorNotif", "path=supervisor-poll serverId=$serverId itemId=${item.id} kind=attention")
     }
 
     /**
      * root 健康通知：新进入 failing 的 root 与/或错误峰值上升。
-     * 固定 id——同一服务器的健康通知只保留最新一条。
+     * 固定 id——同一服务器的健康通知只保留最新一条。点击落到带健康上下文标注的 Open Items。
      */
     suspend fun notifyRootHealth(
         serverId: String,
@@ -85,27 +111,26 @@ class SupervisorNotificationManager @Inject constructor(
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setContentIntent(supervisorPendingIntent(serverId, ROOT_HEALTH_REQUEST_CODE, healthContext = true))
+            .setContentIntent(
+                supervisorPendingIntent(
+                    SupervisorPushSpec.rootHealthTarget(serverId),
+                    SupervisorPushSpec.ROOT_HEALTH_REQUEST_CODE,
+                ),
+            )
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setGroup("supervisor_$serverId")
             .build()
-        manager.notify(notificationId(serverId, ROOT_HEALTH_KEY), notification)
+        manager.notify(SupervisorPushSpec.rootHealthNotificationId(serverId), notification)
         AppLogger.i("SupervisorNotif", "path=supervisor-poll serverId=$serverId failingRoots=${failingRoots.size} errorsPeak=$errorsPeak kind=root-health")
     }
 
-    private fun supervisorPendingIntent(
-        serverId: String,
-        requestCode: Int,
-        itemId: String? = null,
-        healthContext: Boolean = false,
-    ): PendingIntent {
+    private fun supervisorPendingIntent(target: SupervisorOpenTarget, requestCode: Int): PendingIntent {
         val intent = Intent(appContext, MainActivity::class.java).apply {
             action = ACTION_OPEN_SUPERVISOR
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra(EXTRA_SERVER_ID, serverId)
-            if (itemId != null) putExtra(EXTRA_ITEM_ID, itemId)
-            if (healthContext) putExtra(EXTRA_HEALTH_CONTEXT, true)
+            putExtra(EXTRA_SERVER_ID, target.serverId)
+            if (target.itemId != null) putExtra(EXTRA_ITEM_ID, target.itemId)
+            if (target.healthContext) putExtra(EXTRA_HEALTH_CONTEXT, true)
         }
         return PendingIntent.getActivity(
             appContext,
@@ -128,18 +153,6 @@ class SupervisorNotificationManager @Inject constructor(
         }
     }
 
-    private fun notificationId(serverId: String, key: String): Int = stableHash(serverId, key)
-
-    /** FNV-1a 32 位稳定 hash（与 AppNotificationManager 同款，跨进程一致）。 */
-    private fun stableHash(vararg parts: String): Int {
-        var hash = 0x811c9dc5.toInt()
-        for (part in parts) {
-            for (i in part.indices) {
-                hash = (hash xor part[i].code) * 0x01000193
-            }
-        }
-        return hash
-    }
 
     companion object {
         /** 通知点击动作：打开 Supervisor 摘要页（MainActivity 消费）。 */
@@ -154,7 +167,6 @@ class SupervisorNotificationManager @Inject constructor(
         const val EXTRA_HEALTH_CONTEXT = "supervisor_health_context"
 
 
-        private const val ROOT_HEALTH_KEY = "root-health"
-        private const val ROOT_HEALTH_REQUEST_CODE = 0x5A17
+        private const val PUSH_BODY_REASON_CHARS = 100
     }
 }
