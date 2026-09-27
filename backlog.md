@@ -267,10 +267,11 @@
 
 ## P3 — 观察与低价值改进
 
-- [ ] **#445 R2 测量增量化深水区：流式 markdown 稳定/活跃双容器需换状态管理方案** `perf` `design`
+- [~] **#445 R2 测量增量化深水区：流式 markdown 稳定/活跃双容器需换状态管理方案** `perf` `design`
   - 双容器在 append-only StreamingMarkdownState 约束下存在固化解迁移帧（空白/重叠一帧=闪烁）——需自研 append-only+前缀吸收的渲染状态或库改造；stableTailBoundary 纯函数已备（StableTailBoundaryTest 6 例）。目标：append 成本 O(总内容)→O(尾块)，滑动 p90 冲 12ms。
   - 取证补充(2026-09-27):完结窗 -67px uniform 步进源=chunk/segment plan 异步就绪节奏(RenderSupplyCoordinator),非 held 帽——帽平滑化参数保留(held 域更细腻)。深水区=plan 就绪节流/合并。
   - 排除链更新(2026-09-27 R4):完结窗t>10.5s的-67px uniform步进≠item高度变化(RESIZE序列66-68px步进全在流式期内=限速铺开的期望节奏,t>10.5s后零RESIZE)=纯视口滚动注入——嫌疑收窄到完结触底滚动分步(scrollToBottom/GUARD pending)。下一轮:logcat定位完结后的滚动派发源。
+  - 结论修正(2026-09-27 R4终):条带步进帧与RESIZE序列7↔7一一对应(时间轴对齐偏移~3s)——所谓完结切换窗跳变在当前修复栈下已退化为流式尾段限速铺开节奏(66-68px/300-400ms,BIG_RELEASE_MIN_INTERVAL_MS=200 可调)——设计行为非缺陷。旧的EOF一次性大跳已被#438①限速消除(append max 2087→200)。卡片主体收口待用户观感验收;深水区(plan就绪/双容器固化解)维持登记。
 
 - [ ] **#444 fling 下滑跳变复发（原 #437 系修复后回归）** `bug`
   - 用户报告（2026-09-27 R2 开工时）：此前修复过的 fling 下滑跳变再次出现。
