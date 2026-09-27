@@ -97,7 +97,7 @@ Release keystore 位于 `app/keystore/`（gitignore，仅本地文件与 CI Secr
 **任何完成声明前必须加载 `verification-before-completion` skill**。铁律：没有新鲜的验证证据就不能声称完成。完整验证框架（V1-V6，旧称 4+1 维；编号见 [numbering-charter](docs/numbering-charter.md)）见 [`docs/verification.md`](docs/verification.md)——验收分类**按仪器可验证性而非「是否 UIUX」**（ai-acceptance-workflow §1）：仪器可断言的（含 UI 结构/流程/色值/时间性可量化面）AI 真机验证即收；仅**真手指体感/用户凭据/数日观察/主观拍板**四类必须提供人工验证清单（V6）并请用户验证后才能声称完成。
 
 - 测试栈（JUnit4/MockK/Turbine/coroutines-test、HiltTestRunner、Maestro）与版本以 `app/build.gradle.kts`、`androidTest/`、`maestro/` 为准；`isReturnDefaultValues = true` 的 mock 返回默认值，可能掩盖 bug
-- 环境（2026-09-27 systemd 用户服务化，linger 已启用开机自启）：`opencode-v1.service` = V1 实验环境 **4199**（数据隔离 `~/oc-v1-env`，无密码仅 127.0.0.1）；`opencode-v2.service` = 2.x 真实环境 **4096**（Basic Auth，用户名 `opencode`，密码 = `~/.config/opencode/service.json` 的 `password`，经 `OPENCODE_SERVER_PASSWORD` 固定——2.x 默认每次启动随机生成）。真机一律 `adb reverse` 映射对应端口
+- 环境（2026-09-27 服务化定局：**v2 服务化常驻，v1 不自启按需拉起**）：`opencode-v2.service` = 2.x 真实环境 **4096**（systemd 用户服务+linger 开机自启，Basic Auth，用户名 `opencode`，密码 = `~/.config/opencode/service.json` 的 `password`，经 `OPENCODE_SERVER_PASSWORD` 固定——2.x 默认每次启动随机生成）；`opencode-v1.service` = V1 实验环境 **4199**（数据隔离 `~/oc-v1-env`，无密码仅 127.0.0.1，unit 保留但 disabled——`debug-entry.sh` 测试时自动 `systemctl --user start`，不用时手动 stop）。真机一律 `adb reverse` 映射对应端口
 - **真机测试优先**（2026-08-20 方针）：小米 houji serial `e69a99d8`，静默装包/服务器连通/debug intent 配置见 [`docs/device-testing.md`](docs/device-testing.md)。**测试入口一律 `./scripts/debug-entry.sh`**（debug intent 直达会话列表，2026-08-25 定规）——禁止从 Settings 页手工点进会话列表（坐标易错/BACK 退桌面/dump 陈旧三坑）
 - 模拟器访问宿主机 `10.0.2.2`；模拟器 UI 调试（tap/截图/logcat）派 subagent 执行，避免主会话上下文溢出
 

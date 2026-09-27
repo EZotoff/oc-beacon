@@ -28,6 +28,10 @@ SERVICE_JSON=${OCBEACEN_SERVICE_JSON:-$HOME/.config/opencode/service.json}
 PW=$(python3 -c "import json; print(json.load(open('$SERVICE_JSON'))['password'])")
 if [ -z "$PW" ]; then echo "ERROR: password empty from $SERVICE_JSON" >&2; exit 1; fi
 
+# v1 实验服务器按需拉起（2026-09-27 用户裁决：v1 不服务化——不自启，
+# 测试需要时由此入口临时 start；v2 保持 systemd 服务化常驻）
+systemctl --user is-active --quiet opencode-v1.service || systemctl --user start opencode-v1.service
+
 adb -s "$SERIAL" reverse tcp:4199 tcp:4199
 adb -s "$SERIAL" logcat -c
 adb -s "$SERIAL" shell am force-stop "$PKG"
