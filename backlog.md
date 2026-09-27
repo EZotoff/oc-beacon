@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#456**（2026-09-27 #455 统计栏视觉微调：间距对齐 user 侧 + ag）。
+**编号**：全局递增，不回收。下一编号：**#458**（2026-09-28 #457 displayItems 单 key 值缓存三处）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。
 
@@ -73,12 +73,6 @@
   - 取证数据：/tmp/statbar/logcat-send.txt + shot-*.png + dots-*.png；修复需专门插桩批次（state→displayItems→chatEntries→像素 四点计时）。
   - 2026-09-27 深夜独立复验 PASS：API 路径 user 纯增量独立 ENTRIES n=1（+43ms，修复前 n=1 从不出现）；app 内发送路径气泡 ≤31.3s 帧上屏（shot-452b-3）。详见 journal 2026-09-27-v2「#452 独立复验」。旁观察：本环境走 V1 发送无本地播种（#447 同源）；[452-display] 门控流式期未完全生效（log 卫生）。
 
-- [~] **#450 turn结束后统计栏常驻正在流式输出且计时不停** `streaming` `statemachine` `network`
-  - 用户报告(2026-09-27):turn完成后Streaming状态不收敛——嫌疑v2线面turn完成事件未被消费(v2连接修复后首次日常使用)
-  - 真机取证(2026-09-27 16:20 gran-eof run2 turn):①26.895 SSE MessageUpdated completed=1790497227711 已到达 MsgEventHandler ②26.925 状态机 Idle streaming=false ✓ ③Room 落库 completed ✓ ④26.948 最后一次 entries 重建后 UI 流停更——badge 停 STREAMING+ticker 持续跑 ⑤26.962 L3 keep current status/27.025 L3 REST refresh 26 msgs 时序吻合(嫌疑发射断点在完结事件的 conversation flow 发射,REST_AUTHORITY 合并相等性吞发射待证) ⑥轻推滚动即恢复(badge 消失)——workaround 存在 ⑦下一动作:MsgEventHandler merge+conversation flow 发射探针定位精确断点
-  - 用户可用临时缓解:卡住时轻滑一下列表即恢复。
-  - 根修(2026-09-27):turnGroups/turnAnchors 签名缓存换 messagesLifecycleSignature(id+completed位)——completed 转换失效缓存拿新引用,isStreamingMsg/isStreamingTurn 两处 stale 引用卡滞自愈。真机验证 BANNER 1→0。测试+1。
-
 - [~] **#447 opencode server 2.0.16+ 移除 /api/health 导致 app V2 探测永久失效** `network` `compat`
   - 2.0.16+ 实测移除 GET /api/health(鉴权通过仍 404)→ApiVersionDetector V2 探测只认该端点返回 null；tryV1 探 /global/health 收 SPA HTML 被 content-type 防御拦截→双探皆空 UNKNOWN
   - checkHealth 按 #132 语义 UNKNOWN 保留原值→真机持久化的 V1 永不被纠正→V1 请求 /project 等收 HTML 200→SSE parseEvent 抛异常→重连退避→『服务器已断开+目录为空』
@@ -95,9 +89,11 @@
   - 修法方向：gate 释放按壁钟限速（与到达解耦）；配对 set 后在同帧重建 lastKnownKey 或改用保 key 的定位通道
   - 证据：docs/journal/2026-09-25-437-streaming-md-stable-reveal.md 验收十轮；/tmp/t9_log.txt /tmp/f9 帧
   - 2026-09-27 #438① 已落地：gate 大放行壁钟限速（BIG_RELEASE_CH=200/间隔≥200ms，与到达解耦）+ releaseLength maxReleaseChars 参数（空行毕业段纳入批预算）；真机 gran-run4：append max 1023-2087→200。②配对 set 保 key 未动（下轮）。
+  - 2026-09-28 深度调研(issue438-research.md):①已完整收口;②键回写机制在但覆盖有洞——R-1 targetKey 仅落点在 visibleItemsInfo 内才解析,越窗 null 仍按裸 index set(R9 LEAP 残余通道);R-2 新发现死接线:shouldYieldPairing 记忆变量 lastSetFii/lastSetFiso 声明在每帧执行的 PreDrawFlushTask lambda 体内(ScrollCompensation.kt:366-369),每帧重置→让位防御从未生效(#444 嫌疑(a)直接对应物,与 issue442 调研交叉互证);方案A(M):resolvePairedTarget 纯函数+null-key 熔断+记忆缝修复+TDD 3-4 例
 
 - [ ] **#437 流式Markdown稳定揭示渲染——安全前缀两级放行(稳定块+纯段安全后缀),消灭不稳定尾回溯跳变** `sse,render,perf`
   - 根因:不稳定尾先字面排版后回溯重释义=已显示内容高度回溯(真机录屏A-B翻转帧定罪);#435引擎只能配对单调增长。方案:pilot差分与append之间加SafePrefixGate(库与渲染零改动):稳定块+开放段纯文字安全后缀两级放行,尾部扣留超龄进锁高降亮区,完结EOF全量flush。spec:docs/specs/2026-09-25-437-streaming-md-stable-reveal-design.md(阶段A-D+验收矩阵)
+  - 2026-09-28 深度调研(issue437-research.md,204行):核心根因已由 SafePrefixGate 消灭有二十余轮定量证据;剩余=验收收口+关联残差分卡。R-7 重要发现:beta/stable 双关闭,修复仅 dev 生效(build.gradle.kts:108-118);铁律文档 sse-scroll-stability-iron-laws.md 未收编#437 内容(文档同步缺口);#450 是本卡判据放宽的直接次生回归(教训建议进铁律)
 
 - [~] **#435 #433 高度引擎统一化——流式增长/COMP-MSG/GUARD整合进引擎配对体系(用户裁决)** `chat-ui,architecture`
   - 用户裁决:所有高度相关处理统一到高度引擎。现状断层:48ms批流式增长直接改布局绕过引擎→GUARD事后拉回(snapshotFlow版一帧滞后,已作缓解层装机);COMP-MSG补偿(ChatMessageList layout{}注入)与steady配对(引擎dispatchRawDelta)两套并行。目标:流式item增长纳入steady同构配对(dispatchRawDelta同帧,与卡片增长一致),COMP-MSG/GUARD/流式锚定并入PreRenderCoordinator flush体系,单一视口权威。依赖:真机活跃流式窗口验证(本轮两次16s录屏窗口agent均空闲,需用户配合制造流式)。
@@ -171,6 +167,13 @@
   - 批次三(步骤组顶开根修,用户三报告驱动):FLUSH 实测钉位统一契约(预测配对退役——LEAP+回收双雷,帧级实证 LeftCompositionCancellationException);组尾收起行(小组+大组);重内容首帧占位。折叠行 1100→1100 分毫不动;思考卡同路径回归;全量绿。待用户手感复验。commit 805c0e84。
 
 ## P2 — 优化与锦上添花
+
+- [ ] **#457 displayItems 单 key 值缓存三处遗留洞(#452 同款:SnapshotStateList 实例键自反恒等)** `chat,render,bug`
+  - #452 深审(issue452-followup-audit.md)全仓扫描:ChatMessageList.kt:595 turnOrdinalByMsgId(中危——台账轮次号翻页后永不更新/错位,违背自身设计注释)、:599 displayItemMessageIds(低危 V1 去重)、:602 v1CompactionSummaryInList(低危)——均 displayItems 单 key 值缓存无兜底;修法照抄 size-key 或改 derivedStateOf;另建议补 androidTest Compose 层回归测试防 key 改回实例引用(骨架已在审计报告)
+
+- [~] **#456 Single part后零高提问槽位吃spacedBy双倍间距:卡↔正文16dp vs 卡↔卡8dp** `chat-ui,render,bug`
+  - 根因:MessageCardAssistant GroupedParts(Single)分支无条件渲染CardExpandReveal(visible恒false)——零高AnimatedVisibility仍是Column(spacedBy)直接子项,两侧各计一档spacing→每个Single part后双倍间距(真机定罪:卡↔正文44/43px=16dp vs 组内卡间24-27px=8dp)。修复:effectiveAnchorId!=null才渲染槽位(无提问历史零节点)。#389三轮c『0高度不占spacedBy』注释是误解。残差:提问exit后槽位零高常驻待动画完成回调
+  - 验证:compile✓全量单测✓真机复测(完结会话思考卡→正文dump差19px≈8dp单档,修复前同构43px=16dp);真机装包2026-09-28 00:06
 
 - [~] **#455 统计栏视觉微调：间距对齐 user 侧 + agent 徽标边框化** `uiux` `chat`
   - assistant 正文→统计栏间距原 SM 8dp（compact XS 4dp），user 气泡外置统计栏 4dp（compact 2dp）——两侧不一致（2026-09-27 用户报告）
