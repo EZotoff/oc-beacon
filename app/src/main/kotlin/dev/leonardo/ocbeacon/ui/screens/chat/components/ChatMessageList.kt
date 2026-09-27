@@ -280,12 +280,12 @@ fun ChatMessageList(
     // 安全前提：renderableTurns 的 miss 分支（流式/新消息）用最新 msg 引用替换
     // turn 内同 id 的旧引用 —— 流式 turn 永不冻结（历史回归 37d9a6ac 的教训）。
     // 此处仅按结构（id 序列）缓存；内容（parts）变化不重建 Map —— 同 id 的
-    // 旧引用由 miss 分支修正；另一读取点（isStreamingMsg 判断）只比较 id，
-    // 不受旧引用影响。
+    // 旧引用由 miss 分支修正；isStreamingMsg 判定（#437 起读组内消息 completed
+    // 字段）经 #450 生命周期签名失效缓存自愈——completed 变化必重建拿新引用。
     val turnGroupsSigRef = remember { intArrayOf(Int.MIN_VALUE) }
     val turnGroupsRef = remember { arrayOfNulls<Map<Int, List<ChatMessage>>>(1) }
     val turnGroups: Map<Int, List<ChatMessage>> = remember(rawMessages) {
-        val sig = MessageFingerprints.messagesSignature(rawMessages)
+        val sig = MessageFingerprints.messagesLifecycleSignature(rawMessages)
         val cached = turnGroupsRef[0]
         if (cached != null && sig == turnGroupsSigRef[0]) {
             cached
@@ -298,7 +298,7 @@ fun ChatMessageList(
     val turnAnchorsSigRef = remember { intArrayOf(Int.MIN_VALUE) }
     val turnAnchorsRef = remember { arrayOfNulls<Map<Int, String>>(1) }
     val turnAnchors: Map<Int, String> = remember(rawMessages) {
-        val sig = MessageFingerprints.messagesSignature(rawMessages)
+        val sig = MessageFingerprints.messagesLifecycleSignature(rawMessages)
         val cached = turnAnchorsRef[0]
         if (cached != null && sig == turnAnchorsSigRef[0]) {
             cached

@@ -22,6 +22,25 @@ object MessageFingerprints {
     }
 
     /**
+     * #450（2026-09-27）：结构+生命周期签名——在 id 序列之上追加每消息
+     * completed 位。turnGroups/turnAnchors 的签名缓存用本变体：结构签名
+     * （[messagesSignature]）对 completed 变化不敏感，turn 完结时缓存复用
+     * stale ChatMessage 引用 → isStreamingMsg/isStreamingTurn（读组内消息
+     * completed 字段）卡 true → 统计栏「正在流式输出」永驻（真机探针定罪：
+     * badge 决策点 completed=值 且 isStreaming=true 并存）。
+     * 失效频率：completed 变化（每 turn 数条）才重建——流式 delta 期间
+     * completed 恒 null 签名不变，无重组风暴回归。
+     */
+    fun messagesLifecycleSignature(messages: List<ChatMessage>): Int {
+        var h = messages.size * 31
+        for (m in messages) {
+            h = h * 31 + m.message.id.hashCode()
+            h = h * 31 + if (m.message.time.completed != null) 1 else 0
+        }
+        return h
+    }
+
+    /**
      * 轻量内容指纹：只覆盖会随 SSE 流式 / 工具输出注入 / 完成替换变异的字段，
      * 避免对整个消息做深 hashCode（大文本逐字符开销）。
      * 覆盖：Text/Reasoning 文本尾部、Tool output 尾部、消息完成时间与错误。

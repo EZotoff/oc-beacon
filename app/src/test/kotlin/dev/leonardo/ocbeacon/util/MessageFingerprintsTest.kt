@@ -41,6 +41,46 @@ class MessageFingerprintsTest {
         assertNotEquals(MessageFingerprints.messagesSignature(a), MessageFingerprints.messagesSignature(b))
     }
 
+    // ============ #450（2026-09-27）：生命周期签名 ============
+
+    @Test
+    fun `lifecycle signature reacts to completed transition but structural does not`() {
+        // turn 完结形态：同 id 同文本，completed null → 值。
+        val streaming = listOf(
+            userMessage("1", "hi"),
+            ChatMessage(
+                message = Message.Assistant(
+                    id = "2", sessionId = "s1", time = TimeInfo(created = 100L), parentId = "p"
+                ),
+                parts = listOf(textPart("p2", "hello")),
+            ),
+        )
+        val done = listOf(
+            userMessage("1", "hi"),
+            ChatMessage(
+                message = Message.Assistant(
+                    id = "2", sessionId = "s1", time = TimeInfo(created = 100L, completed = 200L), parentId = "p"
+                ),
+                parts = listOf(textPart("p2", "hello")),
+            ),
+        )
+        // 结构签名对 completed 不敏感（既有设计——turn 结构只依赖 id/role）
+        assertEquals(
+            MessageFingerprints.messagesSignature(streaming),
+            MessageFingerprints.messagesSignature(done),
+        )
+        // #450 生命周期签名必须感知 completed 转换——turnGroups 缓存失效依据
+        assertNotEquals(
+            MessageFingerprints.messagesLifecycleSignature(streaming),
+            MessageFingerprints.messagesLifecycleSignature(done),
+        )
+        // 自反：同 completed 形态签名相等
+        assertEquals(
+            MessageFingerprints.messagesLifecycleSignature(done),
+            MessageFingerprints.messagesLifecycleSignature(done),
+        )
+    }
+
     @Test
     fun `messageFingerprint same content same fingerprint`() {
         val a = assistantMessage("1", "same text")

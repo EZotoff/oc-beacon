@@ -66,10 +66,11 @@
 
 ## P1 — 核心功能需求
 
-- [ ] **#450 turn结束后统计栏常驻正在流式输出且计时不停** `streaming` `statemachine` `network`
+- [~] **#450 turn结束后统计栏常驻正在流式输出且计时不停** `streaming` `statemachine` `network`
   - 用户报告(2026-09-27):turn完成后Streaming状态不收敛——嫌疑v2线面turn完成事件未被消费(v2连接修复后首次日常使用)
   - 真机取证(2026-09-27 16:20 gran-eof run2 turn):①26.895 SSE MessageUpdated completed=1790497227711 已到达 MsgEventHandler ②26.925 状态机 Idle streaming=false ✓ ③Room 落库 completed ✓ ④26.948 最后一次 entries 重建后 UI 流停更——badge 停 STREAMING+ticker 持续跑 ⑤26.962 L3 keep current status/27.025 L3 REST refresh 26 msgs 时序吻合(嫌疑发射断点在完结事件的 conversation flow 发射,REST_AUTHORITY 合并相等性吞发射待证) ⑥轻推滚动即恢复(badge 消失)——workaround 存在 ⑦下一动作:MsgEventHandler merge+conversation flow 发射探针定位精确断点
   - 用户可用临时缓解:卡住时轻滑一下列表即恢复。
+  - 根修(2026-09-27):turnGroups/turnAnchors 签名缓存换 messagesLifecycleSignature(id+completed位)——completed 转换失效缓存拿新引用,isStreamingMsg/isStreamingTurn 两处 stale 引用卡滞自愈。真机验证 BANNER 1→0。测试+1。
 
 - [ ] **#447 opencode server 2.0.16+ 移除 /api/health 导致 app V2 探测永久失效** `network` `compat`
   - 2.0.16+ 实测移除 GET /api/health(鉴权通过仍 404)→ApiVersionDetector V2 探测只认该端点返回 null；tryV1 探 /global/health 收 SPA HTML 被 content-type 防御拦截→双探皆空 UNKNOWN
@@ -268,6 +269,7 @@
 
 - [ ] **#445 R2 测量增量化深水区：流式 markdown 稳定/活跃双容器需换状态管理方案** `perf` `design`
   - 双容器在 append-only StreamingMarkdownState 约束下存在固化解迁移帧（空白/重叠一帧=闪烁）——需自研 append-only+前缀吸收的渲染状态或库改造；stableTailBoundary 纯函数已备（StableTailBoundaryTest 6 例）。目标：append 成本 O(总内容)→O(尾块)，滑动 p90 冲 12ms。
+  - 取证补充(2026-09-27):完结窗 -67px uniform 步进源=chunk/segment plan 异步就绪节奏(RenderSupplyCoordinator),非 held 帽——帽平滑化参数保留(held 域更细腻)。深水区=plan 就绪节流/合并。
 
 - [ ] **#444 fling 下滑跳变复发（原 #437 系修复后回归）** `bug`
   - 用户报告（2026-09-27 R2 开工时）：此前修复过的 fling 下滑跳变再次出现。

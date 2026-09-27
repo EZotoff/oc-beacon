@@ -77,13 +77,20 @@ internal class HeldTailAgingState(
         /** 尾部超龄阈值（约 6 批）——此前大概率已毕业，不闪降亮区。 */
         const val REVEAL_AFTER_MS = 300L
 
-        /** 锁高刷新节流（降亮区高度量子间隔）。 */
-        const val HEIGHT_REFRESH_MS = 500L
+        /**
+         * 锁高刷新节流（降亮区高度量子间隔）。
+         *
+         * #445（2026-09-27 条带差分实测）：500ms 量子在 EOF/大段毕业时使贴底视口
+         * 每 ~400ms 阵跳 66-78px（gran-eof t=8.8-10.6s 五次 uniform 跳变定罪）。
+         * 平滑化：125ms/400px（速率守恒 3200px/s，步幅 ÷4 频率 ×4）——每帧位移
+         * 降至 ~27px@120fps（平滑滚动阈内），阶梯语义（低频量子+引擎配对兼容）不变。
+         */
+        const val HEIGHT_REFRESH_MS = 125L
 
-        /** #437 验收九轮：超龄首亮高度上限——防停顿冲刷单帧巨额落地。 */
-        const val ONSET_REVEAL_CAP_PX = 800
+        /** #437 验收九轮：超龄首亮高度上限（#445 平滑化同步减半）。 */
+        const val ONSET_REVEAL_CAP_PX = 400
 
-        /** #437 验收九轮：首亮后锁高步进上限（每 HEIGHT_REFRESH_MS）。 */
-        const val STEP_REVEAL_CAP_PX = 1600
+        /** #437 验收九轮 + #445 平滑化：首亮后锁高步进上限（每 HEIGHT_REFRESH_MS）。 */
+        const val STEP_REVEAL_CAP_PX = 400
     }
 }
