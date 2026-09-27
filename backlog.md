@@ -72,7 +72,7 @@
   - 用户可用临时缓解:卡住时轻滑一下列表即恢复。
   - 根修(2026-09-27):turnGroups/turnAnchors 签名缓存换 messagesLifecycleSignature(id+completed位)——completed 转换失效缓存拿新引用,isStreamingMsg/isStreamingTurn 两处 stale 引用卡滞自愈。真机验证 BANNER 1→0。测试+1。
 
-- [ ] **#447 opencode server 2.0.16+ 移除 /api/health 导致 app V2 探测永久失效** `network` `compat`
+- [~] **#447 opencode server 2.0.16+ 移除 /api/health 导致 app V2 探测永久失效** `network` `compat`
   - 2.0.16+ 实测移除 GET /api/health(鉴权通过仍 404)→ApiVersionDetector V2 探测只认该端点返回 null；tryV1 探 /global/health 收 SPA HTML 被 content-type 防御拦截→双探皆空 UNKNOWN
   - checkHealth 按 #132 语义 UNKNOWN 保留原值→真机持久化的 V1 永不被纠正→V1 请求 /project 等收 HTML 200→SSE parseEvent 抛异常→重连退避→『服务器已断开+目录为空』
   - 取证:handoff-oc-beacon-card-intervention.md §10.1(2026-09-27);可观测性缺口:V2 探测非 2xx 静默 return null(ApiVersionDetector L99)且新进程启动未发探测请求,修复需先补日志
@@ -165,7 +165,7 @@
 
 ## P2 — 优化与锦上添花
 
-- [ ] **#448 SseClient.parseEvent 对非 JSON 帧零容错(单帧即断流)** `network` `robustness`
+- [~] **#448 SseClient.parseEvent 对非 JSON 帧零容错(单帧即断流)** `network` `robustness`
   - 收到 HTML/裸 0 等非 JSON 对象帧时 parseEvent 直接抛异常并关闭整条流(单帧即断),心跳/注释帧未显式忽略
   - 建议:跳过该帧+计数上报;与 P1 SSE 长连接随机断连卡疑同源族群,接手对照
   - 取证:handoff-oc-beacon-card-intervention.md §10.2(2026-09-27),真机代理实验日志复现
