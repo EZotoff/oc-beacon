@@ -156,11 +156,6 @@
 
 ## P2 — 优化与锦上添花
 
-- [ ] **#449 快速定位跳转未关闭 autoOn,增长期视口被 MSGEFFECT 锚回贴底** `streaming`
-  - EP13/EP14 实证:快速定位跳到旧消息后 autoOn 仍 true,流式期 MSGEFFECT 持续把离底视口拉回底部(LEAP idx7→0 dOff=-38225);另流式开始时 app 主动滚底(同类家族)
-  - #435『锚即意图』语义下『跳转=读旧消息』意图应关闭跟随;当前需用户额外下滑手势才能锁定视口(实验中以微下滑 140px 规避)
-  - 取证:docs/journal/2026-09-27-card-intervention-growth-phase.md(EP13/EP14);裁决项:a) 跳转关 autoOn b) 流式开始滚底是否保留
-
 - [ ] **#448 SseClient.parseEvent 对非 JSON 帧零容错(单帧即断流)** `network` `robustness`
   - 收到 HTML/裸 0 等非 JSON 对象帧时 parseEvent 直接抛异常并关闭整条流(单帧即断),心跳/注释帧未显式忽略
   - 建议:跳过该帧+计数上报;与 P1 SSE 长连接随机断连卡疑同源族群,接手对照

@@ -75,3 +75,43 @@ episode 窗口内 RESERVE flush 无并发记录——共享 PreRenderCoordinator
 - `~/card-lab/mp4-frame-jump.py / jump-classify.py`（cv2 直读 mp4 突跳分类）
 - `~/card-lab/peek.py / window.py / analyze-density.py`（取证辅助）
 - 录屏与日志：~/card-lab/card-ep1[1-3].mp4、card-full-ep1[1-4]-*.log
+
+## 勘误：#449 归因修正与完结（2026-09-27 用户质询后深查）
+
+用户质询「流式中视窗不含末条消息就不会被自动下拉？好像有参数？」——深查代码+补充实验（EP15/EP15b）后确认**用户记忆正确，#449 原归因错误**。
+
+### 机制三层（非配置参数，是历史修复形成的组合）
+
+1. **MSGEFFECT/GUARD 流式静默**：ChatScrollController 的 `!streamingActive()` 门控（#437 验收六轮定规「流式中静默——物理跟随+配对 set 各司其职」）
+2. **SGR 离底免派发**：StreamingGrowLedger drop(reading-away)（#435「锚即意图」）
+3. **reverseLayout 物理特性**：贴底视口才被内容增长自然推动（框架自带）
+
+### 实测补充（EP15/EP15b 真机）
+
+- 非流式 + autoOn=true + 快速定位跳最早 Q：9s 内零 GUARD reanchor、零 MSGEFFECT anchor、视口纹丝不动
+- 非流式 + 预下滑关 autoOn + 跳转：同样零拉回
+
+### EP13 LEAP -38225 真因（替代原「MSGEFFECT 锚回」解释）
+
+turn 边界 user 消息插入 → 旧 turn item 坍缩（RESIZE 40342→255，d=-40087）→ 视口 offset 38225 越界 → **LazyColumn 框架 clamp 弹底**（一次性结构事件，随后 item 弹回 39491）。EP14 因跳转发生在结构稳定后而不受影响。
+
+### 用户裁决
+
+「流式开始滚底」不是问题（所有聊天 app 都这么做），维持现状。#449 双裁决项均关闭，卡片完结迁移。
+```
+09:31:22.895 RESIZE t_msg turnB h 40342→255  (d=-40087)   ← item 坍缩
+09:31:22.951 drift atBot=true idx=0 off=0                   ← 视口被 clamp 弹底
+09:31:23.167 RESIZE t_msg turnB h 975→39491 (d=+38516)      ← item 弹回
+```
+
+## 已完结卡片迁入（2026-09-27）
+
+### **#449 快速定位跳转未关闭 autoOn,增长期视口被 MSGEFFECT 锚回贴底** `streaming`
+  - EP13/EP14 实证:快速定位跳到旧消息后 autoOn 仍 true,流式期 MSGEFFECT 持续把离底视口拉回底部(LEAP idx7→0 dOff=-38225);另流式开始时 app 主动滚底(同类家族)
+  - #435『锚即意图』语义下『跳转=读旧消息』意图应关闭跟随;当前需用户额外下滑手势才能锁定视口(实验中以微下滑 140px 规避)
+  - 取证:docs/journal/2026-09-27-card-intervention-growth-phase.md(EP13/EP14);裁决项:a) 跳转关 autoOn b) 流式开始滚底是否保留
+  - [勘误·归因修正 2026-09-27 用户质询后深查] 原告『跳转不关autoOn→流式期被MSGEFFECT锚回』不成立:①流式期MSGEFFECT/GUARD全静默(ChatScrollController L177/L231 !streamingActive()门控,#437验收六轮定规)②非流式跳转autoOn=true实测9s零拉回(EP15b真机:GUARD/MSGEFFECT anchor零出现,视口纹丝不动)③EP13的LEAP -38225真因=turn边界user消息插入引发旧turn item坍缩(40342→255px)→LazyColumn视口offset越界被框架clamp弹底(一次性结构事件,先塌d=-40087后弹d=+38516)
+  - [用户记忆验证]『视窗不含末条消息就不会被自动下拉』正确——机制=reverseLayout物理特性(贴底才跟随)+SGR drop(reading-away)离底免派发+MSGEFFECT/GUARD流式静默三层;非配置参数,是#435/#437/#301历史修复形成的机制组合
+  - [用户裁决 2026-09-27] 流式开始滚底(实为turn边界item坍缩clamp的框架行为+贴底正常表现):不是问题,所有聊天app都这么做,维持现状
+  - 处置:原告双方均证伪/裁决维持现状→完结迁移journal
+  - 迁入依据：归因修正(用户质询深查):流式期MSGEFFECT/GUARD静默+SGR离底免派发,原告证伪;用户裁决流式开始滚底维持现状（backlog.sh migrate 2026-09-27）
