@@ -80,47 +80,6 @@ class SupervisorViewModelTest {
     }
 
     @Test
-    fun `sendReply success clears inflight flag`() = runTest {
-        val item = SupervisorAttentionItem("att-1", "Choose", "app", "2026-09-22T09:00:00Z", 1, root = "/work/app")
-        val snapshotWithItem = SupervisorSnapshot(1, 0, 0, listOf(item), emptyList())
-        coEvery { repository.load("server-1") } returns Result.success(snapshotWithItem)
-        coEvery { repository.sendReply("server-1", "/work/app", any()) } returns Result.success(Unit)
-        val viewModel = SupervisorViewModel(savedStateHandle(), repository, cache, replyStore)
-
-        viewModel.sendReply(item, "use Qdrant")
-
-        coVerify {
-            repository.sendReply("server-1", "/work/app", match { it.explicitItemID == "att-1" && it.text == "use Qdrant" })
-        }
-        assertTrue(viewModel.uiState.value.replyInFlight.isEmpty())
-        assertTrue(viewModel.uiState.value.replyFailed.isEmpty())
-    }
-
-    @Test
-    fun `sendReply failure marks item failed`() = runTest {
-        val item = SupervisorAttentionItem("att-1", "Choose", "app", "2026-09-22T09:00:00Z", 1, root = "/work/app")
-        val snapshotWithItem = SupervisorSnapshot(1, 0, 0, listOf(item), emptyList())
-        coEvery { repository.load("server-1") } returns Result.success(snapshotWithItem)
-        coEvery { repository.sendReply("server-1", "/work/app", any()) } returns Result.failure(java.io.IOException("offline"))
-        val viewModel = SupervisorViewModel(savedStateHandle(), repository, cache, replyStore)
-
-        viewModel.sendReply(item, "use Qdrant")
-
-        assertTrue(viewModel.uiState.value.replyInFlight.isEmpty())
-        assertEquals(setOf("att-1"), viewModel.uiState.value.replyFailed)
-    }
-
-    @Test
-    fun `sendReply ignores blank text or missing root`() = runTest {
-        val item = SupervisorAttentionItem("att-1", "Choose", "app", "2026-09-22T09:00:00Z", 1)
-        coEvery { repository.load("server-1") } returns Result.success(snapshot)
-        val viewModel = SupervisorViewModel(savedStateHandle(), repository, cache, replyStore)
-
-        viewModel.sendReply(item, "   ")
-
-        coVerify(exactly = 0) { repository.sendReply(any(), any(), any()) }
-    }
-    @Test
     fun `detail viewmodel reply is visible as replied chip in list viewmodel`() = runTest {
         val item = SupervisorAttentionItem("att-1", "Choose", "app", "2026-09-22T09:00:00Z", 1, root = "/work/app")
         coEvery { repository.load("server-1") } returns Result.success(SupervisorSnapshot(1, 0, 0, listOf(item), emptyList()))

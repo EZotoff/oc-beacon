@@ -7,7 +7,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.leonardo.ocbeacon.data.repository.SupervisorReplyStateStore
 import dev.leonardo.ocbeacon.data.repository.SupervisorSnapshotCache
 import dev.leonardo.ocbeacon.domain.model.SupervisorSnapshot
-import dev.leonardo.ocbeacon.domain.model.BeaconReply
 import dev.leonardo.ocbeacon.domain.model.SupervisorAttentionItem
 import dev.leonardo.ocbeacon.domain.repository.SupervisorRepository
 import dev.leonardo.ocbeacon.ui.navigation.routes.ServerRouteParams
@@ -104,16 +103,5 @@ class SupervisorViewModel @Inject constructor(
         }
     }
 
-    /** Seam 4 beacon reply ingress：把卡片回复作为关联信封事件发送（状态写穿共享 store）。 */
-    fun sendReply(item: SupervisorAttentionItem, text: String) {
-        val trimmed = text.trim()
-        if (trimmed.isEmpty() || item.root.isBlank()) return
-        if (replyStateStore.phase(serverId, item.id) == SupervisorReplyStateStore.Phase.IN_FLIGHT) return
-        replyStateStore.markInFlight(serverId, item.id)
-        viewModelScope.launch {
-            repository.sendReply(serverId, item.root, BeaconReply.text(trimmed, explicitItemID = item.id))
-                .onSuccess { replyStateStore.markSent(serverId, item.id) }
-                .onFailure { replyStateStore.markFailed(serverId, item.id) }
-        }
-    }
+
 }
