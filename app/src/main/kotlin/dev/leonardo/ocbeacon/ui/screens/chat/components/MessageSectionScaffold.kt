@@ -49,31 +49,32 @@ internal fun MessageSectionScaffold(
 ) {
     val compact = LocalChatDensity.current == ChatDensity.Compact
     val sectionGap = if (compact) SpacingTokens.XS.dp else SpacingTokens.SM.dp
+    // 正文→尾部统计栏间距：与 user 气泡外置统计栏（UserBubbleExternalActions
+    // 的 padding top）严格一致——2026-09-27 用户报告两侧间距不一致（助手侧
+    // 原为 sectionGap=SM 8dp，user 侧 4dp），裁决以 user 侧为基准统一。
+    val tailGap = if (compact) 2.dp else 4.dp
 
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start,
     ) {
+        // ① 正文栏（内部 parts 间距仍由 sectionGap 驱动，不受本改动影响）
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(sectionGap),
         ) {
-            // ① 正文栏
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(sectionGap),
-            ) {
-                content()
-            }
+            content()
+        }
 
-            // ② 尾部统计栏
-            if (showTail && tail != null) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
-                ) {
-                    tail()
-                }
+        // ② 尾部统计栏（间距走 padding 而非外层 spacedBy——与正文内部间距解耦）
+        if (showTail && tail != null) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = tailGap),
+                verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
+            ) {
+                tail()
             }
         }
     }
