@@ -90,6 +90,7 @@
   - 证据：docs/journal/2026-09-25-437-streaming-md-stable-reveal.md 验收十轮；/tmp/t9_log.txt /tmp/f9 帧
   - 2026-09-27 #438① 已落地：gate 大放行壁钟限速（BIG_RELEASE_CH=200/间隔≥200ms，与到达解耦）+ releaseLength maxReleaseChars 参数（空行毕业段纳入批预算）；真机 gran-run4：append max 1023-2087→200。②配对 set 保 key 未动（下轮）。
   - 2026-09-28 深度调研(issue438-research.md):①已完整收口;②键回写机制在但覆盖有洞——R-1 targetKey 仅落点在 visibleItemsInfo 内才解析,越窗 null 仍按裸 index set(R9 LEAP 残余通道);R-2 新发现死接线:shouldYieldPairing 记忆变量 lastSetFii/lastSetFiso 声明在每帧执行的 PreDrawFlushTask lambda 体内(ScrollCompensation.kt:366-369),每帧重置→让位防御从未生效(#444 嫌疑(a)直接对应物,与 issue442 调研交叉互证);方案A(M):resolvePairedTarget 纯函数+null-key 熔断+记忆缝修复+TDD 3-4 例
+  - 2026-09-28 R-2 让位防御死接线已根修:lastSetFii/lastSetFiso 从 PreDrawFlushTask lambda 体内提到工厂函数体(闭包捕获,记忆生命周期=task 实例)——修复前每帧重置 null,shouldYieldPairing 外部 pending 让位分支(cb733d80 引入)在生产从未生效。TDD:FlushTaskMemoryTest 新增 2 例(红→绿:跨帧记忆+让位触发/实例间无泄漏);全量单测绿;真机流式冒烟 flush/release 配对正常。R-1(null-key 裸 index set)未动——方案A 剩余项
 
 - [ ] **#437 流式Markdown稳定揭示渲染——安全前缀两级放行(稳定块+纯段安全后缀),消灭不稳定尾回溯跳变** `sse,render,perf`
   - 根因:不稳定尾先字面排版后回溯重释义=已显示内容高度回溯(真机录屏A-B翻转帧定罪);#435引擎只能配对单调增长。方案:pilot差分与append之间加SafePrefixGate(库与渲染零改动):稳定块+开放段纯文字安全后缀两级放行,尾部扣留超龄进锁高降亮区,完结EOF全量flush。spec:docs/specs/2026-09-25-437-streaming-md-stable-reveal-design.md(阶段A-D+验收矩阵)
@@ -174,8 +175,9 @@
 - [ ] **#458 DSH 0.1.7 错误码税则漂移：39 值点式闭集全面脱节** `regression,dsh,data`
   - 0.1.7 实发斜杠命名空间码（session/not-found、gateway/arguments-invalid），app DshRpcErrorCode 闭集 isKnown 恒 false 全走 Unknown 兜底（优雅降级成立但分类/文案失准）；/api/respond 已移除改 /result（app 双路已备）。详见 docs/research/2026-09-28-triface-regression-report.md 缺陷 D1/D5
 
-- [ ] **#457 displayItems 单 key 值缓存三处遗留洞(#452 同款:SnapshotStateList 实例键自反恒等)** `chat,render,bug`
+- [~] **#457 displayItems 单 key 值缓存三处遗留洞(#452 同款:SnapshotStateList 实例键自反恒等)** `chat,render,bug`
   - #452 深审(issue452-followup-audit.md)全仓扫描:ChatMessageList.kt:595 turnOrdinalByMsgId(中危——台账轮次号翻页后永不更新/错位,违背自身设计注释)、:599 displayItemMessageIds(低危 V1 去重)、:602 v1CompactionSummaryInList(低危)——均 displayItems 单 key 值缓存无兜底;修法照抄 size-key 或改 derivedStateOf;另建议补 androidTest Compose 层回归测试防 key 改回实例引用(骨架已在审计报告)
+  - 2026-09-28 已修:三处(ChatMessageList.kt turnOrdinalByMsgId/displayItemMessageIds/v1CompactionSummaryInList)remember(displayItems) 实例键自反恒真 → displayItems.size 键(#452 同款修法,快照读建立失效依赖+值比较);注释已标机制。验证:全量单测绿;行为级androidTest(Compose层)仍缺(与#452深审建议同池)
 
 - [~] **#456 Single part后零高提问槽位吃spacedBy双倍间距:卡↔正文16dp vs 卡↔卡8dp** `chat-ui,render,bug`
   - 根因:MessageCardAssistant GroupedParts(Single)分支无条件渲染CardExpandReveal(visible恒false)——零高AnimatedVisibility仍是Column(spacedBy)直接子项,两侧各计一档spacing→每个Single part后双倍间距(真机定罪:卡↔正文44/43px=16dp vs 组内卡间24-27px=8dp)。修复:effectiveAnchorId!=null才渲染槽位(无提问历史零节点)。#389三轮c『0高度不占spacedBy』注释是误解。残差:提问exit后槽位零高常驻待动画完成回调

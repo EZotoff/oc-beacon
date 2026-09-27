@@ -363,10 +363,18 @@ internal fun streamingGrowFlushTask(
     listState: LazyListState,
     ledger: StreamingGrowLedger,
     reserve: HeightReserveState? = null,
-): PreDrawFlushTask = PreDrawFlushTask {
-    var pendingReserveRelease: ReserveReleasePlan? = null
+): PreDrawFlushTask {
+    // #438 R-2（2026-09-28 让位防御死接线根修，#438/#442 调研双源互证）：
+    // lastSetFii/lastSetFiso 原声明在下方 lambda 体内——flush 每帧调用，每次
+    // 重置 null → shouldYieldPairing 的「外部 pending 让位」分支（cb733d80 引入）
+    // 在生产从未生效。提到工厂体：闭包捕获，记忆生命周期=task 实例生命周期
+    // （同一 task 跨帧保留；新 task 实例无历史记忆——见 FlushTaskMemoryTest）。
+    // 注意 pendingReserveRelease 仍留在 lambda 内：它是单帧内帽→set 的传递
+    // 载体，每帧新计划，跨帧保留反而是 bug。
     var lastSetFii: Int? = null
     var lastSetFiso: Int? = null
+    return PreDrawFlushTask {
+    var pendingReserveRelease: ReserveReleasePlan? = null
     // [#437 引擎①] 一帧缓冲帽释放：measure 相已得真高（增量当帧被帽裁掉不可见），
     // 此处单事务原子施加。reject-draw 对 item 层重绘无效（VDRAW 实证），故不依赖。
     if (reserve != null) {
@@ -534,6 +542,7 @@ internal fun streamingGrowFlushTask(
         return@PreDrawFlushTask ledgerTotal == 0f
     }
     true
+    } // PreDrawFlushTask lambda（#438 R-2：lastSet 记忆在工厂体，见函数头注释）
 }
 
 // --- 反射:绕过官方 requestScrollToItem 的 scroll{} 互斥锁取消机制 ---

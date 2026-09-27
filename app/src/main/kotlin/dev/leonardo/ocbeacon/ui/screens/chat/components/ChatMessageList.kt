@@ -592,14 +592,20 @@ fun ChatMessageList(
     // #310④ 轨迹台账：轮次序号（当前已加载窗口内按视觉顺序编号，最旧 = 1；
     // 分页窗口变化号码随之平移——绝对轮次号无数据源，纯函数可测）+ 台账
     // 展开记忆表（#227 屏幕级模式：滚出视口不丢、离会话即清）。
-    val turnOrdinalByMsgId = remember(displayItems) { turnOrdinalByAnchorId(displayItems) }
+    // #457(2026-09-28,#452 深审同款洞):displayItems 是 SnapshotStateList 同实例,
+    // 自反 equals 恒真 → remember(displayItems) 从不失效——分页加载后序号表永不
+    // 更新(违背上方"分页窗口变化号码随之平移"设计注释)。改 size 键:快照读建立
+    // 失效依赖+值比较,增删即失效;同 size 逐槽替换的盲区由 item 级 get(i) 依赖自愈。
+    val turnOrdinalByMsgId = remember(displayItems.size) { turnOrdinalByAnchorId(displayItems) }
 
     // #217/#226：尾部兜底去重判据（消息 id 集 + V1 摘要消息入列判定）——
     // 纯逻辑在 CompactionDividerPolicy（C4），此处只做 remember 缓存。
-    val displayItemMessageIds = remember(displayItems) {
+    // #457:同上——displayItems 实例键自反恒真,改 size 键(低危去重判据/摘要判定,
+    // 迟失效最坏多渲染/少渲染一条分割线一帧,仍值得与主洞同修)。
+    val displayItemMessageIds = remember(displayItems.size) {
         CompactionDividerPolicy.displayItemMessageIds(displayItems)
     }
-    val v1CompactionSummaryInList = remember(displayItems) {
+    val v1CompactionSummaryInList = remember(displayItems.size) {
         CompactionDividerPolicy.v1SummaryMessageId(displayItems) != null
     }
 
