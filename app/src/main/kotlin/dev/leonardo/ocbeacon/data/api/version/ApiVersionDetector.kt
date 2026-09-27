@@ -9,6 +9,7 @@ import dev.leonardo.ocbeacon.logging.AppLogger
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
@@ -90,19 +91,38 @@ class ApiVersionDetector @Inject constructor(
         return DetectionResult(ApiVersion.UNKNOWN)
     }
 
-    private suspend fun tryV2(url: String, username: String, password: String?): DetectionResult? {
+    /** /api/health 探测的三态——Absent 才有资格走 #447 线面探针。 */
+    private sealed interface V2HealthProbe {
+        data class Detected(val result: DetectionResult) : V2HealthProbe
+        /** 200 且 JSON 但交叉验证非 V2（1.18.3x 过渡形态）——维持 V1 判定，禁探 event。 */
+        data object Transitional : V2HealthProbe
+        /** 非 2xx / 非 JSON / 传输异常——/api/health 不存在的形态（2.0.16+）。 */
+        data object Absent : V2HealthProbe
+    }
+
+    private suspend fun tryV2(url: String, username: String, password: String?): DetectionResult? =
+        when (val health = tryV2Health(url, username, password)) {
+            is V2HealthProbe.Detected -> health.result
+            V2HealthProbe.Transitional -> null
+            // #447（2026-09-27）：2.0.16+ 移除 /api/health → 双探全败 → UNKNOWN →
+            // V1 线面 → SPA HTML 假死循环（真机取证：条幅常驻+无限倒计时根因）。
+            // /api/event 的 text/event-stream = V2 SSE 线面存在的直接证据。
+            V2HealthProbe.Absent -> tryV2ByEventStream(url, username, password)
+        }
+
+    private suspend fun tryV2Health(url: String, username: String, password: String?): V2HealthProbe {
         return try {
             val conn = ServerConnection.from(url, username, password, ApiVersion.V2)
             val response = apiClient.httpClient.get("${conn.baseUrl}/api/health") {
                 auth(conn)
             }
-            if (!response.status.isSuccess()) return null
+            if (!response.status.isSuccess()) return V2HealthProbe.Absent
 
             // 防御 1：content-type 必须是 JSON——SPA fallback 的 HTML 页面不算健康响应
             val contentType = response.contentType()
             if (contentType == null || !contentType.match(ContentType.Application.Json)) {
                 AppLogger.w(TAG, "V2 probe at $url: non-JSON content-type $contentType, not V2")
-                return null
+                return V2HealthProbe.Absent
             }
 
             val body: JsonObject = apiClient.json.parseToJsonElement(response.bodyAsText()).jsonObject
@@ -119,13 +139,40 @@ class ApiVersionDetector @Inject constructor(
             //      → 不是 V2 → 回退 V1，避免 V2ApiClient 请求不存在的 /api/* 路径拿到 SPA HTML fallback
             val isV2 = ApiVersion.fromVersionString(version) == ApiVersion.V2 || hasPid
             if (healthy && isV2) {
-                DetectionResult(ApiVersion.V2, version)
+                V2HealthProbe.Detected(DetectionResult(ApiVersion.V2, version))
             } else {
-                AppLogger.i(TAG, "V2 probe at $url: healthy=$healthy version=$version hasPid=$hasPid — cross-check failed, not V2")
-                null
+                AppLogger.i(TAG, "V2 probe at $url: healthy=$healthy version=$version hasPid=$hasPid — cross-check failed, transitional shape")
+                V2HealthProbe.Transitional
             }
         } catch (e: Exception) {
             AppLogger.d(TAG, "V2 probe failed for $url: ${e.message}")
+            V2HealthProbe.Absent
+        }
+    }
+
+    /**
+     * #447 线面探针：GET /api/event 只看响应头（不消费流）——
+     * text/event-stream 即 V2 SSE 线面（2.0.16+ 无 /api/health 形态）。
+     */
+    private suspend fun tryV2ByEventStream(url: String, username: String, password: String?): DetectionResult? {
+        return try {
+            val conn = ServerConnection.from(url, username, password, ApiVersion.V2)
+            val (status, contentType) = apiClient.httpClient.prepareGet("${conn.baseUrl}/api/event") {
+                auth(conn)
+            }.execute { response ->
+                response.status.value to (response.headers[io.ktor.http.HttpHeaders.ContentType] ?: "")
+            }
+            val isEventStream = status in 200..299 &&
+                contentType.substringBefore(';').trim().equals("text/event-stream", ignoreCase = true)
+            if (isEventStream) {
+                AppLogger.i(TAG, "V2 detected via /api/event stream (2.0.16+ health-less shape) at $url")
+                DetectionResult(ApiVersion.V2, null)
+            } else {
+                AppLogger.i(TAG, "V2 event-stream probe at $url: status=$status contentType=$contentType — not V2")
+                null
+            }
+        } catch (e: Exception) {
+            AppLogger.d(TAG, "V2 event-stream probe failed for $url: ${e.message}")
             null
         }
     }
