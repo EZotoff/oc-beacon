@@ -106,6 +106,29 @@ class SupervisorPollCoordinatorTest {
     }
 
     @Test
+    fun `stale snapshot caches frozen cards but never notifies or updates seen state`() = runTest {
+        val snapshot = SupervisorSnapshot(
+            rootsMonitored = 1,
+            rootsFailing = 0,
+            errorsPeak = 0,
+            attentionItems = listOf(item("a")),
+            recentDecisions = emptyList(),
+            stale = true,
+            staleReason = "stale",
+        )
+        coEvery { repository.load("s1") } returns Result.success(snapshot)
+        every { seenStore.seenItemIds("s1") } returns flowOf(emptySet())
+        every { seenStore.healthSnapshot("s1") } returns flowOf(SupervisorHealthSnapshot())
+
+        coordinator().poll("s1")
+
+        verify { cache.put("s1", snapshot) }
+        coVerify(exactly = 0) { notifications.notifyAttentionItem(any(), any()) }
+        coVerify(exactly = 0) { notifications.notifyRootHealth(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { seenStore.saveSeenItemIds(any(), any()) }
+        coVerify(exactly = 0) { seenStore.saveHealthSnapshot(any(), any()) }
+    }
+
     fun `load failure is fail-safe and does not touch seen state`() = runTest {
         coEvery { repository.load("s1") } returns Result.failure(RuntimeException("server down"))
 

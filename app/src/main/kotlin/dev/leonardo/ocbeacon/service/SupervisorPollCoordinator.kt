@@ -6,6 +6,7 @@ import dev.leonardo.ocbeacon.data.repository.SupervisorSnapshotCache
 import dev.leonardo.ocbeacon.domain.repository.SupervisorRepository
 import dev.leonardo.ocbeacon.domain.supervisor.SupervisorDiff
 import kotlinx.coroutines.flow.first
+import dev.leonardo.ocbeacon.logging.AppLogger
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -26,8 +27,15 @@ class SupervisorPollCoordinator @Inject constructor(
     private val notifications: SupervisorNotificationManager,
 ) {
     suspend fun poll(serverId: String) {
-        val snapshot = supervisorRepository.load(serverId).getOrNull() ?: return
+val snapshot = supervisorRepository.load(serverId).getOrNull() ?: return
         cache.put(serverId, snapshot)
+
+        // 契约 reader obligations：冻结（stale/invalid/时钟跳变）镜像只缓存不通知——
+        // 不 diff、不更新 seen 状态，让真实恢复后的重新通知仍然成立。
+        if (snapshot.stale) {
+            AppLogger.i(TAG, "path=supervisor-poll serverId=$serverId frozen=${snapshot.staleReason} — skipping notify")
+            return
+        }
 
         val seenIds = seenStore.seenItemIds(serverId).first()
         val previousHealth = seenStore.healthSnapshot(serverId).first()
@@ -55,3 +63,5 @@ class SupervisorPollCoordinator @Inject constructor(
         )
     }
 }
+
+private const val TAG = "SupervisorPoll"
