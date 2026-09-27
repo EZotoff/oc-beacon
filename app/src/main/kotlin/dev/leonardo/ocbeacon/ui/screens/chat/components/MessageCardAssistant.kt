@@ -371,24 +371,39 @@ internal fun MessageCardAssistant(
                                 // 2026-08-17（多卡片修复）：锚定 questionAnchorPartId——
                                 // 只在锚 part 后渲染一张（原条件会按 part 数量重复渲染）。
                                 // 2026-08-30 用户裁决：撤销展开补偿，回归 AV 出厂默认
-                                CardExpandReveal(
-                                    visible = qEntered && pendingQuestion != null &&
-                                        item.group.part.id == effectiveAnchorId,
-                                ) {
-                                    val avQuestion = pendingQuestion ?: lastQuestion
-                                    if (avQuestion != null &&
-                                        item.group.part.id == effectiveAnchorId
+                                // #456(2026-09-28)间距根修：提问槽位仅在「本 turn 锚定过
+                                // 提问」（effectiveAnchorId != null：活提问，或提问刚消失的
+                                // exit 动画窗——retainedAnchorId 保留）时才渲染。原无条件渲染
+                                // 的恒 visible=false 槽位是零高 AnimatedVisibility——外层
+                                // Column(spacedBy(sectionGap)) 对零高子项**照样计数**，每个
+                                // Single part 与下一元素之间多吃一档间距（真机定罪：卡↔正文
+                                // /跨 StepGroup 边界 44/43px=16dp vs 组内卡间 24-27px=8dp）。
+                                // 「#389 三轮c：空内容动画收起为 0 高度不再占 spacedBy 间距」
+                                // 的旧注释是对 Arrangement.spacedBy 语义的误解——0 高度子项
+                                // 仍是直接子项，两侧各计一档 spacing。
+                                // 已知残差：提问提交/忽略后 exit 播完，槽位零高常驻（锚
+                                // part 后单处双倍间距）——待 CardExpandReveal 暴露动画完成
+                                // 回调后随槽位一并移除。
+                                if (effectiveAnchorId != null) {
+                                    CardExpandReveal(
+                                        visible = qEntered && pendingQuestion != null &&
+                                            item.group.part.id == effectiveAnchorId,
                                     ) {
-                                        QuestionCard(
-                                            question = avQuestion,
-                                            onSubmit = { answers ->
-                                                onQuestionSubmit?.invoke(avQuestion.id, answers)
-                                            },
-                                            onReject = {
-                                                onQuestionReject?.invoke(avQuestion.id)
-                                            },
-                                            answersStore = questionAnswersCache,
-                                        )
+                                        val avQuestion = pendingQuestion ?: lastQuestion
+                                        if (avQuestion != null &&
+                                            item.group.part.id == effectiveAnchorId
+                                        ) {
+                                            QuestionCard(
+                                                question = avQuestion,
+                                                onSubmit = { answers ->
+                                                    onQuestionSubmit?.invoke(avQuestion.id, answers)
+                                                },
+                                                onReject = {
+                                                    onQuestionReject?.invoke(avQuestion.id)
+                                                },
+                                                answersStore = questionAnswersCache,
+                                            )
+                                        }
                                     }
                                 }
                             }
