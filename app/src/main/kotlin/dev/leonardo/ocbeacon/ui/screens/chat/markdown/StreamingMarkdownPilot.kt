@@ -9,7 +9,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import com.mikepenz.markdown.model.StreamingMarkdownState
 import com.mikepenz.markdown.model.rememberStreamingMarkdownState
 import dev.leonardo.ocbeacon.BuildConfig
@@ -182,14 +181,14 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String): PilotStreami
         }
         if (gate && prev != null) {
             val newHeld = markdown.substring(released.coerceIn(0, markdown.length))
-            // #437 崩溃批次后续修（2026-09-25 用户报「闪烁后视窗回位」）：
-            // 转正（毕业放行）时降亮区收缩与 Markdown 正文扩张存在两帧错位
-            // ——held 同帧缩短→item 净高先减一帧→正文下一帧长回=视口单次往返
-            // 闪烁。收缩侧延一帧（等扩张帧落地），增长侧不延（降亮区晚一帧
-            // 无感）。净高度变化从此单调。
-            if (newHeld.length < held.value.length) {
-                withFrameNanos { }
-            }
+            // #446 根修（2026-09-27 真机条带差分定罪）：毕业收缩侧撤销一帧延迟。
+            // 旧延迟使 held 收缩落在正文扩张的下一帧——净高单帧回缩，而帽
+            // reserved 单调不回改：top 对齐下统计栏/held 缝单帧上跳 Δmoved、
+            // 底对齐下内容整体下滑 Δmoved = 「active 块与上方内容位移不同步」
+            // 撕裂（R4 录屏 b12 带 ±8~66px 差动，26 个 single-band 异常帧全部
+            // 对齐 MDPgate 毕业窗 ±50ms）。同帧收缩后，延迟原本要防的「净高
+            // 先减一帧触达列表」由帽协议承接——增量当帧被帽裁掉，flush 单出口
+            // 只放行净增长（trueHeight−reserved），列表永不见负增量。
             held.value = newHeld
         }
     }
