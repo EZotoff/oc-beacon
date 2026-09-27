@@ -1,0 +1,64 @@
+# 三面全量回归编排 — OC Beacon（2026-09-28）
+# 端口约定：V1=14199 / V2=14096 / DSH=14200（与宿主 v1@4199 / v2@4096 完全错开）
+# 首次运行前：bash setup-secrets.sh 生成 runtime/ 下的运行时文件（不入库）
+# 用法：docker compose up -d --build && bash wait-ready.sh
+services:
+  opencode-v1:
+    build: ./v1
+    container_name: ocbeacon-reg-v1
+    ports: ["14199:14199"]
+    environment:
+      OPENCODE_SERVER_PASSWORD: ${V1_PASSWORD:-regression-v1-pw}
+      ZHIPU_API_KEY: ${ZHIPU_API_KEY:-}
+    volumes:
+      - ./runtime/v1-config:/root/.config/opencode
+      - ./runtime/v1-data:/root/.local/share/opencode
+      - ./runtime/workspace:/workspace
+    working_dir: /workspace
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:14199/global/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+    restart: unless-stopped
+
+  opencode-v2:
+    build: ./v2
+    container_name: ocbeacon-reg-v2
+    ports: ["14096:14096"]
+    environment:
+      OPENCODE_SERVER_PASSWORD: ${V2_PASSWORD:-regression-v2-pw}
+      ZHIPU_API_KEY: ${ZHIPU_API_KEY:-}
+    volumes:
+      - ./runtime/v2-config:/root/.config/opencode
+      - ./runtime/v2-data:/root/.local/share/opencode
+      - ./runtime/workspace:/workspace
+      # 版本锚定：直接挂载宿主 systemd 服务同款二进制（opencode v2.0.18，glibc ELF）
+      # 备选（网络可达时）：Dockerfile 内从 GitHub Releases 下载同名版本
+      - ${HOME}/.opencode/bin/opencode:/usr/local/bin/opencode:ro
+    working_dir: /workspace
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u opencode:${V2_PASSWORD:-regression-v2-pw} http://127.0.0.1:14096/api/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+    restart: unless-stopped
+
+  dsh:
+    build: ./dsh
+    container_name: ocbeacon-reg-dsh
+    ports: ["14200:14200"]
+    environment:
+      DSH_HOME: /root/.dsh
+      ZAI_API_KEY: ${ZAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+    volumes:
+      - ./runtime/dsh-home:/root/.dsh
+      - ./runtime/workspace:/workspace
+    working_dir: /workspace
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:14200/ | grep -qE '200|303|401' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 36
+    restart: unless-stopped

@@ -190,3 +190,23 @@ ScrollIsland.kt:10-17 取证（2026-08-27 真机）：冷启动进场后平台�
 **git 提交**：84476ccd（07-31 旧实现引入）、d3462892（09-23 22:21 #429 L0）、0f708b30（09-25 00:39 #433 登记）、fca689d7/944a89ec（03:12）、010363f2（03:25 默认收起）、af428686（04:30 #435）、22f3e68d（09-25 18:55 手势根修）
 
 **外部一手源**（经 433-compose-viewport-research.md 转引，本次直连 raw.githubusercontent 网络不通未能复核原文，如实注记）：androidx ScrollableState.kt / LazyListState.kt / LazyListMeasure.kt（ gestures 包源码链接见该文档 §附）
+
+---
+
+## 附录 A · 验证与验收要求映射（docs/verification.md V1-V6 框架）
+
+按 AGENTS.md「验证与测试」节与 docs/verification.md 的验收分类（按仪器可验证性而非「是否 UIUX」），本卡后续动作的验证归属：
+
+| 动作 | 验证等级 | 判据 | 说明 |
+|---|---|---|---|
+| 方案 C（双包 A/B 定罪） | V2 仪器取证 | A 包复现「起于正文滑动零位移」+ B 包同操作可滚动；logcat FreezeDiag/VTRACE 佐证 | 仪器可断言（isScrollInProgress/idx/off/像素位移均可量化），无需人工拍板 |
+| 方案 A 的两枚不变量测试 | V3 自动化 | 单测/instrumented 测试绿 | 「起于正文 swipe 必产滚动位移」「头部 tap 可折叠」均为可注入断言 |
+| H1 若定罪成立的销案观感 | V6 人工 | 用户真手指确认正文滑动手感正常 | 手势体感属 V6 清单项（真手指）；但定罪本身不依赖 V6 |
+| 死锁再发时的现场保护 | 预案 | 禁止 pm clear；先 adb pull DataStore/Room + bugreport + logcat | 本案取证链断裂的教训（pm clear 毁现场）应固化为预案 |
+
+## 附录 B · 调研方法与局限（如实声明）
+
+1. **一手来源范围**：backlog 卡片、git 提交考古（含 0f708b30/944a89ec/010363f2/22f3e68d/d3462892/84476ccd 的 diff 与时间戳）、journal、既有调研文档、当前 HEAD 源码逐行走读。journal 检索覆盖 docs/journal/ 全量 grep（死锁/锁死/pm clear/零响应/fling）。
+2. **无法完成项**：androidx 源码直连复核（raw.githubusercontent.com 网络不通，web_fetch/exa 均失败）——drag 检测器 requireUnconsumed 语义系转引自仓库内 433-compose-viewport-research.md（其成文时直读了 androidx-main 源码）+ 本仓库真机探针实证（437 journal:34-38），两源一致故采信，已标注。
+3. **核心局限**：原始现场（设备数据 + 事发会话）已被 pm clear 摧毁，本报告的一切归因都是基于时间线与机制证据的**重建推理**，最终定罪依赖方案 C 的重建实验；若重建实验 A 包不复现，H1 降级为「未证实的一致假设」，应转向 H2/H3 补取证。
+4. **只读承诺**：本调研未修改任何源码/配置/backlog/journal；唯一写入 = 本报告文件。

@@ -1,0 +1,202 @@
+[
+ {
+  "face": "dsh",
+  "group": "fence",
+  "name": "无 cookie RPC → 401 unauthorized",
+  "status": "PASS",
+  "detail": "status=401 body=unauthorized",
+  "evidence": ""
+ },
+ {
+  "face": "dsh",
+  "group": "fence",
+  "name": "伪 Host → 403 forbidden",
+  "status": "PASS",
+  "detail": "status=403 forbidden",
+  "evidence": ""
+ },
+ {
+  "face": "dsh",
+  "group": "fence",
+  "name": "无 cookie 非 JSON POST → 401（0.1.7 栅栏序：鉴权先于媒体型）",
+  "status": "PASS",
+  "detail": "status=401",
+  "evidence": ""
+ },
+ {
+  "face": "dsh",
+  "group": "auth",
+  "name": "GET /?token= → 303+Set-Cookie",
+  "status": "PASS",
+  "detail": "status=303 cookie=有",
+  "evidence": ""
+ },
+ {
+  "face": "dsh",
+  "group": "fence",
+  "name": "带 cookie 非 JSON POST → 415",
+  "status": "PASS",
+  "detail": "status=415",
+  "evidence": ""
+ },
+ {
+  "face": "dsh",
+  "group": "rpc",
+  "name": "session/list",
+  "status": "PASS",
+  "detail": "ok=true",
+  "evidence": "HTTP 200 {\"type\":\"server-response\",\"rpcId\":\"29bb8ded-5219-474e-9085-c9f6f21b2174\",\"result\":{\"ok\":true,\"value\":{\"items\":[{\"sessionId\":\"session-6f187f6c-90ba-43e5-9642-f52"
+ },
+ {
+  "face": "dsh",
+  "group": "rpc",
+  "name": "session/search",
+  "status": "PASS",
+  "detail": "业务错误 code=gateway/internal（斜杠命名空间式（0.1.7 税则，已记漂移））",
+  "evidence": "HTTP 200 {\"type\":\"server-response\",\"rpcId\":\"a92598db-f1ac-460d-b9f6-0debfa04af8e\",\"result\":{\"ok\":false,\"error\":{\"code\":\"gateway/internal\",\"message\":\"session search faile"
+ },
+ {
+  "face": "dsh",
+  "group": "rpc",
+  "name": "session/page",
+  "status": "PASS",
+  "detail": "业务错误 code=gateway/input-invalid（斜杠命名空间式（0.1.7 税则，已记漂移））",
+  "evidence": "HTTP 200 {\"type\":\"server-response\",\"rpcId\":\"a2d597c3-5edc-49f1-9f25-6cdfc333cd66\",\"result\":{\"ok\":false,\"error\":{\"code\":\"gateway/input-invalid\",\"message\":\"typert gateway:"
+ },
+ {
+  "face": "dsh",
+  "group": "rpc",
+  "name": "session/cancel",
+  "status": "PASS",
+  "detail": "业务错误 code=session/not-found（斜杠命名空间式（0.1.7 税则，已记漂移））",
+  "evidence": "HTTP 200 {\"type\":\"server-response\",\"rpcId\":\"2176cf91-100b-477e-822e-acdc158f7222\",\"result\":{\"ok\":false,\"error\":{\"code\":\"session/not-found\",\"message\":\"session \\\"__bogus__"
+ },
+ {
+  "face": "dsh",
+  "group": "rpc",
+  "name": "subagents/list",
+  "status": "FAIL",
+  "detail": "非 200：404",
+  "evidence": "HTTP 404 not found"
+ },
+ {
+  "face": "dsh",
+  "group": "rpc",
+  "name": "agentPresets/list",
+  "status": "PASS",
+  "detail": "业务错误 code=gateway/arguments-invalid（斜杠命名空间式（0.1.7 税则，已记漂移））",
+  "evidence": "HTTP 200 {\"type\":\"server-response\",\"rpcId\":\"80e65ebb-591e-4d66-a2c0-60caa76231c6\",\"result\":{\"ok\":false,\"error\":{\"code\":\"gateway/arguments-invalid\",\"message\":\"typert gate"
+ },
+ {
+  "face": "dsh",
+  "group": "rpc",
+  "name": "agentPresets/read",
+  "status": "PASS",
+  "detail": "业务错误 code=gateway/arguments-invalid（斜杠命名空间式（0.1.7 税则，已记漂移））",
+  "evidence": "HTTP 200 {\"type\":\"server-response\",\"rpcId\":\"9f4a4d77-896b-4dc2-9a86-91052ac5f2d9\",\"result\":{\"ok\":false,\"error\":{\"code\":\"gateway/arguments-invalid\",\"message\":\"typert gate"
+ },
+ {
+  "face": "dsh",
+  "group": "rpc",
+  "name": "llm/listProviders",
+  "status": "PASS",
+  "detail": "ok=true",
+  "evidence": "HTTP 200 {\"type\":\"server-response\",\"rpcId\":\"b69b854c-9516-4c61-a9d8-bfc1c3602817\",\"result\":{\"ok\":true,\"value\":[{\"id\":\"zai-coding-cn\",\"name\":\"zai-coding-cn\"},{\"id\":\"deeps"
+ },
+ {
+  "face": "dsh",
+  "group": "rpc",
+  "name": "session/modelCatalog",
+  "status": "PASS",
+  "detail": "业务错误 code=gateway/arguments-invalid（斜杠命名空间式（0.1.7 税则，已记漂移））",
+  "evidence": "HTTP 200 {\"type\":\"server-response\",\"rpcId\":\"915b8b1e-63a2-47a5-9047-0d412ccc8b1c\",\"result\":{\"ok\":false,\"error\":{\"code\":\"gateway/arguments-invalid\",\"message\":\"typert gate"
+ },
+ {
+  "face": "dsh",
+  "group": "rpc",
+  "name": "directoryPicker/list",
+  "status": "PASS",
+  "detail": "业务错误 code=gateway/arguments-invalid（斜杠命名空间式（0.1.7 税则，已记漂移））",
+  "evidence": "HTTP 200 {\"type\":\"server-response\",\"rpcId\":\"64d51546-d84c-408a-ac71-faa64bdd5913\",\"result\":{\"ok\":false,\"error\":{\"code\":\"gateway/arguments-invalid\",\"message\":\"typert gate"
+ },
+ {
+  "face": "dsh",
+  "group": "rpc",
+  "name": "settings/describe",
+  "status": "PASS",
+  "detail": "ok=true",
+  "evidence": "HTTP 200 {\"type\":\"server-response\",\"rpcId\":\"51af9cbc-b067-43c6-9154-58e194191b16\",\"result\":{\"ok\":true,\"value\":{\"writable\":true,\"hasDocument\":true,\"namespaces\":[{\"ns\":\"ag"
+ },
+ {
+  "face": "dsh",
+  "group": "rpc",
+  "name": "sessionReferenceResolver/candidates",
+  "status": "PASS",
+  "detail": "业务错误 code=gateway/arguments-invalid（斜杠命名空间式（0.1.7 税则，已记漂移））",
+  "evidence": "HTTP 200 {\"type\":\"server-response\",\"rpcId\":\"da966668-32f4-4ef7-9d0e-3fc7cf2c825e\",\"result\":{\"ok\":false,\"error\":{\"code\":\"gateway/arguments-invalid\",\"message\":\"typert gate"
+ },
+ {
+  "face": "dsh",
+  "group": "rpc",
+  "name": "messageFeedback/list",
+  "status": "PASS",
+  "detail": "ok=true",
+  "evidence": "HTTP 200 {\"type\":\"server-response\",\"rpcId\":\"c8a4c69b-7666-458a-8b22-ef13c245cc52\",\"result\":{\"ok\":true,\"value\":{\"ok\":false,\"error\":{\"code\":\"session-not-found\",\"sessionId\""
+ },
+ {
+  "face": "dsh",
+  "group": "fence",
+  "name": "URL/body.method 不等 → bad-request",
+  "status": "PASS",
+  "detail": "code=gateway/bad-request",
+  "evidence": ""
+ },
+ {
+  "face": "dsh",
+  "group": "ws",
+  "name": "WS /api/remote.mux 升级+首帧",
+  "status": "BLOCKED",
+  "detail": "101；帧数=0 types=[]",
+  "evidence": "[]"
+ },
+ {
+  "face": "dsh",
+  "group": "ws",
+  "name": "WS /api/events.mux",
+  "status": "BLOCKED",
+  "detail": "升级被拒 HTTP 0（线面现状如实记录）",
+  "evidence": ""
+ },
+ {
+  "face": "dsh",
+  "group": "ws",
+  "name": "WS /api/events.host",
+  "status": "BLOCKED",
+  "detail": "升级被拒 HTTP 0（线面现状如实记录）",
+  "evidence": ""
+ },
+ {
+  "face": "dsh",
+  "group": "respond",
+  "name": "POST /api/respond bogus rpcId",
+  "status": "FAIL",
+  "detail": "HTTP 404 非 JSON",
+  "evidence": "not found"
+ },
+ {
+  "face": "dsh",
+  "group": "export",
+  "name": "GET /api/session.export",
+  "status": "PASS",
+  "detail": "status=404（bogus id 实况）",
+  "evidence": "session not found"
+ },
+ {
+  "face": "dsh",
+  "group": "llm",
+  "name": "session.create 实况",
+  "status": "PASS",
+  "detail": "ok=True id=",
+  "evidence": ""
+ }
+]

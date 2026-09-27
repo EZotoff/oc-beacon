@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#458**（2026-09-28 #457 displayItems 单 key 值缓存三处）。
+**编号**：全局递增，不回收。下一编号：**#461**（2026-09-28 #460 V1 服务端三处顽固缺陷实测（find 超时/项）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。
 
@@ -168,6 +168,12 @@
 
 ## P2 — 优化与锦上添花
 
+- [ ] **#459 V2 2.0.18 消费侧 14 端点漂移清单（health/question|form request/pty shells/share/rename/service stop 等 404）** `regression,v2,data`
+  - app 调用面 45 点中 14 点在 2.0.18 openapi 缺失（全 404 实证）；真机主链路不受影响（探测器/PATCH session 等降级路径实证），但 question/form 轮询兜底、pty shells、share、service/stop 在 2.0.18 下不可用。详见回归报告 §1.2/缺陷 D2
+
+- [ ] **#458 DSH 0.1.7 错误码税则漂移：39 值点式闭集全面脱节** `regression,dsh,data`
+  - 0.1.7 实发斜杠命名空间码（session/not-found、gateway/arguments-invalid），app DshRpcErrorCode 闭集 isKnown 恒 false 全走 Unknown 兜底（优雅降级成立但分类/文案失准）；/api/respond 已移除改 /result（app 双路已备）。详见 docs/research/2026-09-28-triface-regression-report.md 缺陷 D1/D5
+
 - [ ] **#457 displayItems 单 key 值缓存三处遗留洞(#452 同款:SnapshotStateList 实例键自反恒等)** `chat,render,bug`
   - #452 深审(issue452-followup-audit.md)全仓扫描:ChatMessageList.kt:595 turnOrdinalByMsgId(中危——台账轮次号翻页后永不更新/错位,违背自身设计注释)、:599 displayItemMessageIds(低危 V1 去重)、:602 v1CompactionSummaryInList(低危)——均 displayItems 单 key 值缓存无兜底;修法照抄 size-key 或改 derivedStateOf;另建议补 androidTest Compose 层回归测试防 key 改回实例引用(骨架已在审计报告)
 
@@ -271,6 +277,9 @@
   - 待用户真机观感验收
 
 ## P3 — 观察与低价值改进
+
+- [ ] **#460 V1 服务端三处顽固缺陷实测（find 超时/项目外 file 500/share 挂起）+ 参数名勘误（/find 收 pattern）** `regression,v1`
+  - 1.18.32 实测：/find?pattern 可 ReadTimeout；/file 项目外路径 500 UnknownError（非 400/404，差异文档有载）；POST share 挂起不返回；/find 参数名 pattern（文档未载）。详见回归报告缺陷 D3/D4
 
 - [ ] **#454 v1 真机 IME 换行注入后 prompt 未发出** `chat` `device` `v1`
   - 真机 IME keyevent 66 发送路径:消息含注入换行(Run\n\n)时 prompt POST 未发出,乐观气泡悬挂;二次干净发送正常(prompt_async 202)。发送链路疑有 IME 竞态边角,#453 验证时顺带观察,未复现第二次
