@@ -192,12 +192,18 @@ class DshEventMapperTest {
     }
 
     @Test
-    fun `block end chunk is ignored to avoid terminal wipe`() {
-        // 偏离任务草案的定点裁决：DSH block-end 不携带文本，而 mergePart 的 isTerminal
-        // 覆盖语义假定 incoming 是全量终值（2026-08-16 官方 text.ended 契约）——发空文本
-        // 终态 part 会清空已流式文本。终态化改由 turn/end → SessionIdle → markSessionIdle 承担。
+    fun `block end chunk maps to time patch without kind guess`() {
+        // #453：原整帧忽略（mergePart isTerminal 覆盖语义下空文本终态 part 会清空
+        // 流式文本），块终态化拖到 turn/end 的 markSessionIdle——思考块完毕、正文
+        // 流式期间思考卡计时持续虚涨的根因。block-end 无 blockType，改发无 kind
+        // 的时间补丁（消费端按 `_ord_{index}` 后缀扫描定位，见
+        // MessageEventHandler.handleMessagePartTimePatch）。
         val m = mappedFrames("dsh/mux-frames-extra.jsonl")[9]
-        assertEquals(listOf(DshMappedEvent.Ignored(DshIgnoreReason.CHUNK_BLOCK_END)), m.mapped)
+        val patch = eventsOf(m.mapped).single() as SseEvent.MessagePartTimePatch
+        assertEquals("fixture-0001", patch.sessionId)
+        assertEquals("dsh-t2s1", patch.messageId)
+        assertEquals(0L, patch.ordinal)
+        assertEquals(1788109002002L, patch.endMs)
     }
 
     @Test
@@ -688,6 +694,8 @@ class DshEventMapperTest {
         assertEquals("""{"command":"ls"}""", pending.raw) // 原始参数串保真
         assertEquals(setOf("command"), pending.input.keys) // 可解析时同步展开 input map
         assertEquals("ls", (pending.input["command"] as kotlinx.serialization.json.JsonPrimitive).content)
+        // #453：调用信封时刻 = 工具卡累积计时锚
+        assertEquals(1788109999000L, pending.time!!.start)
     }
 
     @Test
@@ -704,6 +712,9 @@ class DshEventMapperTest {
         assertEquals("dsh-call-call_1", tool.messageId)
         val completed = tool.state as ToolState.Completed
         assertEquals("file-a\nfile-b", completed.output)
+        // #453：终态 time（start=0 哨兵——真实 start 由 mergePart 从 Pending 锚继承）
+        assertEquals(0L, completed.time!!.start)
+        assertEquals(1788109999000L, completed.time!!.end)
     }
 
     @Test
@@ -718,6 +729,8 @@ class DshEventMapperTest {
         val tool = (eventsOf(mapped).single() as SseEvent.MessagePartUpdated).part as Part.Tool
         val error = tool.state as ToolState.Error
         assertEquals("exit 1", error.error)
+        // #453：Error 终态同补 time（错误调用同样显示累积时长）
+        assertEquals(1788109999000L, error.time!!.end)
     }
 
     // ============ #349：subagent 族 code-dispatch 子代理卡 ============

@@ -286,4 +286,89 @@ class MessageEventHandlerMergeTest {
         val result = handler.parts.value["msg-1"]!![0] as Part.Text
         assertEquals("Accumulated SSE text", result.text)
     }
+
+    // ============ #453：MessagePartTimePatch（DSH block-end 块终态化） ============
+
+    /** 思考块流式（start 锚 + 累积文本）→ block-end 补丁补 time.end（计时冻结的核心路径）。 */
+    @Test
+    fun `time patch finalizes streaming reasoning part by ordinal suffix`() {
+        val msg = Message.Assistant(id = "dsh-t2s1", sessionId = "s1", parentId = "", time = TimeInfo(created = 1000L))
+        handler.handleMessageUpdated(SseEvent.MessageUpdated(msg))
+        val seeded = Part.Reasoning(
+            id = "dsh-t2s1_reasoning_ord_0", sessionId = "s1", messageId = "dsh-t2s1",
+            text = "think", time = Part.Reasoning.Time(start = 1000L),
+        )
+        handler.handleMessagePartUpdated(SseEvent.MessagePartUpdated(seeded))
+
+        handler.handleMessagePartTimePatch(SseEvent.MessagePartTimePatch(
+            sessionId = "s1", messageId = "dsh-t2s1", ordinal = 0L, endMs = 4000L,
+        ))
+
+        val patched = handler.parts.value["dsh-t2s1"]!!
+            .filterIsInstance<Part.Reasoning>().single()
+        assertEquals(1000L, patched.time!!.start) // start 保留（block-start 锚）
+        assertEquals(4000L, patched.time!!.end)   // end 补齐 → 计时冻结
+        assertEquals("think", patched.text)        // 文本不动
+    }
+
+    /** 幂等：已终态的 part 二次补丁不误伤（同 ordinal 跨 kind 历史块保护）。 */
+    @Test
+    fun `time patch skips already finalized parts`() {
+        val msg = Message.Assistant(id = "dsh-t2s1", sessionId = "s1", parentId = "", time = TimeInfo(created = 1000L))
+        handler.handleMessageUpdated(SseEvent.MessageUpdated(msg))
+        val finalized = Part.Text(
+            id = "dsh-t2s1_text_ord_0", sessionId = "s1", messageId = "dsh-t2s1",
+            text = "正文", time = Part.Text.Time(start = 1000L, end = 2000L),
+        )
+        handler.handleMessagePartUpdated(SseEvent.MessagePartUpdated(finalized))
+
+        handler.handleMessagePartTimePatch(SseEvent.MessagePartTimePatch(
+            sessionId = "s1", messageId = "dsh-t2s1", ordinal = 0L, endMs = 9999L,
+        ))
+
+        val patched = handler.parts.value["dsh-t2s1"]!!
+            .filterIsInstance<Part.Text>().single()
+        assertEquals(2000L, patched.time!!.end) // 原 end 保留，不被补丁覆盖
+    }
+
+    /** start 未知（0 哨兵/无锚残留）→ 不伪造 start=end，end 照补（显示层走冻结实测）。 */
+    @Test
+    fun `time patch does not fabricate start when anchor missing`() {
+        val msg = Message.Assistant(id = "dsh-t2s1", sessionId = "s1", parentId = "", time = TimeInfo(created = 1000L))
+        handler.handleMessageUpdated(SseEvent.MessageUpdated(msg))
+        val noAnchor = Part.Reasoning(
+            id = "dsh-t2s1_reasoning_ord_2", sessionId = "s1", messageId = "dsh-t2s1",
+            text = "残留",
+        )
+        handler.handleMessagePartUpdated(SseEvent.MessagePartUpdated(noAnchor))
+
+        handler.handleMessagePartTimePatch(SseEvent.MessagePartTimePatch(
+            sessionId = "s1", messageId = "dsh-t2s1", ordinal = 2L, endMs = 5000L,
+        ))
+
+        val patched = handler.parts.value["dsh-t2s1"]!!
+            .filterIsInstance<Part.Reasoning>().single()
+        assertEquals(0L, patched.time!!.start)      // 不伪造
+        assertEquals(5000L, patched.time!!.end)     // end 照补（partEnded=true，计时停）
+    }
+
+    /** ordinal 不匹配（后缀扫描未命中）→ 无操作，parts 原样。 */
+    @Test
+    fun `time patch with unknown ordinal is a no-op`() {
+        val msg = Message.Assistant(id = "dsh-t2s1", sessionId = "s1", parentId = "", time = TimeInfo(created = 1000L))
+        handler.handleMessageUpdated(SseEvent.MessageUpdated(msg))
+        val part = Part.Reasoning(
+            id = "dsh-t2s1_reasoning_ord_0", sessionId = "s1", messageId = "dsh-t2s1",
+            text = "think", time = Part.Reasoning.Time(start = 1000L),
+        )
+        handler.handleMessagePartUpdated(SseEvent.MessagePartUpdated(part))
+
+        handler.handleMessagePartTimePatch(SseEvent.MessagePartTimePatch(
+            sessionId = "s1", messageId = "dsh-t2s1", ordinal = 7L, endMs = 4000L,
+        ))
+
+        val untouched = handler.parts.value["dsh-t2s1"]!!
+            .filterIsInstance<Part.Reasoning>().single()
+        assertEquals(null, untouched.time!!.end) // 未终态（不匹配不动）
+    }
 }
