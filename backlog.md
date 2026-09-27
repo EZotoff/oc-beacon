@@ -66,7 +66,7 @@
 
 ## P1 — 核心功能需求
 
-- [ ] **#453 思考卡计时块级冻结 + 工具卡累积计时** `chat` `dsh` `timing`
+- [~] **#453 思考卡计时块级冻结 + 工具卡累积计时** `chat` `dsh` `timing`
   - DSH block-end 整帧忽略→part 终态化拖到 turn/end,思考块完毕后正文流式期间思考卡计时虚涨;新增 MessagePartTimePatch(ordinal 后缀扫描定位)块级及时冻结
   - 工具卡族补累积计时:ToolState.Pending+time/V2·DSH 映射填充/mergePart time 继承/ToolCardScaffold 行尾走动+冻结槽(12 卡接线);无锚不显示不伪造
 
