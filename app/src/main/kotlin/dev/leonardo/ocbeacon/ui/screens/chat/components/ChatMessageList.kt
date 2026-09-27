@@ -755,7 +755,17 @@ fun ChatMessageList(
     // ===== 2026-08-20 fling 巨帧根治：分片发射表（消息区 entries）=====
     // entries = displayItems 经 chunkPlans 展开（巨型 turn → N 个 chunk item）。
     // 双向索引是 LazyColumn index ↔ displayItems index 的单一真相源。
-    val chatEntries = remember(displayItems, turnGroups, turnAnchors, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans) {
+    //
+    // #452（2026-09-27 真机插桩定罪）：displayItems 是 SnapshotStateList ——
+    // 同一实例作 remember key 自反恒等（equals 自身恒 true），key 形同虚设；
+    // turnGroups/turnAnchors 是 Map 值比较，而 **user 消息不入 turn 组**
+    // （computeTurnGroups 只收 assistant）——「纯 user 消息增量」（新会话
+    // 首条消息播种）不改变任何 key → chatEntries 冻结在旧条目集 → 列表
+    // 空白直到首个 assistant 事件（免费/远程服务首事件 3-90s = 主诉窗口）。
+    // 修复：displayItems.size 是快照读（建立失效依赖）且值比较——条目数
+    // 变化必重建；同 size 的内容替换（pending-* 换装）由 item 级 get(i)
+    // 快照依赖自愈，turnGroups（id 序列变 → Map 值变）兜底。
+    val chatEntries = remember(displayItems.size, turnGroups, turnAnchors, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans) {
         // [DEBUG-jk] #437 卡顿诊断：chatEntries 全量重建计时——确证「48ms 快照重组
         // 风暴」归因（每行含耗时/规模/滚动状态）；确证并固化冻结修复后整块移除。
         val jkT0 = android.os.SystemClock.elapsedRealtime()

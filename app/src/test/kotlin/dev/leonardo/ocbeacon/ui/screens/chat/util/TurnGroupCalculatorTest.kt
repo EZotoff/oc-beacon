@@ -73,6 +73,44 @@ class TurnGroupCalculatorTest {
         assertEquals(emptyMap<Int, List<ChatMessage>>(), result)
     }
 
+    // ============ #452（2026-09-27）修复依据锁定 ============
+
+    /**
+     * #452 机制根源：user 消息不入 turn 组 → 纯 user 增量前后 turnGroups
+     * **值相等**（空↔空）。chatEntries 的 remember 曾以 turnGroups（Map 值比较）
+     * + displayItems（SnapshotStateList 同实例自反恒真）作 key —— 两者全恒等
+     * → 新会话首条消息（仅 user 播种）期间条目集冻结，列表空白直到首个
+     * assistant 事件。本测试钉死该值相等事实：若未来 turnGroups 语义变化
+     * （如 user 入组），ChatMessageList 的 #452 修复注释与 key 设计需复核。
+     */
+    @Test
+    fun `#452 user-only growth keeps turnGroups structurally equal`() {
+        val before = computeTurnGroups(listOf(userMsg("u1")))
+        val after = computeTurnGroups(listOf(userMsg("u1"), userMsg("u2")))
+        assertEquals(before, after)
+    }
+
+    /**
+     * #452 修复有效性前提：buildChatEntries 本身对 user-only displayItems
+     * **会发射** Turn entry（isUser=true）——条目缺席纯因 remember key 恒等
+     * 不重建（真机插桩：[452-display] n=2 而 ENTRIES 冻结 n=0）。修复后
+     * displayItems.size 入 key，size 变化即重建 → user 气泡立即上屏。
+     */
+    @Test
+    fun `#452 user-only displayItems emit Turn entries`() {
+        val user = userMsg("u1")
+        val entries = dev.leonardo.ocbeacon.ui.screens.chat.components.buildChatEntries(
+            displayItems = listOf(0 to user),
+            turnGroups = emptyMap(),
+            streamingMsgId = null,
+            chunkPlans = emptyMap(),
+            recentStreamedTurnKeys = emptySet(),
+        )
+        assertEquals(1, entries.entries.size)
+        val turn = entries.entries.first() as dev.leonardo.ocbeacon.ui.screens.chat.components.ChatEntry.Turn
+        assertEquals(true, turn.isUser)
+    }
+
     private fun syntheticMsg(id: String) = ChatMessage(
         message = Message.User(
             id = id,

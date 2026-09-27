@@ -144,6 +144,10 @@ internal class MessageDataDelegate(
     private var lastCombineSessionId: String? = null
     private val chatMessageCache = HashMap<String, ChatMessage>()
 
+    // #452 四点计时 P2 日志门控（size/sid 变化才发射一条）
+    private var lastCombineLogSize = -1
+    private var lastCombineLogSid = ""
+
     // ============ 工具展开状态 ============
     private val _toolExpandedStates = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val toolExpandedStates: StateFlow<Map<String, Boolean>> = _toolExpandedStates
@@ -303,6 +307,22 @@ internal class MessageDataDelegate(
                     allParts[msg.id]?.takeIf { it.isNotEmpty() }?.let { msg.id to it }
                 }.toMap(),
             )
+            // #452 四点计时 P2（combine 发射）：size/sid 变化才打——流式期零刷屏；
+            // 「[msg] 已到而 visible 不动」即本管道与 EventDispatcher 之间的断点。
+            if (BuildConfig.DEBUG &&
+                (visibleMessages.size != lastCombineLogSize || sid != lastCombineLogSid)
+            ) {
+                lastCombineLogSize = visibleMessages.size
+                lastCombineLogSid = sid
+                AppLogger.d(
+                    "MessageDataDelegate",
+                    "[452-combine] sid=" + sid.takeLast(8) +
+                        " visible=" + visibleMessages.size +
+                        " raw=" + sessionMessages.size +
+                        " parts=" + (state.partsByMessageId.size) +
+                        " loading=" + loading,
+                )
+            }
             // DIAG 已移除（2026-08-10）：combine 每 48ms 触发的 MsgDiag 日志（每秒 ~80 条 logcat 写入）
             // 是真机掉帧的根因之一——debug 版 BuildConfig.DEBUG=true 时门控无效，必须彻底删除。
             state

@@ -988,6 +988,8 @@ fun ChatScreen(
                         val displayItemsState = remember {
                             androidx.compose.runtime.mutableStateListOf<Pair<Int, ChatMessage>>()
                         }
+                        // #452 P-display 日志门控（size 变化才发射一条）
+                        val lastDisplayLogSize = remember { intArrayOf(-1) }
                         remember(rawMessages) {
                             diffDisplayItemsInto(
                                 displayItemsState,
@@ -1018,6 +1020,18 @@ fun ChatScreen(
                                 },
                                 ) { pair -> syntheticEventIdentityKey(pair.second) },
                             )
+                            // #452 四点计时 P-display：displayItems 差量写入后规模
+                            //（size 变化才打——流式期 rawMessages 每 48ms 新实例，
+                            // 无门控会以 ~20/s 刷屏，见 MsgDiag 移除教训）。
+                            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
+                                displayItemsState.size != lastDisplayLogSize[0]
+                            ) {
+                                lastDisplayLogSize[0] = displayItemsState.size
+                                dev.leonardo.ocbeacon.logging.AppLogger.d(
+                                    "ChatScreen",
+                                    "[452-display] n=" + displayItemsState.size,
+                                )
+                            }
                             true
                         }
 
