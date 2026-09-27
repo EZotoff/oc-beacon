@@ -32,6 +32,9 @@ data class SupervisorAttentionItem(
     val premiseTexts: List<String> = emptyList(),
     /** 契约频段 A/B/C/D（A 最紧急）。 */
     val severity: String = "",
+    /** 会话标签（operator-view 卡片元数据，Detail 元信息行）。 */
+    val sessionLabel: String = "",
+
 )
 
 data class SupervisorDecision(

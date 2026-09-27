@@ -911,6 +911,17 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_no_decisions">No recent decisions</string>
     <string name="supervisor_unknown_project">Unknown project</string>
     <string name="supervisor_health_context">Supervisor health</string>
+    <string name="supervisor_stale_banner">Supervisor state stale</string>
+    <string name="supervisor_detail_missing">This item is no longer in the current supervisor view</string>
+    <string name="supervisor_detail_section_what_happened">What happened</string>
+    <string name="supervisor_detail_section_judgment">What needs your judgment</string>
+    <string name="supervisor_detail_summary_label">Supervisor summary (may be truncated)</string>
+    <string name="supervisor_detail_section_why">Why this came up</string>
+    <string name="supervisor_no_premises">No premises recorded</string>
+    <string name="supervisor_detail_section_evidence">Evidence</string>
+    <string name="supervisor_detail_evidence_unavailable">Evidence references not available here</string>
+    <string name="supervisor_detail_section_next_step">Next step</string>
+    <string name="supervisor_detail_section_answer">Answer</string>
     <string name="supervisor_load_failed">Could not load the supervisor digest</string>
     <string name="notification_channel_supervisor">Supervisor</string>
     <string name="notification_channel_supervisor_desc">Escalations and questions needing attention</string>

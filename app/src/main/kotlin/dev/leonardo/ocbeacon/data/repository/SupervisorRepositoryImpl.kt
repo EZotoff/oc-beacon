@@ -101,6 +101,7 @@ class SupervisorRepositoryImpl @Inject constructor(
             reasonText = reasonText,
             premiseTexts = premiseTexts,
             severity = severity,
+            sessionLabel = sessionLabel,
         )
 
     override suspend fun sendReply(serverId: String, root: String, reply: BeaconReply): Result<Unit> =
