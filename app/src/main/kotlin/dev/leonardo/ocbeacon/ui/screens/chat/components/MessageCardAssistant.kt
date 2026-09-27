@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -1040,7 +1041,10 @@ private fun AssistantTurnTail(
         verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth()
+                // #455（2026-09-27 用户裁决）：统计栏行高与 user 侧外置统计栏
+                // （UserBubbleExternalActions 的 28dp 图标命中区）严格等高。
+                .heightIn(min = 28.dp),
             horizontalArrangement = Arrangement.spacedBy(SpacingTokens.SM.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

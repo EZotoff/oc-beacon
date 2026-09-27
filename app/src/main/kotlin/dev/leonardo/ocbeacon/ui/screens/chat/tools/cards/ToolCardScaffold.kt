@@ -155,15 +155,19 @@ internal fun ToolCardScaffold(
         modifier = modifier.fillMaxWidth()
     ) {
         // 2026-09-20 间距统一裁决:垂直 4→2dp(与 ReasoningBlock 同步——卡↔正文
-        // 空白收敛,卡族互相对齐保持)
+        // 空白收敛,卡族互相对齐保持)。
+        // #455(2026-09-27 用户报告「卡片上下边距变高且不统一」像素定罪):
+        // 卡为透明无背景形态,容器垂直 padding 不提供任何视觉边界,只在
+        // spacedBy(8dp) 之上叠加 12dp 卡间节奏(vs 摘要行↔卡 8dp)——两档混杂
+        // 的根源。垂直 padding 归零:全部相邻节奏统一为 8dp。
         Column(
             modifier = Modifier.padding(
                 // #432(用户反馈):水平缩进归零——原 XS(4dp) 使卡片比正文多缩一档,
                 // 「正文与卡片没对齐」根源;卡族与正文现在同缘(垂直 padding 不变)。
                 start = 0.dp,
                 end = 0.dp,
-                top = 2.dp,
-                bottom = 2.dp,
+                top = 0.dp,
+                bottom = 0.dp,
             ),
         ) {
             // 标题行
