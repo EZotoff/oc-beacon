@@ -10,6 +10,7 @@ import dev.leonardo.ocbeacon.domain.model.BeaconReply
 import dev.leonardo.ocbeacon.domain.model.SupervisorAttentionItem
 import dev.leonardo.ocbeacon.domain.repository.SupervisorRepository
 import dev.leonardo.ocbeacon.ui.navigation.routes.ServerRouteParams
+import dev.leonardo.ocbeacon.ui.navigation.routes.SupervisorNav
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +26,8 @@ data class SupervisorUiState(
     /** Seam 4 回复发送中/已失败的卡片项 ID（发送成功即移出）。 */
     val replyInFlight: Set<String> = emptySet(),
     val replyFailed: Set<String> = emptySet(),
+    /** root 健康通知落地时 true：Open Items 顶部渲染标注健康上下文。 */
+    val healthContext: Boolean = false,
 ) {
     val openItems get() = snapshot?.attentionItems.orEmpty()
     val decisions get() = snapshot?.recentDecisions.orEmpty()
@@ -37,10 +40,11 @@ class SupervisorViewModel @Inject constructor(
     private val cache: SupervisorSnapshotCache,
 ) : ViewModel() {
     private val serverId: String = checkNotNull(savedStateHandle[ServerRouteParams.PARAM_SERVER_ID])
+    private val healthContext: Boolean = savedStateHandle[SupervisorNav.PARAM_HEALTH_CONTEXT] ?: false
     // 后台轮询最近一次成功快照作为初始值：同步后打开即为最新，离线仍可展示。
     private val _uiState = MutableStateFlow(
-        cache.get(serverId)?.let { SupervisorUiState(snapshot = it, isLoading = false) }
-            ?: SupervisorUiState(),
+        cache.get(serverId)?.let { SupervisorUiState(snapshot = it, isLoading = false, healthContext = healthContext) }
+            ?: SupervisorUiState(healthContext = healthContext),
     )
     val uiState: StateFlow<SupervisorUiState> = _uiState.asStateFlow()
 
@@ -60,7 +64,7 @@ class SupervisorViewModel @Inject constructor(
         viewModelScope.launch {
             repository.load(serverId)
                 .onSuccess { snapshot ->
-                    _uiState.value = SupervisorUiState(snapshot = snapshot, isLoading = false)
+                    _uiState.value = SupervisorUiState(snapshot = snapshot, isLoading = false, healthContext = healthContext)
                 }
                 .onFailure {
                     _uiState.update { state ->

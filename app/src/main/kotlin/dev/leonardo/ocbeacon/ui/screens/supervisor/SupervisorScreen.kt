@@ -161,6 +161,7 @@ private fun OpenItems(
         verticalArrangement = Arrangement.spacedBy(SpacingTokens.MD.dp),
     ) {
         item { GlanceHeader(snapshot) }
+        if (state.healthContext) item { HealthContextHeader() }
         if (state.openItems.isEmpty()) item { EmptyText(R.string.supervisor_no_open_items) }
         items(state.openItems, key = { it.id }) { item ->
             AttentionCard(
@@ -170,6 +171,19 @@ private fun OpenItems(
                 onReply = onReply,
             )
         }
+    }
+}
+
+@Composable
+private fun HealthContextHeader() {
+    // root 健康通知落地：明确标注这是健康上下文，不是某个问题卡。
+    Card(Modifier.fillMaxWidth()) {
+        Text(
+            stringResource(R.string.supervisor_health_context),
+            modifier = Modifier.padding(SpacingTokens.MD.dp),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.error,
+        )
     }
 }
 

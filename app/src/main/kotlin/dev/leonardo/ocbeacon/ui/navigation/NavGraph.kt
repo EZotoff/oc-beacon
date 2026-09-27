@@ -39,6 +39,7 @@ import dev.leonardo.ocbeacon.ui.screens.server.ServerSettingsRoute
 import dev.leonardo.ocbeacon.ui.screens.settings.SettingsRoute
 import dev.leonardo.ocbeacon.ui.screens.supervisor.SupervisorRoute
 import dev.leonardo.ocbeacon.ui.screens.supervisor.SupervisorDestination
+import dev.leonardo.ocbeacon.ui.screens.supervisor.SupervisorDetailRoute
 import dev.leonardo.ocbeacon.ui.screens.webview.WebViewScreen
 import dev.leonardo.ocbeacon.ui.screens.workspace.WorkspaceRoute
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -79,7 +80,7 @@ fun NavGraph(
     windowSizeClass: WindowSizeClass,
     deepLinkFlow: MutableSharedFlow<SessionDeepLink>,
     debugChannelFlow: MutableSharedFlow<String>,
-    supervisorNavFlow: MutableSharedFlow<String>,
+    supervisorNavFlow: MutableSharedFlow<SupervisorNavEvent>,
     sharedImagesFlow: SharedFlow<List<Uri>>,
     settingsRepository: SettingsRepository,
     serverRepository: ServerRepository,
@@ -188,12 +189,19 @@ fun NavGraph(
         }
     }
 
-    // Supervisor 通知点击：直达该服务器的摘要页
+    // Supervisor 通知点击：事项通知直达该事项 Detail，健康通知落 Open Items。
     LaunchedEffect(Unit) {
-        supervisorNavFlow.collect { serverId ->
+        supervisorNavFlow.collect { event ->
             supervisorNavFlow.resetReplayCache()
-            AppLogger.i(TAG, "Supervisor notification → digest for server $serverId")
-            navController.navigate(SupervisorNav.createOpenItemsRoute(serverId)) { launchSingleTop = true }
+            if (!event.itemId.isNullOrBlank()) {
+                AppLogger.i(TAG, "Supervisor notification → detail ${event.itemId} for ${event.serverId}")
+                navController.navigate(SupervisorNav.createDetailRoute(event.serverId, event.itemId)) { launchSingleTop = true }
+            } else {
+                AppLogger.i(TAG, "Supervisor notification → open items for ${event.serverId} health=${event.healthContext}")
+                navController.navigate(SupervisorNav.createOpenItemsRoute(event.serverId, event.healthContext)) {
+                    launchSingleTop = true
+                }
+            }
         }
     }
 
@@ -290,7 +298,7 @@ fun NavGraph(
 
         composable(
             route = SupervisorNav.openItemsRoutePattern,
-            arguments = SupervisorNav.navArguments,
+            arguments = SupervisorNav.openItemsNavArguments,
         ) { entry ->
             val serverId = SupervisorNav.serverId(entry)
             SupervisorRoute(
@@ -317,6 +325,22 @@ fun NavGraph(
                 },
             )
         }
+        composable(
+            route = SupervisorNav.detailRoutePattern,
+            arguments = SupervisorNav.detailNavArguments,
+        ) { entry ->
+            val serverId = SupervisorNav.serverId(entry)
+            SupervisorDetailRoute(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToOpenItems = {
+                    navController.navigate(SupervisorNav.createOpenItemsRoute(serverId)) {
+                        popUpTo(SupervisorNav.openItemsRoutePattern) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
+            )
+        }
+
 
         // ============ 设置页 ============
         composable(SettingsNav.route) {

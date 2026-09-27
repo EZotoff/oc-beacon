@@ -46,7 +46,7 @@ class SupervisorNotificationManager @Inject constructor(
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setContentIntent(supervisorPendingIntent(serverId, item.id.hashCode()))
+            .setContentIntent(supervisorPendingIntent(serverId, item.id.hashCode(), itemId = item.id))
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setGroup("supervisor_$serverId")
@@ -85,7 +85,7 @@ class SupervisorNotificationManager @Inject constructor(
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setContentIntent(supervisorPendingIntent(serverId, ROOT_HEALTH_REQUEST_CODE))
+            .setContentIntent(supervisorPendingIntent(serverId, ROOT_HEALTH_REQUEST_CODE, healthContext = true))
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setGroup("supervisor_$serverId")
@@ -94,11 +94,18 @@ class SupervisorNotificationManager @Inject constructor(
         AppLogger.i("SupervisorNotif", "path=supervisor-poll serverId=$serverId failingRoots=${failingRoots.size} errorsPeak=$errorsPeak kind=root-health")
     }
 
-    private fun supervisorPendingIntent(serverId: String, requestCode: Int): PendingIntent {
+    private fun supervisorPendingIntent(
+        serverId: String,
+        requestCode: Int,
+        itemId: String? = null,
+        healthContext: Boolean = false,
+    ): PendingIntent {
         val intent = Intent(appContext, MainActivity::class.java).apply {
             action = ACTION_OPEN_SUPERVISOR
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(EXTRA_SERVER_ID, serverId)
+            if (itemId != null) putExtra(EXTRA_ITEM_ID, itemId)
+            if (healthContext) putExtra(EXTRA_HEALTH_CONTEXT, true)
         }
         return PendingIntent.getActivity(
             appContext,
@@ -140,6 +147,12 @@ class SupervisorNotificationManager @Inject constructor(
 
         /** 通知点击携带的服务器 id extra。 */
         const val EXTRA_SERVER_ID = "supervisor_server_id"
+        /** 通知点击可携带的注意事项 id extra（→ 该事项 Detail）。 */
+        const val EXTRA_ITEM_ID = "supervisor_item_id"
+
+        /** root 健康通知携带的 extra（→ Open Items 标注健康上下文）。 */
+        const val EXTRA_HEALTH_CONTEXT = "supervisor_health_context"
+
 
         private const val ROOT_HEALTH_KEY = "root-health"
         private const val ROOT_HEALTH_REQUEST_CODE = 0x5A17

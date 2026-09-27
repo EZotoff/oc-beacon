@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import androidx.core.content.ContextCompat
 import java.util.UUID
+import dev.leonardo.ocbeacon.ui.navigation.routes.SupervisorNavEvent
 import dev.leonardo.ocbeacon.ui.navigation.NavGraph
 import dev.leonardo.ocbeacon.ui.theme.OpenCodeTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -99,7 +100,7 @@ class MainActivity : ComponentActivity() {
      * Supervisor 通知点击产生的导航事件（携带 serverId）。
      * NavGraph 订阅并直达该服务器的 Supervisor 摘要页；replay=1 保证冷启动不丢失。
      */
-    private val _supervisorNavFlow = MutableSharedFlow<String>(replay = 1)
+    private val _supervisorNavFlow = MutableSharedFlow<SupervisorNavEvent>(replay = 1)
 
     /**
      * 用于通过 ACTION_SEND / ACTION_SEND_MULTIPLE 接收图片的 SharedFlow。
@@ -302,14 +303,18 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * 处理 Supervisor 通知点击：发射 serverId 到 [supervisorNavFlow]，
-     * NavGraph 导航到该服务器的摘要页。
+     * 处理 Supervisor 通知点击：发射 serverId（+ 可选 itemId / healthContext）到
+     * [supervisorNavFlow]，NavGraph 按事件形态导航——事项通知直达该事项的
+     * Detail，root 健康通知落到 Open Items 的标注健康上下文。
      */
     private fun handleSupervisorIntent(intent: Intent?) {
         if (intent?.action != SupervisorNotificationManager.ACTION_OPEN_SUPERVISOR) return
         val serverId = intent.getStringExtra(SupervisorNotificationManager.EXTRA_SERVER_ID) ?: return
-        AppLogger.i(TAG, "Supervisor deep-link: serverId=$serverId")
-        _supervisorNavFlow.tryEmit(serverId)
+        val itemId = intent.getStringExtra(SupervisorNotificationManager.EXTRA_ITEM_ID)
+            ?.takeIf { it.isNotBlank() }
+        val healthContext = intent.getBooleanExtra(SupervisorNotificationManager.EXTRA_HEALTH_CONTEXT, false)
+        AppLogger.i(TAG, "Supervisor deep-link: serverId=$serverId itemId=$itemId health=$healthContext")
+        _supervisorNavFlow.tryEmit(SupervisorNavEvent(serverId, itemId, healthContext))
     }
 
     /**

@@ -910,6 +910,7 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_reply_failed">Reply failed to send</string>
     <string name="supervisor_no_decisions">No recent decisions</string>
     <string name="supervisor_unknown_project">Unknown project</string>
+    <string name="supervisor_health_context">Supervisor health</string>
     <string name="supervisor_load_failed">Could not load the supervisor digest</string>
     <string name="notification_channel_supervisor">Supervisor</string>
     <string name="notification_channel_supervisor_desc">Escalations and questions needing attention</string>
