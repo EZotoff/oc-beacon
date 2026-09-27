@@ -69,6 +69,7 @@ import dev.leonardo.ocbeacon.ui.screens.chat.tools.turnLedgerSummary
 import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.MessageDetailInput
 import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.RowCapabilities
 import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.TurnNumber
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.MessageStatusBadge
 import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.messageRowTail
 import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.statusBadgeFor
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem
@@ -90,12 +91,24 @@ import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalToolExpandedStates
 import dev.leonardo.ocbeacon.ui.screens.chat.util.toolExpandedOrDefault
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material3.Icon
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.alpha
+import kotlin.math.sin
 
 /**
  * 智能体消息（v2 两段式：正文 + 尾部统计栏）——扁平，无气泡容器、无头部标签栏。
  * 正文 = renderItems（文本 / 推理 / 工具卡片 / 分隔线）+ 错误展示；
- * 尾部 = 状态徽标 / 逐消息 agent 标签 / 提供商·模型 / 时长 / 步数·工具摘要
- *        + 复制 + 「详情」入口（时间与低频动作在详情弹窗里）。
+ * 尾部 = 逐消息 agent 标签 / 提供商·模型 / 时长 + 复制 + 「详情」入口（时间
+ *        与低频动作在详情弹窗里）。流式态：右缘为三点动态 loading，复制/
+ *        详情与「正在流式输出」徽标不渲染（2026-09-27 用户裁决，统计栏空间
+ *        紧张）；步/工具计数文本已移除，历史轮产出文件展开保留为裸 chevron。
  */
 @Composable
 internal fun MessageCardAssistant(
@@ -1009,7 +1022,8 @@ private fun AssistantTurnTail(
     var showDetailDialog by remember { mutableStateOf(false) }
     val moreClipboard = LocalClipboard.current
     val moreScope = rememberCoroutineScope()
-    // US#14：最新轮尾部常显；历史轮默认收起、点击摘要展开（产出文件行随之显隐）。
+    // US#14：最新轮尾部常显；历史轮默认收起、点击 chevron 展开（产出文件行
+    // 随之显隐；步/工具摘要文本已按 2026-09-27 用户裁决移除）。
     var tailExpandedOverride by remember { mutableStateOf<Boolean?>(null) }
     val tailExpanded = tailExpandedOverride ?: isTurnLast
     val statusBadge = statusBadgeFor(
@@ -1030,8 +1044,10 @@ private fun AssistantTurnTail(
             horizontalArrangement = Arrangement.spacedBy(SpacingTokens.SM.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // ① 状态徽标（v2：从头部迁到尾部信息簇首位；完成态不渲染）
-            if (statusBadge != null) {
+            // ① 状态徽标（v2：从头部迁到尾部信息簇首位；完成态不渲染）。
+            //    流式态徽标亦不渲染——统计栏空间紧张，进行中语义由右缘三点
+            //    loading 承担（2026-09-27 用户裁决）；中断/出错仍常显。
+            if (statusBadge != null && statusBadge != MessageStatusBadge.STREAMING) {
                 MessageStatusBadgeLabel(statusBadge)
             }
             // ② 逐消息 agent 标签（v2：OpenCode 逐消息 agent；DSH 恒 null → 走会话级）
@@ -1078,72 +1094,64 @@ private fun AssistantTurnTail(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT)
                 )
             }
-            // ⑤ 步数 · 工具数摘要（US#7）+ US#14 历史轮展开入口
-            if (renderableTurn.stepCount > 0 || toolCallCount > 0) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = if (!isTurnLast) {
-                        Modifier
-                            .clip(ShapeTokens.small)
-                            .clickable(
-                                onClickLabel = stringResource(
-                                    if (tailExpanded) R.string.chat_turn_ledger_collapse
-                                    else R.string.chat_turn_ledger_expand,
-                                ),
-                            ) {
-                                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-                                    dev.leonardo.ocbeacon.logging.AppLogger.d(
-                                        "SGB",
-                                        "TAILCLICK turn=" + turnNumber + " tailExpanded=" + tailExpanded +
-                                            " steps=" + renderableTurn.stepCount + " tools=" + toolCallCount,
-                                    )
-                                }
-                                tailExpandedOverride = !tailExpanded
+            // ⑤ US#14 历史轮产出文件展开入口。2026-09-27 用户裁决：步/工具
+            //    计数文本移除（统计栏空间紧张）；仅保留裸 chevron，且只在历史
+            //    轮、步骤完结且确有产出文件时出现（无文件=无展开语义=不占位）。
+            if (!isTurnLast && renderableTurn.allStepsCompleted && tailModel.producedFiles.isNotEmpty()) {
+                Icon(
+                    imageVector = if (tailExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = stringResource(
+                        if (tailExpanded) R.string.chat_turn_ledger_collapse
+                        else R.string.chat_turn_ledger_expand,
+                    ),
+                    modifier = Modifier
+                        .size(14.dp)
+                        .clip(ShapeTokens.small)
+                        .clickable(
+                            onClickLabel = stringResource(
+                                if (tailExpanded) R.string.chat_turn_ledger_collapse
+                                else R.string.chat_turn_ledger_expand,
+                            ),
+                        ) {
+                            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                dev.leonardo.ocbeacon.logging.AppLogger.d(
+                                    "SGB",
+                                    "TAILCLICK turn=" + turnNumber + " tailExpanded=" + tailExpanded,
+                                )
                             }
-                    } else {
-                        Modifier
-                    },
-                ) {
-                    Text(
-                        text = stringResource(
-                            R.string.chat_msg_tail_summary,
-                            renderableTurn.stepCount,
-                            toolCallCount,
-                        ),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT)
-                    )
-                    if (!isTurnLast) {
-                        androidx.compose.material3.Icon(
-                            imageVector = if (tailExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                            contentDescription = null,
-                            modifier = Modifier.size(12.dp),
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.weight(1f))
-            // ⑥ 复制常显（US#9）
-            if (copyText != null && onCopy != null) {
-                CopyButton(
-                    text = copyText,
-                    modifier = Modifier.size(14.dp),
-                    onCopied = onCopy
+                            tailExpandedOverride = !tailExpanded
+                        },
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
                 )
             }
-            // ⑦ 「详情」入口（v2：取代「更多」溢出菜单；每条角色消息常驻）
-            androidx.compose.material3.Icon(
-                imageVector = Icons.Outlined.Info,
-                contentDescription = stringResource(R.string.a11y_message_detail),
-                modifier = Modifier
-                    .size(16.dp)
-                    .clickable {
-                        performHaptic(hapticView, hapticOn)
-                        showDetailDialog = true
-                    },
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
-            )
+            Spacer(modifier = Modifier.weight(1f))
+            // ⑥⑦ 右缘操作区（2026-09-27 用户裁决）：流式态 = 三点动态 loading，
+            //    复制/详情按钮不渲染（空间紧张，进行中语义由 loading 承担）；
+            //    流式完毕恢复常驻复制 + 详情。
+            if (isStreaming) {
+                StreamingDotsIndicator()
+            } else {
+                // ⑥ 复制常显（US#9）
+                if (copyText != null && onCopy != null) {
+                    CopyButton(
+                        text = copyText,
+                        modifier = Modifier.size(14.dp),
+                        onCopied = onCopy
+                    )
+                }
+                // ⑦ 「详情」入口（v2：取代「更多」溢出菜单；每条角色消息常驻）
+                androidx.compose.material3.Icon(
+                    imageVector = Icons.Outlined.Info,
+                    contentDescription = stringResource(R.string.a11y_message_detail),
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable {
+                            performHaptic(hapticView, hapticOn)
+                            showDetailDialog = true
+                        },
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
+                )
+            }
         }
         // 产出行：SSE 铁律——仅在轮完结后挂载（流式中途写类工具完成即非空 → 脚部高度突变）
         if (tailExpanded && renderableTurn.allStepsCompleted && tailModel.producedFiles.isNotEmpty()) {
@@ -1444,4 +1452,47 @@ internal object HflickProbe {
     }
 
     val branchStates: Map<String, Boolean> get() = branch
+}
+
+/** 三点 loading 行波周期（ms）。呼吸 800ms 过快，行波序列取 1200ms 更接近
+ *  常见输入指示器节奏。 */
+private const val STREAMING_DOTS_CYCLE_MS = 1200
+
+/**
+ * 三点动态 loading 指示器（2026-09-27 用户裁决）：流式态右缘占位，取代
+ * 复制/详情按钮。正弦行波相位逐点错开 1/3 周期，alpha 基线 0.25 → 峰值 1.0；
+ * 纯 rememberInfiniteTransition 驱动（无额外依赖库，SSE 铁律无关——不触碰
+ * 滚动/高度管线）。
+ */
+@Composable
+private fun StreamingDotsIndicator(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "streamingDots")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2.0 * Math.PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = STREAMING_DOTS_CYCLE_MS, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "streamingDotPhase",
+    )
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(3) { index ->
+            val offset = (index / 3f) * (2.0 * Math.PI).toFloat()
+            val wave = 0.5f + 0.5f * sin(phase - offset)
+            Box(
+                modifier = Modifier
+                    .size(3.5.dp)
+                    .alpha(0.25f + 0.75f * wave)
+                    .background(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        shape = CircleShape,
+                    ),
+            )
+        }
+    }
 }
