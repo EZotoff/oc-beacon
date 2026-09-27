@@ -40,6 +40,8 @@ import dev.leonardo.ocbeacon.ui.screens.chat.tools.extractFileName
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
 import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.frozenDurationMs
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.timingStartMs
 
 /**
  * Read tool card — shows "读取" title, file name subtitle, expandable for details.
@@ -84,6 +86,9 @@ internal fun ReadToolCard(
         copyText = copyText,
         isExpanded = isExpanded,
         isRunning = isRunning,
+        // #453：累积计时（运行中走动/终态冻结；无锚不显示）
+        runningStartMs = tool.state.timingStartMs(),
+        completedDurationMs = tool.state.frozenDurationMs(),
         hasContent = hasContent,
         isAmoled = isAmoled,
         onToggleExpand = onToggleExpand,

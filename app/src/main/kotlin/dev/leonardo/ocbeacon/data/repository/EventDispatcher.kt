@@ -113,13 +113,15 @@ class EventDispatcher @Inject constructor(
             SseEvent.SessionTokenUsageChanged::class, SseEvent.SessionSubagentTimingChanged::class,
             SseEvent.VcsBranchUpdated::class, SseEvent.ProjectUpdated::class
         )
-        // 消息（updated/removed/part×3）→ MessageEventHandler 直接实现 SseEventHandler
+        // 消息（updated/removed/part×4）→ MessageEventHandler 直接实现 SseEventHandler
         //（#175：原三壳 handler 全指向同一 store 且 serverId 未用，删壳单 bind）
         bind(
             messageHandler,
             SseEvent.MessageUpdated::class, SseEvent.MessageRemoved::class,
             SseEvent.MessagePartUpdated::class, SseEvent.MessagePartDelta::class,
-            SseEvent.MessagePartRemoved::class
+            SseEvent.MessagePartRemoved::class,
+            // #453：块完结时间补丁（DSH block-end）
+            SseEvent.MessagePartTimePatch::class
         )
         // 权限 → PermissionEventHandler
         bind(
@@ -517,6 +519,8 @@ class EventDispatcher @Inject constructor(
             is SseEvent.MessagePartUpdated -> event.part.sessionId
             is SseEvent.MessagePartDelta -> event.sessionId
             is SseEvent.MessagePartRemoved -> event.sessionId
+            // #453：块完结时间补丁（DSH block-end）
+            is SseEvent.MessagePartTimePatch -> event.sessionId
             // 权限 / 问题
             is SseEvent.PermissionAsked -> event.sessionId
             is SseEvent.PermissionReplied -> event.sessionId

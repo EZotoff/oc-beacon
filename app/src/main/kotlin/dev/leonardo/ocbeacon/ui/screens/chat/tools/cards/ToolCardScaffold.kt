@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
@@ -25,6 +27,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.drawBehind
@@ -56,10 +60,12 @@ import dev.leonardo.ocbeacon.ui.components.AmoledSurface
 import dev.leonardo.ocbeacon.ui.components.CardStandardBorder
 import dev.leonardo.ocbeacon.ui.components.indicators.PulsingDotsIndicator
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalHapticFeedbackEnabled
+import dev.leonardo.ocbeacon.ui.screens.chat.util.formatDuration
 import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
 import dev.leonardo.ocbeacon.ui.screens.chat.util.performHaptic
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
@@ -116,6 +122,10 @@ internal fun ToolCardScaffold(
     trailingExtras: @Composable (RowScope.() -> Unit)? = null,
     titleContent: (@Composable RowScope.() -> Unit)? = null,
     containerColor: Color = MaterialTheme.colorScheme.surface,
+    /** #453 累积计时锚（调用发起时刻）——isRunning 且 >0 时行尾走动计时。 */
+    runningStartMs: Long? = null,
+    /** #453 终态冻结时长——非 running 且 >0 时行尾静态显示。 */
+    completedDurationMs: Long? = null,
     expandedContent: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -257,6 +267,18 @@ internal fun ToolCardScaffold(
                         // IconButton；统一交互契约后该入口整体不再需要）
                     }
                 }
+                // #453：累积计时行尾固定区（SpaceBetween 右槽，与思考卡时长同构）
+                // ——不随左侧标题/摘要宽度变化推移，消除流式横向跳动。
+                // 数据判定（非 isRunning 参数）：终态时长>0 → 冻结；否则锚>0 →
+                // 走动（Pending/Running 均算未完结——DSH tool/call 的 Pending 带
+                // 锚也走动）；都无 → 不渲染（不伪造时长）。
+                if (runningStartMs != null || completedDurationMs != null) {
+                    Spacer(modifier = Modifier.width(SpacingTokens.XS.dp))
+                }
+                ToolElapsedText(
+                    runningStartMs = runningStartMs,
+                    completedDurationMs = completedDurationMs,
+                )
             }
 
             // 展开的内容（2026-08-30 用户裁决：统一顶边垂直揭幕，见 CardExpandTransitions.kt）
@@ -290,6 +312,46 @@ internal fun ToolCardScaffold(
             }
         }
     }
+}
+
+/**
+ * #453：工具卡累积计时文本——数据判定（不依赖 isRunning 参数）：
+ *
+ * - 终态冻结时长 >0 → 静态显示；
+ * - 否则锚（start）>0 → 100ms tick 走动计时（Pending/Running 均算未完结——
+ *   DSH tool/call 的 Pending 带锚也走动）；重组范围仅限本组件（独立 state，
+ *   与思考卡 ReasoningBlock 同节奏）；
+ * - 都无 → 不渲染（不伪造时长——思考卡 #263 同原则）。
+ */
+@Composable
+private fun ToolElapsedText(
+    runningStartMs: Long?,
+    completedDurationMs: Long?,
+) {
+    if (completedDurationMs != null && completedDurationMs > 0) {
+        Text(
+            text = formatDuration(completedDurationMs),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
+            maxLines = 1,
+        )
+        return
+    }
+    val start = runningStartMs?.takeIf { it > 0 } ?: return
+    val elapsed = remember { mutableLongStateOf(0L) }
+    LaunchedEffect(start) {
+        while (true) {
+            // 下限钳制 0——服务器/设备钟域偏差不显示负数
+            elapsed.longValue = (System.currentTimeMillis() - start).coerceAtLeast(0L)
+            delay(100L)
+        }
+    }
+    Text(
+        text = formatDuration(elapsed.longValue),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
+        maxLines = 1,
+    )
 }
 
 /**

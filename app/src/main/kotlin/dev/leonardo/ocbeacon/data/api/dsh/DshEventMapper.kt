@@ -1270,6 +1270,8 @@ object DshEventMapper {
                         state = ToolState.Pending(
                             input = parsedInput,
                             raw = rawArgs.takeIf { it.isNotEmpty() },
+                            // #453：调用信封时刻 = 工具卡累积计时锚（行尾走动计时）
+                            time = ToolState.Pending.Time(start = time),
                         ),
                     )
                 )
@@ -1289,9 +1291,17 @@ object DshEventMapper {
         val errorElem = data["error"] ?: message?.get("error")
         val rootOutput = flattenToolResultOutput(message)
         val state = if (errorElem != null && errorElem !is JsonNull) {
-            ToolState.Error(error = errorElem.errorText())
+            // #453：终态 time（start=0 哨兵——mergePart Tool 分支从 existing
+            // Pending/Running 继承真实 start；显示层 end-start>0 才显示）
+            ToolState.Error(
+                error = errorElem.errorText(),
+                time = ToolState.Error.Time(start = 0L, end = time),
+            )
         } else {
-            ToolState.Completed(output = rootOutput)
+            ToolState.Completed(
+                output = rootOutput,
+                time = ToolState.Completed.Time(start = 0L, end = time),
+            )
         }
         return listOf(
             DshMappedEvent.Sse(
@@ -1426,7 +1436,13 @@ object DshEventMapper {
             mapOf("sessionId" to JsonPrimitive(it), "sessionID" to JsonPrimitive(it))
         }
         val state = if (isError) {
-            ToolState.Error(error = output, metadata = metadata)
+            // #453：Error 终态同补 time（对齐 Completed 腿——错误工具调用同样
+            // 显示累积时长；start=0 由 mergePart 从 Running 锚继承）
+            ToolState.Error(
+                error = output,
+                metadata = metadata,
+                time = ToolState.Error.Time(start = 0L, end = time),
+            )
         } else {
             ToolState.Completed(
                 output = output,
@@ -1665,10 +1681,11 @@ object DshEventMapper {
      * - block-start → MessagePartUpdated（空 part 种子，kind 按 blockType）；
      * - text-delta / reasoning-delta → MessagePartDelta（field 按 chunk.type——与设计
      *   §1.5 定稿一致；kind 推断实际走 partId 契约）；
-     * - block-end → Ignored：DSH block-end 不携带文本，而消费端 mergePart 的
-     *   isTerminal 覆盖语义假定 incoming 是全量终值（官方 text.ended 契约）——发空
-     *   文本终态 part 会清空已流式文本；终态化由 turn/end → SessionIdle →
-     *   markSessionIdle 路径承担（偏离任务草案的定点裁决，见报告）；
+     * - block-end → MessagePartTimePatch（#453）：原整帧忽略（mergePart isTerminal
+     *   覆盖语义下空文本终态 part 会清空流式文本），块终态化拖到 turn/end 的
+     *   markSessionIdle——思考块完毕、正文流式期间思考卡计时持续虚涨的根因。
+     *   block-end 帧无 blockType，无法构造 kind 编码 part id，改发无 kind 的
+     *   时间补丁（消费端按 `_ord_{index}` 后缀扫描定位，幂等跳过已终态块）；
      * - usage → tokens-only MessageUpdated 写流式宿主（(e) 全桶接入；宿主由消费端
      *   惰性播种，terminate 时 assistant/message 的 MessageRemoved 拆除，
      *   不污染终态权威 usage）。
@@ -1719,7 +1736,18 @@ object DshEventMapper {
                     )
                 )
             )
-            "block-end" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.CHUNK_BLOCK_END))
+            // #453：块完结时间补丁（原 Ignored——终态化拖到 markSessionIdle 使
+            // 思考卡在正文流式期间计时虚涨）。无 blockType → 无 kind 补丁事件。
+            "block-end" -> listOf(
+                DshMappedEvent.Sse(
+                    SseEvent.MessagePartTimePatch(
+                        sessionId = sessionId,
+                        messageId = messageId,
+                        ordinal = index,
+                        endMs = time,
+                    )
+                )
+            )
             "usage" -> {
                 // (2026-09-12 消息层扁平化 (e))：usage 帧按 turn/step 定址到流式宿主
                 // dsh-t{turn}s{step}，发 tokens-only MessageUpdated——消费端
@@ -2067,7 +2095,7 @@ object DshIgnoreReason {
     /** host/remote-event 已解包但转发事件无消费端（#296 白名单其余项）。 */
     const val REMOTE_EVENT = "remote-event"
 
-    /** chunk block-end（空载荷终态 part 会清空流式文本——见 mapChunk 注释）。 */
+    /** chunk block-end 退役值（#453 改发 MessagePartTimePatch；保留防外部队列/日志串回流误判）。 */
     const val CHUNK_BLOCK_END = "chunk-block-end"
 
     /** chunk usage（#276 SessionUsage 对位）。 */

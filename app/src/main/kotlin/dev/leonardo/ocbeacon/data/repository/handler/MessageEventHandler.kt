@@ -47,6 +47,8 @@ class MessageEventHandler @Inject constructor(
             is SseEvent.MessagePartUpdated -> { handleMessagePartUpdated(event); true }
             is SseEvent.MessagePartDelta -> { handleMessagePartDelta(event); true }
             is SseEvent.MessagePartRemoved -> { handleMessagePartRemoved(event); true }
+            // #453：块完结时间补丁（DSH block-end）——无 kind 的终态化信号
+            is SseEvent.MessagePartTimePatch -> { handleMessagePartTimePatch(event); true }
             // #378：表面区间替换（user/message surfaceOp.replace）——被遮蔽旧消息
             // 折叠的权威指令：台账记账 + 内存/热表移除（幂等，实况/历史同事件）。
             is SseEvent.SurfaceRangeReplaced -> { handleSurfaceRangeReplaced(event); true }
@@ -939,6 +941,52 @@ class MessageEventHandler @Inject constructor(
         _parts.update { current ->
             val messageParts = current[event.messageId]?.filter { it.id != event.partId }
             if (messageParts != null) current + (event.messageId to messageParts) else current
+        }
+    }
+
+    /**
+     * #453：DSH block-end 的块完结时间补丁——按 `_ord_{ordinal}` 后缀扫描定位
+     * （不分 kind：block-end 帧无 blockType，kind 编码的派生 id 无法单侧构造）。
+     *
+     * 只补 time.end == null 的流式 Text/Reasoning part（已终态的幂等跳过——
+     * 流式时序上 block-end 只针对当前活动块，跨 kind 同 ordinal 的历史块早已
+     * 终态化，不误伤）。end 与 start 同域钳制（chunk 信封时刻同域，防御性
+     * maxOf——负跨度由显示层按未知处理，与 markSessionIdle 同口径）。
+     */
+    internal fun handleMessagePartTimePatch(event: SseEvent.MessagePartTimePatch) {
+        val suffix = "_ord_" + event.ordinal
+        var changed = false
+        _parts.update { current ->
+            val messageParts = current[event.messageId] ?: return@update current
+            val updatedParts = messageParts.map { part ->
+                when {
+                    part is Part.Text && part.time?.end == null && part.id.endsWith(suffix) -> {
+                        changed = true
+                        val start = part.time?.start?.takeIf { it > 0 } ?: 0L
+                        part.copy(time = Part.Text.Time(
+                            start = start.takeIf { it > 0 } ?: event.endMs,
+                            end = maxOf(event.endMs, start),
+                        ))
+                    }
+                    part is Part.Reasoning && part.time?.end == null && part.id.endsWith(suffix) -> {
+                        changed = true
+                        // #263 round2 同款哨兵：start 未知（0）不伪造 start=end——
+                        // 显示层走本地冻结实测时长，不显示伪造 0ms。
+                        val start = part.time?.start?.takeIf { it > 0 } ?: 0L
+                        part.copy(time = Part.Reasoning.Time(
+                            start = start,
+                            end = maxOf(event.endMs, start),
+                        ))
+                    }
+                    else -> part
+                }
+            }
+            if (changed) current + (event.messageId to updatedParts) else current
+        }
+        if (changed) {
+            // 落盘闭环：重启/离线 seed 后计时冻结不回涨（对齐 markSessionIdle 的
+            // persistSseUpdate 语义——内存态 part 变更必须同步 Room）。
+            persistSseUpdate(event.sessionId, listOf(event.messageId))
         }
     }
 

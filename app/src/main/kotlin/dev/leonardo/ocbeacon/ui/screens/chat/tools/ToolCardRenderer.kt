@@ -112,6 +112,9 @@ internal fun ToolCallCard(
         hasContent = true, // 通用渲染器始终显示复制 + 展开
         isAmoled = isAmoled,
         onToggleExpand = onToggleExpand,
+        // #453：累积计时（运行中走动/终态冻结；无锚不显示）
+        runningStartMs = tool.state.timingStartMs(),
+        completedDurationMs = tool.state.frozenDurationMs(),
         titleContent = if (isTask) {
             {
                 Row(

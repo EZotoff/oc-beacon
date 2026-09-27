@@ -365,7 +365,12 @@ object V2SseMapper {
                     messageId = messageId,
                     callId = callId,
                     tool = input["tool"]?.jsonPrimitive?.contentOrNull ?: "",
-                    state = ToolState.Running(input = input, output = "")
+                    // #453：执行开始锚（信封时刻缺席回退本地钟）——工具卡走动计时
+                    state = ToolState.Running(
+                        input = input,
+                        output = "",
+                        time = ToolState.Running.Time(start = envelopeTimeMs ?: System.currentTimeMillis()),
+                    )
                 )
             )
         }
@@ -387,8 +392,15 @@ object V2SseMapper {
                 }
                 mapped
             }
+            // #453：终态 time——start=0 哨兵（mergePart Tool 分支从 existing
+            // Running/Pending 锚继承真实 start），end=信封时刻缺席回退本地钟
+            val endMs = envelopeTimeMs ?: System.currentTimeMillis()
             val state = if (type == "session.tool.success") {
-                ToolState.Completed(output = contentText, metadata = metadata?.ifEmpty { null })
+                ToolState.Completed(
+                    output = contentText,
+                    metadata = metadata?.ifEmpty { null },
+                    time = ToolState.Completed.Time(start = 0L, end = endMs),
+                )
             } else {
                 val error = props["error"]?.let { elem ->
                     when {
@@ -397,7 +409,11 @@ object V2SseMapper {
                         else -> elem.toString()
                     }
                 } ?: ""
-                ToolState.Error(error = error, metadata = metadata?.ifEmpty { null })
+                ToolState.Error(
+                    error = error,
+                    metadata = metadata?.ifEmpty { null },
+                    time = ToolState.Error.Time(start = 0L, end = endMs),
+                )
             }
             SseEvent.MessagePartUpdated(
                 Part.Tool(

@@ -85,6 +85,11 @@ internal fun ShellCard(
         hasContent = output.isNotBlank(),
         isAmoled = isAmoled,
         onToggleExpand = onToggleExpand,
+        // #453：累积计时（Part.Shell.time——V2 shell started/ended 信封）
+        runningStartMs = shell.time?.start?.takeIf { it > 0 },
+        completedDurationMs = shell.time?.let { t ->
+            t.end?.let { e -> (e - t.start).takeIf { d -> d > 0 } }
+        },
         titleContent = {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(3.dp),

@@ -36,6 +36,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
 import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.frozenDurationMs
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.timingStartMs
 
 /**
  * Search tool card (glob/grep) — shows pattern + expandable output.
@@ -73,6 +75,9 @@ internal fun SearchToolCard(
         copyText = title,
         isExpanded = isExpanded,
         isRunning = isRunning,
+        // #453：累积计时（运行中走动/终态冻结；无锚不显示）
+        runningStartMs = tool.state.timingStartMs(),
+        completedDurationMs = tool.state.frozenDurationMs(),
         hasContent = hasOutput,
         isAmoled = isAmoled,
         onToggleExpand = onToggleExpand

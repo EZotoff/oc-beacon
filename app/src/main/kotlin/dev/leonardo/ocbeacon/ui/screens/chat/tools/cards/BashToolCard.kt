@@ -41,6 +41,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
 import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.frozenDurationMs
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.timingStartMs
 
 /** #135（D2-L43）：ANSI 转义序列剥离正则——顶层预编译（原每次重组现场编译）。 */
 private val ANSI_ESCAPE_REGEX = Regex("\u001B\\[[0-9;]*[a-zA-Z]")
@@ -118,6 +120,9 @@ internal fun BashToolCard(
         copyText = displayText,
         isExpanded = isExpanded,
         isRunning = isRunning,
+        // #453：累积计时（运行中走动/终态冻结；无锚不显示）
+        runningStartMs = tool.state.timingStartMs(),
+        completedDurationMs = tool.state.frozenDurationMs(),
         hasContent = hasContent,
         isAmoled = isAmoled,
         onToggleExpand = onToggleExpand,

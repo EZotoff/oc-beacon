@@ -103,6 +103,10 @@ internal object MessageMergeEngine {
                 if (incomingMetadata.isNullOrEmpty() && !existingMetadata.isNullOrEmpty()) {
                     merged = merged.withStateMetadata(existingMetadata)
                 }
+                // #453 time 继承：incoming state 无 time（中间事件/REST 快照）→ 整体
+                // 保留 existing（否则锚丢失，重进后计时归零）；有 time 但 start=0
+                // 哨兵（终态事件只带 end）→ 从 existing 锚补 start，跨度才真实。
+                merged = merged.withInheritedStateTime(existing)
                 merged
             }
             // #295 残项（2026-09-02 真机实证）：File 的 url 是**客户端补丁字段**
@@ -158,6 +162,49 @@ internal object MessageMergeEngine {
             is ToolState.Error -> s.copy(metadata = metadata)
         }
     )
+
+    /**
+     * #453：incoming state 的 time 继承 existing 锚。
+     *
+     * - incoming 无 time（V2 中间事件 tool.input.ended、REST 快照）→ 整体保留
+     *   existing 的 time（锚丢失会让工具卡重进后计时归零）；
+     * - incoming 有 time 但 start<=0（终态事件只带 end 的 0 哨兵）→ 从 existing
+     *   补真实 start（否则 end-start 为负/0，冻结时长显示不出）；
+     * - existing 也无锚 → 保持 incoming 原样（无可继承）。
+     */
+    private fun Part.Tool.withInheritedStateTime(existing: Part.Tool): Part.Tool {
+        val existingStart = when (val s = existing.state) {
+            is ToolState.Pending -> s.time?.start
+            is ToolState.Running -> s.time?.start
+            is ToolState.Completed -> s.time?.start
+            is ToolState.Error -> s.time?.start
+        }?.takeIf { it > 0 }
+        val state = when (val s = state) {
+            is ToolState.Pending -> when {
+                s.time == null && existingStart != null -> s.copy(time = ToolState.Pending.Time(existingStart))
+                else -> s
+            }
+            is ToolState.Running -> when {
+                s.time == null && existingStart != null -> s.copy(time = ToolState.Running.Time(existingStart))
+                else -> s
+            }
+            is ToolState.Completed -> when {
+                s.time == null && existingStart != null ->
+                    s.copy(time = ToolState.Completed.Time(existingStart, existingStart))
+                s.time != null && s.time.start <= 0 && existingStart != null ->
+                    s.copy(time = s.time.copy(start = existingStart))
+                else -> s
+            }
+            is ToolState.Error -> when {
+                s.time == null && existingStart != null ->
+                    s.copy(time = ToolState.Error.Time(existingStart, existingStart))
+                s.time != null && s.time.start <= 0 && existingStart != null ->
+                    s.copy(time = s.time.copy(start = existingStart))
+                else -> s
+            }
+        }
+        return if (state === this.state) this else copy(state = state)
+    }
 
     fun mergePartsList(existingParts: List<Part>, incomingParts: List<Part>): List<Part> {
         // 2026-08-12 根因修复（流式内容消失）：

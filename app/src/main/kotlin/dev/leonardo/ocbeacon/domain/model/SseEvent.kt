@@ -141,6 +141,24 @@ sealed class SseEvent {
         val partId: String
     ) : SseEvent()
 
+    /**
+     * #453：part 终态时间补丁——只带 ordinal 不带 kind 的块完结信号。
+     *
+     * DSH block-end 帧无 blockType（黄金样本 mux-frames-extra #10），无法构造
+     * kind 编码的派生 part id（PartIdContract），故按 `_ord_{ordinal}` 后缀由
+     * 消费端扫描定位（见 MessageEventHandler.handleMessagePartTimePatch）。
+     * 语义：命中流式中的 Text/Reasoning part（time.end == null）补 end →
+     * 块级计时及时冻结（原实现 block-end 整帧忽略，终态化拖到 turn/end 的
+     * markSessionIdle——思考块完毕、正文流式期间思考卡计时持续虚涨的根因）。
+     */
+    @Serializable
+    data class MessagePartTimePatch(
+        val sessionId: String,
+        val messageId: String,
+        val ordinal: Long,
+        val endMs: Long,
+    ) : SseEvent()
+
     // 权限事件
     @Serializable
     data class PermissionAsked(
