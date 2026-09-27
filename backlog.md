@@ -70,6 +70,7 @@
   - 2.0.16+ 实测移除 GET /api/health(鉴权通过仍 404)→ApiVersionDetector V2 探测只认该端点返回 null；tryV1 探 /global/health 收 SPA HTML 被 content-type 防御拦截→双探皆空 UNKNOWN
   - checkHealth 按 #132 语义 UNKNOWN 保留原值→真机持久化的 V1 永不被纠正→V1 请求 /project 等收 HTML 200→SSE parseEvent 抛异常→重连退避→『服务器已断开+目录为空』
   - 取证:handoff-oc-beacon-card-intervention.md §10.1(2026-09-27);可观测性缺口:V2 探测非 2xx 静默 return null(ApiVersionDetector L99)且新进程启动未发探测请求,修复需先补日志
+  - 服务器侧已收口(2026-09-27):本机 opencode systemd 用户服务化(linger 开机自启)——opencode-v1@4199(~/oc-v1-env 隔离,无密码仅 127.0.0.1)/opencode-v2@4096(真实环境,Basic Auth 经 OPENCODE_SERVER_PASSWORD 固定为 service.json 密码;官方机制=不设则每次启动随机生成)。真机 E2E 绿(debug-entry→SessionList)。app 侧 V2 探测修复(可观测性缺口)仍待做
 
 - [ ] **#441 app SSE 长连接随机断连：输出期间渲染静默（服务端正常）** `bug` `dsh`
   - 二十四/二十五世轮实证：DSH 服务正常（RPC accepted、服务端 turn 照常完成并生成标题），app 侧 MDPilot/渲染全静默；重启 app 即恢复。疑电池优化杀后台 socket（横幅曾警告）或 SSE 重连缺失。
@@ -160,10 +161,12 @@
   - 收到 HTML/裸 0 等非 JSON 对象帧时 parseEvent 直接抛异常并关闭整条流(单帧即断),心跳/注释帧未显式忽略
   - 建议:跳过该帧+计数上报;与 P1 SSE 长连接随机断连卡疑同源族群,接手对照
   - 取证:handoff-oc-beacon-card-intervention.md §10.2(2026-09-27),真机代理实验日志复现
+  - 勘误(2026-09-27 核码):现码 V1(SseClient.kt L238-249)/V2(SseClientV2.kt L178-205) parse 均 per-frame try-catch,坏帧跳过不断流——卡片『单帧即断』不成立于当前代码;§10.2 实测『断流』真因=服务器返回非 SSE 有限 body(HTML)→逐帧 Parse error+零事件+body 结束即断+重连循环。真实缺口=非 SSE 响应无快检(content-type/首帧嗅探)、坏帧无计数上报——与 #447 探测器同族,接手时对照
 
-- [ ] **#446 SSE流式active块上移快于turn上方内容(视觉撕裂)** `streaming` `render`
+- [~] **#446 SSE流式active块上移快于turn上方内容(视觉撕裂)** `streaming` `render`
   - 疑似与上文消失(CONTENT-BLINK)同源;用户裁决支线,卡片介入实验后系统调研
   - 候选:帽clip相位差/放行与reserve释放节奏/diff与flush事务帧错位
+  - 根修交付(2026-09-27,e76aed43):毕业 held 收缩撤销一帧延迟(withFrameNanos)——真机条带差分定罪 b12 底缝 26 帧差动全对齐毕业窗;R5 对照 b12 族 13→2 帧(收敛88%),±80px 振荡级联消失。真机验证绿,单测跑全量;待用户观感验收
 
 - [ ] **#442 高度引擎根修二期：R2分片增量化(滑动p90 12ms)+cadence收编+flush深拆+终审待复核项** `perf` `refactor`
   - 终审判定：R1批次已锁 A2 贴底5ms/A1回归/A4全项；滑动p90 19-27 未达12——R2分片(稳定块缓存/尾块单测)是 O(内容)→O(尾块) 唯一路径。
