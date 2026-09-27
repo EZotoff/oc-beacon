@@ -91,6 +91,8 @@ internal val FabSlideTopMargin: Dp = 8.dp
  */
 internal const val FAB_IDLE_ALPHA = 0.3f
 internal const val FAB_FADE_DELAY_MS = 3_000L
+/** ⬇ 触底 FAB 独立回落延迟（2026-09-27 用户裁决：停动 2s，快于菜单 FAB 的 3s）。 */
+internal const val FAB_SCROLL_FADE_DELAY_MS = 2_000L
 internal const val FAB_FADE_DURATION_MS = 1_000
 
 /** 默认悬浮位抬升量（px）：容器高 1/8（纯函数，单测覆盖）。 */
@@ -203,6 +205,11 @@ internal fun rememberFabEdgeSlideState(): FabEdgeSlideState =
 @Stable
 internal class FabTransparencyController(
     private val isContentScrolling: () -> Boolean,
+    /** 回落延迟（菜单 3s / ⬇ 触底 FAB 2s——2026-09-27 用户裁决）。 */
+    private val fadeDelayMs: Long = FAB_FADE_DELAY_MS,
+    /** true = 内容滚动中即保持不透明（⬇ 触底 FAB 语义，与停靠位无关）；
+     *  false = 菜单语义（展开，或拉底钉住且滚动中）。 */
+    private val scrollHoldOnly: Boolean = false,
 ) {
     private val alpha = Animatable(1f)
 
@@ -224,15 +231,21 @@ internal class FabTransparencyController(
 
     /** 常驻效应体：ChatFabMenu 内 LaunchedEffect(Unit) 调用。 */
     suspend fun run() {
-        snapshotFlow { Triple(expanded, pinnedAtBottom && isContentScrolling(), interactionTick) }
-            .collectLatest { (menuOpen, holdOpaque, _) ->
-                if (menuOpen || holdOpaque) {
-                    alpha.snapTo(1f)
-                } else {
-                    delay(FAB_FADE_DELAY_MS)
-                    alpha.animateTo(FAB_IDLE_ALPHA, tween(FAB_FADE_DURATION_MS))
-                }
+        snapshotFlow {
+            Triple(
+                expanded,
+                if (scrollHoldOnly) isContentScrolling()
+                else pinnedAtBottom && isContentScrolling(),
+                interactionTick,
+            )
+        }.collectLatest { (menuOpen, holdOpaque, _) ->
+            if (menuOpen || holdOpaque) {
+                alpha.snapTo(1f)
+            } else {
+                delay(fadeDelayMs)
+                alpha.animateTo(FAB_IDLE_ALPHA, tween(FAB_FADE_DURATION_MS))
             }
+        }
     }
 }
 
@@ -351,6 +364,7 @@ internal fun ChatFabMenu(
     LaunchedEffect(Unit) { alphaController?.run() }
     alphaController?.expanded = expanded
     alphaController?.pinnedAtBottom = slideState.offsetYPx == 0f
+    val fabAlpha = alphaController?.value ?: 1f
 
     // D2：展开溢出下移分量（临时态，不持久化）
     var expandShift by remember { mutableFloatStateOf(0f) }
@@ -416,9 +430,7 @@ internal fun ChatFabMenu(
     // 与稳定 ui 组二进制冲突）——布局几何（items 上排/button 钉底/44dp 药丸/
     // 8dp 列底距）与 #194 溢出计算精确对齐原实现，morph 动画简化为整列展开。
     Box(
-        modifier = modifier
-            .graphicsLayer { alpha = alphaController?.value ?: 1f }
-            .fabEdgeVerticalSlide(
+        modifier = modifier.fabEdgeVerticalSlide(
             state = slideState,
             extraShift = { expandShift },
             onDragStart = {
@@ -511,15 +523,26 @@ internal fun ChatFabMenu(
                     .size(48.dp)
                     .border(
                         1.dp,
-                        MaterialTheme.colorScheme.outline,
+                        MaterialTheme.colorScheme.outline.copy(alpha = fabAlpha),
                         RoundedCornerShape(16.dp),
                     ),
                 shape = RoundedCornerShape(16.dp),
                 // Secondary 变体（第十九轮，用户选 B）：secondaryContainer 系，
                 // 与用户气泡（primaryContainer 系）区分；展开态不 morph（稳定
                 // API 无 checked 色彩过渡，图标切换承担状态表达）
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                // #451 色料级透明：颜色 copy(alpha) 而非 layer-alpha——后者与
+                // M3 FAB 内部 Surface/阴影 RenderNode 互搏（真机像素实证：
+                // 半透明态容器整层不绘制、仅图标残影）
+                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = fabAlpha),
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = fabAlpha),
+                // 2026-09-27 用户裁决：FAB 按钮/菜单/菜单项全去阴影（恒 0；
+                // 亦规避「阴影不随色料 alpha 缩放」家族问题）
+                elevation = androidx.compose.material3.FloatingActionButtonDefaults.elevation(
+                    defaultElevation = 0.dp,
+                    pressedElevation = 0.dp,
+                    focusedElevation = 0.dp,
+                    hoveredElevation = 0.dp,
+                ),
             ) {
                 val desc = if (expanded) {
                     stringResource(R.string.chat_fab_menu_close)
@@ -530,23 +553,23 @@ internal fun ChatFabMenu(
                     Icon(
                         if (expanded) Icons.Default.Close else Icons.Default.Inbox,
                         contentDescription = desc,
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = fabAlpha),
                     )
                 }
                 if (!expanded && goalActive) {
                     // #286：goal 运行点角标（blocked 用警示色）——取代数字角标
                     // #364：圆点尺寸 8dp（与新增消息点统一，M3 Badge 默认偏大）。
                     FabDotBadge(
-                        color = if (goalPhase == "blocked") {
+                        color = (if (goalPhase == "blocked") {
                             MaterialTheme.colorScheme.error
                         } else {
                             MaterialTheme.colorScheme.primary
-                        },
+                        }).copy(alpha = fabAlpha),
                     ) { fabIcon() }
                 } else if (!expanded && (totalBadge > 0 || queueCount > 0)) {
                     // #364（2026-09-08 用户裁决）：FAB 按钮角标=**圆点**（只提示有新
                     // 消息，不展示条数）；TODO/智能体/Shell/排队队列任一非零即亮。
-                    FabDotBadge(color = MaterialTheme.colorScheme.primary) { fabIcon() }
+                    FabDotBadge(color = MaterialTheme.colorScheme.primary.copy(alpha = fabAlpha)) { fabIcon() }
                 } else {
                     fabIcon()
                 }
@@ -607,6 +630,9 @@ private fun FabMenuEntry(
         // Secondary 变体（第十九轮）：药丸 secondaryContainer 系，与用户气泡区分
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        // 2026-09-27 用户裁决：菜单项无阴影（显式归零防 M3 默认漂移）
+        shadowElevation = 0.dp,
+        tonalElevation = 0.dp,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp),
@@ -708,6 +734,8 @@ internal fun FabSlotHeightReveal(
 internal fun ChatScrollBottomFab(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** #451 色料级透明度（lambda 内部读——动画帧只重组本组件）。 */
+    contentAlpha: () -> Float = { 1f },
     // 2026-09-19 三轮用户反馈定案：显隐 = **纯位移动画、无 fade、原生 6dp 阴影
     // 恒在**——不带 alpha（Compose 投影不随绘制层 alpha 变化：半透明按钮会挂全
     // 尺寸阴影；而压 elevation + graphicsLayer 渐显的替代在本机实证不绘制，
@@ -715,18 +743,32 @@ internal fun ChatScrollBottomFab(
     // 全程跟随），终态与菜单 FAB 投影完全同款（像素基准 darken≈10.9 对齐）。
 ) {
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+        // #451 色料级透明（同菜单 FAB：layer-alpha 与 M3 FAB 内部 Surface/阴影
+        // RenderNode 互搏——半透明态容器不绘制；颜色 copy(alpha) 无层参与）
+        val fabAlpha = contentAlpha()
         FloatingActionButton(
             onClick = onClick,
             modifier = modifier
                 .size(48.dp)
-                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp)),
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = fabAlpha),
+                    RoundedCornerShape(16.dp),
+                ),
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = fabAlpha),
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = fabAlpha),
+            // 2026-09-27 用户裁决：全去阴影（恒 0）
+            elevation = androidx.compose.material3.FloatingActionButtonDefaults.elevation(
+                defaultElevation = 0.dp,
+                pressedElevation = 0.dp,
+                focusedElevation = 0.dp,
+                hoveredElevation = 0.dp,
+            ),
         ) {
             Icon(
                 Icons.Default.KeyboardArrowDown,
                 contentDescription = stringResource(R.string.chat_scroll_bottom),
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = fabAlpha),
             )
         }
     }

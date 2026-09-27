@@ -1089,12 +1089,22 @@ fun ChatScreen(
               // 回底滑出回落——平时菜单 FAB 贴底基线与旧版完全一致）。
               if (!isTerminalMode) {
                   // #451：FAB 组透明度控制器（isScrollInProgress 同时覆盖 fling 与
-                  // 触摸滚动——LazyListState 语义）。
+                  // 触摸滚动——LazyListState 语义）。菜单 FAB：3s 回落。
                   val fabAlphaController = remember {
                       dev.leonardo.ocbeacon.ui.screens.chat.FabTransparencyController(
                           isContentScrolling = { listState.isScrollInProgress },
                       )
                   }
+                  // ⬇ 触底 FAB 独立控制器（2026-09-27 用户裁决）：滚动中即不透明
+                  // （与停靠位无关），停动 2s 回落。
+                  val scrollFabAlphaController = remember {
+                      dev.leonardo.ocbeacon.ui.screens.chat.FabTransparencyController(
+                          isContentScrolling = { listState.isScrollInProgress },
+                          fadeDelayMs = dev.leonardo.ocbeacon.ui.screens.chat.FAB_SCROLL_FADE_DELAY_MS,
+                          scrollHoldOnly = true,
+                      )
+                  }
+                  LaunchedEffect(Unit) { scrollFabAlphaController.run() }
                   ChatFabMenu(
                       todoPendingCount = sessionTodos.count { it.status == "pending" || it.status == "in_progress" },
                       agentRunningCount = taskUi.runningSubagentCount,
@@ -1146,9 +1156,10 @@ fun ChatScreen(
                                       )
                                       ChatScrollBottomFab(
                                           onClick = {
-                                              fabAlphaController.notifyInteraction()
+                                              scrollFabAlphaController.notifyInteraction()
                                               coroutineScope.launch { listState.snapToBottom() }
                                           },
+                                          contentAlpha = { scrollFabAlphaController.value },
                                       )
                                   }
                               }
