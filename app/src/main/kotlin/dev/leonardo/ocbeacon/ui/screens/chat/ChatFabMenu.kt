@@ -53,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -73,12 +74,28 @@ import dev.leonardo.ocbeacon.logging.AppLogger
 import kotlin.math.roundToInt
 import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 import dev.leonardo.ocbeacon.ui.theme.AppMotion
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 
 /** 工具栏入口 id（沿用第十轮四入口独立 sheet 语义）。 */
 internal enum class ChatToolbarEntry { TODO, AGENT, SHELL, GOAL, QUEUE }
 
 /** 贴边滑动顶边距（#194 D1：上限 = 容器高 − 按钮高 − 此边距）。 */
 internal val FabSlideTopMargin: Dp = 8.dp
+
+/**
+ * #451（2026-09-27 用户裁决）FAB 组透明度与默认悬浮位：
+ * - 默认停位 = 容器高 1/8（自底缘抬升，列底边落在 1/8·H 处）；
+ * - 闲置最透 30%；互动（tap/拖拽）与「拉底+内容滚动中」立即不透明；
+ * - 停互动 / 拉底停滑 / 浮空位滑动开始 → 3s 后 1s 过渡回落 30%。
+ */
+internal const val FAB_IDLE_ALPHA = 0.3f
+internal const val FAB_FADE_DELAY_MS = 3_000L
+internal const val FAB_FADE_DURATION_MS = 1_000
+
+/** 默认悬浮位抬升量（px）：容器高 1/8（纯函数，单测覆盖）。 */
+internal fun defaultRestOffsetYPx(containerHeightPx: Float): Float =
+    if (containerHeightPx > 0f) -(containerHeightPx / 8f) else 0f
 
 /**
  * #194 D2 菜单内容几何（全静态，tap 瞬时可算，无 stagger/锚点竞态——M3 折叠态
@@ -126,8 +143,12 @@ internal fun computeFabExpandShiftPx(
  */
 @Stable
 internal class FabEdgeSlideState {
-    /** 纵向位移（负 = 上移；0 = 底部原位）。rememberSaveable 持久化（Saver 只存此项）。 */
-    var offsetYPx by mutableFloatStateOf(0f)
+    /**
+     * 纵向位移（负 = 上移；0 = 底部原位=拉底钉住）。rememberSaveable 持久化
+     * （Saver 只存此项）。#451：NaN = 未解析默认位哨兵——首布局按容器高
+     * 解析为 1/8 抬升（defaultRestOffsetYPx）；此后与普通值无异。
+     */
+    var offsetYPx by mutableFloatStateOf(Float.NaN)
 
     /** 容器实测高（layout 约束 maxHeight，#194 D1——取代旧整屏高 − 160dp 魔法数）。 */
     var containerHeightPx by mutableFloatStateOf(0f)
@@ -162,7 +183,58 @@ private val FabEdgeSlideSaver = Saver<FabEdgeSlideState, Float>(
 
 @Composable
 internal fun rememberFabEdgeSlideState(): FabEdgeSlideState =
-    rememberSaveable(saver = FabEdgeSlideSaver) { FabEdgeSlideState() }
+    // #451：显式 key 换代——旧按位置保存的 0f（=旧版默认贴底）不再复用，
+    // 全员落到 NaN 哨兵 → 新默认 1/8 悬浮位；此后用户拖拽位置正常持久化。
+    rememberSaveable(key = "fabSlideOffsetV2", saver = FabEdgeSlideSaver) { FabEdgeSlideState() }
+
+/**
+ * #451 FAB 组透明度控制器（宿主 ChatScreen remember，注入 ChatFabMenu）。
+ *
+ * 状态机（snapshotFlow + collectLatest 单环，键 = 展开态/钉底滚动保持/互动 tick）：
+ * - **立即不透明（snap 1f）**：菜单展开；或拉底钉住且内容滚动中（fling/触摸，
+ *   [isContentScrolling] 读 LazyListState.isScrollInProgress——两者皆覆盖）；
+ * - **回落（3s 延迟 → 1s tween → 30%）**：其余一切状态——含浮空位滑动开始
+ *   （键翻转即重置 3s 计时，对应用户 spec「开始滑动后 3s 慢慢变透明」）与
+ *   拉底停滑（「非滑动状态下 3s 后慢慢变透明」）；
+ * - 互动（tap/拖拽起止）经 [notifyInteraction] 翻转 tick 重置计时。
+ *
+ * 初始 1f（入场可见）→ 3s 后自然回落 30%（闲置常态）。
+ */
+@Stable
+internal class FabTransparencyController(
+    private val isContentScrolling: () -> Boolean,
+) {
+    private val alpha = Animatable(1f)
+
+    /** 当前组透明度（graphicsLayer lambda 内快照读，动画不触发重组）。 */
+    val value: Float get() = alpha.value
+
+    /** 菜单展开 → 强制不透明（菜单内容可读性优先）。由 ChatFabMenu 镜像写入。 */
+    var expanded by mutableStateOf(false)
+
+    /** 拉底钉住（offsetYPx == 0）→ 内容滚动时保持不透明。由 ChatFabMenu 镜像写入。 */
+    var pinnedAtBottom by mutableStateOf(false)
+
+    /** 互动计数（tap/拖拽起止）——翻转即重置回落计时。 */
+    var interactionTick by mutableStateOf(0)
+
+    fun notifyInteraction() {
+        interactionTick++
+    }
+
+    /** 常驻效应体：ChatFabMenu 内 LaunchedEffect(Unit) 调用。 */
+    suspend fun run() {
+        snapshotFlow { Triple(expanded, pinnedAtBottom && isContentScrolling(), interactionTick) }
+            .collectLatest { (menuOpen, holdOpaque, _) ->
+                if (menuOpen || holdOpaque) {
+                    alpha.snapTo(1f)
+                } else {
+                    delay(FAB_FADE_DELAY_MS)
+                    alpha.animateTo(FAB_IDLE_ALPHA, tween(FAB_FADE_DURATION_MS))
+                }
+            }
+    }
+}
 
 /**
  * #192 v6 + #194 D1：FAB 沿所在屏缘垂直拖动（贴边上下滑动）。
@@ -179,6 +251,7 @@ private fun Modifier.fabEdgeVerticalSlide(
     state: FabEdgeSlideState,
     extraShift: () -> Float = { 0f },
     onDragStart: () -> Unit = {},
+    onDragEnd: () -> Unit = {},
 ): Modifier = composed {
     val density = LocalDensity.current
     val marginPx = with(density) { FabSlideTopMargin.toPx() }
@@ -187,6 +260,12 @@ private fun Modifier.fabEdgeVerticalSlide(
             val containerH = constraints.maxHeight.toFloat()
             if (containerH > 0f && containerH != state.containerHeightPx) {
                 state.updateContainerHeight(containerH)
+            }
+            // #451：默认位哨兵在首帧布局解析（此前任何 NaN 算术均为惰性安全：
+            // coerceIn 对 NaN 原样透传、roundToInt()=0、shift 比较=0f）
+            if (state.offsetYPx.isNaN() && containerH > 0f) {
+                state.offsetYPx = defaultRestOffsetYPx(containerH)
+                    .coerceIn(-(containerH - marginPx), 0f)
             }
             val placeable = measurable.measure(constraints)
             // 折叠态节点高 = **观测最小值**：展开/stagger 只会更大；收起动画收缩途中的
@@ -207,6 +286,7 @@ private fun Modifier.fabEdgeVerticalSlide(
         .pointerInput(state) {
             detectVerticalDragGestures(
                 onDragStart = { onDragStart() },
+                onDragEnd = { onDragEnd() },
                 onVerticalDrag = { change, dragAmount ->
                     change.consume()
                     // 上限基准 = 折叠态节点高（D4 合并后节点仍在收起动画中，尺寸未回落）
@@ -214,6 +294,7 @@ private fun Modifier.fabEdgeVerticalSlide(
                         val basis = state.collapsedNodeHeightPx
                         if (ch > 0f && basis > 0f) ch - basis - marginPx else 0f
                     }
+                    if (state.offsetYPx.isNaN()) return@detectVerticalDragGestures
                     state.offsetYPx = (state.offsetYPx + dragAmount).coerceIn(-maxUp, 0f)
                 },
             )
@@ -260,9 +341,16 @@ internal fun ChatFabMenu(
      * 自适应加高的折叠列）；显隐动画由调用方 AnimatedVisibility 驱动。
      */
     bottomSlot: (@Composable () -> Unit)? = null,
+    /** #451：透明度控制器（宿主 ChatScreen remember 创建；见类注释）。 */
+    alphaController: FabTransparencyController? = null,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val slideState = rememberFabEdgeSlideState()
+
+    // #451 透明度接线：常驻效应 + 展开态/钉底位镜像（组合期幂等写）。
+    LaunchedEffect(Unit) { alphaController?.run() }
+    alphaController?.expanded = expanded
+    alphaController?.pinnedAtBottom = slideState.offsetYPx == 0f
 
     // D2：展开溢出下移分量（临时态，不持久化）
     var expandShift by remember { mutableFloatStateOf(0f) }
@@ -328,10 +416,13 @@ internal fun ChatFabMenu(
     // 与稳定 ui 组二进制冲突）——布局几何（items 上排/button 钉底/44dp 药丸/
     // 8dp 列底距）与 #194 溢出计算精确对齐原实现，morph 动画简化为整列展开。
     Box(
-        modifier = modifier.fabEdgeVerticalSlide(
+        modifier = modifier
+            .graphicsLayer { alpha = alphaController?.value ?: 1f }
+            .fabEdgeVerticalSlide(
             state = slideState,
             extraShift = { expandShift },
             onDragStart = {
+                alphaController?.notifyInteraction()
                 if (expanded) {
                     // D4：展开中拖动 → 收起，当前 shift 瞬时并入 offsetYPx（位置连续、
                     // 不双计），此后拖动直接跟手；effect 重启时 expandShift 已为 0，
@@ -346,6 +437,7 @@ internal fun ChatFabMenu(
                     expandShift = 0f
                 }
             },
+            onDragEnd = { alphaController?.notifyInteraction() },
         ),
     ) {
         Column(
@@ -409,7 +501,11 @@ internal fun ChatFabMenu(
                 }
             }
             FloatingActionButton(
-                onClick = { expanded = !expanded }, // shift 计算在 LaunchedEffect(expanded) 内（Q3 瞬时稳定量）
+                // #451：tap 立刻不透明（notifyInteraction 翻转 tick → 环重置 → snap 1f）
+                onClick = {
+                    alphaController?.notifyInteraction()
+                    expanded = !expanded
+                }, // shift 计算在 LaunchedEffect(expanded) 内（Q3 瞬时稳定量）
                 // 描边（第二十轮，用户要求）：角半径冻结 16dp——形状恒定描边才贴边
                 modifier = Modifier
                     .size(48.dp)

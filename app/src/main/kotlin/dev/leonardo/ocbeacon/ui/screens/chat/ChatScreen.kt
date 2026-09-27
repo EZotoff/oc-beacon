@@ -1088,6 +1088,13 @@ fun ChatScreen(
               //（整列贴边拖动联动；离开底部时带动画滑入并把菜单 FAB 推上，
               // 回底滑出回落——平时菜单 FAB 贴底基线与旧版完全一致）。
               if (!isTerminalMode) {
+                  // #451：FAB 组透明度控制器（isScrollInProgress 同时覆盖 fling 与
+                  // 触摸滚动——LazyListState 语义）。
+                  val fabAlphaController = remember {
+                      dev.leonardo.ocbeacon.ui.screens.chat.FabTransparencyController(
+                          isContentScrolling = { listState.isScrollInProgress },
+                      )
+                  }
                   ChatFabMenu(
                       todoPendingCount = sessionTodos.count { it.status == "pending" || it.status == "in_progress" },
                       agentRunningCount = taskUi.runningSubagentCount,
@@ -1112,6 +1119,7 @@ fun ChatScreen(
                       // 推上）/回底滑出（回落）；即时吸附（旧 FAB 同语义）——不走
                       // forceScrollTick 路径：那是「发送后等新消息增长再滚」的执行器，
                       // 点 ⬇ 无新消息时要等 5s 增长超时才滚（真机日志实锤 grew=-1 后才滚）
+                      alphaController = fabAlphaController,
                       bottomSlot = {
                            // 2026-09-19 终态阴影突跳根修：显隐高度过渡不走 expand/shrink
                            // Vertically（裁剪窗口会把动画期投影裁掉，展开完成 clip 撤除
@@ -1137,7 +1145,10 @@ fun ChatScreen(
                                           Modifier.height(SpacingTokens.LG.dp),
                                       )
                                       ChatScrollBottomFab(
-                                          onClick = { coroutineScope.launch { listState.snapToBottom() } },
+                                          onClick = {
+                                              fabAlphaController.notifyInteraction()
+                                              coroutineScope.launch { listState.snapToBottom() }
+                                          },
                                       )
                                   }
                               }
