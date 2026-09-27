@@ -71,6 +71,7 @@
   - checkHealth 按 #132 语义 UNKNOWN 保留原值→真机持久化的 V1 永不被纠正→V1 请求 /project 等收 HTML 200→SSE parseEvent 抛异常→重连退避→『服务器已断开+目录为空』
   - 取证:handoff-oc-beacon-card-intervention.md §10.1(2026-09-27);可观测性缺口:V2 探测非 2xx 静默 return null(ApiVersionDetector L99)且新进程启动未发探测请求,修复需先补日志
   - 服务器侧已收口(2026-09-27):本机 opencode systemd 用户服务化(linger 开机自启)——opencode-v1@4199(~/oc-v1-env 隔离,无密码仅 127.0.0.1)/opencode-v2@4096(真实环境,Basic Auth 经 OPENCODE_SERVER_PASSWORD 固定为 service.json 密码;官方机制=不设则每次启动随机生成)。真机 E2E 绿(debug-entry→SessionList)。app 侧 V2 探测修复(可观测性缺口)仍待做
+  - 2026-09-27 根修：/api/event 线面探针接替 /api/health（2.0.16+）；真机 v2 回路绿（条幅恢复 7s 消失）。服务器侧 v2 systemd 服务化+固定密码已就绪。
 
 - [ ] **#441 app SSE 长连接随机断连：输出期间渲染静默（服务端正常）** `bug` `dsh`
   - 二十四/二十五世轮实证：DSH 服务正常（RPC accepted、服务端 turn 照常完成并生成标题），app 侧 MDPilot/渲染全静默；重启 app 即恢复。疑电池优化杀后台 socket（横幅曾警告）或 SSE 重连缺失。
@@ -80,6 +81,7 @@
   - 真机 R9 实证两残差：①catch-up 期 gate 按 400ch/48ms 释放而 measure 滞后聚合（442ms 聚 7 批=单 note d=6236）；②大额配对 set 走 requestPositionAndForgetLastKnownKey 核销锚 key，突发期新 item 插入+重排后 LazyList 按字面 index 重锚（LEAP -7562 视觉大跳）
   - 修法方向：gate 释放按壁钟限速（与到达解耦）；配对 set 后在同帧重建 lastKnownKey 或改用保 key 的定位通道
   - 证据：docs/journal/2026-09-25-437-streaming-md-stable-reveal.md 验收十轮；/tmp/t9_log.txt /tmp/f9 帧
+  - 2026-09-27 #438① 已落地：gate 大放行壁钟限速（BIG_RELEASE_CH=200/间隔≥200ms，与到达解耦）+ releaseLength maxReleaseChars 参数（空行毕业段纳入批预算）；真机 gran-run4：append max 1023-2087→200。②配对 set 保 key 未动（下轮）。
 
 - [ ] **#437 流式Markdown稳定揭示渲染——安全前缀两级放行(稳定块+纯段安全后缀),消灭不稳定尾回溯跳变** `sse,render,perf`
   - 根因:不稳定尾先字面排版后回溯重释义=已显示内容高度回溯(真机录屏A-B翻转帧定罪);#435引擎只能配对单调增长。方案:pilot差分与append之间加SafePrefixGate(库与渲染零改动):稳定块+开放段纯文字安全后缀两级放行,尾部扣留超龄进锁高降亮区,完结EOF全量flush。spec:docs/specs/2026-09-25-437-streaming-md-stable-reveal-design.md(阶段A-D+验收矩阵)
@@ -162,6 +164,7 @@
   - 建议:跳过该帧+计数上报;与 P1 SSE 长连接随机断连卡疑同源族群,接手对照
   - 取证:handoff-oc-beacon-card-intervention.md §10.2(2026-09-27),真机代理实验日志复现
   - 勘误(2026-09-27 核码):现码 V1(SseClient.kt L238-249)/V2(SseClientV2.kt L178-205) parse 均 per-frame try-catch,坏帧跳过不断流——卡片『单帧即断』不成立于当前代码;§10.2 实测『断流』真因=服务器返回非 SSE 有限 body(HTML)→逐帧 Parse error+零事件+body 结束即断+重连循环。真实缺口=非 SSE 响应无快检(content-type/首帧嗅探)、坏帧无计数上报——与 #447 探测器同族,接手时对照
+  - 2026-09-27 已实现：非 event-stream 嗅探（SseProtocolMismatchException，不计冷却长退避）+ 坏帧跳过计数（V1/V2 客户端，50 帧汇总）+ 冷却倒计时排程（reconnectAt=冷却结束时刻）。
 
 - [~] **#446 SSE流式active块上移快于turn上方内容(视觉撕裂)** `streaming` `render`
   - 疑似与上文消失(CONTENT-BLINK)同源;用户裁决支线,卡片介入实验后系统调研

@@ -247,4 +247,29 @@ class SafePrefixGateTest {
         assertEquals("1. 第一\n".length, rel("1. 第一\n"))
     }
 
+    // ============ #438①（2026-09-27）：单次放行上限（含空行毕业段） ============
+
+    @Test
+    fun `maxReleaseChars 截断空行毕业大段`() {
+        // 三段空行毕业的定案内容（每段 60+ 字）——原第一级不受批预算约束整段放行；
+        // maxReleaseChars=100 时只放 100（截断点在行中——released 坐标续放安全）。
+        val seg = "这是一段足够长的定案文字用来验证单次放行上限对空行毕业段的截断行为覆盖到索引位置。"
+        val snap = (seg + "\n\n").repeat(5) + seg
+        assertEquals(100, SafePrefixGate.releaseLength(snap, 0, maxReleaseChars = 100))
+        // 续放：从 100 继续到下一个 100
+        assertEquals(200, SafePrefixGate.releaseLength(snap, 100, maxReleaseChars = 100))
+        // 尾批放满
+        val full = SafePrefixGate.releaseLength(snap, 0)
+        assertEquals(full, SafePrefixGate.releaseLength(snap, 200, maxReleaseChars = 100))
+        // 默认参数 = 原行为（整段毕业）
+        assertTrue(full > 200)
+    }
+
+    @Test
+    fun `maxReleaseChars 不影响扣留语义`() {
+        // 未闭合 fence：预算再大也零放行（扣留优先于上限）
+        val snap = "文字\n\n" + "```" + "kotlin\nval a = 1"
+        val r0 = SafePrefixGate.releaseLength(snap, 0)
+        assertEquals(r0, SafePrefixGate.releaseLength(snap, 0, maxReleaseChars = 50))
+    }
 }

@@ -2,10 +2,12 @@ package dev.leonardo.ocbeacon.ui.screens.chat.markdown
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -13,6 +15,7 @@ import com.mikepenz.markdown.model.StreamingMarkdownState
 import com.mikepenz.markdown.model.rememberStreamingMarkdownState
 import dev.leonardo.ocbeacon.BuildConfig
 import dev.leonardo.ocbeacon.logging.AppLogger
+import kotlinx.coroutines.delay
 
 /**
  * #265 流式 Markdown 增量解析试点开关。
@@ -99,6 +102,15 @@ internal object StreamingScrollHold {
  *
  * 关闭（回退通道）：adb shell setprop debug.ocbeacon.jankhold 0 后重启进程。
  */
+/**
+ * #438① 大放行限速参数（2026-09-27）：突发/首跑铺开期单批放行 ≥[BIG_RELEASE_CH]
+ * 视为大放行，两次大放行壁钟间隔 ≥[BIG_RELEASE_MIN_INTERVAL_MS]——把中继缓冲突发
+ * （实测 22s TTFB + 900 delta/12s）下的 catch-up 观感从「单帧砸出」变为
+ * 「快速但分块出现」。正常流式批次（p50=9ch、p90=41ch）远低于阈值，直通。
+ */
+internal const val BIG_RELEASE_CH = 200
+internal const val BIG_RELEASE_MIN_INTERVAL_MS = 200L
+
 internal object JankHoldGate {
     val enabled: Boolean by lazy {
         try {
@@ -122,6 +134,8 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String): PilotStreami
     // #437 §4：非前缀风暴探测（重建限频——冻结放行，旧串回来即恢复）
     val flap = remember { FlapDetector(now = { android.os.SystemClock.elapsedRealtime() }) }
     var lastStormCount by remember { mutableIntStateOf(0) }
+    // #438①：上次大放行（≥BIG_RELEASE_CH）壁钟——大放行间隔限速（与到达解耦）
+    var lastBigReleaseAt by remember { mutableLongStateOf(0L) }
     val gate = StreamingMarkdownPilot.stableReveal
     LaunchedEffect(markdown, state, StreamingScrollHold.holding) {
         val p = prev
@@ -134,9 +148,26 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String): PilotStreami
             p == null -> {
                 if (markdown.isNotEmpty()) {
                     if (gate) {
-                        val d = SafePrefixGate.releaseDelta(markdown, 0)
-                        released = d.newReleased
-                        if (d.delta.isNotEmpty()) appendAndTrace(state, d.delta)
+                        // 2026-09-27 首跑多帧铺开（真机取证：多消息 turn 的后续段
+                        // 全量到达无 delta 流，首跑单帧巨量 append 1136-2087ch——
+                        // 单帧 GC/解析压力集中且打穿帽揭示量子化节奏。改为逐帧铺开
+                        // + #438① 大放行壁钟限速（与增量分支同语义），视觉节奏由帽
+                        // （≤800px 首亮+1600px/500ms 步进）+限速共同接管。
+                        var rel = 0
+                        while (rel < markdown.length) {
+                            val d = SafePrefixGate.releaseDelta(markdown, rel, BIG_RELEASE_CH)
+                            if (d.newReleased <= rel) break // gate 拒绝（扣留中）——后续增量/EOF 接管
+                            if (d.newReleased - rel >= BIG_RELEASE_CH) {
+                                val wait = lastBigReleaseAt + BIG_RELEASE_MIN_INTERVAL_MS -
+                                    android.os.SystemClock.elapsedRealtime()
+                                if (wait > 0) delay(wait)
+                                lastBigReleaseAt = android.os.SystemClock.elapsedRealtime()
+                            }
+                            if (d.delta.isNotEmpty()) appendAndTrace(state, d.delta)
+                            rel = d.newReleased
+                            if (rel < markdown.length) withFrameNanos { }
+                        }
+                        released = rel
                         logGate(markdown, 0, released)
                     } else {
                         appendAndTrace(state, markdown)
@@ -165,12 +196,27 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String): PilotStreami
             }
             markdown.length > p.length -> {
                 if (gate) {
-                    val d = SafePrefixGate.releaseDelta(markdown, released)
-                    if (d.newReleased > released && d.delta.isNotEmpty()) {
-                        appendAndTrace(state, d.delta)
+                    // #438①（2026-09-27 壁钟限速）：catch-up/突发到达期 gate 按
+                    // 400ch/48ms 释放过快（R9 真机实证 442ms 聚 7 批=单 note
+                    // d=6236px，中继缓冲突发下观感即「整块一次性出」）。大放行
+                    // （≥[BIG_RELEASE_CH]）间隔下限 [BIG_RELEASE_MIN_INTERVAL_MS]——
+                    // 与到达解耦、只约束大批；正常流式小批（<200ch）直通不受影响。
+                    val from = released
+                    while (released < markdown.length) {
+                        // #438①：每批喂 [BIG_RELEASE_CH]（含空行毕业段——原不受
+                        // 批预算约束的漏洞）；批 ≥ 阈值即触发壁钟间隔
+                        val d = SafePrefixGate.releaseDelta(markdown, released, BIG_RELEASE_CH)
+                        if (d.newReleased <= released) break
+                        if (d.newReleased - released >= BIG_RELEASE_CH) {
+                            val wait = lastBigReleaseAt + BIG_RELEASE_MIN_INTERVAL_MS -
+                                android.os.SystemClock.elapsedRealtime()
+                            if (wait > 0) delay(wait)
+                            lastBigReleaseAt = android.os.SystemClock.elapsedRealtime()
+                        }
+                        if (d.delta.isNotEmpty()) appendAndTrace(state, d.delta)
+                        released = d.newReleased
                     }
-                    logGate(markdown, released, d.newReleased)
-                    released = d.newReleased
+                    logGate(markdown, from, released)
                 } else {
                     appendAndTrace(state, markdown.substring(p.length))
                     released = markdown.length

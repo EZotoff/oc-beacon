@@ -44,8 +44,14 @@ internal object SafePrefixGate {
     /**
      * 计算快照 [snapshot] 相对已放行长度 [alreadyReleased] 的安全放行长度。
      * 调用方保证 [alreadyReleased] 是此前某次调用结果（或 0/重建清零）。
+     *
+     * #438①（2026-09-27）：[maxReleaseChars] 单次调用放行量上限（默认无限——
+     * 兼容既有调用/测试）。第一级空行毕业原本不受 [MAX_RELEASE_PER_BATCH]
+     * 约束（cand 直接放行）——中继缓冲突发下首跑/catch-up 单批可达整段，
+     * 调用方（pilot 铺开循环）以本参数逐批喂入。截断点可落在行中：
+     * released 是快照坐标，续放时行扫描的 lineStartReal 防御已覆盖行续段。
      */
-    fun releaseLength(snapshot: String, alreadyReleased: Int): Int {
+    fun releaseLength(snapshot: String, alreadyReleased: Int, maxReleaseChars: Int = Int.MAX_VALUE): Int {
         val floor = alreadyReleased.coerceIn(0, snapshot.length)
         if (floor >= snapshot.length) return floor
 
@@ -166,7 +172,12 @@ internal object SafePrefixGate {
                 else -> break // 含活动标记的行：整行扣留等闭合（毕业/EOF flush）
             }
         }
-        return maxOf(floor, allowed)
+        // #438①：放行量总上限（含第一级空行毕业——原不受批预算约束）。
+        // 先比较后相加——floor+Int.MAX_VALUE 的任何溢出形态（Long→Int 收窄
+        // wrap 同样踩坑）从构造上排除。
+        val budget = allowed - floor
+        val capped = if (maxReleaseChars >= budget) allowed else floor + maxReleaseChars
+        return maxOf(floor, capped)
     }
 
     // ===== 块级判定辅助（2026-09-26 行扫描二次重写） =====
@@ -350,8 +361,8 @@ internal object SafePrefixGate {
      * 2026-09-26：[alreadyReleased] 可能落在纯文字行中（增量直出）——delta 首
      * 行是行续段，无表头语义，注入判定跳过之。
      */
-    fun releaseDelta(snapshot: String, alreadyReleased: Int): ReleaseDecision {
-        val r = releaseLength(snapshot, alreadyReleased)
+    fun releaseDelta(snapshot: String, alreadyReleased: Int, maxReleaseChars: Int = Int.MAX_VALUE): ReleaseDecision {
+        val r = releaseLength(snapshot, alreadyReleased, maxReleaseChars)
         val from = alreadyReleased.coerceIn(0, snapshot.length)
         val delta = snapshot.substring(from, r)
         return ReleaseDecision(r, injectTableBlankLines(snapshot, from, delta))
