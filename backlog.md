@@ -71,6 +71,7 @@
   - 免费服务首事件延迟大时窗口拉长到 10-90s（用户 17:21 实测 turn 89s）——完全解释「第一条消息没上屏」与重进后长时间空白观感。
   - 重进复现（空闲/流式中途）均无空白：缓存即时+REST 0.4-1.5s；replaceSessionMessages 已有空列表守卫；loading 仅在消息也为空时清空——数据层无嫌疑，嫌疑在 displayItems→LazyColumn 之间的渲染管线（readiness/turn 重建/会话状态门）。
   - 取证数据：/tmp/statbar/logcat-send.txt + shot-*.png + dots-*.png；修复需专门插桩批次（state→displayItems→chatEntries→像素 四点计时）。
+  - 2026-09-27 深夜独立复验 PASS：API 路径 user 纯增量独立 ENTRIES n=1（+43ms，修复前 n=1 从不出现）；app 内发送路径气泡 ≤31.3s 帧上屏（shot-452b-3）。详见 journal 2026-09-27-v2「#452 独立复验」。旁观察：本环境走 V1 发送无本地播种（#447 同源）；[452-display] 门控流式期未完全生效（log 卫生）。
 
 - [~] **#450 turn结束后统计栏常驻正在流式输出且计时不停** `streaming` `statemachine` `network`
   - 用户报告(2026-09-27):turn完成后Streaming状态不收敛——嫌疑v2线面turn完成事件未被消费(v2连接修复后首次日常使用)
@@ -175,6 +176,9 @@
   - assistant 正文→统计栏间距原 SM 8dp（compact XS 4dp），user 气泡外置统计栏 4dp（compact 2dp）——两侧不一致（2026-09-27 用户报告）
   - 修复：MessageSectionScaffold 尾部间距独立 tailGap（4dp/2dp 与 UserBubbleExternalActions 严格一致），正文内部 parts 间距解耦不动
   - AgentTag 去实底背景改 1dp 边框（tagColor@MUTED + 同色文字）——扁平消息层下实底徽标不协调（用户裁决）
+  - 扩展(2026-09-27 二轮)：①卡片族容器垂直 padding 2→0dp(ToolCardScaffold+ReasoningBlock)——透明卡无背景,padding 只叠加卡间节奏,像素定罪修改前卡间空隙 24/38.5/37.5/28dp 两档混杂(#422 中断轮平铺豁免首次暴露),归零后图标列实测 25.1-25.5dp 完全统一
+  - ②统计栏行高：assistant 信息簇 Row heightIn(min=28dp) 对齐 user 侧外置统计栏 28dp 图标命中区(#419 定规不可降)
+  - 保持：turn 边界/消息边界(16dp)为结构语义层级不压平;Shell 两行卡行尾时长整行居中(设计)
 
 - [ ] **#442 高度引擎根修二期：R2分片增量化(滑动p90 12ms)+cadence收编+flush深拆+终审待复核项** `perf` `refactor`
   - 终审判定：R1批次已锁 A2 贴底5ms/A1回归/A4全项；滑动p90 19-27 未达12——R2分片(稳定块缓存/尾块单测)是 O(内容)→O(尾块) 唯一路径。
