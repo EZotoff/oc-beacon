@@ -11,6 +11,9 @@ import dev.leonardo.ocbeacon.domain.model.SupervisorSnapshot
 import dev.leonardo.ocbeacon.domain.repository.FileRepository
 import dev.leonardo.ocbeacon.domain.repository.ServerRepository
 import dev.leonardo.ocbeacon.domain.repository.SupervisorRepository
+import dev.leonardo.ocbeacon.domain.supervisor.OperatorViewCardDto
+import dev.leonardo.ocbeacon.domain.supervisor.OperatorViewFreshness
+import dev.leonardo.ocbeacon.domain.supervisor.OperatorViewReadOutcome
 import dev.leonardo.ocbeacon.logging.AppLogger
 import dev.leonardo.ocbeacon.util.PathUtils
 import dev.leonardo.ocbeacon.util.UuidV7
@@ -19,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -31,14 +35,14 @@ class SupervisorRepositoryImpl @Inject constructor(
     private val json: Json,
 ) : SupervisorRepository {
 
+    /** 每服务器一个契约新鲜度评估器（保留 lastGood/单调锚点跨 load 调用）。 */
+    private val freshness = mutableMapOf<String, OperatorViewFreshness>()
+
     override suspend fun load(serverId: String): Result<SupervisorSnapshot> = runCatchingCancellable {
         val home = files.getServerPaths(serverId).getOrThrow().home
         val stateDirectory = "$home/.local/state/opencode-supervisor"
         val status = json.decodeFromString<StatusDto>(
             files.getFileContent(serverId, home, "$stateDirectory/status.json").getOrThrow().content,
-        )
-        val queue = json.decodeFromString<QueueDto>(
-            files.getFileContent(serverId, home, "$stateDirectory/queue.json").getOrThrow().content,
         )
         val decisions = files.getFileContent(serverId, home, "$stateDirectory/ledger.jsonl")
             .getOrThrow()
@@ -53,32 +57,51 @@ class SupervisorRepositoryImpl @Inject constructor(
             .takeLast(20)
             .reversed()
 
+        // 注意事项只来自 operator-view.json 单镜像（契约「Operator read model」）：
+        // 不再 join queue.json / ledger——那些是 supervisor 内部状态，不是操作员视图。
+        val evaluator = freshness.getOrPut(serverId) { OperatorViewFreshness() }
+        val raw = files.getFileContent(serverId, home, "$stateDirectory/operator-view.json")
+            .getOrNull()
+            ?.content
+        val outcome = if (raw == null) evaluator.readError() else evaluator.read(raw)
+        if (outcome is OperatorViewReadOutcome.Frozen && BuildConfig.DEBUG) {
+            AppLogger.d(TAG, "operator-view frozen: reason=${outcome.reason} hasLastGood=${outcome.lastGood != null}")
+        }
+        val live = outcome is OperatorViewReadOutcome.Live
+        val view = when (outcome) {
+            is OperatorViewReadOutcome.Live -> outcome.view
+            is OperatorViewReadOutcome.Frozen -> outcome.lastGood
+        }
+
         SupervisorSnapshot(
             rootsMonitored = status.rootHealth.size,
             rootsFailing = status.rootHealth.values.count { it.state == "failing" },
             errorsPeak = status.errorsLastHourPeak,
-            attentionItems = queue.items
-                .filter { it.lifecycle.lastOrNull()?.state != "resolved" }
-                .sortedByDescending { it.priority.stakes }
-                .map { item ->
-                    SupervisorAttentionItem(
-                        id = item.id,
-                        question = item.question,
-                        project = projectName(item.target.root),
-                        createdAt = item.priority.createdAt,
-                        stakes = item.priority.stakes,
-                        actionClass = item.actionClass,
-                        escalationKind = item.escalationKind.orEmpty(),
-                        root = item.target.root,
-                    )
-                },
+            attentionItems = view?.cards.orEmpty().map { it.toAttentionItem() },
             recentDecisions = decisions,
             failingRoots = status.rootHealth
                 .filterValues { it.state == "failing" }
                 .keys
                 .toList(),
+            stale = !live,
+            staleReason = if (live) null else (outcome as OperatorViewReadOutcome.Frozen).reason.name.lowercase().replace('_', '-'),
         )
     }
+
+    /** LIVE 卡 → 注意事项项；root 缺省（增补前发布端）时失败安全为空串——空 root 回复守卫自然 no-op。 */
+    private fun OperatorViewCardDto.toAttentionItem(): SupervisorAttentionItem =
+        SupervisorAttentionItem(
+            id = id,
+            question = reasonText,
+            project = rootLabel.ifBlank { projectName(root.orEmpty()) },
+            createdAt = Instant.now().minusSeconds(ageSeconds.coerceAtLeast(0L)).toString(),
+            actionClass = actionClass.orEmpty(),
+            escalationKind = escalationKind.orEmpty(),
+            root = root.orEmpty(),
+            reasonText = reasonText,
+            premiseTexts = premiseTexts,
+            severity = severity,
+        )
 
     override suspend fun sendReply(serverId: String, root: String, reply: BeaconReply): Result<Unit> =
         withContext(Dispatchers.IO) {
@@ -127,32 +150,6 @@ class SupervisorRepositoryImpl @Inject constructor(
 
     @Serializable
     private data class RootHealthDto(val state: String = "unknown")
-
-    @Serializable
-    private data class QueueDto(val items: List<QueueItemDto> = emptyList())
-
-    @Serializable
-    private data class QueueItemDto(
-        val id: String,
-        val question: String,
-        val target: TargetDto,
-        val priority: PriorityDto,
-        val lifecycle: List<LifecycleDto> = emptyList(),
-        val actionClass: String = "",
-        val escalationKind: String? = null,
-    )
-
-    @Serializable
-    private data class TargetDto(val root: String)
-
-    @Serializable
-    private data class PriorityDto(
-        val stakes: Int,
-        val createdAt: String,
-    )
-
-    @Serializable
-    private data class LifecycleDto(val state: String)
 
     @Serializable
     private data class LedgerRecordDto(

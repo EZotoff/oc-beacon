@@ -108,6 +108,9 @@ class OperatorViewFreshness(
     private fun frozen(reason: FreezeReason): OperatorViewReadOutcome =
         OperatorViewReadOutcome.Frozen(reason, lastGood)
 
+    /** 文件字节读取失败（repository 侧 IO 错误）：冻结并保留 lastGood。 */
+    fun readError(): OperatorViewReadOutcome = frozen(FreezeReason.READ_ERROR)
+
     companion object {
         /** Contract: stale = producedAt older than 30 s at receipt. */
         const val READ_STALE_AGE_MS = 30_000L

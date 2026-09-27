@@ -19,6 +19,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -30,13 +33,13 @@ class SupervisorRepositoryImplTest {
     private val json = Json { ignoreUnknownKeys = true }
 
     @Test
-    fun `load returns glance metrics open items and recent decisions`() = runTest {
+    fun `load builds items from operator-view single image without queue or ledger joins`() = runTest {
         val home = "/home/operator"
         coEvery { files.getServerPaths("server-1") } returns Result.success(ServerPaths(home = home))
         coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/status.json") } returns
             text("status.json", STATUS_JSON)
-        coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/queue.json") } returns
-            text("queue.json", QUEUE_JSON)
+        coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/operator-view.json") } returns
+            text("operator-view.json", operatorViewJson())
         coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/ledger.jsonl") } returns
             text("ledger.jsonl", LEDGER_JSONL)
 
@@ -47,12 +50,61 @@ class SupervisorRepositoryImplTest {
         assertEquals(2, snapshot.rootsMonitored)
         assertEquals(1, snapshot.rootsFailing)
         assertEquals(4, snapshot.errorsPeak)
-        assertEquals(listOf("att_open"), snapshot.attentionItems.map { it.id })
-        assertEquals("oc-beacon", snapshot.attentionItems.single().project)
-        assertEquals("/work/oc-beacon", snapshot.attentionItems.single().root)
-        assertEquals(4, snapshot.attentionItems.single().stakes)
+        assertFalse(snapshot.stale)
+        assertNull(snapshot.staleReason)
+        assertEquals(listOf("att_open", "att_info"), snapshot.attentionItems.map { it.id })
+        val first = snapshot.attentionItems.first()
+        assertEquals("Choose the release path", first.question)
+        assertEquals("oc-beacon", first.project)
+        assertEquals("/work/oc-beacon", first.root)
+        assertEquals("ESCALATE", first.actionClass)
+        assertEquals("DECISION", first.escalationKind)
+        assertEquals("B", first.severity)
+        assertEquals(listOf("branch blocked", "tests red"), first.premiseTexts)
+        assertTrue(first.createdAt.isNotBlank())
         assertEquals("ESCALATE", snapshot.recentDecisions.single().action)
         assertEquals("oc-beacon", snapshot.recentDecisions.single().project)
+    }
+
+    @Test
+    fun `frozen image retains previous snapshot items with stale true`() = runTest {
+        val home = "/home/operator"
+        coEvery { files.getServerPaths("server-1") } returns Result.success(ServerPaths(home = home))
+        coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/status.json") } returns
+            text("status.json", STATUS_JSON)
+        coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/ledger.jsonl") } returns
+            text("ledger.jsonl", LEDGER_JSONL)
+        coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/operator-view.json") } returnsMany
+            listOf(
+                text("operator-view.json", operatorViewJson()),
+                text("operator-view.json", operatorViewJson(producedAtOffsetMs = -60_000)),
+            )
+
+        val repository = SupervisorRepositoryImpl(files, servers, sessions, messages, json)
+        val live = repository.load("server-1").getOrThrow()
+        assertFalse(live.stale)
+
+        val frozen = repository.load("server-1").getOrThrow()
+        assertTrue(frozen.stale)
+        assertEquals("stale", frozen.staleReason)
+        assertEquals(live.attentionItems.map { it.id }, frozen.attentionItems.map { it.id })
+    }
+
+    @Test
+    fun `invalid json freezes and never yields a live empty idle state`() = runTest {
+        val home = "/home/operator"
+        coEvery { files.getServerPaths("server-1") } returns Result.success(ServerPaths(home = home))
+        coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/status.json") } returns
+            text("status.json", STATUS_JSON)
+        coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/ledger.jsonl") } returns
+            text("ledger.jsonl", LEDGER_JSONL)
+        coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/operator-view.json") } returns
+            text("operator-view.json", "not json at all")
+
+        val snapshot = SupervisorRepositoryImpl(files, servers, sessions, messages, json).load("server-1").getOrThrow()
+
+        assertTrue(snapshot.stale)
+        assertEquals("invalid-schema", snapshot.staleReason)
     }
 
     @Test
@@ -157,6 +209,18 @@ class SupervisorRepositoryImplTest {
         time = Session.Time(created = 0L, updated = 0L),
     )
 
+    private fun operatorViewJson(producedAtOffsetMs: Long = 0L): String {
+        val producedAt = java.time.Instant.now().plusMillis(producedAtOffsetMs).toString()
+        return """{"schemaVersion":1,"generation":1,"lastSeq":7,"producedAt":"$producedAt","cards":[
+            {"id":"att_open","rootLabel":"oc-beacon","root":"/work/oc-beacon","sessionLabel":"ses_1",
+             "reasonText":"Choose the release path","premiseTexts":["branch blocked","tests red"],
+             "ageSeconds":600,"severity":"B","jumpAvailable":true,"actionClass":"ESCALATE","escalationKind":"DECISION"},
+            {"id":"att_info","rootLabel":"voice-bridge","root":"/work/voice-bridge","sessionLabel":"ses_2",
+             "reasonText":"FYI only","premiseTexts":[],
+             "ageSeconds":120,"severity":"D","jumpAvailable":true,"actionClass":"CONTINUE","escalationKind":"INFORMATION"}
+        ]}""".trimIndent()
+    }
+
     private fun text(path: String, content: String): Result<FileContent> =
         Result.success(FileContent(path, ContentType.TEXT, content))
 
@@ -166,21 +230,6 @@ class SupervisorRepositoryImplTest {
              "ticksByAction":{},"unknownOriginRate":0,"machineMarkedRate":1,"errorsLastHourPeak":4,
              "rootHealth":{"/work/oc-beacon":{"state":"ok","consecutiveFailures":0},
              "/work/voice-bridge":{"state":"failing","consecutiveFailures":2}}}
-        """.trimIndent()
-
-        val QUEUE_JSON = """
-            {"schemaVersion":1,"items":[
-              {"schemaVersion":1,"id":"att_open","version":1,"decisionKey":"a","kind":"decision",
-               "origin":{"tickID":"tick_1","ledgerSeq":1,"decision":{"action":"ESCALATE","rationale":"Need operator","citations":[],"confidence":0.9},"citations":[],"informationNeeds":[],"contextDigest":"x"},
-               "target":{"root":"/work/oc-beacon","sessionID":"ses_1","userMessageID":"msg_1"},"actionClass":"ESCALATE",
-               "question":"Choose the release path","rationale":"The branch is blocked","priority":{"stakes":4,"urgency":3,"confidence":0.9,"freshness":1,"createdAt":"2026-09-22T09:00:00Z"},
-               "premises":[],"relatedItemIDs":[],"lifecycle":[{"state":"proposed","at":"2026-09-22T09:00:00Z","actor":"tick"}],"poisonCount":0},
-              {"schemaVersion":1,"id":"att_done","version":2,"decisionKey":"b","kind":"decision",
-               "origin":{"tickID":"tick_2","ledgerSeq":2,"decision":{"action":"ACCEPT","rationale":"Done","citations":[],"confidence":1},"citations":[],"informationNeeds":[],"contextDigest":"y"},
-               "target":{"root":"/work/voice-bridge","sessionID":"ses_2","userMessageID":"msg_2"},"actionClass":"ACCEPT",
-               "question":"Old item","rationale":"Resolved","priority":{"stakes":1,"urgency":1,"confidence":1,"freshness":1,"createdAt":"2026-09-22T08:00:00Z"},
-               "premises":[],"relatedItemIDs":[],"lifecycle":[{"state":"resolved","at":"2026-09-22T08:30:00Z","disposition":"propagated","evidence":[]}],"poisonCount":0}
-            ],"surfaceLog":[],"digest":[]}
         """.trimIndent()
 
         val LEDGER_JSONL = """
