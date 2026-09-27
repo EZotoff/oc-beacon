@@ -38,3 +38,12 @@
 - 环境注意：gradle.properties 的代理四行与 org.gradle.java.home 为**本机生效、禁止提交**（CI 无代理/无 brew 路径会被破坏）；local.properties 已改指 ~/android-sdk（不入库）。
 - 工具沉淀（~/card-lab）：tear-r1..r5.py（复现协议：清日志先于入口+sid 对齐屏幕会话+首探针门禁+anchor 记录）、tear-timeline.py、tear-strips.py、tear-correlate.py、tear-r{4,5}-logcat/timeline/strips.csv 全套数据。
 - 待用户验收（V6）：日常使用观感确认「流式输出中 active 块与上方内容是否还有撕裂感」。
+
+## 已完结卡片迁入（2026-09-27）
+
+### **#446 SSE流式active块上移快于turn上方内容(视觉撕裂)** `streaming` `render`
+  - 疑似与上文消失(CONTENT-BLINK)同源;用户裁决支线,卡片介入实验后系统调研
+  - 候选:帽clip相位差/放行与reserve释放节奏/diff与flush事务帧错位
+  - 根修交付(2026-09-27,e76aed43):毕业 held 收缩撤销一帧延迟(withFrameNanos)——真机条带差分定罪 b12 底缝 26 帧差动全对齐毕业窗;R5 对照 b12 族 13→2 帧(收敛88%),±80px 振荡级联消失。真机验证绿,单测跑全量;待用户观感验收
+  - 验证收口:单测全量 3573 例两轮绿(首轮1例 SseConnectionManagerTest MockK verify 超时=冷跑负载偶发,定向复跑绿+全量复跑绿交叉确认);真机 R5 对照 b12 族 13→2 帧
+  - 迁入依据：用户日常验收未再见撕裂(R5+本批限速后观感通过)（backlog.sh migrate 2026-09-27）
