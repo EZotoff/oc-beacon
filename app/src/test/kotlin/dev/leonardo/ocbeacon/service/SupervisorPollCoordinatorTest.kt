@@ -140,4 +140,32 @@ class SupervisorPollCoordinatorTest {
         coVerify(exactly = 0) { seenStore.saveHealthSnapshot(any(), any()) }
         verify(exactly = 0) { cache.put(any(), any()) }
     }
+
+    @Test
+    fun `probe-noise burst renders all items without displacing seen ids and notifies only unseen`() = runTest {
+        // 契约 required case：burst 形状的高计数卡列表（上限 20 张，混合 escalationKind）。
+        // 探针过滤在上游 publisher 完成；Beacon 侧断言：全部卡渲染、既有 id 键稳定、只通知未见项。
+        val kinds = listOf("APPROVAL", "DECISION", "INFORMATION")
+        val burst = (1..20).map { i -> item("burst-$i", escalationKind = kinds[(i - 1) % 3]) }
+        val snapshot = SupervisorSnapshot(
+            rootsMonitored = 1,
+            rootsFailing = 0,
+            errorsPeak = 0,
+            attentionItems = burst,
+            recentDecisions = emptyList(),
+        )
+        coEvery { repository.load("s1") } returns Result.success(snapshot)
+        every { seenStore.seenItemIds("s1") } returns flowOf(setOf("burst-1", "burst-2", "burst-3"))
+        every { seenStore.healthSnapshot("s1") } returns flowOf(SupervisorHealthSnapshot())
+
+        coordinator().poll("s1")
+
+        // 全量渲染（含 INFORMATION——应用内可见）。
+        verify { cache.put("s1", snapshot) }
+        // 只向通知层派发未见项；kind 过滤是 manager 的纵深防御（见 SupervisorNotificationManagerTest）。
+        coVerify(exactly = 17) { notifications.notifyAttentionItem("s1", match { it.id.startsWith("burst-") }) }
+        coVerify(exactly = 0) { notifications.notifyAttentionItem("s1", match { it.id == "burst-1" }) }
+        // seen 键稳定：保存集合 = 当前开放 id 全集，无位移。
+        coVerify { seenStore.saveSeenItemIds("s1", burst.map { it.id }.toSet()) }
+    }
 }

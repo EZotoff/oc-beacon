@@ -152,4 +152,22 @@ class SupervisorNotificationManagerTest {
         assertNull(health.itemId)
         assertTrue(health.healthContext)
     }
+
+    @Test
+    fun `mixed-kind burst notifies only APPROVAL and DECISION items`() = runTest {
+        val kinds = listOf("APPROVAL", "DECISION", "INFORMATION")
+        val burst = (1..20).map { i -> item("burst-$i", escalationKind = kinds[(i - 1) % 3]) }
+        burst.forEach { manager().notifyAttentionItem("s1", it) }
+
+        burst.filter { it.escalationKind != "INFORMATION" }.forEach { item ->
+            verify {
+                notificationManager.notify(SupervisorPushSpec.attentionNotificationId("s1", item.id), any())
+            }
+        }
+        burst.filter { it.escalationKind == "INFORMATION" }.forEach { item ->
+            verify(exactly = 0) {
+                notificationManager.notify(SupervisorPushSpec.attentionNotificationId("s1", item.id), any())
+            }
+        }
+    }
 }

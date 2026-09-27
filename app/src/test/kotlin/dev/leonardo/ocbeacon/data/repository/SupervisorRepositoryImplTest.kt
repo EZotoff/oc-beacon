@@ -108,6 +108,31 @@ class SupervisorRepositoryImplTest {
     }
 
     @Test
+    fun `twenty-card burst renders every card with stable ids and kind metadata`() = runTest {
+        val home = "/home/operator"
+        coEvery { files.getServerPaths("server-1") } returns Result.success(ServerPaths(home = home))
+        coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/status.json") } returns
+            text("status.json", STATUS_JSON)
+        coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/ledger.jsonl") } returns
+            text("ledger.jsonl", LEDGER_JSONL)
+        coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/operator-view.json") } returns
+            text("operator-view.json", operatorViewJson(cards = 20))
+
+        val snapshot = SupervisorRepositoryImpl(files, servers, sessions, messages, json).load("server-1").getOrThrow()
+
+        assertFalse(snapshot.stale)
+        assertEquals((1..19).map { "att_$it" } + "att_open", snapshot.attentionItems.map { it.id })
+        // 混合 kind 全量映射：INFORMATION 只留在应用内，APPROVAL/DECISION 保留元数据供推送过滤。
+        assertEquals(
+            listOf("APPROVAL", "DECISION", "INFORMATION"),
+            snapshot.attentionItems.take(3).map { it.escalationKind },
+        )
+        // 已有事项 id 不被 burst 位移（att_open 仍在末位，键稳定）。
+        assertEquals("att_open", snapshot.attentionItems.last().id)
+    }
+
+
+    @Test
     fun `sendReply creates inbox session when absent and sends correlated reply`() = runTest {
         val root = "/work/oc-beacon"
         coEvery { servers.resolveConnection("server-1") } returns mockk()
@@ -209,16 +234,29 @@ class SupervisorRepositoryImplTest {
         time = Session.Time(created = 0L, updated = 0L),
     )
 
-    private fun operatorViewJson(producedAtOffsetMs: Long = 0L): String {
+    private fun operatorViewJson(producedAtOffsetMs: Long = 0L, cards: Int = 0): String {
         val producedAt = java.time.Instant.now().plusMillis(producedAtOffsetMs).toString()
-        return """{"schemaVersion":1,"generation":1,"lastSeq":7,"producedAt":"$producedAt","cards":[
-            {"id":"att_open","rootLabel":"oc-beacon","root":"/work/oc-beacon","sessionLabel":"ses_1",
+        val body = if (cards > 0) {
+            // burst 形状：cards-1 张混合 kind 卡 + 末位固定的既有 ESCALATE/DECISION 卡。
+            val kinds = listOf("APPROVAL" to "ESCALATE", "DECISION" to "ESCALATE", "INFORMATION" to "CONTINUE")
+            (1 until cards).joinToString(",") { i ->
+                val (kind, action) = kinds[(i - 1) % 3]
+                """{"id":"att_$i","rootLabel":"proj-$i","root":"/work/p$i","sessionLabel":"ses_$i",
+                 "reasonText":"burst reason $i","premiseTexts":[],
+                 "ageSeconds":$i,"severity":"C","jumpAvailable":true,"actionClass":"$action","escalationKind":"$kind"}"""
+            } +
+                """,{"id":"att_open","rootLabel":"oc-beacon","root":"/work/oc-beacon","sessionLabel":"ses_1",
+                 "reasonText":"Choose the release path","premiseTexts":["branch blocked","tests red"],
+                 "ageSeconds":600,"severity":"B","jumpAvailable":true,"actionClass":"ESCALATE","escalationKind":"DECISION"}"""
+        } else {
+            """{"id":"att_open","rootLabel":"oc-beacon","root":"/work/oc-beacon","sessionLabel":"ses_1",
              "reasonText":"Choose the release path","premiseTexts":["branch blocked","tests red"],
              "ageSeconds":600,"severity":"B","jumpAvailable":true,"actionClass":"ESCALATE","escalationKind":"DECISION"},
             {"id":"att_info","rootLabel":"voice-bridge","root":"/work/voice-bridge","sessionLabel":"ses_2",
              "reasonText":"FYI only","premiseTexts":[],
-             "ageSeconds":120,"severity":"D","jumpAvailable":true,"actionClass":"CONTINUE","escalationKind":"INFORMATION"}
-        ]}""".trimIndent()
+             "ageSeconds":120,"severity":"D","jumpAvailable":true,"actionClass":"CONTINUE","escalationKind":"INFORMATION"}"""
+        }
+        return """{"schemaVersion":1,"generation":1,"lastSeq":7,"producedAt":"$producedAt","cards":[$body]}""".trimIndent()
     }
 
     private fun text(path: String, content: String): Result<FileContent> =
