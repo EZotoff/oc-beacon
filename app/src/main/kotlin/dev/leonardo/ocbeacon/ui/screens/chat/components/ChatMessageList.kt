@@ -97,6 +97,7 @@ import dev.leonardo.ocbeacon.ui.screens.chat.dialog.PermissionCard
 import dev.leonardo.ocbeacon.ui.screens.chat.dialog.QuestionCard
 import dev.leonardo.ocbeacon.ui.screens.chat.components.AlwaysConfirmDialog
 import dev.leonardo.ocbeacon.ui.screens.chat.scroll.PreRenderCoordinator
+import dev.leonardo.ocbeacon.ui.screens.chat.util.cardFlingLeakGuard
 import dev.leonardo.ocbeacon.ui.screens.chat.util.rememberSafeFlingBehavior
 import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.InjectionLabelKind
 import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.RowCapabilities
@@ -2525,6 +2526,11 @@ fun ChatMessageList(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                // 卡内滚动 fling 泄漏守卫(#474 五轮):拦截本 item 内
+                                // 全部卡内滚动容器(思考内容/工具输出等 21 处)的 fling
+                                // 到边泄漏(逐帧 onPostScroll+残速 onPostFling,reverseLayout
+                                // 下朝底猛拉),drag 泄漏放行(滚动链期望行为)。
+                                .cardFlingLeakGuard()
                                 .animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = null),
                         ) {
                             CompositionLocalProvider(
