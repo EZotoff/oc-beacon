@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#468**（2026-09-28 #467 V1 外部注入轮次(POST /session/）。
+**编号**：全局递增，不回收。下一编号：**#472**（2026-09-28 #471 完结瞬间高度跳变族:StepGroup整树互换+）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。
 
@@ -65,6 +65,15 @@
   - 00:07 fling中tap思考卡后,列表对任意方向滑动零响应(MIUIInput事件送达,无ANR,CPU~20%)。force-stop重启/重装(install -r保留数据)均不恢复;pm clear后现场丢失无法复验。嫌疑:某持久化状态(expanded集合/DataStore)触发测量/布局死循环或滚动消费悬挂。复现路径已记录在案,待重建环境后优先定位。
 
 ## P1 — 核心功能需求
+
+- [ ] **#470 流式高度配对收缩缺口:帽不回改空白残留+ledger收缩不配对视口落** `scroll,chat`
+  - 2026-09-30 调研 P3 定罪:①帽轨 reserveReleasePlan 对 trueHeight<=reserved 恒 null(帽单调只增,ScrollCompensation.kt:338)——流式内容回缩(表格列放宽/setext 前重排)时 item 保持旧高=空白残留,直到换流式项 reset;②ledger 轨 note 对 d<0 只 rebase 不配对(:157)——压缩卡/工具横幅回缩时上方内容下坠无补偿。修复需高度引擎域专项设计(帽回改与『已上屏永不回改』既有裁决冲突,需用户裁断语义:回缩时同步缩帽+视口跟随 vs 维持空白)。
+
+- [ ] **#469 流式表格高度抖动三连:键含全文致列宽重排+stagedLimit塌回+两拍收敛** `chat,markdown,scroll`
+  - 2026-09-30 高度稳定性系统调研(docs/research/streaming-height-stability-audit.md)P0 定罪:①MeasureCache/rows/NaturalWidthsLru 键含整条消息全文,流式每 append 失效重建→新宽单元格改变全表列宽,已上屏行重换行(双向跳变,MarkdownTable.kt:189/361-414);②>20 行表格 stagedLimit=remember(content,tableNode){1} 每 append 重置→塌回 8 行再逐帧重建循环(MarkdownTable.kt:101/226-232/765-770);③containerWidth 首拍 0→120dp cap 夹窄,次拍放宽回缩(MarkdownTable.kt:250/258/390-414)。修复方向:表格内 remember 键改表格自身文本/node 深比较+BoxWithConstraints 首拍内联宽。触发面:流式中任何表格输出(密集轮次常见)。
+
+- [ ] **#468 流式表格高度抖动三连:键含全文致列宽重排+stagedLimit塌回+两拍收敛** `chat,markdown,scroll`
+  - 2026-09-30 高度稳定性系统调研(docs/research/streaming-height-stability-audit.md)P0 定罪:①MeasureCache/rows/NaturalWidthsLru 键含整条消息全文,流式每 append 失效重建→新宽单元格改变全表列宽,已上屏行重换行(双向跳变,MarkdownTable.kt:189/361-414);②>20 行表格 stagedLimit=remember(content,tableNode){1} 每 append 重置→塌回 8 行再逐帧重建循环(MarkdownTable.kt:101/226-232/765-770);③containerWidth 首拍 0→120dp cap 夹窄,次拍放宽回缩(MarkdownTable.kt:250/258/390-414)。修复方向:表格内 remember 键改表格自身文本/node 深比较+BoxWithConstraints 首拍内联宽。触发面:流式中任何表格输出(密集轮次常见)。
 
 - [ ] **#466 展开方向:贴底免派发向上推旧内容,用户要向下推新内容(与 #432 裁决反向)** `chat-ui`
   - 2026-09-29 用户验收 B 反馈:展开后前面内容被往上推,期望后续内容往下推。取证:贴底态(fii=0)展开命中 #432 免派发分支(bottom-pinned expand skip-dispatch H=62),布局向上扩展——截图对比中上部 24547-56029px 位移/底部不动=机制实锤。与 #432 当时裁决(贴底护底部,修展开跳转主诉)方向相反——需用户拷问裁断场景边界(主动展开 vs 流式跟随)后定向修复。
@@ -180,6 +189,9 @@
   - 批次三(步骤组顶开根修,用户三报告驱动):FLUSH 实测钉位统一契约(预测配对退役——LEAP+回收双雷,帧级实证 LeftCompositionCancellationException);组尾收起行(小组+大组);重内容首帧占位。折叠行 1100→1100 分毫不动;思考卡同路径回归;全量绿。待用户手感复验。commit 805c0e84。
 
 ## P2 — 优化与锦上添花
+
+- [ ] **#471 完结瞬间高度跳变族:StepGroup整树互换+>2048字符Loading塌缩+归一化重排** `chat,markdown`
+  - 2026-09-30 调研 P2 定罪:①多消息 turn 完结时 StepGroup 流式平铺↔折叠组整树互换(探针注释自认结构性高度跳变源,数千 px 级,冷账本 24dp 桩帧,MessageCardAssistant.kt:428-479);②>2048 字符正文完结切 pilot→async 首帧 Loading≈0 高再 Success 全高(#428 同族 +268px,MarkdownContent.kt:603-715);③完结归一化变换(数学围栏/任务列表/长段空行化)只发生在完结=一次性重排。方向:②pilot 终帧同步换入/缓存预热收益最明确;①依赖 L3 AST 切片既有计划。另:setext 升格(SafePrefixGate 自认缺口)+tight→loose 列表+CRLF 表格三小项随 markdown 批次顺带。
 
 - [ ] **#465 UI 暖态下点击偶发失效(冷启可靠,间歇性)** `chat-ui`
   - 2026-09-29 #461/#462 取证副产物:force-stop 冷启后输入 tap 可靠命中,暖运行后同坐标偶发零效果(无日志无 UI 变化,vibrator 反馈存在);复现条件未锁定——暖态 35min 点击仍正常(4 条 episode 日志实证),失效为间歇性非持续态。影响面=自动化验证可靠性,无用户主诉不阻塞;再撞上时现场抓 input dispatcher+app 双侧日志。
