@@ -58,6 +58,14 @@ data class RenderableTurn(
      */
     val tokensTotal: Long? = null,
     /**
+     * #463 三轮：最后消息（最终回答/流式中的最新 step）首组 part id——非 null
+     * 表示该 part 渲染前应插 step 分割线。根因：流式中最新消息走 GroupedParts
+     * 平铺分支（无 stepStarts 信息），线等消息完结并入 StepGroup 且下一条消息
+     * 开始流式才后补 = 晚一个 step；改由装配层按消息序直接标记，线随新 step
+     * 首个内容块首帧出现。Context 组（无单一 part id）/空前序 = null 不插。
+     */
+    val lastStepDividerBeforePartId: String? = null,
+    /**
      * #311 Task4 deliverables：turn 内产出文件（成功写类工具调用 args 路径，
      * 首见序去重；TurnDeliverables fold 契约 ②）。从**原始 parts** 折（非
      * renderItems——#247 同键折叠会吞后续同键卡的 args）；空列表 = 该轮
@@ -212,6 +220,9 @@ fun computeRenderableTurn(
     val pendingStepGroups = mutableListOf<PartGroup>()
     // #463:每 step(消息)首组索引——StepGroup 分割线序号判定用
     val pendingStepStarts = mutableListOf<Int>()
+    // #463 三轮:旧侧(更早 step)带渲染组的消息数——最后消息分割线标记的前提
+    var priorStepsWithContent = 0
+    var lastStepDividerBeforePartId: String? = null
     var pendingToolCount = 0
     var pendingTextCount = 0
     for ((msgIndex, msg) in ordered.withIndex()) {
@@ -233,11 +244,20 @@ fun computeRenderableTurn(
         val isLastStep = msgIndex == ordered.lastIndex
         if (!isLastStep && msgParts.isNotEmpty()) {
             if (pendingStepMsgId == null) pendingStepMsgId = msg.message.id
-            if (groups.isNotEmpty()) pendingStepStarts.add(pendingStepGroups.size)
+            if (groups.isNotEmpty()) {
+                pendingStepStarts.add(pendingStepGroups.size)
+                priorStepsWithContent++
+            }
             pendingStepGroups.addAll(groups)
             pendingToolCount += msgParts.count { it is Part.Tool }
             pendingTextCount += msgParts.count { it is Part.Text }
         } else {
+            // #463 三轮:最后消息首组前存在带内容的旧侧消息 = 非 首 step,
+            // 标记首组 part id(线随其首帧渲染;平铺分支无 stepStarts 可查)。
+            if (isLastStep && priorStepsWithContent >= 1) {
+                lastStepDividerBeforePartId =
+                    (groups.firstOrNull() as? PartGroup.Single)?.part?.id
+            }
             if (pendingStepGroups.isNotEmpty()) {
                 renderItems.add(
                     RenderItem.StepGroup(
@@ -340,6 +360,7 @@ fun computeRenderableTurn(
         renderItems = collapseConsecutiveToolCards(renderItems),
         isEmpty = renderItems.isEmpty() && errorText == null,
         errorText = errorText,
+        lastStepDividerBeforePartId = lastStepDividerBeforePartId,
         agentName = agentName,
         modelId = modelId,
         durationMs = durationMs,

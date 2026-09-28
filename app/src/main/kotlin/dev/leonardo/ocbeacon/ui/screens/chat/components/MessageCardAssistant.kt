@@ -274,6 +274,10 @@ internal fun MessageCardAssistant(
                     is RenderItem.RepeatingTool -> {
                         // #247（2026-08-28 用户裁决）：回合内连续同键 tool 卡折叠——
                         // 首张正常渲染 + ×N 徽标（与 #243 合成卡去重同款交互）。
+                        // #463 三轮:最后消息首组被折叠为首张时,线随首张首帧出现。
+                        if (item.part.id == renderableTurn.lastStepDividerBeforePartId) {
+                            StepDivider(0)
+                        }
                         key(item.part.id) {
                             Box {
                                 PartContent(
@@ -326,7 +330,14 @@ internal fun MessageCardAssistant(
                                     onOpenFile = onOpenFile ?: {},
                                 )
                             }
-                            is PartGroup.Single -> key(item.group.part.id) {
+                            is PartGroup.Single -> {
+                                // #463 三轮:最后消息(最新 step)首组前插分割线——
+                                // 平铺分支无 stepStarts,装配层按 part-id 身份标记,
+                                // 线随新 step 首个内容块首帧出现(不后补)。
+                                if (item.group.part.id == renderableTurn.lastStepDividerBeforePartId) {
+                                    StepDivider(0)
+                                }
+                                key(item.group.part.id) {
                                 // 滚动预解析消费：长文本 part 取 Parsed state（与驱动端
                                 // key 约定：partId；阈值一致 ≥200 字符）。
                                 // 2026-08-20 滚动卡顿根因修复：原 current() 走快照 Map 读
@@ -405,6 +416,7 @@ internal fun MessageCardAssistant(
                                             )
                                         }
                                     }
+                                }
                                 }
                             }
                         }
@@ -774,6 +786,10 @@ internal fun ChunkAssistantItems(
             }
             is RenderItem.RepeatingTool -> {
                 // #247：分片路径同款折叠渲染（分片 turn 恒非流式）
+                // #463 三轮:最后消息首组被折叠为首张时,线随首张首帧出现。
+                if (item.part.id == renderableTurn.lastStepDividerBeforePartId) {
+                    StepDivider(0)
+                }
                 key(item.part.id) {
                     Box {
                         PartContent(
@@ -810,7 +826,12 @@ internal fun ChunkAssistantItems(
                         onOpenFile = onOpenFile ?: {},
                     )
                 }
-                is PartGroup.Single -> key(item.group.part.id) {
+                is PartGroup.Single -> {
+                    // #463 三轮:分片路径同款——最后消息首组分割线(身份匹配)。
+                    if (item.group.part.id == renderableTurn.lastStepDividerBeforePartId) {
+                        StepDivider(0)
+                    }
+                    key(item.group.part.id) {
                     val part = item.group.part
                     val preParsed = (part as? Part.Text)
                         ?.takeIf { it.text.length >= 200 && it.synthetic != true && it.ignored != true && !it.text.contains("User has answered") }
@@ -829,6 +850,7 @@ internal fun ChunkAssistantItems(
                         asyncParse = true,
                         turnAgentName = if (part is Part.Tool && part.tool == "task") renderableTurn.taskAgentName else null,
                     )
+                    }
                 }
             }
             // #422:step 折叠组——递归复用本函数渲染 groups(不无限递归:StepGroup
