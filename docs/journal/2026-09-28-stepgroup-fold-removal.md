@@ -109,3 +109,11 @@ tap 前后 screencap 对(pxA/pxB)+分带位移相关分析(±90px 搜索):
 - 新增 normalizeExpandAnchor 超界归一:v1 偶发跳变防御(半贴底 fiso+H 超出锚 item 可滚范围→沿可见链向新端折算,零尺寸占位直接穿过,数学等价);本会话占位带高 0→fii==0 恒 fiso==0 半贴底不存在,归一作通用防御(item0 非零高构型)
 - 验证:贴底展开反射恢复+归一 (0,0)+720→(7,720)+upper residual=0.0(上方逐像素不动,内容向下);贴底收起 (7,720)−720→(7,0) 精确闭环;mid-list 反射精确+rep 兜底(ledger=0)继续工作;单测 47 例绿(含归一 4 例)
 - 语义三代对照:v1 反射=上方不动✓(缺归一防御);v2/v3 豁免=向上扩展✗被否决;v4 全域反射+归一=终态
+
+### #474 五轮:卡内 fling 制动拉底双通道根修(2026-09-29 02:2x)
+
+- 用户主诉:最后 turn 第一 step 思考卡展开,内容 fling 中手指触碰(哪怕 1px 下滑)→整个视口拉到对话流最底部
+- 一度定罪:触摸打断子 fling,剩余速度 -1480px/s 经 onPostFling 转移父 LazyList(reverseLayout 符号=朝底)→SafeFling 一帧 LEAP 7→0;首修吞 onPostFling
+- 二度定罪(复测 v=0 仍跳底):子 fling 逐帧走嵌套协议,到边后每帧剩余经 onPostScroll 泄漏父(VPT 逐帧 -8px 实证);正解=onPreFling 标记 fling 窗口,期间 onPostScroll 全额吞没+onPostFling 吞残速,drag 泄漏放行(滑到底继续滑=滚视口的期望行为)
+- 复测:S2b 泄漏归零((7,720) 稳),S3/S4 残余 215px=drag 期合法泄漏,不再拉底
+- 单测绿;ReasoningBlock 内容盒 nestedScroll 拦截(NestedScrollConnection 三方法)
