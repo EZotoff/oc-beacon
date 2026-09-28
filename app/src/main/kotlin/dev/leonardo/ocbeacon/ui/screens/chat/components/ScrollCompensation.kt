@@ -350,6 +350,44 @@ internal fun reserveReleasePlan(
 }
 
 /**
+ * #438 R-1（2026-09-28 null-key 裸 index 通道根修）：配对目标位解析纯函数。
+ *
+ * 可见窗内按 layout 索引/尺寸换算（原 while 逻辑）；**落点越窗**时原逻辑
+ * targetKey=null → 反射 requestPosition 按字面 index 重锚——插入/重排后即
+ * LEAP 残余通道（R9 -7562 实证；817607b4 键回写只覆盖「落点在 visibleItemsInfo
+ * 内」的条件式修复）。数据侧 key 投影（dataKeyAt：index → chatEntries key，
+ * 装配层提供）兜底：越窗也能 key 锚定，重排后仍正确重锚。offset 用越窗时
+ * 的换算余量（近似，key 正确性优先，小误差下帧自愈）。
+ */
+internal fun resolvePairedTarget(
+    fii: Int,
+    fiso: Int,
+    total: Int,
+    visible: List<androidx.compose.foundation.lazy.LazyListItemInfo>,
+    dataKeyAt: ((Int) -> Any?)?,
+): Triple<Int, Int, Any?> {
+    var targetFii = fii
+    var targetFiso = fiso + total
+    var targetKey: Any? = null
+    var guard = 0
+    while (guard++ < 64) {
+        val anchor = visible.firstOrNull { it.index == targetFii }
+        if (anchor == null) {
+            // #438 R-1：越窗兜底——数据侧 key 投影；无投影/投影 miss 退旧通道（null key）
+            targetKey = dataKeyAt?.invoke(targetFii)
+            break
+        }
+        if (targetFiso < anchor.size) {
+            targetKey = anchor.key
+            break
+        }
+        targetFiso -= anchor.size
+        targetFii++
+    }
+    return Triple(targetFii, targetFiso, targetKey)
+}
+
+/**
  * 流式家族 flush 任务(#435):挂 PreRenderCoordinator 单点(ChatMessageList 常驻注册,
  * 空账本零成本早退;无宿主=预览/单测降级为零配对,与旧通道无泵降级一致)。
  *
@@ -363,6 +401,8 @@ internal fun streamingGrowFlushTask(
     listState: LazyListState,
     ledger: StreamingGrowLedger,
     reserve: HeightReserveState? = null,
+    /** #438 R-1：数据侧 key 投影（index → chatEntries key）——越窗落点的键锚兜底。 */
+    dataKeyAt: ((Int) -> Any?)? = null,
 ): PreDrawFlushTask {
     // #438 R-2（2026-09-28 让位防御死接线根修，#438/#442 调研双源互证）：
     // lastSetFii/lastSetFiso 原声明在下方 lambda 体内——flush 每帧调用，每次
@@ -504,16 +544,10 @@ internal fun streamingGrowFlushTask(
         // 本质区别在「计算先行、measure 原子生效」。
         // 目标位=用户公式 scrollPos+Δ：fiso += total（锚 item 内偏移推大），
         // 溢出沿可见 items 向 index 增大换算（reverseLayout 视觉向上）。
-        var targetFii = fii
-        var targetFiso = fiso + total.toInt()
-        var targetKey: Any? = null
-        var guard = 0
-        while (guard++ < 64) {
-            val anchor = infos.firstOrNull { it.index == targetFii } ?: break
-            if (targetFiso < anchor.size) { targetKey = anchor.key; break }
-            targetFiso -= anchor.size
-            targetFii++
-        }
+        // #438 R-1：换用纯函数（越窗 dataKeyAt 兜底；行为=旧逻辑+投影扩展）
+        val (targetFii, targetFiso, targetKey) = resolvePairedTarget(
+            fii, fiso, total.toInt(), infos, dataKeyAt,
+        )
         var writtenReserve = false
         androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
             // 帽释放（若有）：与滚动待定位同一事务——高度扩展与位移下一遍 measure 同 pass 消费

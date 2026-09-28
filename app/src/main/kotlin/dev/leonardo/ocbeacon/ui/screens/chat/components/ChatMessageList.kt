@@ -680,13 +680,7 @@ fun ChatMessageList(
     // #435 流式家族 flush 任务：常驻挂接(空账本零成本早退)。流式增长的配对位移
     // 与卡片 episode/steady 同走 PreRenderCoordinator 单点(单一视口权威);无宿主
     // (预览/JVM 单测)不派发=降级,与旧通道无泵降级一致。
-    val sgrFlushTask = remember(listState, streamingLedger, heightReserve) {
-        streamingGrowFlushTask(listState, streamingLedger, heightReserve)
-    }
-    DisposableEffect(sgrFlushTask) {
-        PreRenderCoordinator.registerFlushTask(sgrFlushTask)
-        onDispose { PreRenderCoordinator.unregisterFlushTask(sgrFlushTask) }
-    }
+    // #435 流式 flush 任务的装配在 chatEntries 声明之后（dataKeyAt 投影需要它，见下）。
     val bannerCount = remember(compactionBanners) {
         BANNER_ALWAYS_COUNT +
         (if (compactionBanners.streamClaimed) 1 else 0)
@@ -842,7 +836,24 @@ fun ChatMessageList(
             }
     }
 
-
+    // #435 流式家族 flush 任务：常驻挂接(空账本零成本早退)。流式增长的配对位移
+    // 与卡片 episode/steady 同走 PreRenderCoordinator 单点(单一视口权威);无宿主
+    // (预览/JVM 单测)不派发=降级,与旧通道无泵降级一致。
+    // #438 R-1：dataKeyAt 数据侧 key 投影——chatEntries.entries[i].key 与
+    // LazyColumn item key 同源（itemsIndexed key = entry.key，含 chunk #c<i> 后缀）；
+    // 越窗落点也能 key 锚定（插入/重排后正确重锚，堵 R9 LEAP 残余通道，R9 -7562 实证）。
+    // remember key 含 chatEntries：投影捕获当前实例，列表重建时 task 同步重建
+    //（lastSet 记忆清零=列表重排后放弃旧记忆，语义正确）。
+    val sgrFlushTask = remember(listState, streamingLedger, heightReserve, chatEntries) {
+        streamingGrowFlushTask(
+            listState, streamingLedger, heightReserve,
+            dataKeyAt = { i -> chatEntries.entries.getOrNull(i)?.key },
+        )
+    }
+    DisposableEffect(sgrFlushTask) {
+        PreRenderCoordinator.registerFlushTask(sgrFlushTask)
+        onDispose { PreRenderCoordinator.unregisterFlushTask(sgrFlushTask) }
+    }
 
     // ===== #430 大组硬切换锚定(已撤,待重做) =====
     // 尝试把展开后的 StepGroupHead 钉回视口上部;五轮真机迭代均在反向布局
