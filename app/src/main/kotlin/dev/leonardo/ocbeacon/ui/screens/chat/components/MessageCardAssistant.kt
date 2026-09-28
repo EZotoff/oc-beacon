@@ -422,60 +422,28 @@ internal fun MessageCardAssistant(
                         }
                     }
 
-                    // #422:step 折叠组——流式 turn 恒平铺(跟随生成,DSH 同款时机);
-                    // 非流式走 StepGroupCard 折叠(最终回答=最后消息恒平铺,装配层保证);
-                    // 历史懒加载拆条目时本 item 由 Head/Body 条目承担,此处整体跳过
+                    // #422 清理批次(2026-09-28 用户裁决):StepGroup 统一渲染树——
+                    // 流式/完结同构。原双分支(流式平铺 PartContent 直出 vs 完结
+                    // StepGroupCard)整树互换是完结塌缩根因:互换首帧 heavyComposed=false
+                    // 渲染 24dp 桩,且流式分支不写账本致桩兜底失守(ledgerTotal=0 实证,
+                    // RESIZE 712→475→700)。统一后唯一保留的流式态差异是解析策略分流
+                    // (asyncParse:流式同步 pilot 链/完结异步 #428 >2048 防线)——同构
+                    // 树内参数级差异,不再触发子树重建;pilot→async 换装由
+                    // pilotTerminalHold(#472)终帧保持保护。
                     is RenderItem.StepGroup -> key(item.msgId) {
-                        // [DEBUG-hflick] #437 十三轮仪器：流式平铺↔折叠组分支翻转探针。
-                        // 两分支内容树不同构（平铺=PartContent 直出；折叠=切片+账本+
-                        // heavyComposed 门控），互换即整树重测量——结构性高度跳变源。
-                        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-                            val prevStreaming = HflickProbe.branchStates[item.msgId]
-                            if (prevStreaming != null && prevStreaming != isStreaming) {
-                                dev.leonardo.ocbeacon.logging.AppLogger.w(
-                                    "HFLICK",
-                                    "[DEBUG-hflick] BRANCH id=" + item.msgId.takeLast(12) +
-                                        " streaming " + prevStreaming + "->" + isStreaming +
-                                        " grp=" + item.groups.size,
-                                )
-                            }
-                            HflickProbe.putBranch(item.msgId, isStreaming)
-                        }
-                        if (skipStepGroupItem) {
-                            // 大组展开态:内容已拆为独立 LazyItem(见 buildChatEntries)
-                        } else if (isStreaming) {
-                            item.groups.forEachIndexed { gi, g ->
-                                // #463:step 边界(消息边界)插分割线+步序
-                                dev.leonardo.ocbeacon.ui.screens.chat.tools.stepDividerBefore(gi, item.stepStarts)
-                                    ?.let { ord -> StepDivider(ord) }
-                                val sp = (g as? PartGroup.Single)?.part
-                                if (sp != null) {
-                                    key(sp.id) {
-                                        PartContent(
-                                            part = sp,
-                                            textColor = textColor,
-                                            isUser = false,
-                                            onViewSubSession = onViewSubSession,
-                                            onOpenFile = onOpenFile,
-                                            asyncParse = false,
-                                        )
-                                    }
-                                }
-                            }
-                        } else {
-                            StepGroupCard(
-                                step = item,
-                                textColor = textColor,
-                                isAmoled = isAmoled,
-                                onViewSubSession = onViewSubSession,
-                                onOpenFile = onOpenFile,
-                                onLocateTask = onLocateTask,
-                                eventExpandedStates = eventExpandedStates,
-                                renderableTurn = renderableTurn,
-                                compact = compact,
-                                readinessRegistry = readinessRegistry,
-                            )
-                        }
+                        StepGroupCard(
+                            step = item,
+                            isStreaming = isStreaming,
+                            textColor = textColor,
+                            isAmoled = isAmoled,
+                            onViewSubSession = onViewSubSession,
+                            onOpenFile = onOpenFile,
+                            onLocateTask = onLocateTask,
+                            eventExpandedStates = eventExpandedStates,
+                            renderableTurn = renderableTurn,
+                            compact = compact,
+                            readinessRegistry = readinessRegistry,
+                        )
                     }
                 }
             }
@@ -760,6 +728,9 @@ internal fun ChunkAssistantItems(
     renderableTurn: RenderableTurn,
     compact: Boolean,
     readinessRegistry: RenderReadinessRegistry,
+    /** 统一树解析分流(#422 清理批次):流式同步(pilot 链)/完结异步(#428 >2048
+     * 冷滑防线)。默认 true 保持既有调用点(分片/历史)行为不变。 */
+    asyncParse: Boolean = true,
 ) {
     val showTurnDividers = LocalShowTurnDividers.current
     for (item in items) {
@@ -846,30 +817,21 @@ internal fun ChunkAssistantItems(
                         onViewSubSession = onViewSubSession,
                         onOpenFile = onOpenFile,
                         preParsedState = preParsed,
-                        // 分片 turn 恒非流式（流式 turn 不分片）——降级异步解析
-                        asyncParse = true,
+                        // 统一树解析分流:StepGroupCard 按流式态传入;其他
+                        // 调用点默认 true(分片恒非流式,行为不变)
+                        asyncParse = asyncParse,
                         turnAgentName = if (part is Part.Tool && part.tool == "task") renderableTurn.taskAgentName else null,
                     )
                     }
                 }
             }
-            // #422:step 折叠组——递归复用本函数渲染 groups(不无限递归:StepGroup
-            // 在此解开为 GroupedParts 序列);分片 turn 恒非流式,无流式豁免
+            // #422 清理批次:StepGroup 统一渲染树——递归复用本函数渲染 groups
+            // (不无限递归:StepGroup 在此解开为 GroupedParts 序列);分片 turn 恒
+            // 非流式(流式 turn 不分片),isStreaming 恒 false
             is RenderItem.StepGroup -> key(item.msgId) {
-                // [DEBUG-hflick] #437 十三轮仪器：分片路径 StepGroup 子树重建取证
-                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-                    val prevStreaming = HflickProbe.branchStates[item.msgId]
-                    if (prevStreaming != null && prevStreaming != false) {
-                        dev.leonardo.ocbeacon.logging.AppLogger.w(
-                            "HFLICK",
-                            "[DEBUG-hflick] BRANCH(chunk) id=" + item.msgId.takeLast(12) +
-                                " streaming " + prevStreaming + "->false grp=" + item.groups.size,
-                        )
-                    }
-                    HflickProbe.putBranch(item.msgId, false)
-                }
                 StepGroupCard(
                     step = item,
+                    isStreaming = false,
                     textColor = textColor,
                     isAmoled = isAmoled,
                     onViewSubSession = onViewSubSession,
@@ -1352,6 +1314,9 @@ private fun StepDivider(stepOrdinal: Int) {
 @Composable
 private fun StepGroupCard(
     step: RenderItem.StepGroup,
+    /** 统一树解析分流:流式同步(pilot 链)/完结异步(#428 防线)。不驱动
+     * 任何分支选择——树恒同构(2026-09-28 #422 清理批次)。 */
+    isStreaming: Boolean,
     textColor: Color,
     isAmoled: Boolean,
     onViewSubSession: ((String) -> Unit)?,
@@ -1381,38 +1346,11 @@ private fun StepGroupCard(
         stepGroupNeedsSlicing(step.groups)
     }
     val stepLedger = rememberStepGroupLedger(step.msgId)
-    // #427 竞态修复:重内容门控上提卡体——原在 fraction 门控内容内,收起离树
-    // 即弃置,预热/重展开重入时 Spacer(63px) 首帧与真实内容互换=单帧弹跳
-    // (用户「收起后上推再弹回」成分之一);上提后卡存期内恒真,重入即真实内容
-    // (账本暖时展开即时,占位使命已由账本接管)。
-    // #437 验收十三轮根修一：门控键撤除 step.msgId——组重派生（分页截断/REST
-    // 刷新/回合结束换装）改变组首消息 id 时，remember(msgId){false} 会把数千
-    // px 组体打回桩一帧再逐帧长回（真机 RESIZE 4958→774→5648 塌缩-弹开实证，
-    // 2026-09-26 日志 /tmp/flicker-logcat）。子树存续期间恒保持已组合；子树
-    // 重建（key 变更/分支互换）由账本 Σ 桩高兜底（见下方桩分支根修二）。
-    var heavyComposed by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf(false)
-    }
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        androidx.compose.runtime.withFrameNanos { }
-        heavyComposed = true
-    }
-    // [DEBUG-hflick] #437 十三轮仪器：组身份/账本/门控取证（grep HFLICK 定位/清理）。
-    // fresh=子树重建（分支互换/key 变更）；old->new=同子树内身份漂移。
-    val hflickPrevId = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
-    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-        val idNow = step.msgId
-        if (hflickPrevId.value != idNow) {
-            dev.leonardo.ocbeacon.logging.AppLogger.w(
-                "HFLICK",
-                "[DEBUG-hflick] STEP id " + (hflickPrevId.value?.takeLast(12) ?: "fresh") + "->" + idNow.takeLast(12) +
-                    " grp=" + step.groups.size + " slices=" + stepSlices.size +
-                    " warm=" + stepLedger.isWarm(stepFingerprints) + " heavy=" + heavyComposed +
-                    " ledgerTotal=" + stepLedger.totalHeight(stepFingerprints),
-            )
-            hflickPrevId.value = idNow
-        }
-    }
+    // #422 清理批次(2026-09-28):heavyComposed 首帧门控+HFLICK 探针退役——
+    // 统一树后流式/完结同构,无「分支互换首帧」;小组首组合直渲染(等价原流式
+    // 平铺分支),大组由窗口化内部分批(#427 体系)。原门控两大动机随清理失效:
+    // ①重内容首帧全量组合冻结→窗口化接管 ②重入弹跳→卡体恒真实内容。
+    // 账本(#437 根修三:进程级 LRU)保留——统一树下跨形态恒存活,窗口化记账。
     // #430(用户裁决 2026-09-24):过程卡片退役——过程内容默认全展示,不再经
     // 折叠行/CardExpandReveal 展开。理由:大内容原地展开的组合成本(36k px
     // ≈1.6s 冻结)不随位移配对改善,分批只是把冻结拆段;默认展示=滚动接近时
@@ -1422,31 +1360,10 @@ private fun StepGroupCard(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
     ) {
-                if (!heavyComposed) {
-                    // #437 验收十三轮根修二：桩帧高度 = 账本 Σ+片间距（全暖时），
-                    // 与 StepGroupWindowedBody 总高累加式逐像素对齐——分支互换/
-                    // 子树重建的首帧不再塌到 24dp 固定桩（RESIZE 4958→774 的 774
-                    // 帧即旧桩+气泡 chrome）。全冷（真首组合，通常屏外预取）才
-                    // 退 24dp。
-                    val stubPx = stubHeightPx(
-                        ledger = stepLedger,
-                        fingerprints = stepFingerprints,
-                        sliceCount = stepSlices.size,
-                        spacingPx = with(androidx.compose.ui.platform.LocalDensity.current) {
-                            SpacingTokens.XS.dp.roundToPx()
-                        },
-                    )
-                    Spacer(
-                        modifier = Modifier.fillMaxWidth().height(
-                            if (stubPx != null) {
-                                with(androidx.compose.ui.platform.LocalDensity.current) { stubPx.toDp() }
-                            } else {
-                                24.dp
-                            },
-                        ),
-                    )
-                } else if (!stepNeedsSlicing) {
-                // #463:小组直渲染——step 边界(消息边界)插分割线+步序
+                if (!stepNeedsSlicing) {
+                // #463:小组直渲染——step 边界(消息边界)插分割线+步序。
+                // 统一树:解析分流在此(asyncParse)——流式同步 pilot 链/完结
+                // 异步 #428 防线,参数级差异不触发子树重建。
                 step.groups.forEachIndexed { gi, g ->
                     dev.leonardo.ocbeacon.ui.screens.chat.tools.stepDividerBefore(gi, step.stepStarts)
                         ?.let { ord -> StepDivider(ord) }
@@ -1461,6 +1378,7 @@ private fun StepGroupCard(
                         renderableTurn = renderableTurn,
                         compact = compact,
                         readinessRegistry = readinessRegistry,
+                        asyncParse = !isStreaming,
                     )
                 }
                 } else {
@@ -1497,6 +1415,7 @@ private fun StepGroupCard(
                             renderableTurn = renderableTurn,
                             compact = compact,
                             readinessRegistry = readinessRegistry,
+                            asyncParse = !isStreaming,
                         )
                     }
                 }
@@ -1515,22 +1434,6 @@ private fun StepGroupCard(
 @Composable
 private fun rememberStepGroupLedger(msgId: String): StepGroupHeightLedger =
     androidx.compose.runtime.remember(msgId) { StepGroupLedgerStore.getOrCreate(msgId) }
-
-/**
- * [DEBUG-hflick] #437 十三轮：高度闪烁取证探针数据面（grep HFLICK 定位/清理）。
- * 进程级 map，容量封顶防膨胀；DEBUG 专用，release 由调用点 BuildConfig 门控。
- */
-internal object HflickProbe {
-    private const val CAP = 256
-    private val branch = HashMap<String, Boolean>()
-
-    fun putBranch(id: String, streaming: Boolean) {
-        if (branch.size >= CAP && !branch.containsKey(id)) branch.remove(branch.keys.first())
-        branch[id] = streaming
-    }
-
-    val branchStates: Map<String, Boolean> get() = branch
-}
 
 /** 三点 loading 行波周期（ms）。呼吸 800ms 过快，行波序列取 1200ms 更接近
  *  常见输入指示器节奏。 */
