@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#466**（2026-09-28 #465 UI 暖态下点击偶发失效(冷启可靠,间歇性)）。
+**编号**：全局递增，不回收。下一编号：**#467**（2026-09-28 #466 展开方向:贴底免派发向上推旧内容,用户要向下推新）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。
 
@@ -66,13 +66,12 @@
 
 ## P1 — 核心功能需求
 
+- [ ] **#466 展开方向:贴底免派发向上推旧内容,用户要向下推新内容(与 #432 裁决反向)** `chat-ui`
+  - 2026-09-29 用户验收 B 反馈:展开后前面内容被往上推,期望后续内容往下推。取证:贴底态(fii=0)展开命中 #432 免派发分支(bottom-pinned expand skip-dispatch H=62),布局向上扩展——截图对比中上部 24547-56029px 位移/底部不动=机制实锤。与 #432 当时裁决(贴底护底部,修展开跳转主诉)方向相反——需用户拷问裁断场景边界(主动展开 vs 流式跟随)后定向修复。
+
 - [ ] **#462 多卡展开态收起其一仍导致用户视角高度变化** `scroll`
   - 用户报告(2026-09-29):展开≥2 张内容卡后收起其中一张,视口锚定仍漂移;要求根因分析+根修(收起配对在多卡展开态的语义缺口)
   - 2026-09-29 根修交付:根因=收起用「本卡展开前绝对快照」恢复视口(requestScrollToItemNoCancel(episodeAnchorItem/Offset))——仅在集间无其他位移时正确;多卡展开态 V=Pa+H_A+H_B,收起 A 绝对恢复 Pa 偏差 −H_B(视口多退 B 的展开量)=「收起其一视角跳变」。数学定罪+既有真机日志证实模型(展开配对后 fiso+=H、快照恢复=−H,#427 终局日志 4103↔3909)。修:resolveCollapseAnchor 纯函数(增量镜像语义:目标=当前视口−episodeShiftConsumedPx,单卡与旧绝对恢复数学同值,多卡保其他卡净位移;跨界经可见 item 高链折算,链不足返 null)——收起路径接线(绝对快照退役,取消路径 cancel-anchor-restore 保留原撤销语义不动);anchorKnown=false 回退既有 dispatch 镜像。TDD:ResolveCollapseAnchorTest 5 例(零消费不变/单卡镜像/多卡保他卡/跨界折算/链不足 null)+全量单测绿。真机复验(冷启流程,双开思考卡→收起其一,像素对比):修复前同流程 rows400-600 有 24732px 内容位移(视口跳变),修复后中段内容带(200-2200)完全静止、仅收起卡自身局部变化 794px——收起不再拖动视口。
-
-- [ ] **#461 部分思考卡片无法打开** `chat-ui`
-  - 用户报告(2026-09-29):有的思考卡点击展开无反应;范围/触发条件待取证(疑与 #425 prewarm 队列化改动或 fraction 状态相关,需真机定罪)
-  - 2026-09-29 根修交付:根因三方定罪(日志 settle H=0 三次复现/dump 展开区无内容节点/像素级判读标题行与下卡仅 8dp 单档间距)+DB 排除数据侧(277 条 reasoning 文本全非空 81-3103 字符,无不稳定结构开头)——ReasoningBlock 等静态调用点未传 asyncParse(默认 false),MarkdownContent pilot 分支仅判 !isUser,历史思考文本误入流式路径:StreamingMarkdownState 初始空靠 LaunchedEffect 逐帧 append 填充,在 CardExpandReveal ε/展开窗内与 settle 竞态,600ms 内未落地即 H=0 僵尸态(展开集 f=1.000 完成但 0 高,toggle 永无视觉)。修:①准入收为 streamingPilotEligible 纯函数并接线 :601;②六个静态调用点补 asyncParse(ReasoningBlock=!isStreaming 与正文同语义;CompactionCard/SyntheticNotificationCard/Search/Task/PreviewDialog=true,同根因宿主一并接线)。TDD:StreamingPilotEligibilityTest 4 例红转绿(静态不入/流式入/覆写旁路/用户侧不入)+全量单测绿。真机复验:CARD-452B 点击思考卡内容即渲染(dump 出现内容文本节点;修复前同位置三次复现零节点)。暖态列表点击偶发失效为独立未解现象(冷启流程可靠,不阻塞本卡)。
 
 - [~] **#447 opencode server 2.0.16+ 移除 /api/health 导致 app V2 探测永久失效** `network` `compat`
   - 2.0.16+ 实测移除 GET /api/health(鉴权通过仍 404)→ApiVersionDetector V2 探测只认该端点返回 null；tryV1 探 /global/health 收 SPA HTML 被 content-type 防御拦截→双探皆空 UNKNOWN
