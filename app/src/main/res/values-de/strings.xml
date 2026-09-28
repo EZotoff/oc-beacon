@@ -256,7 +256,6 @@
     <string name="chat_message_delete_failed">Nachricht konnte nicht gelöscht werden</string>
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">Tokens/s</string>
-    <string name="chat_msg_tail_summary">%1$d Schritte · %2$d Werkzeuge</string>
     <string name="a11y_message_detail">Nachrichtendetails</string>
     <string name="chat_stats_session_title">Sitzungsstatistiken</string>
     <string name="chat_stats_summary">%1$d Runden · %2$d Schritte · %3$s LLM · %4$s Werkzeuge</string>

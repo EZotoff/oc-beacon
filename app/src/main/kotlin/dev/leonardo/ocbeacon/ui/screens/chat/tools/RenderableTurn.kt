@@ -92,10 +92,10 @@ sealed class RenderItem {
     data class RepeatingTool(val part: Part.Tool, val count: Int) : RenderItem()
 
     /**
-     * #422 step 自动折叠（2026-09-20 用户裁决）：turn 内**非最后一条**
+     * #422 清理批次（2026-09-28 用户裁决彻底清理）：turn 内**非最后一条**
      * assistant 消息（V2/DSH step.finish 落一条消息 → 消息边界=step 边界）
-     * 的整组渲染项——默认折叠为计数行（复用 chat_msg_tail_summary），
-     * 点击展开；流式 turn 渲染层恒平铺（跟随生成，DSH 同款时机）。
+     * 的分组渲染项——统一渲染树恒平铺（流式/完结同构）；分组语义保留,
+     * 承载 step 边界信息（#463 分割线 stepStarts）与高度估算。
      */
     @Immutable
     data class StepGroup(

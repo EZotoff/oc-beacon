@@ -150,9 +150,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 // #227：压缩尾部兜底分割线的展开表键随认领策略外移
 // CompactionDividerPolicy.TAIL_EXPANSION_KEY（C4）。
 
-/** #422 历史懒加载:大组分片淡入时长(ms)——直出+淡入档(介于 AppMotion SHORT/MEDIUM)。 */
-private const val SG_BODY_FADE_MS = 220
-
 private val BACKGROUND_SYNTHETIC_MARKERS = listOf(
     "User requested that active blocking work be moved to the background",
     "active blocking work be moved to the background",
@@ -472,18 +469,9 @@ fun ChatMessageList(
 
     // ===== #423 批次十三:结构裂变全量退役(用户裁决「大数据量加速而非拆分」) =====
     // 全部步组走 CardExpandReveal 统一引擎(渲染前计算+反射位移——钉位铁律
-    // 全局一致,大小组无别);大内容加速=引擎空闲预热(CardExpandReveal
-    // PREWARM_IDLE_MS),而非 #422 条目拆分懒加载。映射恒空 →
-    // buildChatEntries 裂变分支休眠(发射机保留,死代码清理另行批次);
-    // REPIN 重锚修正器同批退役(引擎自证钉位,不留补偿族)。
-    val expandedStepGroups: Map<String, dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem.StepGroup> = emptyMap()
-
-
-    // ===== #423 SGB 埋点:结构裂变观测(仅 DEBUG;窗口门控,常态零行) =====
-    // 批次十三:裂变退役 → SPLIT/SNAP 效应移除;两探针保留供休眠的 Head 渲染
-    // 分支引用(sgSwapAtMs 恒 0 = 窗口永闭,零日志)。
-    val sgSwapAtMs = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
-    val sgHeadTopY = remember { androidx.compose.runtime.mutableIntStateOf(Int.MIN_VALUE) }
+    // #422 清理批次(2026-09-28):裂变发射机/expandedStepGroups 映射/SGB 埋点
+    // 整体退役——expandedStepGroups 恒空致裂变分支休眠已久(#426 死代码),
+    // 统一渲染树后 Head/Body 条目族不复存在。
     // #435 流式增长账本：流式家族(消息/工具横幅/压缩卡)高度增长统一并入高度
     // 引擎配对体系——measure 相记账 Δ → pre-draw flush 单点按统一规则派发(锚即
     // 意图:贴底跟随族/读历史免派发,尾段阅读 +Δ 同帧配对)。取代 COMP 家族三补偿器
@@ -855,12 +843,6 @@ fun ChatMessageList(
         onDispose { PreRenderCoordinator.unregisterFlushTask(sgrFlushTask) }
     }
 
-    // ===== #430 大组硬切换锚定(已撤,待重做) =====
-    // 尝试把展开后的 StepGroupHead 钉回视口上部;五轮真机迭代均在反向布局
-    // scrollToItem/dispatchRawDelta 语义上落错位(实测视口被甩到无关区域,
-    // 比不锚更糟——展开内容反而不见)。撤除;大组无锚定(折叠行随展开飞出)
-    // 维持 #422 已知缺口,随 L3 AST 切片批次以 layoutInfo 键匹配方案重做。
-    // 教训:反向布局滚动语义必须先写校准单测再上真机。
     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
         androidx.compose.runtime.LaunchedEffect(displayItems) {
             val tail = displayItems.lastOrNull()?.second?.message
@@ -1625,102 +1607,6 @@ fun ChatMessageList(
                                     }
                                 }
                             }
-                            // ===== #422 历史懒加载:大组展开态的拆分条目 =====
-                            is ChatEntry.StepGroupHead -> {
-                                // 折叠行头(气泡顶部):共享 StepGroupFoldRow(点击收起)
-                                // #sgt 尾行 pinEligible=false:与 #sgh 同 stateKey,
-                                // 双写会让重锚测到 60px 外的尾行(批次七)
-                                val isHeadRow = entry.key.endsWith("#sgh")
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clipToBounds()
-                                        .onGloballyPositioned {
-                                            sgHeadTopY.intValue = it.positionInRoot().y.toInt()
-                                            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
-                                                System.currentTimeMillis() - sgSwapAtMs.longValue < 1200
-                                            ) {
-                                                dev.leonardo.ocbeacon.logging.AppLogger.d(
-                                                    "SGB",
-                                                    "HEAD topY=" + sgHeadTopY.intValue,
-                                                )
-                                            }
-                                        }
-                                        .padding(bottom = SpacingTokens.XS.dp)
-                                ) {
-                                    StepGroupFoldRow(step = entry.step, pinEligible = isHeadRow)
-                                }
-                            }
-                            is ChatEntry.StepGroupBody -> {
-                                // 内容分片(独立 LazyItem):视口外零组合。注意:切片按
-                                // part 边界——单个巨型 text part(如 60 行表格)仍会整条
-                                // 测量(#422 三层根因,见 backlog note),待 AST 级切片。
-                                val bodyTurn = renderableTurns.getOrNull(entry.displayIndex)
-                                if (bodyTurn != null) {
-                                    // #430 loading 首帧占位:巨型单体 part(实测 60 行表格
-                                    // h=20226px)首组合冻结主线程 598ms,期间 alpha=0 内容
-                                    // 在组合、屏幕无任何反馈=用户主诉「加载/延迟高」。
-                                    // 重组合延后一帧:首帧先画轻量占位(冻结期间可见),
-                                    // 下一帧再组合重内容——加载态即时可见,内容照常淡入。
-                                    var heavyComposed by androidx.compose.runtime.saveable.rememberSaveable(entry.key) {
-                                        androidx.compose.runtime.mutableStateOf(false)
-                                    }
-                                    LaunchedEffect(entry.key) {
-                                        androidx.compose.runtime.withFrameNanos { }
-                                        heavyComposed = true
-                                    }
-                                    if (!heavyComposed) {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = SpacingTokens.XL.dp),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(20.dp),
-                                                strokeWidth = 2.dp,
-                                            )
-                                        }
-                                    } else {
-                                    var bodyShown by androidx.compose.runtime.saveable.rememberSaveable(entry.key) {
-                                        androidx.compose.runtime.mutableStateOf(false)
-                                    }
-                                    LaunchedEffect(entry.key) { bodyShown = true }
-                                    val bodyAlpha by androidx.compose.animation.core.animateFloatAsState(
-                                        targetValue = if (bodyShown) 1f else 0f,
-                                        // 淡入时长:介于 AppMotion.SHORT(150) 与 MEDIUM(300) 之间,
-                                        // 大组分片直出的视觉过渡档(用户裁决「直出+淡入」)
-                                        animationSpec = androidx.compose.animation.core.tween(SG_BODY_FADE_MS),
-                                        label = "sgBodyFade",
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clipToBounds()
-                                            .padding(bottom = SpacingTokens.XS.dp)
-                                            .graphicsLayer { alpha = bodyAlpha }
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
-                                        ) {
-                                            ChunkAssistantItems(
-                                                items = entry.groups.map { RenderItem.GroupedParts(it) },
-                                                textColor = MaterialTheme.colorScheme.onSurface,
-                                                isAmoled = isAmoled,
-                                                onViewSubSession = navigateToChildSession,
-                                                onOpenFile = onOpenFile,
-                                                onLocateTask = onLocateTask,
-                                                eventExpandedStates = eventCardExpandedStates,
-                                                renderableTurn = bodyTurn,
-                                                compact = LocalChatDensity.current == ChatDensity.Compact,
-                                                readinessRegistry = LocalRenderReadiness.current,
-                                            )
-                                        }
-                                    }
-                                    }
-                                }
-                            }
                             is ChatEntry.Turn -> {
                         val displayItemIndex = entry.displayIndex
                         val (rawIndex, msg) = displayItems[entry.displayIndex]
@@ -1910,9 +1796,6 @@ fun ChatMessageList(
                                 Column {
                                 MessageCard(
                                     role = MessageCardRole.ASSISTANT,
-                                    // #422 历史懒加载:大组展开态下本 Turn 是拆分尾片,
-                                    // StepGroup 条目由 Head/Body 独立 LazyItem 承担
-                                    skipStepGroupItem = entry.skipStepGroupItem,
                                     renderableTurn = renderableTurns[displayItemIndex],
                                     currentMessage = msg,
                                     onViewSubSession = navigateToChildSession,
@@ -2617,8 +2500,6 @@ fun ChatMessageList(
                                 is ChatEntry.Chunk -> "assistant_chunk"
                                 is ChatEntry.TurnChunk -> "assistant_segment"
                                 is ChatEntry.UserChunk -> "user_chunk"
-                                is ChatEntry.StepGroupHead -> "assistant_sg_head"
-                                is ChatEntry.StepGroupBody -> "assistant_sg_body"
                                 is ChatEntry.Turn -> if (entry.isUser) "user" else "assistant"
                             }
                         },

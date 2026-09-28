@@ -93,8 +93,6 @@ internal fun ReasoningBlock(
     val hapticView = LocalView.current
     val hapticOn = LocalHapticFeedbackEnabled.current
     val expanded = isExpanded
-    val reportY = LocalFoldRowYReport.current
-    val clickHook = LocalFoldRowClick.current
 
     // 流式推理的实时计时器
     // #207：fallback 锚点 remember → rememberSaveable。time=null 的残留 part 无
@@ -212,16 +210,11 @@ internal fun ReasoningBlock(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        // 批次八:REPIN 上报/快照(与组折叠行同机制)
-                        .onGloballyPositioned {
-                            if (pinKey.isNotEmpty()) reportY?.invoke(pinKey, it.positionInRoot().y)
-                        }
                         // 2026-09-20 方案A回退(用户裁决:还是正常卡片就行)——
                         // 强制 height(12dp) 单行胶囊只瘦了思考卡,工具卡未同步,
                         // 卡族折叠态高度失配=「不协调」来源,且违背 2026-08-16
                         // 「折叠行高与工具卡一致」裁决。恢复自然行高。
                         .clickable {
-                            if (pinKey.isNotEmpty()) clickHook?.invoke(pinKey)
                             performHaptic(hapticView, hapticOn); onToggleExpand()
                         },
                     horizontalArrangement = Arrangement.SpaceBetween,

@@ -89,7 +89,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalOnToggleToolExpanded
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalToolExpandedStates
-import dev.leonardo.ocbeacon.ui.screens.chat.util.toolExpandedOrDefault
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material3.Icon
 import androidx.compose.animation.core.LinearEasing
@@ -153,9 +152,6 @@ internal fun MessageCardAssistant(
     onDeleteMessage: (() -> Unit)? = null,
     /** 2026-09-12 扁平化：行模型能力位（尾部字段/动作门控单源）。 */
     caps: RowCapabilities? = null,
-    /** #422 历史懒加载:大组拆条目发射时尾片置 true——StepGroup 条目整体
-     *  跳过(折叠行由 ChatEntry.StepGroupHead 条目渲染,内容由 Body 条目)。 */
-    skipStepGroupItem: Boolean = false,
 ) {
     // D2-L22：原 if(isAmoled) 两分支相同（死条件）——直接取 onSurface
     val textColor = MaterialTheme.colorScheme.onSurface
@@ -1200,94 +1196,6 @@ private fun AssistantTurnTail(
     }
 }
 
-
-/**
- * #422 折叠组展开表 key(单一真相源):「step_」前缀与 part id 不冲突
- * (MessageCardAssistant/ChatMessageList 三消费方共用,防手拼漂移断链)。
- */
-internal fun stepGroupStateKey(msgId: String): String = "step_" + msgId
-
-/** #423 批次七:折叠行位置上报(结构裂变重锚的实测源)。key=stateKey。 */
-internal val LocalFoldRowYReport = staticCompositionLocalOf<((String, Float) -> Unit)?> { null }
-
-/** #423 批次七:折叠行点击快照钩(toggle 瞬间冻结点击行屏位,供重建后重锚)。 */
-internal val LocalFoldRowClick = staticCompositionLocalOf<((String) -> Unit)?> { null }
-
-/**
- * #422 折叠组计数行(共享组件):Layers 图标 + 「N 步 · M 个工具」,点击 toggle
- * 展开态。StepGroupCard(小组动画路径)与 ChatEntry.StepGroupHead 条目
- * (大组懒加载路径)共用——同一交互入口。
- */
-@Composable
-internal fun StepGroupFoldRow(
-    step: RenderItem.StepGroup,
-    modifier: Modifier = Modifier,
-    /** #423 批次七:#sgt 尾行不参与重锚(与 #sgh 同 stateKey,防 60px 歧义)。 */
-    pinEligible: Boolean = true,
-    /**
-     * #429:展开集高度计算期——true 时层叠图标换小 spinner(loading 过渡,
-     * 用户裁决 2026-09-24;计算期=点击→Phase A 落地,幕布接续)。
-     */
-    expanding: Boolean = false,
-) {
-    val onToggleToolExpanded = LocalOnToggleToolExpanded.current
-    val hapticView = LocalView.current
-    val hapticOn = LocalHapticFeedbackEnabled.current
-    val stateKey = stepGroupStateKey(step.msgId)
-    val expanded = toolExpandedOrDefault(stateKey)
-    // #429:计算期 spinner——本参(小组卡内路径)或共享表命中(大组外层行)皆显示
-    val computingShared = dev.leonardo.ocbeacon.ui.screens.chat.util.LocalStepGroupComputing.current
-    val showComputing = expanding || (computingShared.value[stateKey] == true)
-    val reportY = LocalFoldRowYReport.current
-    val clickHook = LocalFoldRowClick.current
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .onGloballyPositioned {
-                // 批次七:逐放置上报屏位(常态每布局一次,零日志;重锚消费)
-                if (pinEligible) reportY?.invoke(stateKey, it.positionInRoot().y)
-            }
-            .clickable {
-                clickHook?.invoke(stateKey)
-                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-                    dev.leonardo.ocbeacon.logging.AppLogger.d(
-                        "SGB",
-                        "CLICK key=" + stateKey.takeLast(12) + " expanded=" + expanded +
-                            " steps=" + step.textCount + " tools=" + step.toolCount,
-                    )
-                }
-                performHaptic(hapticView, hapticOn)
-                // 第二参=「未被 toggle 过时的默认态」(委托语义 !(map[id] ?: default)),
-                // 非期望下一态。传 !expanded 会让收起态首点写入 false = 静默无效
-                // (真机取证:click 日志在、toggle 写入 false、无 SGBODY/episode,
-                // 每组每冷启首点必哑——用户观感「点了没反应/加载慢」)。
-                onToggleToolExpanded(stateKey, expanded)
-            },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
-    ) {
-        if (showComputing) {
-            // #429:loading 过渡——高度计算期(先算后展)的可见反馈
-            CircularProgressIndicator(
-                modifier = Modifier.size(16.dp),
-                strokeWidth = 2.dp,
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Default.Layers,
-                contentDescription = stringResource(if (expanded) R.string.a11y_icon_collapse else R.string.a11y_icon_expand),
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.MUTED),
-            )
-        }
-        Text(
-            text = stringResource(R.string.chat_msg_tail_summary, step.textCount.coerceAtLeast(1), step.toolCount),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.MUTED),
-            maxLines = 1,
-        )
-    }
-}
 
 /**
  * #463(2026-09-29 用户提案→二轮简化):turn 内 step 边界分割线——React 密集

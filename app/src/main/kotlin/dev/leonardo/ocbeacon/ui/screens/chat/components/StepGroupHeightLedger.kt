@@ -119,19 +119,3 @@ internal object StepGroupLedgerStore {
     /** 单测隔离用：清空店。 */
     fun clearForTest() = synchronized(cache) { cache.clear() }
 }
-
-/**
- * 桩帧占位高（#437 验收十三轮根修二配套）：全暖 = Σ片高 + 片间间距，与
- * [StepGroupWindowedBody] 的总高累加式逐像素对齐；任一片冷 = null（调用方
- * 退固定小桩——真首组合通常发生在屏外预取，桩不可见）。
- */
-internal fun stubHeightPx(
-    ledger: StepGroupHeightLedger,
-    fingerprints: List<String>,
-    sliceCount: Int,
-    spacingPx: Int,
-): Int? {
-    if (sliceCount <= 0 || fingerprints.size != sliceCount) return null
-    if (!ledger.isWarm(fingerprints)) return null
-    return ledger.totalHeight(fingerprints) + spacingPx * (sliceCount - 1)
-}
