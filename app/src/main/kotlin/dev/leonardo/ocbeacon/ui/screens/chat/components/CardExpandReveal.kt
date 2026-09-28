@@ -779,32 +779,32 @@ internal fun CardExpandReveal(
                     // 渲染后一帧再位移? 不——dispatch 内部 measure 已含增长,
                     // 同帧原子;程序化豁免包裹(防取消守卫误杀)
                     clock.programmaticShift = true
+                    // #466:贴底标记提升到 try 外(departure 防回拉要用)
+                    var wasPinnedToBottom = false
                     try {
                         // #427(终局):记录展开前锚点状态——收起按构造精确恢复
                         clock.episodeAnchorItem = listState.firstVisibleItemIndex
                         clock.episodeAnchorOffset = listState.firstVisibleItemScrollOffset
-                        // #432 贴底免派发:严格贴底(fii==0 ∧ fiso==0)时布局以最新
-                        // item 为锚——卡向上扩展,header 与底部内容天然屏位不变;
-                        // dispatch +H 反而把视口推离贴底 H px(用户正看的最新回复
-                        // 被推出屏=「展开跳转到其他地方」主诉)。跳过派发,steady
-                        // 基线锚 0(否则 flush 会把 +H 当欠账补发,等效跳过失效)。
-                        // 中位构型(fii>0)布局语义不同(锚定翻转需位移抵消),照旧。
-                        val pinnedToBottom = bottomPinnedExpandSkip(
+                        // #466(2026-09-29 用户裁决:统一上方锚定、向下扩展):
+                        // 原贴底免派发(#432)使卡向上扩展推走上方旧内容——用户
+                        // 裁定所有场景(贴底/读历史)一律保持上方不变、展开增量
+                        // 向下推(含最新端被推出屏,B2 明示可接受)。统一走配对
+                        // dispatch +H(与中位构型同款,#427 全额残差重试);收起侧
+                        // 增量镜像(#462)以 consumedPx 记账,数学自动适配。
+                        wasPinnedToBottom = bottomPinnedExpandSkip(
                             listState.firstVisibleItemIndex,
                             listState.firstVisibleItemScrollOffset,
                         )
-                        clock.episodeShiftConsumedPx = if (pinnedToBottom) {
+                        clock.episodeShiftConsumedPx =
+                            applyPairedPreRenderShift(listState, H.toFloat())
+                        if (wasPinnedToBottom) {
                             if (BuildConfig.DEBUG) {
                                 AppLogger.d(
                                     "CardExpand",
-                                    "[DEBUG-432] bottom-pinned expand skip-dispatch H=" + H,
+                                    "[DEBUG-466] pinned-expand dispatch H=" + H +
+                                        " consumed=" + clock.episodeShiftConsumedPx.toInt(),
                                 )
                             }
-                            0f
-                        } else {
-                            // #427:配对到全额(残差重试)——单发在跨锚点测量竞态下
-                            // 欠消费残差不等=每周期恒定净漂(真机 -268px 定罪)
-                            applyPairedPreRenderShift(listState, H.toFloat())
                         }
                     } finally {
                         clock.programmaticShift = false
@@ -812,20 +812,14 @@ internal fun CardExpandReveal(
                     // #430(修正):欠账 rebase——残量=目标−实消费(transient 0 消费
                     // 的配对义务不丢);基线锚定目标,幕布期增量(report>ledger)逐帧
                     // 记账。steadyHold 放行:增长落地帧 flush 同帧补派,上顶不上屏。
-                    // #432:贴底免派发时欠账也归零(否则 flush 把 +H 补发=跳过失效)。
-                    if (clock.episodeShiftConsumedPx == 0f &&
-                        listState.firstVisibleItemIndex == 0 &&
-                        listState.firstVisibleItemScrollOffset == 0
-                    ) {
-                        clock.steadyRebase()
-                    } else {
-                        clock.steadyRebaseAfterEpisodeDispatch(H, clock.episodeShiftConsumedPx)
-                    }
+                    clock.steadyRebaseAfterEpisodeDispatch(H, clock.episodeShiftConsumedPx)
                     clock.steadyHold = false
                     // 离底解跟随(真机定案:预移后 atBot=false 而 autoOn=true,
                     // 仲裁器集后把整个列表拽回底=「其他元素移动」主诉):
-                    // 位移超阈即视为用户意图离底,关 autoScroll(旧引擎同款钩)
-                    if (H > DEPARTURE_THRESHOLD_PX) {
+                    // 位移超阈即视为用户意图离底,关 autoScroll(旧引擎同款钩);
+                    // #466:贴底态 dispatch 必然离底——不等阈值立即解跟随,防
+                    // 仲裁器回拉抹掉展开位移(位置归用户)。
+                    if (H > DEPARTURE_THRESHOLD_PX || wasPinnedToBottom) {
                         departure?.invoke()
                     }
                     // #429:高度已定/相位已落——计算期结束,loading 让位幕布揭示
