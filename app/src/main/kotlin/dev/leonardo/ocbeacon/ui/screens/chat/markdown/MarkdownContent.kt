@@ -627,9 +627,14 @@ internal fun MarkdownContent(
         }
     val asyncTerminalState = asyncTerminal?.state?.collectAsState()?.value
     val asyncTerminalReady = asyncTerminalState != null && asyncTerminalState !is State.Loading
+    // #472 验收轮回归收窄(2026-09-28 真机定罪):hold 只桥接 async 终态在途
+    // (>2048 的 Loading 间隙)。≤2048 完结无终态不保持——立即走同步解析路径
+    // (首帧全高无闪);旧语义 ready 恒 false 使 pilot 永不退场,完结 part
+    // 重组(sync/MessagePartUpdated)的非前缀砸进 pilot 静默重建 → 清空+回灌闪烁
+    val asyncTerminalPending = asyncTerminal != null && !asyncTerminalReady
     var pilotEverRendered by remember { androidx.compose.runtime.mutableStateOf(false) }
     val holdPilotTerminal = StreamingMarkdownPilot.enabled &&
-        pilotTerminalHold(pilotEverRendered, asyncTerminalReady)
+        pilotTerminalHold(pilotEverRendered, asyncTerminalPending)
     if (streamingPilotEligible(overrideState != null, asyncParse, isUser) && StreamingMarkdownPilot.enabled ||
         holdPilotTerminal
     ) {
@@ -638,7 +643,7 @@ internal fun MarkdownContent(
         // 高度流=低频量子，与 #435 引擎配对兼容）。回退 = STABLE_REVEAL_PILOT
         // 置 false（gate 旁路，pilot 原行为）。
         pilotEverRendered = true
-        val pilotState = rememberPilotStreamingMarkdownState(markdown)
+        val pilotState = rememberPilotStreamingMarkdownState(markdown, freeze = holdPilotTerminal)
         androidx.compose.foundation.layout.Column {
             // #437 崩溃修复：非前缀重建（resetKey++）换 state 实例的同一帧，
             // 库 Markdown 内部 collectAsState 对流实例的记忆可能残留旧 snapshot

@@ -137,8 +137,23 @@ internal fun streamingPilotEligible(
  */
 internal fun pilotTerminalHold(
     pilotEverRendered: Boolean,
-    asyncReady: Boolean,
-): Boolean = pilotEverRendered && !asyncReady
+    asyncTerminalPending: Boolean,
+): Boolean = pilotEverRendered && asyncTerminalPending
+
+/** #472 非前缀宽限窗:数据层摆动(reconciler 竞态/完结 sync 重组)在此窗内冻结保树。 */
+internal const val NON_PREFIX_GRACE_MS = 300L
+
+/**
+ * #472 验收轮回归根修(2026-09-28 真机定罪):非前缀事件是否已过宽限窗
+ * (=真重生成,应重建)。窗内返回 false = 冻结保树保进度——旧串回来无缝
+ * 续播;未武装(-1)恒 false。旧实现单发非前缀立即静默重建(resetKey++)→
+ * 完结 part 重组时内容清空+限速回灌 = 「闪烁清空再恢复」主诉。
+ */
+internal fun nonPrefixRebuildDue(
+    nonPrefixSinceMs: Long,
+    nowMs: Long,
+    graceMs: Long = NON_PREFIX_GRACE_MS,
+): Boolean = nonPrefixSinceMs >= 0 && nowMs - nonPrefixSinceMs >= graceMs
 
 internal object JankHoldGate {
     val enabled: Boolean by lazy {
@@ -153,9 +168,11 @@ internal object JankHoldGate {
 }
 
 @Composable
-internal fun rememberPilotStreamingMarkdownState(markdown: String): PilotStreamingState {
+internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boolean = false): PilotStreamingState {
     var resetKey by remember { mutableIntStateOf(0) }
     var prev by remember { mutableStateOf<String?>(null) }
+    // #472:非前缀武装时刻——宽限窗内冻结,超窗才重建
+    var nonPrefixSinceMs by remember { mutableLongStateOf(-1L) }
     // gate 放行长度（相对快照坐标）；非前缀重建时清零
     var released by remember { mutableIntStateOf(0) }
     val state = key(resetKey) { rememberStreamingMarkdownState() }
@@ -168,10 +185,14 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String): PilotStreami
     val gate = StreamingMarkdownPilot.stableReveal
     LaunchedEffect(markdown, state, StreamingScrollHold.holding) {
         val p = prev
+        // #472 完结桥接期冻结:pilot 终帧即终点——async 在途的新快照(完结
+        // sync/part 重组的非前缀串)一律不进 pilot,换装交给终态路径
+        if (freeze) return@LaunchedEffect
         // 滚动/惯性中：暂缓增长增量（prev 不动，settle 后整段一次追平=一次重排版）
         if (StreamingScrollHold.holding && p != null && markdown.length > p.length) {
             return@LaunchedEffect
         }
+        if (p == null || markdown.startsWith(p)) nonPrefixSinceMs = -1L
         when {
             // 首跑（含重建后的新实例）：整串作为初始增量（gate 后定案前缀）
             p == null -> {
@@ -209,6 +230,14 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String): PilotStreami
             // #437 §4 数据层摆动（reconciler vs live 竞态）会高频触发此分支——
             // 风暴抑制：冻结放行与重建（prev 保持旧值，旧串回来无缝恢复）
             !markdown.startsWith(p) -> {
+                // #472 宽限冻结:瞬时摆动(reconciler 竞态/完结 sync 重组)保树
+                // 保进度,旧串回来无缝续播;超窗仍非前缀才是真重生成
+                val nowMs = android.os.SystemClock.elapsedRealtime()
+                if (nonPrefixSinceMs < 0L) nonPrefixSinceMs = nowMs
+                if (!nonPrefixRebuildDue(nonPrefixSinceMs, nowMs)) {
+                    return@LaunchedEffect
+                }
+                nonPrefixSinceMs = -1L
                 if (flap.onNonPrefix()) {
                     if (flap.stormCount != lastStormCount) {
                         lastStormCount = flap.stormCount

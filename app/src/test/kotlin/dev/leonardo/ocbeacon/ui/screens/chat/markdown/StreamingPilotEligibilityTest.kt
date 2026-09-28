@@ -27,19 +27,42 @@ class StreamingPilotEligibilityTest {
     // 保持 pilot 终帧(async 并行预热),Success 后无缝切换。
 
     @Test
-    fun `pilot ever rendered with async loading holds terminal frame`() {
-        assertTrue(pilotTerminalHold(pilotEverRendered = true, asyncReady = false))
+    fun `pilot ever rendered with async pending holds terminal frame`() {
+        assertTrue(pilotTerminalHold(pilotEverRendered = true, asyncTerminalPending = true))
     }
 
     @Test
-    fun `async ready releases hold`() {
-        assertFalse(pilotTerminalHold(pilotEverRendered = true, asyncReady = true))
+    fun `async ready or no terminal releases hold`() {
+        // #472 验收轮回归定罪(2026-09-28 真机):≤2048 完结无 async 终态,
+        // 旧语义 (ever && !ready) 的 ready 恒 false → pilot 永保持 → 完结
+        // part 重组(sync/MessagePartUpdated)的非前缀砸进 pilot 静默重建
+        // (resetKey++)→ 内容清空+限速回灌 = 「闪烁清空再恢复」。hold 只桥接
+        // async Loading 间隙;≤2048 完结即走同步解析路径(首帧全高,无闪)。
+        assertFalse(pilotTerminalHold(pilotEverRendered = true, asyncTerminalPending = false))
     }
 
     @Test
     fun `never rendered never holds`() {
-        assertFalse(pilotTerminalHold(pilotEverRendered = false, asyncReady = false))
-        assertFalse(pilotTerminalHold(pilotEverRendered = false, asyncReady = true))
+        assertFalse(pilotTerminalHold(pilotEverRendered = false, asyncTerminalPending = true))
+        assertFalse(pilotTerminalHold(pilotEverRendered = false, asyncTerminalPending = false))
+    }
+
+    // ============ #472 验收轮回归:非前缀宽限冻结(数据层摆动不重建) ============
+
+    @Test
+    fun `nonPrefix within grace freezes not rebuilds`() {
+        // 宽限窗内:保树保进度,等旧串回来无缝续播
+        assertFalse(nonPrefixRebuildDue(nonPrefixSinceMs = 1000L, nowMs = 1200L))
+    }
+
+    @Test
+    fun `nonPrefix past grace rebuilds`() {
+        assertTrue(nonPrefixRebuildDue(nonPrefixSinceMs = 1000L, nowMs = 1400L))
+    }
+
+    @Test
+    fun `nonPrefix unarmed never rebuilds`() {
+        assertFalse(nonPrefixRebuildDue(nonPrefixSinceMs = -1L, nowMs = 99999L))
     }
 
     @Test
