@@ -910,12 +910,22 @@ internal fun CardExpandReveal(
                     // (scrollToItem 是独立排布通道:塌缩先渲染一帧再跳位
                     //  =整屏闪烁,真机复验收敛定罪;本质=渲染后修正,弃。)
                     // 用户滚动过(阅读位置优先权铁律)或锚点链不足 → 回退镜像位移。
+                    // 展开后回收兜底(2026-09-28 真机 t4 定罪):episodeShiftConsumedPx
+                    // 挂在 clock(remember)上,展开→滚离视口→LazyList 回收→重组合新
+                    // clock 账本归零——consumed=0 时 resolveCollapseAnchor 短路返回
+                    // 原位=零回退,-H 塌缩全额漏成视口跳变(close-anchor consumed=0 +
+                    // RESIZE -194 无配对=用户主诉「整体对话内容往下拖动」)。塌缩量
+                    // 恒=当前上报高度 rep(稳态 fraction=1 时 rep==账本:展开反射记
+                    // H,steady 补派双写同步),账本缺失时以 rep 兜底,数学与账本路径
+                    // 严格同值;两条收起路径(反射锚点/dispatch 镜像)统一取用。
+                    val mirrorConsumed =
+                        clock.episodeShiftConsumedPx.takeIf { it > 0f } ?: rep.toFloat()
                     val collapseAnchor = if (!clock.userScrollCancelled) {
                         val vis = listState.layoutInfo.visibleItemsInfo
                         resolveCollapseAnchor(
                             listState.firstVisibleItemIndex,
                             listState.firstVisibleItemScrollOffset,
-                            clock.episodeShiftConsumedPx,
+                            mirrorConsumed,
                             vis.filter { it.index < listState.firstVisibleItemIndex }
                                 .map { it.size }
                                 .reversed(),
@@ -937,7 +947,8 @@ internal fun CardExpandReveal(
                                 "CardExpand",
                                 "[DEBUG-427] close-anchor-request fii=" + aItem +
                                     " fiso=" + aOffset +
-                                    " (mirror consumed=" + clock.episodeShiftConsumedPx.toInt() + ")",
+                                    " (mirror consumed=" + mirrorConsumed.toInt() +
+                                    " ledger=" + clock.episodeShiftConsumedPx.toInt() + " rep=" + rep + ")",
                             )
                         }
                     }
@@ -950,11 +961,7 @@ internal fun CardExpandReveal(
                         // 追加派发=与手势竞态,双错位)
                         clock.programmaticShift = true
                         try {
-                            val backPx = if (clock.episodeShiftConsumedPx != 0f) {
-                                -clock.episodeShiftConsumedPx
-                            } else {
-                                -rep.toFloat()
-                            }
+                            val backPx = -mirrorConsumed
                             applyPairedPreRenderShift(listState, backPx)
                         } finally {
                             clock.programmaticShift = false
