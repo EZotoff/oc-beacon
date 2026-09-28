@@ -1207,7 +1207,7 @@ private fun StepDivider(stepOrdinal: Int) {
     HorizontalDivider(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = SpacingTokens.XS.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = AlphaTokens.FAINT),
     )
 }
