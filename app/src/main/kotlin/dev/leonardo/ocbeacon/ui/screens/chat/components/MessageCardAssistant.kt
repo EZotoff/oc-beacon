@@ -1356,6 +1356,14 @@ private fun StepGroupCard(
     readinessRegistry: RenderReadinessRegistry,
 ) {
     // #427 P3:切片表+片高账本提升到卡体(卡体常驻,账本跨回收存活)。
+    // #463:step 首组 part id → 序号——窗口化分支分割线定位(片内组与全局
+    // 索引因 splitHeavyTextPart 展开而错位,按身份匹配;split 派生段 #sgN
+    // 不在 map=正确不插;Context 组无单一 part id=罕见边界不插)。
+    val stepFirstGroupIds = androidx.compose.runtime.remember(step.groups, step.stepStarts) {
+        step.stepStarts.mapIndexedNotNull { ord, gi ->
+            (step.groups.getOrNull(gi) as? PartGroup.Single)?.part?.id?.let { it to (ord + 1) }
+        }.toMap()
+    }
     val stepSlices = androidx.compose.runtime.remember(step.groups) {
         sliceStepGroupBodies(step.groups)
     }
@@ -1466,18 +1474,24 @@ private fun StepGroupCard(
                     )
                 }
                 StepGroupWindowedBody(spec = spec) { i ->
-                    ChunkAssistantItems(
-                        items = stepSlices[i].map { RenderItem.GroupedParts(it) },
-                        textColor = textColor,
-                        isAmoled = isAmoled,
-                        onViewSubSession = onViewSubSession,
-                        onOpenFile = onOpenFile,
-                        onLocateTask = onLocateTask,
-                        eventExpandedStates = eventExpandedStates,
-                        renderableTurn = renderableTurn,
-                        compact = compact,
-                        readinessRegistry = readinessRegistry,
-                    )
+                    // #463:片内逐组渲染——step 首组(按 part id 匹配)前插分割线
+                    stepSlices[i].forEach { g ->
+                        (g as? PartGroup.Single)?.part?.id
+                            ?.let { stepFirstGroupIds[it] }
+                            ?.let { ord -> StepDivider(ord) }
+                        ChunkAssistantItems(
+                            items = listOf(RenderItem.GroupedParts(g)),
+                            textColor = textColor,
+                            isAmoled = isAmoled,
+                            onViewSubSession = onViewSubSession,
+                            onOpenFile = onOpenFile,
+                            onLocateTask = onLocateTask,
+                            eventExpandedStates = eventExpandedStates,
+                            renderableTurn = renderableTurn,
+                            compact = compact,
+                            readinessRegistry = readinessRegistry,
+                        )
+                    }
                 }
     }
     }
