@@ -883,27 +883,45 @@ internal fun CardExpandReveal(
                         )
                     }
                     clock.tweening = false
-                    // #427(终局·无闪烁,用户裁决:渲染前计算+反射设置):收起=恢复
-                    // 展开前锚点状态。反射 requestScrollToItemNoCancel 把目标位写入
-                    // **待定区,由下一遍 measure 消费**——与下述快照的高度塌缩
-                    // **同一遍 measure 原子生效**:单帧落地、无中间帧。
+                    // #427(终局·无闪烁,用户裁决:渲染前计算+反射设置):收起=镜像
+                    // 本卡配对消费的增量锚点(#462 改造:原「恢复展开前绝对快照」
+                    // 仅在集间无其他位移时正确——多卡展开态收起 A,绝对快照会把
+                    // B 的展开量一并回退=「收起其一视角跳变」;增量镜像目标=
+                    // 当前视口−episodeShiftConsumedPx,单卡时与旧绝对恢复数学
+                    // 同值,多卡时保其他卡净位移)。反射 requestScrollToItemNoCancel
+                    // 把目标位写入**待定区,由下一遍 measure 消费**——与下述快照的
+                    // 高度塌缩**同一遍 measure 原子生效**:单帧落地、无中间帧。
                     // (scrollToItem 是独立排布通道:塌缩先渲染一帧再跳位
                     //  =整屏闪烁,真机复验收敛定罪;本质=渲染后修正,弃。)
-                    // 用户滚动过(阅读位置优先权铁律)或锚点缺失 → 回退镜像位移。
-                    val anchorKnown =
-                        !clock.userScrollCancelled && clock.episodeAnchorItem >= 0
+                    // 用户滚动过(阅读位置优先权铁律)或锚点链不足 → 回退镜像位移。
+                    val collapseAnchor = if (!clock.userScrollCancelled) {
+                        val vis = listState.layoutInfo.visibleItemsInfo
+                        resolveCollapseAnchor(
+                            listState.firstVisibleItemIndex,
+                            listState.firstVisibleItemScrollOffset,
+                            clock.episodeShiftConsumedPx,
+                            vis.filter { it.index < listState.firstVisibleItemIndex }
+                                .map { it.size }
+                                .reversed(),
+                        )
+                    } else {
+                        null
+                    }
+                    val anchorKnown = collapseAnchor != null
                     if (anchorKnown) {
+                        val (aItem, aOffset) = collapseAnchor!!
                         dev.leonardo.ocbeacon.ui.screens.chat.components.LazyListReflection
                             .requestScrollToItemNoCancel(
                                 listState,
-                                clock.episodeAnchorItem,
-                                clock.episodeAnchorOffset,
+                                aItem,
+                                aOffset,
                             )
                         if (BuildConfig.DEBUG) {
                             AppLogger.d(
                                 "CardExpand",
-                                "[DEBUG-427] close-anchor-request fii=" + clock.episodeAnchorItem +
-                                    " fiso=" + clock.episodeAnchorOffset,
+                                "[DEBUG-427] close-anchor-request fii=" + aItem +
+                                    " fiso=" + aOffset +
+                                    " (mirror consumed=" + clock.episodeShiftConsumedPx.toInt() + ")",
                             )
                         }
                     }
@@ -1553,6 +1571,40 @@ private fun dispatchClosedLoop(
  * 布局语义未取证,保守不启用(待真机日志观察后再放宽)。
  */
 internal fun bottomPinnedExpandSkip(fii: Int, fiso: Int): Boolean = fii == 0 && fiso == 0
+
+/**
+ * #462(2026-09-29):收起锚点解析——增量镜像语义(纯函数可单测)。
+ *
+ * 根因:收起原用「本卡展开前绝对快照」恢复视口,仅在集间无其他位移时正确;
+ * 多卡展开态 V=Pa+H_A+H_B,收起 A 绝对恢复 Pa → 偏差 −H_B(视口多退 B 的
+ * 展开量)=「收起其一视角跳变」(用户报告,数学定罪+真机日志证实:展开配对
+ * 后 fiso+=H、快照恢复=−H)。增量镜像恒正确:目标=当前视口−本卡实际配对
+ * 消费 [episodeShiftConsumedPx]——任何其他「配对过的位移」(别卡展开/稳态
+ * 增长)都不破坏该语义;单卡时与旧绝对恢复严格等价(数学同值)。
+ *
+ * @param itemSizesBackward 自 fii−1 起向前的可见 item 高链(跨界折算用;
+ *   链不足返回 null → 调用方退 dispatch 镜像回退)
+ */
+internal fun resolveCollapseAnchor(
+    fii: Int,
+    fiso: Int,
+    consumedPx: Float,
+    itemSizesBackward: List<Int>,
+): Pair<Int, Int>? {
+    val c = consumedPx.toInt()
+    if (c <= 0) return fii to fiso
+    var item = fii
+    var offset = fiso - c
+    var depth = 0
+    while (offset < 0) {
+        if (item <= 0) return null
+        val size = itemSizesBackward.getOrNull(depth) ?: return null
+        item--
+        offset += size
+        depth++
+    }
+    return item to offset
+}
 
 /**
  * #432 settle 判稳帧推进(纯函数可单测):测量计数静止 ∧ 实测高度>0。
