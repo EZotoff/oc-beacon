@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -600,11 +601,28 @@ internal fun MarkdownContent(
     // 回退 = flavor 的 STREAMING_MD_PILOT 置 false。
     // #461：准入收为 streamingPilotEligible 纯函数——静态文本(asyncParse=true)
     // 不得误入(空 state 靠逐帧 append 填充,ε 窗竞态 → H=0 僵尸展开态)。
-    if (streamingPilotEligible(overrideState != null, asyncParse, isUser) && StreamingMarkdownPilot.enabled) {
+    // #472 完结换装无缝:async 终态源提升到固定组合位(条件创建在稳定位置,
+    // hold 期与切换后同一实例——切换帧不再二次 remember 重解析)。完结前
+    // (asyncParse=false)不创建,流式路径零额外成本。
+    val asyncTerminal: com.mikepenz.markdown.model.MarkdownState? =
+        if (overrideState == null && asyncParse && markdown.length > ASYNC_PARSE_MIN_CHARS) {
+            rememberAsyncMarkdownState(markdown, isUser)
+        } else {
+            null
+        }
+    val asyncTerminalState = asyncTerminal?.state?.collectAsState()?.value
+    val asyncTerminalReady = asyncTerminalState != null && asyncTerminalState !is State.Loading
+    var pilotEverRendered by remember { androidx.compose.runtime.mutableStateOf(false) }
+    val holdPilotTerminal = StreamingMarkdownPilot.enabled &&
+        pilotTerminalHold(pilotEverRendered, asyncTerminalReady)
+    if (streamingPilotEligible(overrideState != null, asyncParse, isUser) && StreamingMarkdownPilot.enabled ||
+        holdPilotTerminal
+    ) {
         // #437：pilotState.state 只收 SafePrefixGate 放行的定案内容；
         // 扣留尾部（heldTail）超龄后由降亮区呈现（锁高裁剪+呼吸光标，
         // 高度流=低频量子，与 #435 引擎配对兼容）。回退 = STABLE_REVEAL_PILOT
         // 置 false（gate 旁路，pilot 原行为）。
+        pilotEverRendered = true
         val pilotState = rememberPilotStreamingMarkdownState(markdown)
         androidx.compose.foundation.layout.Column {
             // #437 崩溃修复：非前缀重建（resetKey++）换 state 实例的同一帧，
@@ -648,8 +666,9 @@ internal fun MarkdownContent(
     // remember 内联执行（1-3ms 有界,无跨线程等待=非 runBlocking 家族）,
     // 首测即终高,占位帧从构造上消失;大文本保持异步（84ms 冷滑巨帧防线,
     // 且 ≥200 字符有 registry 预解析覆盖）。
-    val markdownState = overrideState ?: if (asyncParse) {
+    val markdownState = overrideState ?: asyncTerminal ?: if (asyncParse) {
         if (markdown.length > ASYNC_PARSE_MIN_CHARS) {
+            // #472:常规此处已被 asyncTerminal 覆盖;防御保留(条件变动时兜底)
             rememberAsyncMarkdownState(markdown, isUser)
         } else {
             // #428:小文本同步解析——remember 内联调用库的非 suspend 入口

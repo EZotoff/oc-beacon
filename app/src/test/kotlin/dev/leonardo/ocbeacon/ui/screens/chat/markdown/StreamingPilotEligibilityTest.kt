@@ -19,6 +19,29 @@ import org.junit.Test
  */
 class StreamingPilotEligibilityTest {
 
+    // ============ #472 完结换装无缝:pilot 终帧保持判定 ============
+    //
+    // 根因(真机定罪):流式完结(asyncParse 翻转)pilot 整树 dispose,>2048 字符
+    // 正文切异步解析首帧 State.Loading≈0 高→Success 弹回全高——RESIZE
+    // 1105→865→1580(41ms 两连跳)。修复:pilot 曾渲染且 async 终态未就绪时
+    // 保持 pilot 终帧(async 并行预热),Success 后无缝切换。
+
+    @Test
+    fun `pilot ever rendered with async loading holds terminal frame`() {
+        assertTrue(pilotTerminalHold(pilotEverRendered = true, asyncReady = false))
+    }
+
+    @Test
+    fun `async ready releases hold`() {
+        assertFalse(pilotTerminalHold(pilotEverRendered = true, asyncReady = true))
+    }
+
+    @Test
+    fun `never rendered never holds`() {
+        assertFalse(pilotTerminalHold(pilotEverRendered = false, asyncReady = false))
+        assertFalse(pilotTerminalHold(pilotEverRendered = false, asyncReady = true))
+    }
+
     @Test
     fun `static text with asyncParse never enters streaming pilot`() {
         // #461 主锚:历史思考文本(ReasoningBlock 传 asyncParse=!isStreaming=true)

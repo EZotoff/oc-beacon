@@ -125,6 +125,21 @@ internal fun streamingPilotEligible(
     isUser: Boolean,
 ): Boolean = !hasOverrideState && !asyncParse && !isUser
 
+/**
+ * #472(2026-09-30)完结换装无缝判定(纯函数,单测锚):pilot 曾渲染(流式输出过
+ * 内容)且 async 终态未就绪(State.Loading)时,完结帧保持 pilot 终帧渲染。
+ *
+ * 根因(真机定罪):完结(asyncParse 翻转)令 pilot 整树 dispose,>2048 字符
+ * 正文切 [rememberAsyncMarkdownState] 首帧 Loading≈0 高、Default 线程解析
+ * 完成后 Success 弹回全高——RESIZE 1105→865→1580(41ms 两连跳,用户主诉
+ * 「轮次刚完成的一瞬高度变化」)。保持 pilot 终帧+async 并行预热,Success
+ * 后无缝切换;残余归一化差(流中原文 vs 完结变换)由高度引擎帽配对吸收。
+ */
+internal fun pilotTerminalHold(
+    pilotEverRendered: Boolean,
+    asyncReady: Boolean,
+): Boolean = pilotEverRendered && !asyncReady
+
 internal object JankHoldGate {
     val enabled: Boolean by lazy {
         try {
