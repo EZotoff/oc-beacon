@@ -398,6 +398,13 @@ internal class CardExpandClock(initialFraction: Float) {
     var programmaticShift = false
 
     /**
+     * 贴底域展开标记(2026-09-28 二轮):展开集发起时 fii==0——零位移指令
+     * (锚定底部语义:增长向上扩展,锚定区稳定)。收起镜像据此记零回退
+     * (塌缩向上收,同样零滚动配对);防 rep 兜底把零位移展开误回退 −H。
+     */
+    var bottomAnchoredExpand = false
+
+    /**
      * #423 批次四b:本集几何目标分数(plain)。FLUSH 修正器的灭钉门控——
      * 坐标静止计数稳定前,分数必须已到位(settle/warmup 期报告恒 ε,不得灭钉;
      * 否则 driveTo 增长到来时修正器已离场 = 顶开帧直接上屏)。
@@ -798,7 +805,17 @@ internal fun CardExpandReveal(
                         val anchorFiso = listState.firstVisibleItemScrollOffset
                         val anchored =
                             listState.layoutInfo.visibleItemsInfo.isNotEmpty()
-                        if (anchored) {
+                        // 贴底全域豁免(fii==0,2026-09-28 二轮用户验收定罪):反射
+                        // (0,fiso+H) 把视口滚离底部 H——锚定区(用户正阅读的最新
+                        // 内容)整体下拖 H=用户主诉「点击时视口内容往下拖动」,
+                        // 偶发性=是否处于贴底/近底态点卡(轰炸 E4-E8 fii=0 ×5 复现
+                        // 该路径)。锚定底部语义:(0,fiso) 在 item0 增长时天然稳定
+                        // ——增长向上扩展,卡及下方纹丝不动,上方让位。零位移指令,
+                        // 收起镜像同步记零(bottomAnchoredExpand,塌缩向上收无需
+                        // 滚动配对)。半贴底 offset>0 同域(#432 注释留口的本义)。
+                        val bottomAnchored = anchorFii == 0
+                        clock.bottomAnchoredExpand = bottomAnchored
+                        if (anchored && !bottomAnchored) {
                             dev.leonardo.ocbeacon.ui.screens.chat.components.LazyListReflection
                                 .requestScrollToItemNoCancel(
                                     listState,
@@ -814,6 +831,17 @@ internal fun CardExpandReveal(
                                         " pinned=" + wasPinnedToBottom,
                                 )
                             }
+                        } else if (anchored) {
+                            // 贴底域:零位移(锚定自动稳定);账本记零=收起零回退
+                            clock.episodeShiftConsumedPx = 0f
+                            if (BuildConfig.DEBUG) {
+                                AppLogger.d(
+                                    "CardExpand",
+                                    "[DEBUG-466] expand-anchor-bottom fii=" + anchorFii +
+                                        " fiso=" + anchorFiso + " +H=" + H +
+                                        " (anchored, zero-shift)",
+                                )
+                            }
                         }
                         // 增长快照:反射路径=待定区写入后(同遍 measure 原子生效,
                         // 收起同序);withMutableSnapshot 同步应用保证消费遍见终高。
@@ -822,9 +850,10 @@ internal fun CardExpandReveal(
                             clock.driveTo(1f)
                         }
                         clock.tweening = false
-                        if (!anchored) {
+                        if (!anchored && !bottomAnchored) {
                             // fallback:布局未就绪(无可见条目)退 dispatch 旧路径
                             // (#427 残差重试)——增长已先行,内部测量见终高。
+                            // 贴底域同样豁免(锚定语义不依赖位移指令)。
                             clock.episodeShiftConsumedPx =
                                 applyPairedPreRenderShift(listState, H.toFloat())
                         }
@@ -834,7 +863,13 @@ internal fun CardExpandReveal(
                     // #430(修正):欠账 rebase——残量=目标−实消费(transient 0 消费
                     // 的配对义务不丢);基线锚定目标,幕布期增量(report>ledger)逐帧
                     // 记账。steadyHold 放行:增长落地帧 flush 同帧补派,上顶不上屏。
-                    clock.steadyRebaseAfterEpisodeDispatch(H, clock.episodeShiftConsumedPx)
+                    // 贴底域豁免:零位移语义无配对义务,plain rebase(挂 H 欠账会被
+                    // flush 逐帧补派=锚定区被推移,违背豁免本意)。
+                    if (clock.bottomAnchoredExpand) {
+                        clock.steadyRebase()
+                    } else {
+                        clock.steadyRebaseAfterEpisodeDispatch(H, clock.episodeShiftConsumedPx)
+                    }
                     clock.steadyHold = false
                     // 离底解跟随(真机定案:预移后 atBot=false 而 autoOn=true,
                     // 仲裁器集后把整个列表拽回底=「其他元素移动」主诉):
@@ -918,8 +953,13 @@ internal fun CardExpandReveal(
                     // 恒=当前上报高度 rep(稳态 fraction=1 时 rep==账本:展开反射记
                     // H,steady 补派双写同步),账本缺失时以 rep 兜底,数学与账本路径
                     // 严格同值;两条收起路径(反射锚点/dispatch 镜像)统一取用。
-                    val mirrorConsumed =
+                    // 贴底域展开(零位移)的收起=零回退:塌缩向上收,锚定区稳定,
+                    // rep 兜底不适用(会误回退 −H 把视口拉向旧端=反向过冲)。
+                    val mirrorConsumed = if (clock.bottomAnchoredExpand) {
+                        0f
+                    } else {
                         clock.episodeShiftConsumedPx.takeIf { it > 0f } ?: rep.toFloat()
+                    }
                     val collapseAnchor = if (!clock.userScrollCancelled) {
                         val vis = listState.layoutInfo.visibleItemsInfo
                         resolveCollapseAnchor(
@@ -1592,12 +1632,14 @@ private fun dispatchClosedLoop(
 }
 
 /**
- * #432 贴底免派发判定(纯函数可单测):严格贴底=最新 item 锚定(fii==0 ∧ offset==0)。
- * 此构型布局把塌高向上扩展——header 与底部内容天然屏位不变,dispatch 反而
- * 把视口推离贴底(「展开跳转到其他地方」)。fii==0 但 offset>0 的半贴底域
- * 布局语义未取证,保守不启用(待真机日志观察后再放宽)。
+ * #432 贴底免派发判定(纯函数可单测):贴底全域=最新 item 锚定(fii==0)。
+ * 此构型布局把高度变化向上扩展——header 与底部内容(锚定区)天然屏位不变,
+ * dispatch 反而把视口推离贴底(「展开跳转到其他地方」/「点击时内容往下拖」)。
+ * 2026-09-28 二轮放宽:fii==0 但 offset>0 的半贴底域一并启用——真机用户
+ * 验收定罪反射 (0,fiso+H) 把锚定区下拖 H(偶发主诉),锚定底部语义在半贴底
+ * 同样数学成立(可见卡恒在锚定线上方,增长向上扩展,锚定 (0,fiso) 稳定)。
  */
-internal fun bottomPinnedExpandSkip(fii: Int, fiso: Int): Boolean = fii == 0 && fiso == 0
+internal fun bottomPinnedExpandSkip(fii: Int, fiso: Int): Boolean = fii == 0
 
 /**
  * #462(2026-09-29):收起锚点解析——增量镜像语义(纯函数可单测)。
