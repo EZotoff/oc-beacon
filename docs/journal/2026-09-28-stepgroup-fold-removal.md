@@ -82,3 +82,9 @@ tap 前后 screencap 对(pxA/pxB)+分带位移相关分析(±90px 搜索):
 2. 定向开关 soak 4×(5 轮开关+滚离滚回): toggles=30, RESIZE 15×(-524)/15×(+524) 全配对, **孤儿负跳=0 PASS**, 进程 32594 全程稳定
 - "AndroidRuntime 48 条"甄别= uiautomator dump 工具进程启停日志, app 零异常
 - 连续滚离/滚回循环(回收+重组合反复)下 FLOOR 抬底与 rep 兜底持续生效, 无累积漂移
+
+### #474 第5轮补全:贴底构型+TodoListCard(2026-09-28 23:38)
+
+- 严格贴底 (0,0) 展开(todowrite 轮思考卡 H=720,pinned=true 豁免路径): 像素分带——upper residual=0.0 逐像素不动,mid 3.2(卡行摘要),lower -20px(展开内容向下让位);三构型(mid-list/贴底/回收)统一「点击卡及上方纹丝不动」语义
+- TodoListCard(default expanded,首次点击=收起): close-anchor consumed=240 ledger=0 rep=240——**默认展开卡零账本场景 rep 兜底实证**(旧代码此处必零回退跳变=修复顺带修正的隐性 bug);close-post 720-240=480 精确;再展开归位正常
+- 卡型覆盖最终清单: 思考卡(194/259/524/720 四尺寸)/bash 工具卡/TodoListCard/(QuestionCard 同 default-expanded 族同机制)/分割线(非交互)/表格与嵌套列表(非交互渲染已验)
