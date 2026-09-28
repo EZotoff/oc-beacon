@@ -95,3 +95,9 @@ tap 前后 screencap 对(pxA/pxB)+分带位移相关分析(±90px 搜索):
 - 定罪:现行 expand-anchor 恒走反射 (fii,fiso+H)——贴底/近底态(fii==0)把视口滚离底部 H,锚定区(用户正阅读的最新内容)整体下拖 H;偶发性=点卡时是否处于贴底域(轰炸 E4-E8 fii=0 ×5 复现该路径);#432 注释自留口「fii==0 offset>0 未取证保守不启用」正是此域
 - 修:贴底全域(fii==0,含半贴底)豁免位移——零位移指令+锚定底部语义(增长向上扩展,卡及下方纹丝不动,上方让位);clock.bottomAnchoredExpand 标记,收起镜像零回退(防 rep 兜底反向过冲),steady plain rebase(防欠账补派违背豁免);fallback dispatch 同豁免;BottomPinnedExpandSkipTest 半贴底用例语义更新
 - 验证:①贴底展开 [DEBUG-466] expand-anchor-bottom zero-shift + 像素分带 lower(锚定区) residual=0.0 逐像素不动/upper+70 上移让位 ②贴底收起 mirror consumed=0(rep=720 在场正确不兜底)原位零回退 ③mid-list 回归反射照常 6347+260=6607↔6347 精确 ④五轮贴底循环 fiso 全程 0 零拖动零累积 ⑤单测 43 例绿
+
+### #474 三轮:占位带豁免推广(2026-09-29 00:0x)
+
+- 发现:贴底豁免(fii==0)后,锚停在 idx0-6 占位带(fii=1..6,size=0 分隔/占位 item,真机 items=0:0|1:0|...实证)时卡恒在上方 item7+,增长不触及锚 item=锚定天然稳定,反射(fiso+H)反拖走下方=「往下拖」偶发残留末域
+- 修:豁免判据推广 fii==0 ∨ 锚item零尺寸(零尺寸必不宿主可展开卡,数学安全;占位带轻滚 100px 即被惯性跨过,用户实际停入概率极低=防御性覆盖)
+- 验证:fii=7(卡宿主 item)反射域回归精确(expand-anchor 183+720);单测绿;编译绿
