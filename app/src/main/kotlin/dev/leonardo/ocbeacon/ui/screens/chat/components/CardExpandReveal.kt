@@ -767,44 +767,66 @@ internal fun CardExpandReveal(
                     // 提前吃掉)+ 边缘重试白跑;窗外增量由稳态配对(#430)逐帧接管。
                     // 缓存价值回归"预知 floor"(prewarm/settle 提示),不作位移指令。
                     val H = clock.lastMeasuredH.also { if (it > 0) storeFinalH(it) }
-                    // 布局终态先行且**同步施加**:mutableStateOf 写入是快照批量的,
-                    // 裸写后 dispatch 的内部测量仍见旧高(中间态=卡片屏外 4688px
-                    // →条目回收→协程被杀,真机 exit-CANCELLED 829ms 定案)。
-                    // withMutableSnapshot 块末同步应用 → dispatch 测量即见终高。
-                    clock.tweening = true
-                    androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
-                        clock.driveTo(1f)
-                    }
-                    clock.tweening = false
-                    // 渲染后一帧再位移? 不——dispatch 内部 measure 已含增长,
-                    // 同帧原子;程序化豁免包裹(防取消守卫误杀)
+                    // #466 三轮(机构替换,2026-09-30 用户复验定罪):非贴底下半
+                    // 构型「闪烁→重定位→展开」= dispatchRawDelta 开环位移指令的
+                    // 执行竞态(#427 实证跨锚点大位移欠消费 20352→14190 + 残差
+                    // 重试链 + steady 多帧补派);上半构型恰好全额消费一帧落地
+                    // =「正常」。终态(dispatch 全额消费)语义本身正确——顶侧稳定
+                    // +增量朝锚端推出(B1/B2 裁决);错的是开环执行机构。
+                    // 统一替换为收起侧已定案的反射锚定原子落位:
+                    // requestScrollToItemNoCancel(fii, fiso+H) 待定区写入,与
+                    // driveTo(1f) 的增长**同遍 measure 原子生效**——单帧落地,
+                    // 无位移指令序列。数学:目标滚动位=当前+H,以 (fii,fso+H)
+                    // 分解表达——fii 之下(index 更小侧)无任何增长(卡必在可见
+                    // 域),该分解的绝对位恒=当前+H,与卡位置无关;超范围 offset
+                    // 由框架在消费遍自动归一(等价重写,绝对位不变)。
+                    // 收起镜像(#462)以 consumedPx 记账:反射路径恒记全额 H,
+                    // 回退 −H 闭环;贴底终态与 dispatch 全额严格同值(B2 不变)。
                     clock.programmaticShift = true
-                    // #466:贴底标记提升到 try 外(departure 防回拉要用)
+                    // #466:贴底标记(departure 防回拉)——反射落位后视口必然
+                    // 离底,贴底态立即解跟随的语义保留
                     var wasPinnedToBottom = false
                     try {
-                        // #427(终局):记录展开前锚点状态——收起按构造精确恢复
+                        // #427(终局):记录展开前锚点状态——收起 end-restore 兜底用
                         clock.episodeAnchorItem = listState.firstVisibleItemIndex
                         clock.episodeAnchorOffset = listState.firstVisibleItemScrollOffset
-                        // #466(2026-09-29 用户裁决:统一上方锚定、向下扩展):
-                        // 原贴底免派发(#432)使卡向上扩展推走上方旧内容——用户
-                        // 裁定所有场景(贴底/读历史)一律保持上方不变、展开增量
-                        // 向下推(含最新端被推出屏,B2 明示可接受)。统一走配对
-                        // dispatch +H(与中位构型同款,#427 全额残差重试);收起侧
-                        // 增量镜像(#462)以 consumedPx 记账,数学自动适配。
                         wasPinnedToBottom = bottomPinnedExpandSkip(
                             listState.firstVisibleItemIndex,
                             listState.firstVisibleItemScrollOffset,
                         )
-                        clock.episodeShiftConsumedPx =
-                            applyPairedPreRenderShift(listState, H.toFloat())
-                        if (wasPinnedToBottom) {
+                        val anchorFii = listState.firstVisibleItemIndex
+                        val anchorFiso = listState.firstVisibleItemScrollOffset
+                        val anchored =
+                            listState.layoutInfo.visibleItemsInfo.isNotEmpty()
+                        if (anchored) {
+                            dev.leonardo.ocbeacon.ui.screens.chat.components.LazyListReflection
+                                .requestScrollToItemNoCancel(
+                                    listState,
+                                    anchorFii,
+                                    anchorFiso + H,
+                                )
+                            clock.episodeShiftConsumedPx = H.toFloat()
                             if (BuildConfig.DEBUG) {
                                 AppLogger.d(
                                     "CardExpand",
-                                    "[DEBUG-466] pinned-expand dispatch H=" + H +
-                                        " consumed=" + clock.episodeShiftConsumedPx.toInt(),
+                                    "[DEBUG-466] expand-anchor fii=" + anchorFii +
+                                        " fiso=" + anchorFiso + " +H=" + H +
+                                        " pinned=" + wasPinnedToBottom,
                                 )
                             }
+                        }
+                        // 增长快照:反射路径=待定区写入后(同遍 measure 原子生效,
+                        // 收起同序);withMutableSnapshot 同步应用保证消费遍见终高。
+                        clock.tweening = true
+                        androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
+                            clock.driveTo(1f)
+                        }
+                        clock.tweening = false
+                        if (!anchored) {
+                            // fallback:布局未就绪(无可见条目)退 dispatch 旧路径
+                            // (#427 残差重试)——增长已先行,内部测量见终高。
+                            clock.episodeShiftConsumedPx =
+                                applyPairedPreRenderShift(listState, H.toFloat())
                         }
                     } finally {
                         clock.programmaticShift = false
