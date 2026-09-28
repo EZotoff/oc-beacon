@@ -18,7 +18,9 @@ import dev.leonardo.ocbeacon.domain.model.QuestionState
 import dev.leonardo.ocbeacon.domain.model.Session
 import dev.leonardo.ocbeacon.domain.model.SseEvent
 import dev.leonardo.ocbeacon.domain.model.StepProgressInfo
+import dev.leonardo.ocbeacon.domain.model.SubagentCatalog
 import dev.leonardo.ocbeacon.domain.model.ToolProgressInfo
+import dev.leonardo.ocbeacon.domain.model.WorkspaceSnapshot
 import dev.leonardo.ocbeacon.domain.repository.ChatRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +53,9 @@ class FakeChatRepository @Inject constructor() : ChatRepository {
     val compactionState = MutableStateFlow<CompactionStateInfo?>(null)
     val sessionDiffsState = MutableStateFlow<List<FileDiff>>(emptyList())
 
+    // #311：workspace 快照流（Task1/2 接口成员——此前缺席致本 fake 编译破损）
+    val workspaceSnapshotState = MutableStateFlow(WorkspaceSnapshot())
+
     // 同步变更的内部后备存储
     private val messagesStore = mutableMapOf<String, MutableList<MessageWithParts>>()
     private val permissionsStore = mutableMapOf<String, MutableList<SseEvent.PermissionAsked>>()
@@ -73,8 +78,8 @@ class FakeChatRepository @Inject constructor() : ChatRepository {
     var revertResult: Result<Unit> = Result.success(Unit)
     var unrevertResult: Result<Unit> = Result.success(Unit)
     var respondPermissionResult: Result<Boolean> = Result.success(true)
-    var listPendingPermissionsResult: Result<List<PermissionState>> = Result.success(emptyList())
-    var listPendingQuestionsResult: Result<List<QuestionState>> = Result.success(emptyList())
+    var listPendingPermissionsResult: Result<List<PermissionState>?> = Result.success(emptyList())
+    var listPendingQuestionsResult: Result<List<QuestionState>?> = Result.success(emptyList())
     var replyToQuestionResult: Result<Boolean> = Result.success(true)
     var rejectQuestionResult: Result<Boolean> = Result.success(true)
     var executeCommandResult: Result<Boolean> = Result.success(true)
@@ -138,11 +143,25 @@ class FakeChatRepository @Inject constructor() : ChatRepository {
         model: ModelSelection?,
         agent: String?,
         variant: String?,
-        directory: String?
+        directory: String?,
+        steer: Boolean,
+        seedTranscript: Boolean,
     ): Result<Unit> {
         promptAsyncCalls.add(sessionId to parts)
         return promptAsyncResult
     }
+
+    override fun getTurnMaxTokensForSession(sessionId: String): kotlinx.coroutines.flow.Flow<Long?> =
+        kotlinx.coroutines.flow.flowOf(null)
+
+    override fun getCommandFeedbackForSession(sessionId: String): kotlinx.coroutines.flow.Flow<List<dev.leonardo.ocbeacon.domain.model.CommandFeedback>> =
+        kotlinx.coroutines.flow.flowOf(emptyList())
+
+    override fun getCompactionEntriesForSession(sessionId: String): kotlinx.coroutines.flow.Flow<List<dev.leonardo.ocbeacon.domain.model.CompactionEntry>> =
+        kotlinx.coroutines.flow.flowOf(emptyList())
+
+    override fun getShadowedRangesForSession(sessionId: String): kotlinx.coroutines.flow.Flow<List<LongRange>> =
+        kotlinx.coroutines.flow.flowOf(emptyList())
 
     override suspend fun revertSession(serverId: String, sessionId: String, messageId: String): Result<Unit> =
         revertResult
@@ -160,10 +179,10 @@ class FakeChatRepository @Inject constructor() : ChatRepository {
 
     // ============ 待处理查询 ============
 
-    override suspend fun listPendingPermissions(serverId: String, directory: String?): Result<List<PermissionState>> =
+    override suspend fun listPendingPermissions(serverId: String, directory: String?): Result<List<PermissionState>?> =
         listPendingPermissionsResult
 
-    override suspend fun listPendingQuestions(serverId: String, directory: String?): Result<List<QuestionState>> =
+    override suspend fun listPendingQuestions(serverId: String, directory: String?): Result<List<QuestionState>?> =
         listPendingQuestionsResult
 
     override suspend fun replyToQuestion(
@@ -186,10 +205,6 @@ class FakeChatRepository @Inject constructor() : ChatRepository {
         command: String,
         arguments: String,
         directory: String?,
-        agent: String?,
-        model: String?,
-        variant: String?,
-        parts: List<Map<String, String>>?
     ): Result<Boolean> {
         executeCommandCalls.add(mapOf(
             "serverId" to serverId,
@@ -199,6 +214,12 @@ class FakeChatRepository @Inject constructor() : ChatRepository {
         ))
         return executeCommandResult
     }
+
+    override fun recordCommandAcceptance(sessionId: String, command: String, arguments: String?) = Unit
+
+    override fun recordCommandFailure(sessionId: String, command: String) = Unit
+
+    override suspend fun listQueueItems(serverId: String, sessionId: String): List<dev.leonardo.ocbeacon.domain.model.QueuedInboxItem>? = null
 
     override suspend fun runShellCommand(
         serverId: String,
@@ -231,6 +252,36 @@ class FakeChatRepository @Inject constructor() : ChatRepository {
 
     override suspend fun removeShell(serverId: String, shellId: String, directory: String?): Result<Boolean> =
         Result.success(true)
+
+    // ============ #311 workspace（归档 + 连接候选） ============
+
+    val archiveSessionCalls = mutableListOf<Pair<String, String>>()
+    var archiveSessionResult: Result<List<String>> = Result.success(emptyList())
+
+    override fun getWorkspaceSnapshotFlow(serverId: String): Flow<WorkspaceSnapshot> =
+        workspaceSnapshotState
+
+    override suspend fun archiveSession(serverId: String, sessionId: String): Result<List<String>> {
+        archiveSessionCalls.add(serverId to sessionId)
+        return archiveSessionResult
+    }
+
+    /** #311 Task3：连接复用候选（fake 无 workspace 语义——空表）。 */
+    override suspend fun listSessionsIncludingBlank(serverId: String): Result<List<Session>> =
+        Result.success(emptyList())
+
+    /** #310⑤/#321：@ 补全候选（#417 起可配置——此前恒空表致 mention 集成测试失真）。 */
+    var mentionCandidatesResult: Result<List<dev.leonardo.ocbeacon.domain.model.MentionCandidate>> =
+        Result.success(emptyList())
+
+    override suspend fun mentionCandidates(
+        serverId: String,
+        sessionId: String,
+        query: String,
+        directory: String?,
+        quoted: Boolean,
+    ): Result<List<dev.leonardo.ocbeacon.domain.model.MentionCandidate>> =
+        mentionCandidatesResult
 
     // ============ 权限自动批准 ============
 
@@ -363,6 +414,93 @@ class FakeChatRepository @Inject constructor() : ChatRepository {
         updateQueueItemCalls.add(itemId to action)
         return updateQueueItemResult
     }
+
+    // ============ #310① 子智能体续聊（DSH） ============
+
+    val subagentPromptCalls = mutableListOf<Triple<String, String, List<PromptPart>>>()
+    var subagentPromptResult: Result<String?> = Result.success("msg-sub-fake")
+
+    override suspend fun subagentPrompt(
+        serverId: String,
+        parentSessionId: String,
+        childSessionId: String,
+        parts: List<PromptPart>,
+    ): Result<String?> {
+        subagentPromptCalls.add(Triple(parentSessionId, childSessionId, parts))
+        return subagentPromptResult
+    }
+
+    val subagentInterruptCalls = mutableListOf<Pair<String, String>>()
+    var subagentInterruptResult: Result<Boolean> = Result.success(true)
+
+    override suspend fun subagentInterrupt(
+        serverId: String,
+        parentSessionId: String,
+        childSessionId: String,
+    ): Result<Boolean> {
+        subagentInterruptCalls.add(parentSessionId to childSessionId)
+        return subagentInterruptResult
+    }
+
+    var subagentCatalogResult: Result<SubagentCatalog?> = Result.success(null)
+
+    override suspend fun subagentCatalog(
+        serverId: String,
+        parentSessionId: String,
+    ): Result<SubagentCatalog?> = subagentCatalogResult
+
+    // ============ #310② 消息反馈 ============
+
+    val messageFeedbackPutCalls = mutableListOf<Triple<String, String, dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating>>()
+
+    var messageFeedbackPutResult: Result<dev.leonardo.ocbeacon.domain.model.MessageFeedbackPutResult> =
+        Result.success(
+            dev.leonardo.ocbeacon.domain.model.MessageFeedbackPutResult.Success(
+                dev.leonardo.ocbeacon.domain.model.MessageFeedbackItem(
+                    messageId = "msg-fake",
+                    rating = dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating.Positive,
+                    note = null,
+                    version = "v-fake",
+                    createdAt = 0L,
+                    updatedAt = 0L,
+                ),
+            ),
+        )
+
+    override suspend fun messageFeedbackPut(
+        serverId: String,
+        sessionId: String,
+        messageId: String,
+        rating: dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating,
+        note: String?,
+        ifVersion: String?,
+    ): Result<dev.leonardo.ocbeacon.domain.model.MessageFeedbackPutResult> {
+        messageFeedbackPutCalls.add(Triple(sessionId, messageId, rating))
+        return messageFeedbackPutResult
+    }
+
+    val messageFeedbackDeleteCalls = mutableListOf<Pair<String, String>>()
+
+    var messageFeedbackDeleteResult: Result<dev.leonardo.ocbeacon.domain.model.MessageFeedbackDeleteResult> =
+        Result.success(dev.leonardo.ocbeacon.domain.model.MessageFeedbackDeleteResult.Absent)
+
+    override suspend fun messageFeedbackDelete(
+        serverId: String,
+        sessionId: String,
+        messageId: String,
+        ifVersion: String,
+    ): Result<dev.leonardo.ocbeacon.domain.model.MessageFeedbackDeleteResult> {
+        messageFeedbackDeleteCalls.add(sessionId to messageId)
+        return messageFeedbackDeleteResult
+    }
+
+    var messageFeedbackListResult: Result<List<dev.leonardo.ocbeacon.domain.model.MessageFeedbackItem>?> =
+        Result.success(emptyList())
+
+    override suspend fun messageFeedbackList(
+        serverId: String,
+        sessionId: String,
+    ): Result<List<dev.leonardo.ocbeacon.domain.model.MessageFeedbackItem>?> = messageFeedbackListResult
 
     var createGoalResult: Result<dev.leonardo.ocbeacon.domain.model.DshGoalRef?> = Result.success(null)
 

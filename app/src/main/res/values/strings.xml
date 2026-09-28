@@ -58,15 +58,27 @@
     <string name="sessions_working">Working</string>
     <string name="sessions_retrying">Retrying</string>
     <string name="session_pending_question">Pending answer</string>
+    <string name="session_pending_approval">Pending approval</string>
     <string name="sessions_create_session">Create Session</string>
     <string name="session_status_idle">Idle</string>
     <string name="session_status_busy">Working…</string>
+    <string name="session_status_retry_countdown">Retrying in %1$d s</string>
     <string name="session_status_retry">Retrying (%1$d)</string>
+    <string name="turn_max_tokens_title">Output limit reached</string>
+    <string name="turn_max_tokens_continue">Continue</string>
+    <string name="command_feedback_running">Running…</string>
+    <string name="command_feedback_accepted">Accepted</string>
+    <string name="command_feedback_completed">Completed</string>
+    <string name="command_feedback_failed">Failed</string>
+    <string name="command_feedback_a11y_running">Command execution in progress</string>
     <string name="session_rename">Rename Session</string>
     <string name="session_rename_title">Title</string>
     <string name="session_rename_button">Rename</string>
     <string name="session_delete">Delete Session</string>
     <string name="session_delete_confirm">Delete \"%1$s\"? This cannot be undone.</string>
+    <string name="session_menu_archive">Archive</string>
+    <string name="session_archived_section_title">Archived (%1$d)</string>
+    <string name="session_archive_failed">Failed to archive session</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
     <string name="session_directory_details">Directory Details</string>
@@ -104,6 +116,8 @@
     <string name="session_sync_hint_partial">Only recent messages are stored on this device</string>
 
     <!-- Chat Screen -->
+    <string name="chat_mention_session_a11y">Session %1$s</string>
+    <string name="chat_mention_same_workspace">Same workspace</string>
     <string name="chat_send">Send</string>
     <string name="chat_send_queued">Send (queued)</string>
     <string name="chat_send_shell">Send shell command</string>
@@ -128,6 +142,8 @@
     <string name="todo_empty">No TODO items</string>
     <string name="chat_empty">Start a session</string>
     <string name="chat_copy">Copy</string>
+    <string name="table_copy_cell">Copy cell</string>
+    <string name="table_copy_table">Copy table (TSV)</string>
     <string name="terminal_copy">Copy</string>
     <string name="terminal_paste">Paste</string>
     <string name="terminal_more">More…</string>
@@ -148,6 +164,11 @@
     <string name="chat_share_url_copied">Share URL copied</string>
     <string name="chat_share_failed">Failed to share session</string>
     <string name="chat_copied_clipboard">Copied to clipboard</string>
+    <string name="chat_feedback_positive">Rate as helpful</string>
+    <string name="chat_feedback_negative">Rate as unhelpful</string>
+    <string name="chat_feedback_removed">Rating removed</string>
+    <string name="chat_feedback_conflict">Rating changed elsewhere, try again</string>
+    <string name="chat_feedback_failed">Failed to save rating</string>
     <string name="chat_session_compacted">Session compacted</string>
     <string name="chat_session_compact_failed">Failed to compact session</string>
     <string name="chat_session_unshared">Session unshared</string>
@@ -188,7 +209,16 @@
     <string name="chat_event_task_failed">Subagent failed</string>
     <string name="chat_event_shell_completed">Background command completed</string>
     <string name="chat_event_shell_failed">Background command failed</string>
-    <string name="chat_event_generic">Event</string>
+    <string name="chat_turn_ledger_expand">Show turn details</string>
+    <string name="chat_turn_ledger_collapse">Hide turn details</string>
+    <string name="chat_turn_fork_from_here">Fork from this turn</string>
+    <!-- #311 Task4 deliverables 产出文件行 + Task5 skill 工具卡 -->
+    <string name="chat_produced_files_label">Produced</string>
+    <string name="chat_produced_files_more">+%1$d more</string>
+    <string name="chat_produced_files_open">Open %1$s</string>
+    <string name="chat_skill_title">Skill</string>
+    <string name="chat_skill_instructions">Instructions</string>
+    <string name="chat_event_generic">Notification</string>
     <string name="chat_event_locate_task">Locate task</string>
     <string name="task_sheet_subagent_completed">Completed</string>
     <string name="agent_tree_diagnostic_corrupt">Corrupted subagent entry</string>
@@ -196,11 +226,50 @@
     <string name="agent_tree_diagnostic_unavailable">Unavailable subagent entry</string>
     <string name="chat_label_user">User</string>
     <string name="chat_label_agent">Agent</string>
+    <string name="chat_steer">Interjected</string>
+
+    <!-- 2026-09-12 消息层扁平化：三段式头部状态徽标 / 尾部动作 -->
+    <string name="chat_msg_status_streaming">Streaming</string>
+    <string name="chat_msg_status_interrupted">Interrupted</string>
+    <string name="chat_msg_status_error">Error</string>
+    <string name="chat_msg_detail_title">Message details</string>
+    <string name="chat_detail_time">Time</string>
+    <string name="chat_detail_duration">Duration</string>
+    <string name="chat_detail_tokens">Tokens</string>
+    <string name="chat_copy_markdown_source">Copy Markdown source</string>
+    <string name="chat_delete_message">Delete message</string>
+    <string name="chat_delete_message_title">Delete message?</string>
+    <string name="chat_delete_message_message">This removes the message from the server session. This cannot be undone.</string>
+    <string name="chat_message_deleted">Message deleted</string>
+    <string name="chat_message_delete_failed">Failed to delete message</string>
+    <string name="chat_msg_tail_summary">%1$d steps · %2$d tools</string>
+    <string name="chat_stats_ttft">TTFT</string>
+    <string name="chat_stats_tokens_per_second">tokens/s</string>
+    <!-- 2026-09-12 消息层扁平化 批3：统计弹窗（sessionStats + 逐轮明细） -->
+    <string name="chat_stats_session_title">Session stats</string>
+    <string name="chat_stats_summary">%1$d turns · %2$d steps · %3$s LLM · %4$s tools</string>
+    <string name="chat_stats_ttft_avg">Avg TTFT: %1$s</string>
+    <string name="chat_stats_decode">%1$s tokens/s</string>
+    <string name="chat_stats_per_turn_title">Per-turn details</string>
+    <string name="chat_stats_turn_row">Turn %1$d · %2$s · %3$s</string>
+    <string name="chat_stats_input">Input</string>
+    <string name="chat_stats_output">Output</string>
+    <string name="chat_stats_reasoning">Reasoning</string>
+    <string name="chat_stats_cache_read">Cache read</string>
+    <string name="chat_stats_cache_write">Cache write</string>
+    <string name="chat_stats_cost">Cost</string>
+    <string name="chat_stats_model">Model</string>
+    <string name="chat_stats_steps">Steps</string>
+    <string name="chat_stats_tools">Tools</string>
+    <string name="chat_stats_expand">Expand turn details</string>
+    <string name="chat_stats_collapse">Collapse turn details</string>
+    <string name="a11y_message_detail">Message details</string>
     <string name="chat_subagent_completed_notification">Subagent completed</string>
     <string name="chat_subagent_failed_notification">Subagent failed</string>
     <string name="chat_status_updating_tasks">Updating tasks</string>
     <string name="chat_status_thinking">Thinking</string>
     <string name="chat_thinking_complete">Thought for %1$s</string>
+    <string name="chat_thinking_complete_unknown">Thought complete</string>
     <string name="chat_tool_running_command">Running command…</string>
     <string name="chat_hint_ask">Ask a question…</string>
     <string name="chat_hint_fix">Fix the bug in…</string>
@@ -259,6 +328,8 @@
     <string name="queue_remove">Remove queued message</string>
     <string name="queue_steer">Steer to next turn</string>
     <string name="queue_edit_hint">Edit queued message</string>
+    <string name="queue_title">Queue</string>
+    <string name="queue_empty">No queued messages</string>
     <string name="queue_steer_unavailable">Steer is only available while the session is running</string>
     <string name="queue_action_failed">Queue action failed</string>
     <string name="shell_status_failed">Failed</string>
@@ -319,7 +390,9 @@
     <string name="chat_shell_placeholder">Enter shell command…</string>
     <string name="chat_shell_failed">Failed to run shell command</string>
     <string name="chat_shell_empty">Enter a shell command first</string>
+    <string name="chat_subagent_one_shot_read_only">One-shot subagent session: follow-up messages are not supported</string>
     <string name="chat_shell_attachments_unsupported">Shell mode does not support attachments</string>
+    <string name="chat_command_images_unsupported">Slash commands do not support image attachments</string>
     <string name="chat_terminal_connect_failed">Failed to open terminal</string>
     
     <!-- Patch File Actions -->
@@ -592,7 +665,6 @@
     <string name="crash_logs_dir">Crash logs at Download/%1$s/</string>
 
     <!-- Message meta info -->
-    <string name="chat_meta_tokens">%d tokens</string>
     <string name="chat_glob_match_count">%d matches</string>
     <string name="tool_web_fetch">WebFetch</string>
     <string name="chat_webfetch_prompt">Prompt: %s</string>
@@ -628,7 +700,6 @@ Size: %2$s -&gt; %3$s
 Tokens: ~%4$d -&gt; ~%5$d</string>
 
     <!-- Chat subagent features -->
-    <string name="chat_queued">QUEUED</string>
     <string name="chat_retry_send">Retry</string>
     <string name="chat_title_placeholder">Chat</string>
     <string name="chat_context_detail_title">Context usage details</string>
@@ -704,6 +775,7 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="a11y_icon_navigate_forward">Navigate forward</string>
     <string name="a11y_locate_task">Locate originating task</string>
     <string name="chat_locate_task_not_found">Originating task not found in this session</string>
+    <string name="chat_locate_message_not_found">Message not found in this session</string>
     <string name="a11y_icon_add">Add</string>
     <string name="a11y_icon_share">Share</string>
     <string name="a11y_icon_unlink">Unlink</string>
@@ -753,9 +825,15 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="sessions_clear_search">Clear search</string>
     <!-- #272：内容检索聚合（FTS5/BM25 本地检索） -->
     <string name="search_content_hits">Message matches</string>
+    <!-- #322：DSH 服务器历史命中（session/search） -->
+    <string name="search_server_hits">Session matches</string>
+    <string name="search_server_more">First 20 matches shown</string>
     <string name="search_content_coverage_hint">Full history not synced for this session</string>
     <string name="search_content_hit_count">%1$d messages</string>
     <string name="search_filter_role_all">All roles</string>
+    <string name="search_filter_menu">Filter</string>
+    <string name="search_filter_role_section">Role</string>
+    <string name="search_filter_time_section">Time</string>
     <string name="search_filter_role_user">User</string>
     <string name="search_filter_role_assistant">AI</string>
     <string name="search_filter_time_all">All time</string>
@@ -849,10 +927,19 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="permission_custom">Custom</string>
     <string name="permission_custom_hint">Custom permission preset</string>
     <string name="permission_switch_failed">Failed to switch permission preset</string>
+    <string name="permission_full_access_confirm_title">Switch to Full access?</string>
+    <string name="permission_full_access_confirm_message">Full access lets the agent run commands and edit files without sandbox restrictions. Only enable this for trusted work.</string>
+    <string name="permission_full_access_confirm_button">Switch to Full access</string>
     <string name="a11y_icon_permission_preset">Permission preset</string>
+    <string name="plan_chip_label">Plan</string>
+    <string name="plan_chip_active_a11y">Plan mode on — tap to turn off (/plan off)</string>
+    <string name="plan_chip_pending_a11y">Switching to plan mode — tap to cancel (/plan off)</string>
+    <string name="plan_exit_failed">Failed to exit plan mode</string>
     <string name="server_settings_default_permission">New session default permission</string>
     <string name="agent_preset_locked">Agent preset is locked for this session</string>
     <string name="agent_preset_switch_failed">Failed to switch Agent preset</string>
+    <string name="sessions_new_dialog_preset_label">Agent preset</string>
+    <string name="sessions_new_dialog_preset_default">Default</string>
     <string name="agent_preset_cards_title">Choose Agent preset</string>
     <string name="server_settings_default_agent_preset">New session default Agent preset</string>
     <string name="session_details_agent_preset">Agent preset</string>
@@ -869,6 +956,7 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="goal_blocked_reason">Reason: %1$s</string>
     <string name="goal_action_pause">Pause</string>
     <string name="goal_action_resume">Resume</string>
+    <string name="goal_action_complete">Mark complete</string>
     <string name="goal_action_edit">Edit</string>
     <string name="goal_action_clear">Clear</string>
     <string name="goal_create_heading">Create a goal</string>
@@ -887,6 +975,7 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="context_pressure_messages">Messages</string>
     <!-- #267 Server disconnect awareness (banner + fast-fail message) -->
     <string name="server_link_disconnected_banner">Server disconnected, reconnecting…</string>
+    <string name="server_link_disconnected_banner_countdown">Server disconnected, reconnecting… (retry in %1$d s)</string>
     <string name="server_link_disconnected_message">Server disconnected, operation not sent</string>
 
     <!-- #154a 崩溃启动提示 -->
@@ -933,4 +1022,76 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_notification_root_failing_title">Supervisor: %1$d root(s) failing</string>
     <string name="supervisor_notification_error_peak_title">Supervisor: error peak rising</string>
     <string name="supervisor_notification_error_peak">Error peak: %1$d</string>
+    <string name="dsh_token_banner_text">This server requires an access token</string>
+    <string name="dsh_token_banner_action">Enter token</string>
+    <string name="dsh_token_dialog_title">Access token required</string>
+    <string name="dsh_token_dialog_message">Paste the token or the full URL from the server startup line (it contains token=...).</string>
+    <string name="dsh_token_dialog_hint">Token or URL</string>
+    <string name="dsh_token_dialog_connect">Connect</string>
+    <string name="dsh_token_dialog_rejected">Token rejected by the server. Check it and try again.</string>
+    <string name="server_pair_help_title">First-time pairing</string>
+    <string name="server_pair_help_manual">Manual: save and connect this server, then tap "Enter token" on the banner and paste the token from the server startup line</string>
+    <string name="server_pair_help_adb">USB (dev builds): run ./scripts/dsh-pair.sh on the host — the token is injected automatically</string>
+    <string name="server_pair_help_deeplink">Or run ./scripts/dsh-pair.sh --lan on the host and scan or tap the ocbeacon:// link to pre-fill this form</string>
+    <!-- #324① DSH provider 目录/自定义增删 -->
+    <string name="dsh_settings_loopback_required">This action needs a loopback connection (adb reverse to 127.0.0.1).</string>
+    <string name="dsh_providers_section_title">DSH provider directory</string>
+    <string name="dsh_providers_empty">No providers reported by the server.</string>
+    <string name="dsh_provider_add_custom">Add custom provider</string>
+    <string name="dsh_provider_route">Route ID</string>
+    <string name="dsh_provider_route_hint">Lowercase letters, digits and hyphens; must start with a letter.</string>
+    <string name="dsh_provider_route_invalid">Route must be lowercase letters/digits/hyphens and start with a letter.</string>
+    <string name="dsh_provider_route_taken">This route is already in use.</string>
+    <string name="dsh_provider_display_name">Display name (optional)</string>
+    <string name="dsh_provider_base_url">Base URL</string>
+    <string name="dsh_provider_api_key">API key (optional)</string>
+    <string name="dsh_provider_api_key_hint">Stored in server credentials; the value is never shown again.</string>
+    <string name="dsh_provider_discover">Discover models</string>
+    <string name="dsh_provider_discover_failed">Discovery failed: %1$s</string>
+    <string name="dsh_provider_models_none">No models discovered yet. Fill the Base URL and tap Discover.</string>
+    <string name="dsh_provider_model_select">Select models to include</string>
+    <string name="dsh_provider_create">Create</string>
+    <string name="dsh_provider_delete">Delete</string>
+    <string name="dsh_provider_delete_confirm_title">Delete custom provider</string>
+    <string name="dsh_provider_delete_confirm_text">Delete custom provider %1$s? Its stored credential (if any) is removed too.</string>
+    <string name="dsh_provider_credential_configured">Credential configured</string>
+    <string name="dsh_provider_credential_missing">Credential not set</string>
+    <string name="dsh_provider_active">Active in runtime</string>
+    <string name="dsh_provider_inactive">Not active in runtime</string>
+
+    <!-- #324② preset 管理 -->
+    <string name="dsh_preset_view">View composition</string>
+    <string name="dsh_preset_copy_title">Duplicate preset %1$s</string>
+    <string name="dsh_preset_copy_id">New preset ID</string>
+    <string name="dsh_preset_copy_name">New name (optional)</string>
+    <string name="dsh_preset_copy">Duplicate</string>
+    <string name="dsh_preset_delete_confirm_title">Delete preset</string>
+    <string name="dsh_preset_delete_confirm_text">Delete user preset %1$s? Running sessions are unaffected; new sessions fall back to the default.</string>
+    <string name="dsh_preset_broken_badge">Broken: %1$s</string>
+
+    <!-- #324③ 插件配置与清单 -->
+    <string name="dsh_plugins_inventory_title">Server plugins</string>
+    <string name="dsh_plugins_inventory_empty">No plugin inventory reported.</string>
+    <string name="dsh_plugin_enabled">Enabled</string>
+    <string name="dsh_plugin_disabled">Disabled</string>
+    <string name="dsh_plugin_conditional">Conditional</string>
+    <string name="dsh_plugin_preset_group">Preset: %1$s</string>
+    <string name="dsh_server_config_title">Server configuration</string>
+    <string name="dsh_config_applies_live">Applies immediately</string>
+    <string name="dsh_config_applies_restart">Needs restart</string>
+    <string name="dsh_secret_no_ref">Managed outside this app (no credential reference declared).</string>
+
+    <!-- #324④ skills 触发组 -->
+    <string name="slash_skills_group">Skills</string>
+    <string name="slash_skill_model_invocable">Model-invocable skill</string>
+    <string name="chat_busy_menu_send_now">Send now</string>
+    <string name="chat_busy_menu_send_now_desc">Injects into the running turn, visible immediately</string>
+    <string name="chat_busy_menu_queue">Queue message</string>
+    <string name="chat_busy_menu_queue_desc">Sent automatically when this turn ends</string>
+    <string name="chat_busy_menu_queue_no_attachments">Messages with attachments must be sent now</string>
+    <!-- #385: DSH context injection compact card labels (source.kind) -->
+    <string name="chat_injection_agent_instructions">Workspace instructions</string>
+    <string name="chat_injection_skill_catalog">Skill catalog</string>
+    <string name="chat_injection_plugin">Plugin configuration</string>
+    <string name="chat_injection_context">Context injection</string>
 </resources>

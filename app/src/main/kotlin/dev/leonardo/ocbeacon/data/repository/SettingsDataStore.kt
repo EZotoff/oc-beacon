@@ -264,7 +264,7 @@ class SettingsDataStore @Inject constructor(
         }
     }
 
-    /** 推理块是否默认展开。默认：false（折叠）。 */
+    /** 推理块是否默认展开。#432 用户裁决:默认收起(用户显式设置仍优先)。 */
     val expandReasoning: Flow<Boolean> = prefFlow(EXPAND_REASONING_KEY, false)
     suspend fun setExpandReasoning(enabled: Boolean) = setPref(EXPAND_REASONING_KEY, enabled)
 
@@ -426,7 +426,7 @@ class SettingsDataStore @Inject constructor(
             confirmBeforeSend = prefs[CONFIRM_BEFORE_SEND_KEY] ?: false,
             compactMessages = prefs[COMPACT_MESSAGES_KEY] ?: false,
             autoExpandTools = prefs[AUTO_EXPAND_TOOLS_KEY] ?: prefs[LEGACY_COLLAPSE_TOOLS_KEY] ?: false,
-            expandReasoning = prefs[EXPAND_REASONING_KEY] ?: false,
+            expandReasoning = prefs[EXPAND_REASONING_KEY] ?: false, // #432 默认收起
             showTurnDividers = prefs[SHOW_TURN_DIVIDERS_KEY] ?: true,
             notificationsEnabled = prefs[NOTIFICATIONS_KEY] ?: true,
             silentNotifications = prefs[SILENT_NOTIFICATIONS_KEY] ?: false,

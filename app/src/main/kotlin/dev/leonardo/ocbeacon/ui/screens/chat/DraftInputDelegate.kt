@@ -3,6 +3,8 @@ package dev.leonardo.ocbeacon.ui.screens.chat
 import dev.leonardo.ocbeacon.logging.AppLogger
 
 import dev.leonardo.ocbeacon.domain.model.Draft
+import dev.leonardo.ocbeacon.domain.model.MentionCandidate
+import dev.leonardo.ocbeacon.domain.repository.ChatRepository
 import dev.leonardo.ocbeacon.domain.repository.DraftRepository
 import dev.leonardo.ocbeacon.domain.usecase.ManageAgentUseCase
 import kotlinx.coroutines.CancellationException
@@ -31,6 +33,8 @@ private const val TAG = "DraftInputDelegate"
 internal class DraftInputDelegate(
     private val draftRepository: DraftRepository,
     private val manageAgentUseCase: ManageAgentUseCase,
+    // #310⑤/#321：@ 补全统一候选源（DSH=文件+会话并行合并;非 DSH=findFiles 包装,原路径不回归）
+    private val chatRepository: ChatRepository,
     private val scope: CoroutineScope,
     private val serverId: String,
     private val sessionIdProvider: () -> String,
@@ -59,52 +63,62 @@ internal class DraftInputDelegate(
     private val _restoredDraft = MutableStateFlow<RevertedDraftPayload?>(null)
     val restoredDraftState: StateFlow<RevertedDraftPayload?> = _restoredDraft
 
-    // ============ @ 文件提及搜索 ============
+    // ============ @ 文件/会话提及搜索（#310⑤+#321 统一候选源） ============
     /** @ 自动补全的文件搜索结果 */
     private val _fileSearchResults = MutableStateFlow<List<String>>(emptyList())
     val fileSearchResults: StateFlow<List<String>> = _fileSearchResults
 
+    /** @ 自动补全的会话源候选（DSH sessionReferenceResolver；仅 DSH 非空） */
+    private val _sessionSearchResults = MutableStateFlow<List<MentionCandidate.SessionMention>>(emptyList())
+    val sessionSearchResults: StateFlow<List<MentionCandidate.SessionMention>> = _sessionSearchResults
+
     /** 文件搜索的 debounce job */
     private var fileSearchJob: Job? = null
 
-    /** 搜索文件和目录用于 @ 提及自动补全。150ms debounce。 */
-    fun searchFilesForMention(query: String) {
+    /**
+     * @ 提及候选搜索。150ms debounce（空 query 立即查最近）。
+     * #310⑤/#321：统一走 [ChatRepository.mentionCandidates]——DSH 并行
+     * fileReferences/list + sessionReferenceResolver/candidates 合并
+     * （quoted=true 跳会话域,web @" 先例）;非 DSH 走 findFiles 包装,原行为不回归。
+     */
+    fun searchFilesForMention(query: String, quoted: Boolean = false) {
         fileSearchJob?.cancel()
-        if (query.isEmpty()) {
-            // 立即显示最近/热门文件，无 debounce
-            fileSearchJob = scope.launch {
-                try {
-                    val results = manageAgentUseCase.searchFiles(
-                        serverId = serverId,
-                        query = "",
-                        dirs = "true",
-                        directory = sessionDirectoryProvider(),
-                        limit = 15
-                    )
-                    _fileSearchResults.value = results
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
-                    AppLogger.e(TAG, "File search failed", e)
-                    _fileSearchResults.value = emptyList()
-                }
-            }
+        // #310⑤ 验收簇1修复：懒创建会话在首条消息前 sessionId 为空串——DSH 候选 RPC
+        // (fileReferences/sessionReferenceResolver 均需 agentId)空串必致 URL 编码失败
+        // (真机铁证:cannot encode an empty path segment)。静默清空+debug 日志,不发必败请求;
+        // 首条消息发出后 session 建立,@ 补全自然可用(web 语义对位:web 会话在进入时即存在)。
+        if (sessionIdProvider().isBlank()) {
+            AppLogger.d(TAG, "Mention search skipped: session not created yet (blank sessionId)")
+            _fileSearchResults.value = emptyList()
+            _sessionSearchResults.value = emptyList()
             return
         }
+        // #310⑤ 轮2 A3 修复：quoted 形态 @"a 的 trigger 词含前导引号——查询前必须
+        // 去引号（否则文件查询以 "a 开头恒空,真机轮2 铁证:同会话 @a 正常而 @"a 无弹窗）。
+        val effectiveQuery = if (quoted) query.removePrefix("\"") else query
         fileSearchJob = scope.launch {
-            delay(150) // debounce
+            if (effectiveQuery.isNotEmpty()) delay(150) // debounce
             try {
-                val results = manageAgentUseCase.searchFiles(
+                val merged = chatRepository.mentionCandidates(
                     serverId = serverId,
-                    query = query,
-                    dirs = "true",
+                    sessionId = sessionIdProvider(),
+                    query = effectiveQuery,
                     directory = sessionDirectoryProvider(),
-                    limit = 15
-                )
-                _fileSearchResults.value = results
+                    quoted = quoted,
+                ).getOrElse { e ->
+                    if (e is CancellationException) throw e
+                    AppLogger.w(TAG, "Mention candidates failed for '$query': " + e.message)
+                    _fileSearchResults.value = emptyList()
+                    _sessionSearchResults.value = emptyList()
+                    return@launch
+                }
+                _fileSearchResults.value = merged.filterIsInstance<MentionCandidate.FileMention>().map { it.path }
+                _sessionSearchResults.value = merged.filterIsInstance<MentionCandidate.SessionMention>()
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                AppLogger.e(TAG, "File search failed for query '$query'", e)
+                AppLogger.e(TAG, "Mention search failed for query '$query'", e)
                 _fileSearchResults.value = emptyList()
+                _sessionSearchResults.value = emptyList()
             }
         }
     }
@@ -123,6 +137,7 @@ internal class DraftInputDelegate(
     fun clearFileSearch() {
         fileSearchJob?.cancel()
         _fileSearchResults.value = emptyList()
+        _sessionSearchResults.value = emptyList()
     }
 
     /** 清除确认的文件路径（如发送消息后） */

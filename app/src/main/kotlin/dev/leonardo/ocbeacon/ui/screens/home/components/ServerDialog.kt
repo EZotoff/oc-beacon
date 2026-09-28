@@ -24,6 +24,13 @@ import dev.leonardo.ocbeacon.ui.components.DialogButtons
 import dev.leonardo.ocbeacon.ui.components.amoledDialogParams
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
+
+/** #391 切片8：服务器类型标签（用户选择面；新增类型时补一条本地化映射）。 */
+private fun serverTypeLabel(type: ServerType): Int = when (type) {
+    ServerType.OpenCode -> R.string.server_type_opencode
+    ServerType.Dsh -> R.string.server_type_dsh
+}
 
 /**
  * 解析并校验服务器 URL 字符串。
@@ -82,17 +89,28 @@ private fun deriveServerNameFromUrl(normalizedUrl: String): String {
 @Composable
 internal fun ServerDialog(
     server: ServerConfig?,
+    // #325②：配对深链预填（DSH 地址；非 null 时新建对话框默认选中 DSH 类型）
+    prefillUrl: String? = null,
     onDismiss: () -> Unit,
-    onSave: (name: String, url: String, username: String, password: String, autoConnect: Boolean, serverType: ServerType) -> Unit
+    onSave: (name: String, url: String, username: String, password: String, autoConnect: Boolean, serverType: ServerType) -> Unit,
+    /**
+     * #391 切片8：可选服务器类型由适配器注册表枚举驱动（默认仅显示已注册类型；
+     * 调用方传 viewModel.supportedServerTypes）。为空时回落到默认类型，保证可编辑。
+     */
+    serverTypes: List<ServerType> = listOf(ServerType.OpenCode),
 ) {
     // #115（D2-L25）：服务器名输入 saveable
     var name by rememberSaveable { mutableStateOf(server?.name ?: "") }
-    var url by remember { mutableStateOf(server?.url ?: "http://") }
+    // #325②：深链预填优先于 "http://" 占位（编辑态沿用条目现值）
+    var url by remember { mutableStateOf(server?.url ?: prefillUrl ?: "http://") }
     var username by remember { mutableStateOf(server?.username ?: "opencode") }
     var password by remember { mutableStateOf(server?.password ?: "") }
     var autoConnect by remember { mutableStateOf(server?.autoConnect ?: false) }
-    // #276：服务器类型（enum 是 Serializable，rememberSaveable 原生支持）
-    var serverType by rememberSaveable { mutableStateOf(server?.serverType ?: ServerType.OpenCode) }
+    // #276：服务器类型（enum 是 Serializable，rememberSaveable 原生支持）；
+    // #325②：配对深链预填 → 默认 DSH
+    var serverType by rememberSaveable {
+        mutableStateOf(server?.serverType ?: if (prefillUrl != null) ServerType.Dsh else ServerType.OpenCode)
+    }
     val isDsh = serverType == ServerType.Dsh
 
     var urlError by remember { mutableStateOf<String?>(null) }
@@ -121,14 +139,14 @@ internal fun ServerDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(SpacingTokens.XL.dp),
+                verticalArrangement = Arrangement.spacedBy(SpacingTokens.MD.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .weight(1f, fill = false)
                         .verticalScroll(scrollState),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(SpacingTokens.MD.dp)
                 ) {
                     Text(
                         text = if (server != null) stringResource(R.string.home_edit) else stringResource(R.string.server_add),
@@ -137,21 +155,16 @@ internal fun ServerDialog(
 
                     // #276：服务器类型选择（M3 SegmentedButton 单选；DSH 无鉴权——
                     // 选中后隐藏用户名/密码并切换 URL 提示）
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp)) {
                         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                            SegmentedButton(
-                                selected = !isDsh,
-                                onClick = { serverType = ServerType.OpenCode },
-                                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                            ) {
-                                Text(stringResource(R.string.server_type_opencode))
-                            }
-                            SegmentedButton(
-                                selected = isDsh,
-                                onClick = { serverType = ServerType.Dsh },
-                                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                            ) {
-                                Text(stringResource(R.string.server_type_dsh))
+                            serverTypes.forEachIndexed { index, type ->
+                                SegmentedButton(
+                                    selected = serverType == type,
+                                    onClick = { serverType = type },
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = serverTypes.size)
+                                ) {
+                                    Text(stringResource(serverTypeLabel(type)))
+                                }
                             }
                         }
                         if (isDsh) {
@@ -200,6 +213,44 @@ internal fun ServerDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    // #325：DSH 首次配对辅助区（三通道指引——粘贴手动[现状]/
+                    // adb 注入[dev]/深链填表；轻量自有形态，无新增依赖）
+                    if (isDsh) {
+                        Surface(
+                            shape = ShapeTokens.medium,
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = AlphaTokens.FAINT),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = AlphaTokens.FAINT)),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.server_pair_help_title),
+                                    style = MaterialTheme.typography.titleSmall,
+                                )
+                                Text(
+                                    text = stringResource(R.string.server_pair_help_manual),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    text = stringResource(R.string.server_pair_help_adb),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    text = stringResource(R.string.server_pair_help_deeplink),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+
                     // #276：DSH 无鉴权（§2.1）——用户名/密码字段隐藏
                     if (!isDsh) {
                         OutlinedTextField(
@@ -231,8 +282,8 @@ internal fun ServerDialog(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                .padding(horizontal = 14.dp, vertical = SpacingTokens.MD.dp),
+                            horizontalArrangement = Arrangement.spacedBy(SpacingTokens.MD.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {

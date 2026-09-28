@@ -24,6 +24,7 @@ import dev.leonardo.ocbeacon.service.OpenCodeConnectionService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,6 +47,8 @@ data class HomeUiState(
     val connectionErrors: Map<String, String> = emptyMap(),
     val showAddServerDialog: Boolean = false,
     val editingServer: ServerConfig? = null,
+    /** #325②：配对深链预填的 DSH 服务器地址（null = 无预填）。 */
+    val pairPrefillUrl: String? = null,
     val isLoading: Boolean = true,
 )
 
@@ -58,7 +61,13 @@ class HomeViewModel @Inject constructor(
     private val manageServerProvidersUseCase: ManageServerProvidersUseCase,
     // #154a：崩溃启动提示（诊断库最近未确认 FATAL → Home 横幅）
     private val diagnosticLogRepository: dev.leonardo.ocbeacon.data.repository.DiagnosticLogRepository,
+    // #391 切片8：服务器选择器由注册表枚举驱动（注册了适配器即自动出现）
+    serverAdapters: dev.leonardo.ocbeacon.domain.adapter.ServerAdapterResolver,
 ) : AndroidViewModel(application) {
+
+    /** 已注册（= 产品支持）的服务器类型，按声明序稳定排列。 */
+    val supportedServerTypes: List<dev.leonardo.ocbeacon.domain.model.ServerType> =
+        serverAdapters.supportedTypes().sortedBy { it.ordinal }
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -258,12 +267,20 @@ class HomeViewModel @Inject constructor(
         _uiState.update { it.copy(showAddServerDialog = true, editingServer = null) }
     }
 
+    /**
+     * #325②：配对深链预填——打开添加对话框并预填 DSH 地址（token 已在
+     * 深链到达时后台交换；此处只填表，保存仍由用户确认）。
+     */
+    fun prefillAddServerDialog(url: String) {
+        _uiState.update { it.copy(showAddServerDialog = true, editingServer = null, pairPrefillUrl = url) }
+    }
+
     fun showEditServerDialog(server: ServerConfig) {
         _uiState.update { it.copy(showAddServerDialog = true, editingServer = server) }
     }
 
     fun hideServerDialog() {
-        _uiState.update { it.copy(showAddServerDialog = false, editingServer = null) }
+        _uiState.update { it.copy(showAddServerDialog = false, editingServer = null, pairPrefillUrl = null) }
     }
 
     fun saveServer(
@@ -329,7 +346,7 @@ class HomeViewModel @Inject constructor(
 
         // backlog #34：同后端第二连接预检 —— 若该后端已通过另一服务器条目连接，
         // 直接拒绝并提示，避免 Service 静默拒绝导致 UI 永久显示 "Connecting"。
-        val duplicate = serviceBinder?.getService()?.findDuplicateBackend(server.url, server.username)
+        val duplicate = serviceBinder?.getService()?.findDuplicateBackend(server.url, server.username, server.serverType)
         if (duplicate != null) {
             AppLogger.w(TAG, "Server '${server.displayName}' shares backend with already-connected '${duplicate.displayName}', rejecting duplicate connection")
             _uiState.update {
@@ -395,6 +412,40 @@ class HomeViewModel @Inject constructor(
                 connectJobs.remove(serverId)
             }
         }
+    }
+
+    /**
+     * #339（2026-09-07 用户裁决）：通知点击的重连腿——目标服务器未连接时先触发
+     * [connectToServer]，在短窗内等待连接结果。
+     *
+     * 冷启动容忍：先等服务器条目水化（init 的 loadServers 异步）再判断/触发；
+     * 已连接/连接中不重复触发（connectToServer 幂等同判）。终态判定：
+     * connectedServerIds 命中=true；connectionErrors 命中/超时=false。
+     *
+     * @return true=已连接（可进会话）；false=连不上（调用方退回服务器选择页）
+     */
+    suspend fun awaitServerReachable(serverId: String, timeoutMs: Long = 10_000L): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        // 冷启动：服务器清单未水化前先等（深链可能早于 loadServers 完成）
+        while (_uiState.value.servers.none { it.id == serverId } &&
+            System.currentTimeMillis() < deadline
+        ) {
+            delay(150)
+        }
+        if (_uiState.value.servers.none { it.id == serverId }) return false
+        if (serverId !in _uiState.value.connectedServerIds &&
+            serverId !in _uiState.value.connectingServerIds
+        ) {
+            connectToServer(serverId)
+        }
+        while (System.currentTimeMillis() < deadline) {
+            val state = _uiState.value
+            if (serverId in state.connectedServerIds) return true
+            // 健康检查失败/异常：connectionErrors 命中且 connecting 已撤=终态失败
+            if (serverId in state.connectionErrors && serverId !in state.connectingServerIds) return false
+            delay(250)
+        }
+        return serverId in _uiState.value.connectedServerIds
     }
 
     /**

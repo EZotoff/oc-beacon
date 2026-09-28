@@ -1,0 +1,458 @@
+[
+ {
+  "face": "v2",
+  "group": "health",
+  "name": "无凭据 /api/health → 401（栅栏先于路由）",
+  "status": "PASS",
+  "detail": "status=401",
+  "evidence": ""
+ },
+ {
+  "face": "v2",
+  "group": "health",
+  "name": "带凭据 /api/health → 404（2.0.18 无路由，消费侧漂移）",
+  "status": "PASS",
+  "detail": "status=404",
+  "evidence": ""
+ },
+ {
+  "face": "v2",
+  "group": "health",
+  "name": "/openapi.json 探测（V2 探活替代口径）",
+  "status": "PASS",
+  "detail": "带凭据=200 无凭据=401",
+  "evidence": ""
+ },
+ {
+  "face": "v2",
+  "group": "inventory",
+  "name": "活体 OpenAPI 清单",
+  "status": "PASS",
+  "detail": "115 路径",
+  "evidence": ""
+ },
+ {
+  "face": "v2",
+  "group": "session",
+  "name": "POST /api/session 建靶会话",
+  "status": "PASS",
+  "detail": "status=200 id=ses_f1c33b410f",
+  "evidence": "{\"data\":{\"id\":\"ses_f1c33b410ffeskN2c5Ga6KF2zF\",\"projectID\":\"489399e9cc0fae330bf708f7132dcf9a6a331873\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}},\"time\":{\"creat"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/config",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 [{\"type\":\"document\",\"path\":\"/tmp/triface/v2/config/opencode/opencode.json\",\"info\":{\"providers\":{\"zhipuai\":{\"name\":\"zhipuai\",\"package\":\"aisdk"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/provider",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":[{\"id\":\"zai\",\"integrationID\":\"zai\",\"name\":\"Z.AI\",\"activation\":\"auto\",\"package\":\"@o"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/model",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":[{\"id\":\"longcat-2.5-preview-free\",\"modelID\":\"longcat-2.5-preview-free\",\"providerID"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/model/default",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":{\"id\":\"longcat-2.5-preview-free\",\"modelID\":\"longcat-2.5-preview-free\",\"providerID\""
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/agent",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":[{\"id\":\"build\",\"name\":\"Build\",\"request\":{\"settings\":{},\"headers\":{},\"body\":{}},\"de"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/project",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 [{\"id\":\"489399e9cc0fae330bf708f7132dcf9a6a331873\",\"canonical\":\"/tmp/triface/workspace\",\"vcs\":\"git\",\"time\":{\"created\":1790526523720,\"updated\""
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/project/current",
+  "status": "PASS",
+  "detail": "status=404",
+  "evidence": "HTTP 404 "
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/session",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"data\":[{\"id\":\"ses_f1c33b410ffeskN2c5Ga6KF2zF\",\"projectID\":\"489399e9cc0fae330bf708f7132dcf9a6a331873\",\"cost\":0,\"tokens\":{\"input\":0,\"output\""
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/session/active",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"data\":{}}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/command",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":[{\"name\":\"init\",\"description\":\"guided AGENTS.md setup\"},{\"name\":\"review\",\"descript"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/mcp",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":[]}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/credential",
+  "status": "PASS",
+  "detail": "status=404",
+  "evidence": "HTTP 404 "
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/skill",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":[{\"id\":\"opencode\",\"name\":\"OpenCode\",\"description\":\"Use this skill for any question"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/permission/request",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":[]}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/permission/saved",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"data\":[]}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/question/request",
+  "status": "PASS",
+  "detail": "status=404",
+  "evidence": "HTTP 404 "
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/form/request",
+  "status": "PASS",
+  "detail": "status=404",
+  "evidence": "HTTP 404 "
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/shell",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":[]}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/pty",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":[]}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/pty/shells",
+  "status": "PASS",
+  "detail": "status=400",
+  "evidence": "HTTP 400 {\"_tag\":\"InvalidRequestError\",\"message\":\"Expected a string starting with \\\"pty\\\"\\n  at [\\\"ptyID\\\"]\",\"kind\":\"Params\"}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/vcs",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":{\"provider\":\"git\",\"branch\":{\"current\":\"master\",\"default\":\"master\"}}}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/vcs/status",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":[{\"file\":\"config.json\",\"additions\":3,\"deletions\":0,\"status\":\"added\"}]}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/vcs/base",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":{\"name\":\"master\",\"ref\":\"refs/heads/master\",\"source\":\"default\"}}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/vcs/diff",
+  "status": "PASS",
+  "detail": "status=400",
+  "evidence": "HTTP 400 {\"_tag\":\"InvalidRequestError\",\"message\":\"Missing key\\n  at [\\\"mode\\\"]\",\"kind\":\"Query\"}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/fs/list",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":[{\"path\":\".git/\",\"type\":\"directory\"},{\"path\":\"config.json\",\"type\":\"file\"},{\"path\":"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/fs/find?query=README",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":[{\"path\":\"README.md\",\"type\":\"file\"}]}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/fs/read/README.md",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 # regression workspace\n"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/location",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"directory\":\"/tmp/triface/workspace\",\"project\":{\"id\":\"489399e9cc0fae330bf708f7132dcf9a6a331873\",\"directory\":\"/tmp/triface/workspace\",\"canon"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/info",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"version\":\"2.0.18\",\"pid\":1864716,\"urls\":[\"http://127.0.0.1:14096\"],\"paths\":{\"tmp\":\"/tmp/opencode\"}}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/integration",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":[{\"id\":\"302ai\",\"name\":\"302.AI\",\"methods\":[{\"type\":\"key\"},{\"type\":\"env\",\"names\":[\"3"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/plugin",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":[{\"id\":\"opencode.tool.input.repair\",\"source\":{\"type\":\"builtin\"},\"features\":{\"serve"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/reference",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"location\":{\"directory\":\"/tmp/triface/workspace\"},\"data\":[]}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/session/{id}/message",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"data\":[],\"cursor\":{\"previous\":null,\"next\":null}}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/session/{id}/context",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"data\":[]}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/session/{id}/inbox",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"data\":[]}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "GET /api/session/{id}/todo",
+  "status": "PASS",
+  "detail": "status=404",
+  "evidence": "HTTP 404 "
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "PATCH /api/session/{id}",
+  "status": "PASS",
+  "detail": "status=204",
+  "evidence": "HTTP 204 "
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "POST /api/session/{id}/revert/stage",
+  "status": "PASS",
+  "detail": "status=400",
+  "evidence": "HTTP 400 {\"_tag\":\"InvalidRequestError\",\"message\":\"Missing key\\n  at [\\\"messageID\\\"]\",\"kind\":\"Payload\"}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "POST /api/session/{id}/share",
+  "status": "PASS",
+  "detail": "status=404",
+  "evidence": "HTTP 404 "
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "POST /api/session/{id}/background",
+  "status": "PASS",
+  "detail": "status=204",
+  "evidence": "HTTP 204 "
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "POST /api/session/{id}/shell",
+  "status": "PASS",
+  "detail": "status=204",
+  "evidence": "HTTP 204 "
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "POST /api/session/{id}/interrupt",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"interrupted\":false}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "POST /api/session/{id}/model",
+  "status": "PASS",
+  "detail": "status=400",
+  "evidence": "HTTP 400 {\"_tag\":\"InvalidRequestError\",\"message\":\"Missing key\\n  at [\\\"model\\\"]\",\"kind\":\"Payload\"}"
+ },
+ {
+  "face": "v2",
+  "group": "api",
+  "name": "POST /api/session/{id}/agent",
+  "status": "PASS",
+  "detail": "status=400",
+  "evidence": "HTTP 400 {\"_tag\":\"InvalidRequestError\",\"message\":\"Missing key\\n  at [\\\"agent\\\"]\",\"kind\":\"Payload\"}"
+ },
+ {
+  "face": "v2",
+  "group": "error-path",
+  "name": "GET /api/session/__bogus__",
+  "status": "PASS",
+  "detail": "status=400",
+  "evidence": "HTTP 400 {\"_tag\":\"InvalidRequestError\",\"message\":\"Expected a string starting with \\\"ses\\\"\\n  at [\\\"sessionID\\\"]\",\"kind\":\"Params\"}"
+ },
+ {
+  "face": "v2",
+  "group": "error-path",
+  "name": "POST /api/session 畸形 body → 400",
+  "status": "PASS",
+  "detail": "status=400",
+  "evidence": ""
+ },
+ {
+  "face": "v2",
+  "group": "llm",
+  "name": "POST prompt（V2 200-Inbox 契约）",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "{\"data\":{\"id\":\"msg_0e3cc5257001KG7pryGlDfrOpv\",\"sessionID\":\"ses_f1c33b410ffeskN2c5Ga6KF2zF\",\"time\":{\"created\":1790528213592},\"type\":\"user\",\"payload\":{\"text\":\"re"
+ },
+ {
+  "face": "v2",
+  "group": "llm",
+  "name": "POST compact（压缩）",
+  "status": "PASS",
+  "detail": "status=400",
+  "evidence": "{\"_tag\":\"InvalidRequestError\",\"message\":\"Expected object\",\"kind\":\"Payload\"}"
+ },
+ {
+  "face": "v2",
+  "group": "llm",
+  "name": "POST /api/service/stop（消费侧）",
+  "status": "PASS",
+  "detail": "status=404（2.0.18 无路由——漂移事实）",
+  "evidence": ""
+ },
+ {
+  "face": "v2",
+  "group": "sse",
+  "name": "SSE /api/event 连接与信封 {id,type|event,data}（2.0.18 实测 type）",
+  "status": "PASS",
+  "detail": "帧数=26 事件字段命中=21/21",
+  "evidence": "首帧: {\"id\": \"evt_0e3cc4bfd001YSM3MjF2gAFRZx\", \"type\": \"server.connected\", \"data\": {}}"
+ },
+ {
+  "face": "v2",
+  "group": "inventory",
+  "name": "app 消费面 ⊆ 活体路由（漂移全集）",
+  "status": "BLOCKED",
+  "detail": "31/45 对齐",
+  "evidence": "缺失: GET /api/health; GET /api/project/current; GET /api/credential; GET /api/question/request; GET /api/form/request; GET /api/pty/shells; GET /api/fs/read/{path}; POST /api/session/{id}/share; GET /api/session/{id}/todo; POST /api/session/{id}/form/{fid}/cancel; POST /api/session/import; PATCH /api/session/{id}/rename; POST /api/service/stop; GET /api/question/{id}/reply"
+ },
+ {
+  "face": "v2",
+  "group": "session",
+  "name": "DELETE /api/session/{id} 清理",
+  "status": "PASS",
+  "detail": "status=204",
+  "evidence": ""
+ }
+]

@@ -33,8 +33,16 @@ sealed class ToolState {
     data class Pending(
         val status: String = "pending",
         val input: Map<String, JsonElement> = emptyMap(),
-        val raw: String? = null
-    ) : ToolState()
+        val raw: String? = null,
+        /**
+         * #453：调用发起时刻（DSH tool/call 信封）——工具卡累积计时锚。
+         * 默认 null 向后兼容（V1 pending / 历史落库数据无此字段）。
+         */
+        val time: Time? = null
+    ) : ToolState() {
+        @Serializable
+        data class Time(val start: Long)
+    }
 
     @Serializable
     data class Running(

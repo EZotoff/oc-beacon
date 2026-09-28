@@ -1,6 +1,9 @@
 package dev.leonardo.ocbeacon.data.mapper
 
+import dev.leonardo.ocbeacon.domain.model.Message
 import dev.leonardo.ocbeacon.domain.model.Part
+import dev.leonardo.ocbeacon.domain.model.TimeInfo
+import dev.leonardo.ocbeacon.domain.model.ToolState
 import dev.leonardo.ocbeacon.data.mapper.MessageMergeEngine.PartRegistration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -356,5 +359,79 @@ class MessageMergeEngineTest {
         val incoming = listOf(filePart("f1"))
         val out = MessageMergeEngine.mergePartsList(existing, incoming)
         assertEquals("data:image/png;base64,AAA", (out.single() as Part.File).url)
+    }
+
+    /** #395：user 消息 REST 重建时保留客户端 steer 标记（viaSteer），不无中生有。 */
+    @Test
+    fun `mergeMessageMeta preserves viaSteer for user message`() {
+        val sse = Message.User(id = "u1", sessionId = "s1", time = TimeInfo(created = 0L), viaSteer = true)
+        val rest = Message.User(id = "u1", sessionId = "s1", time = TimeInfo(created = 0L))
+        val merged = MessageMergeEngine.mergeMessageMeta(sse, rest) as Message.User
+        assertTrue(merged.viaSteer)
+
+        val plain = MessageMergeEngine.mergeMessageMeta(
+            Message.User(id = "u2", sessionId = "s1", time = TimeInfo(created = 0L)),
+            Message.User(id = "u2", sessionId = "s1", time = TimeInfo(created = 0L)),
+        ) as Message.User
+        assertFalse(plain.viaSteer)
+    }
+
+    // ============ #453：Tool state time 继承（累积计时锚保全） ============
+
+    private fun pendingTool(id: String, start: Long) = Part.Tool(
+        id = id, sessionId = "s1", messageId = "m1", callId = id, tool = "bash",
+        state = ToolState.Pending(time = ToolState.Pending.Time(start = start)),
+    )
+
+    /** 终态事件 start=0 哨兵 → 从 existing Pending 锚继承真实 start（跨度才真实）。 */
+    @Test
+    fun `mergePart tool terminal inherits start anchor from existing pending`() {
+        val existing = pendingTool("c1", start = 1000L)
+        val incoming = existing.copy(state = ToolState.Completed(
+            output = "done",
+            time = ToolState.Completed.Time(start = 0L, end = 5000L),
+        ))
+        val merged = MessageMergeEngine.mergePart(existing, incoming) as Part.Tool
+        val completed = merged.state as ToolState.Completed
+        assertEquals(1000L, completed.time!!.start)
+        assertEquals(5000L, completed.time!!.end)
+        assertEquals(4000L, completed.time!!.end - completed.time!!.start)
+    }
+
+    /** incoming 无 time（中间事件/REST 快照）→ 整体保留 existing 锚（计时归零防线）。 */
+    @Test
+    fun `mergePart tool incoming without time keeps existing anchor`() {
+        val existing = pendingTool("c1", start = 1000L)
+        val incoming = existing.copy(state = ToolState.Running(output = "partial"))
+        val merged = MessageMergeEngine.mergePart(existing, incoming) as Part.Tool
+        val running = merged.state as ToolState.Running
+        assertEquals(1000L, running.time!!.start)
+    }
+
+    /** Error 终态同样继承（失败调用也显示累积时长）。 */
+    @Test
+    fun `mergePart tool error inherits start anchor from existing running`() {
+        val existing = pendingTool("c1", start = 2000L)
+        val incoming = existing.copy(state = ToolState.Error(
+            error = "boom",
+            time = ToolState.Error.Time(start = 0L, end = 3000L),
+        ))
+        val merged = MessageMergeEngine.mergePart(existing, incoming) as Part.Tool
+        val error = merged.state as ToolState.Error
+        assertEquals(2000L, error.time!!.start)
+        assertEquals(3000L, error.time!!.end)
+    }
+
+    /** 双侧都无锚（历史落库数据）→ 不伪造，保持 incoming 原样。 */
+    @Test
+    fun `mergePart tool no anchors anywhere keeps incoming as is`() {
+        val existing = Part.Tool(
+            id = "c1", sessionId = "s1", messageId = "m1", callId = "c1", tool = "bash",
+            state = ToolState.Pending(),
+        )
+        val incoming = existing.copy(state = ToolState.Completed(output = "done"))
+        val merged = MessageMergeEngine.mergePart(existing, incoming) as Part.Tool
+        val completed = merged.state as ToolState.Completed
+        assertEquals(null, completed.time) // 无锚不伪造（显示层不显示时长）
     }
 }

@@ -6,7 +6,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 
 /**
  * DSH session.list 条目 → 域模型 [Session] 映射器（backlog #276 步骤③；V2SessionMapper 先例）。
@@ -34,7 +36,11 @@ object DshSessionMapper {
         return Session(
             id = item.dshStr("sessionId") ?: "",
             directory = item.dshStr("cwd") ?: "",
-            parentId = item.dshStr("parentSessionId"),
+            // #331/#333：parentId = durable subagent 父（app 侧语义——发送分流
+            // subagents/prompt / interruptByParent / 列表 parentId==null 过滤均按此
+            // 解释）；fork 子会话（parentSessionId 在、origin 缺席）是普通会话，
+            // 服务器 validateAddress 对其只收 {kind:session} 地址——不置 parentId。
+            parentId = item.dshStr("parentSessionId")?.takeIf { item.dshStr("origin") == "subagent" },
             title = title,
             time = Session.Time(
                 created = 0L,
@@ -182,6 +188,45 @@ object DshSessionMapper {
         }
 }
 
+
+/**
+ * session.list 行 → SessionAddress wire 装配（#310① A8 缺陷A修复 + #333 origin 判别）。
+ *
+ * 服务器契约（session-controller index.js validateAddress:1374-1392）：
+ * - origin=subagent 会话拒收 {kind:session} 地址（"subagent Sessions require their
+ *   durable parent address"——A7/A8 实测 follow 与 page 双腿同拒）；须 {kind:subagent,
+ *   parentSessionId, childSessionId, mode}，且 mode 与行内 subagent 投影身份严格一致。
+ * - 反向同样成立：{kind:session} 对 origin!==subagent 的会话**恒合法**——fork 子会话
+ *   （session.fork meta 携 parentSession 但**无 origin 字段**，服务器源码 fork() 实证；
+ *   2026-09-06 会话存储 session-49fb76af header parentSession 在/origin null 活体佐证）
+ *   是普通会话，此前因 parentSessionId 误判为 subagent、无 mode 投影 → null 地址 →
+ *   连接期 follow 跳过（#333 同族：fork 子会话连接期从未开流）。
+ */
+object DshSessionAddress {
+    /**
+     * 普通会话/fork 子会话 → {kind:session,sessionId}；origin=subagent 子会话 →
+     * durable subagent 地址。subagent 投影缺席（无 mode）无法构成合法地址——返回
+     * null，调用方保守跳过/回退 session 形态（不劣于修复前行为）。
+     */
+    fun fromListItem(item: JsonObject): JsonObject? {
+        val sid = item.dshStr("sessionId") ?: return null
+        if (item.dshStr("origin") != "subagent") {
+            return buildJsonObject {
+                put("kind", "session")
+                put("sessionId", sid)
+            }
+        }
+        val parent = item.dshStr("parentSessionId") ?: return null
+        val mode = item.dshObj("projections")?.dshObj("values")?.dshObj("subagent")?.dshStr("mode")
+            ?: return null
+        return buildJsonObject {
+            put("kind", "subagent")
+            put("parentSessionId", parent)
+            put("childSessionId", sid)
+            put("mode", mode)
+        }
+    }
+}
 // ============ JsonObject/JsonArray 安全取值（包内复用；畸形输入 null 容错） ============
 
 internal fun JsonObject.dshStr(key: String): String? =

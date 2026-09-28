@@ -23,9 +23,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import dev.leonardo.ocbeacon.ui.screens.chat.components.CardExpandEnterTransition
+import dev.leonardo.ocbeacon.ui.screens.chat.components.CardExpandReveal
 import dev.leonardo.ocbeacon.ui.screens.chat.components.CardExpandExitTransition
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import dev.leonardo.ocbeacon.ui.screens.chat.components.occupyBottomGap
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -42,8 +44,10 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import dev.leonardo.ocbeacon.ui.components.AmoledSurface
+import dev.leonardo.ocbeacon.ui.components.CardStandardBorder
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 private data class TodoItem(
     val content: String,
@@ -95,16 +99,17 @@ internal fun TodoListCard(
     val hapticView = LocalView.current
     val hapticOn = LocalHapticFeedbackEnabled.current
 
-    // #215 批3：容器统一收尾——手写 Surface+border 模式（批1 已对齐圆角）收敛到
-    // AmoledSurface（surface + tonal 1dp + smallMedium 6dp，AMOLED 纯黑+边框），与全家同源
+    // 2026-09-20 #421 单行形态收编(补卡族遗漏)+#421B 输出块语义:
+    // 去容器(透明/无描边/零 elevation)对齐 16 卡 scaffold 语言;占位收缩同步;
+    // todo 列表(机器产出)=数据块,列表区底色走 toolOutputContainerColor 薄纱档
     AmoledSurface(
         isAmoledDark = isAmoled,
-        normalColor = MaterialTheme.colorScheme.surface,
-        normalTonalElevation = 1.dp,
-        shape = ShapeTokens.smallMedium,
-        modifier = Modifier.fillMaxWidth()
+        normalColor = Color.Transparent,
+        normalTonalElevation = 0.dp,
+        normalBorder = null,        shape = ShapeTokens.smallMedium,
+        modifier = Modifier.fillMaxWidth().occupyBottomGap()
     ) {
-        Column(modifier = Modifier.padding(8.dp)) {
+        Column(modifier = Modifier.padding(start = SpacingTokens.XS.dp, end = SpacingTokens.XS.dp, top = 2.dp, bottom = 2.dp)) {
             // Header row
             Row(
                 modifier = Modifier
@@ -151,13 +156,11 @@ internal fun TodoListCard(
             }
 
             // Todo items（2026-08-30 用户裁决：统一顶边垂直揭幕，见 CardExpandTransitions.kt）
-            androidx.compose.animation.AnimatedVisibility(
+            CardExpandReveal(
                 visible = expanded,
-                enter = CardExpandEnterTransition,
-                exit = CardExpandExitTransition,
             ) {
                     Column(
-                        modifier = Modifier.padding(top = 4.dp),
+                        modifier = Modifier.padding(top = SpacingTokens.XS.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         for (todo in todos) {

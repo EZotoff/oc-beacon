@@ -198,7 +198,12 @@ class ChatMessageRenderingTest : BaseChatTest() {
         // 不注入任何消息 —— 默认空状态
         renderChatScreen()
 
-        // 当消息为空且未在加载时，ChatEmptyState 显示此文本
-        composeRule.onNodeWithText("Start a session with OpenCode").assertIsDisplayed()
+        // 当消息为空且未在加载时，ChatEmptyState 显示 chat_empty 文案。
+        // #417 根修：断言从 activity context 取串 —— targetContext（应用包默认配置，
+        // 本机 zh）与插桩 activity 的 Compose 渲染配置（EN）可能不同 locale，
+        // 跨源取串必漂移（实测 DBG-ZH=0 / DBG-EN=1）；activity.getString 与
+        // stringResource 同一配置源，随文案/语言双稳定。
+        val emptyHint = composeRule.activity.getString(dev.leonardo.ocbeacon.R.string.chat_empty)
+        composeRule.onNodeWithText(emptyHint).assertIsDisplayed()
     }
 }

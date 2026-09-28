@@ -2,17 +2,20 @@ package dev.leonardo.ocbeacon.ui.screens.chat
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,6 +31,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -49,10 +53,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
@@ -66,12 +72,32 @@ import androidx.compose.ui.unit.dp
 import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.logging.AppLogger
 import kotlin.math.roundToInt
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
+import dev.leonardo.ocbeacon.ui.theme.AppMotion
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 
 /** 工具栏入口 id（沿用第十轮四入口独立 sheet 语义）。 */
-internal enum class ChatToolbarEntry { TODO, AGENT, SHELL, GOAL }
+internal enum class ChatToolbarEntry { TODO, AGENT, SHELL, GOAL, QUEUE }
 
 /** 贴边滑动顶边距（#194 D1：上限 = 容器高 − 按钮高 − 此边距）。 */
 internal val FabSlideTopMargin: Dp = 8.dp
+
+/**
+ * #451（2026-09-27 用户裁决）FAB 组透明度与默认悬浮位：
+ * - 默认停位 = 容器高 1/8（自底缘抬升，列底边落在 1/8·H 处）；
+ * - 闲置最透 30%；互动（tap/拖拽）与「拉底+内容滚动中」立即不透明；
+ * - 停互动 / 拉底停滑 / 浮空位滑动开始 → 3s 后 1s 过渡回落 30%。
+ */
+internal const val FAB_IDLE_ALPHA = 0.3f
+internal const val FAB_FADE_DELAY_MS = 3_000L
+/** ⬇ 触底 FAB 独立回落延迟（2026-09-27 用户裁决：停动 2s，快于菜单 FAB 的 3s）。 */
+internal const val FAB_SCROLL_FADE_DELAY_MS = 2_000L
+internal const val FAB_FADE_DURATION_MS = 1_000
+
+/** 默认悬浮位抬升量（px）：容器高 1/8（纯函数，单测覆盖）。 */
+internal fun defaultRestOffsetYPx(containerHeightPx: Float): Float =
+    if (containerHeightPx > 0f) -(containerHeightPx / 8f) else 0f
 
 /**
  * #194 D2 菜单内容几何（全静态，tap 瞬时可算，无 stagger/锚点竞态——M3 折叠态
@@ -84,7 +110,6 @@ internal val FabSlideTopMargin: Dp = 8.dp
 private val FabMenuItemHeight: Dp = 44.dp
 private val FabMenuItemSpacingVertical: Dp = 4.dp
 private val FabMenuPaddingBottomToken: Dp = 8.dp
-private const val FabMenuItemCount = 5
 
 /**
  * #194 D1 展开溢出量计算（纯函数，单测覆盖）——全稳定量版（无 stagger 竞态）。
@@ -120,8 +145,12 @@ internal fun computeFabExpandShiftPx(
  */
 @Stable
 internal class FabEdgeSlideState {
-    /** 纵向位移（负 = 上移；0 = 底部原位）。rememberSaveable 持久化（Saver 只存此项）。 */
-    var offsetYPx by mutableFloatStateOf(0f)
+    /**
+     * 纵向位移（负 = 上移；0 = 底部原位=拉底钉住）。rememberSaveable 持久化
+     * （Saver 只存此项）。#451：NaN = 未解析默认位哨兵——首布局按容器高
+     * 解析为 1/8 抬升（defaultRestOffsetYPx）；此后与普通值无异。
+     */
+    var offsetYPx by mutableFloatStateOf(Float.NaN)
 
     /** 容器实测高（layout 约束 maxHeight，#194 D1——取代旧整屏高 − 160dp 魔法数）。 */
     var containerHeightPx by mutableFloatStateOf(0f)
@@ -156,7 +185,69 @@ private val FabEdgeSlideSaver = Saver<FabEdgeSlideState, Float>(
 
 @Composable
 internal fun rememberFabEdgeSlideState(): FabEdgeSlideState =
-    rememberSaveable(saver = FabEdgeSlideSaver) { FabEdgeSlideState() }
+    // #451：显式 key 换代——旧按位置保存的 0f（=旧版默认贴底）不再复用，
+    // 全员落到 NaN 哨兵 → 新默认 1/8 悬浮位；此后用户拖拽位置正常持久化。
+    rememberSaveable(key = "fabSlideOffsetV2", saver = FabEdgeSlideSaver) { FabEdgeSlideState() }
+
+/**
+ * #451 FAB 组透明度控制器（宿主 ChatScreen remember，注入 ChatFabMenu）。
+ *
+ * 状态机（snapshotFlow + collectLatest 单环，键 = 展开态/钉底滚动保持/互动 tick）：
+ * - **立即不透明（snap 1f）**：菜单展开；或拉底钉住且内容滚动中（fling/触摸，
+ *   [isContentScrolling] 读 LazyListState.isScrollInProgress——两者皆覆盖）；
+ * - **回落（3s 延迟 → 1s tween → 30%）**：其余一切状态——含浮空位滑动开始
+ *   （键翻转即重置 3s 计时，对应用户 spec「开始滑动后 3s 慢慢变透明」）与
+ *   拉底停滑（「非滑动状态下 3s 后慢慢变透明」）；
+ * - 互动（tap/拖拽起止）经 [notifyInteraction] 翻转 tick 重置计时。
+ *
+ * 初始 1f（入场可见）→ 3s 后自然回落 30%（闲置常态）。
+ */
+@Stable
+internal class FabTransparencyController(
+    private val isContentScrolling: () -> Boolean,
+    /** 回落延迟（菜单 3s / ⬇ 触底 FAB 2s——2026-09-27 用户裁决）。 */
+    private val fadeDelayMs: Long = FAB_FADE_DELAY_MS,
+    /** true = 内容滚动中即保持不透明（⬇ 触底 FAB 语义，与停靠位无关）；
+     *  false = 菜单语义（展开，或拉底钉住且滚动中）。 */
+    private val scrollHoldOnly: Boolean = false,
+) {
+    private val alpha = Animatable(1f)
+
+    /** 当前组透明度（graphicsLayer lambda 内快照读，动画不触发重组）。 */
+    val value: Float get() = alpha.value
+
+    /** 菜单展开 → 强制不透明（菜单内容可读性优先）。由 ChatFabMenu 镜像写入。 */
+    var expanded by mutableStateOf(false)
+
+    /** 拉底钉住（offsetYPx == 0）→ 内容滚动时保持不透明。由 ChatFabMenu 镜像写入。 */
+    var pinnedAtBottom by mutableStateOf(false)
+
+    /** 互动计数（tap/拖拽起止）——翻转即重置回落计时。 */
+    var interactionTick by mutableStateOf(0)
+
+    fun notifyInteraction() {
+        interactionTick++
+    }
+
+    /** 常驻效应体：ChatFabMenu 内 LaunchedEffect(Unit) 调用。 */
+    suspend fun run() {
+        snapshotFlow {
+            Triple(
+                expanded,
+                if (scrollHoldOnly) isContentScrolling()
+                else pinnedAtBottom && isContentScrolling(),
+                interactionTick,
+            )
+        }.collectLatest { (menuOpen, holdOpaque, _) ->
+            if (menuOpen || holdOpaque) {
+                alpha.snapTo(1f)
+            } else {
+                delay(fadeDelayMs)
+                alpha.animateTo(FAB_IDLE_ALPHA, tween(FAB_FADE_DURATION_MS))
+            }
+        }
+    }
+}
 
 /**
  * #192 v6 + #194 D1：FAB 沿所在屏缘垂直拖动（贴边上下滑动）。
@@ -173,6 +264,7 @@ private fun Modifier.fabEdgeVerticalSlide(
     state: FabEdgeSlideState,
     extraShift: () -> Float = { 0f },
     onDragStart: () -> Unit = {},
+    onDragEnd: () -> Unit = {},
 ): Modifier = composed {
     val density = LocalDensity.current
     val marginPx = with(density) { FabSlideTopMargin.toPx() }
@@ -181,6 +273,12 @@ private fun Modifier.fabEdgeVerticalSlide(
             val containerH = constraints.maxHeight.toFloat()
             if (containerH > 0f && containerH != state.containerHeightPx) {
                 state.updateContainerHeight(containerH)
+            }
+            // #451：默认位哨兵在首帧布局解析（此前任何 NaN 算术均为惰性安全：
+            // coerceIn 对 NaN 原样透传、roundToInt()=0、shift 比较=0f）
+            if (state.offsetYPx.isNaN() && containerH > 0f) {
+                state.offsetYPx = defaultRestOffsetYPx(containerH)
+                    .coerceIn(-(containerH - marginPx), 0f)
             }
             val placeable = measurable.measure(constraints)
             // 折叠态节点高 = **观测最小值**：展开/stagger 只会更大；收起动画收缩途中的
@@ -201,6 +299,7 @@ private fun Modifier.fabEdgeVerticalSlide(
         .pointerInput(state) {
             detectVerticalDragGestures(
                 onDragStart = { onDragStart() },
+                onDragEnd = { onDragEnd() },
                 onVerticalDrag = { change, dragAmount ->
                     change.consume()
                     // 上限基准 = 折叠态节点高（D4 合并后节点仍在收起动画中，尺寸未回落）
@@ -208,6 +307,7 @@ private fun Modifier.fabEdgeVerticalSlide(
                         val basis = state.collapsedNodeHeightPx
                         if (ch > 0f && basis > 0f) ch - basis - marginPx else 0f
                     }
+                    if (state.offsetYPx.isNaN()) return@detectVerticalDragGestures
                     state.offsetYPx = (state.offsetYPx + dragAmount).coerceIn(-maxUp, 0f)
                 },
             )
@@ -236,13 +336,35 @@ internal fun ChatFabMenu(
     todoPendingCount: Int,
     agentRunningCount: Int,
     shellRunningCount: Int,
+    /** #313：排队队列项数（FAB 菜单项计数角标；0 仍显示入口，sheet 内空态）。 */
+    queueCount: Int = 0,
     /** 目标状态（#286）：goal.active/blocked → FAB 运行点 + 菜单项 phase 角标；null/complete 不渲染角标。 */
     goalPhase: String? = null,
     onOpenEntry: (ChatToolbarEntry) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * 统一审计批1：可见入口按能力位过滤（GOAL=goalSupported、SHELL=terminalSupported）。
+     * 默认全量（预览/测试兼容）；ChatScreen 按 ServerCapabilities 传入。
+     */
+    entries: List<ChatToolbarEntry> = ChatToolbarEntry.entries.toList(),
+    /**
+     * 底部追加 slot（2026-09-18 用户裁决：滚动到底部 FAB 并入右下 FAB 组——菜单
+     * button 下方成列「组成一个整体」）。内容渲染在 toggle button 之后、共享本
+     * 容器的贴边拖动（整列联动）与展开溢出几何（collapsedNodeHeightPx 实测
+     * 自适应加高的折叠列）；显隐动画由调用方 AnimatedVisibility 驱动。
+     */
+    bottomSlot: (@Composable () -> Unit)? = null,
+    /** #451：透明度控制器（宿主 ChatScreen remember 创建；见类注释）。 */
+    alphaController: FabTransparencyController? = null,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val slideState = rememberFabEdgeSlideState()
+
+    // #451 透明度接线：常驻效应 + 展开态/钉底位镜像（组合期幂等写）。
+    LaunchedEffect(Unit) { alphaController?.run() }
+    alphaController?.expanded = expanded
+    alphaController?.pinnedAtBottom = slideState.offsetYPx == 0f
+    val fabAlpha = alphaController?.value ?: 1f
 
     // D2：展开溢出下移分量（临时态，不持久化）
     var expandShift by remember { mutableFloatStateOf(0f) }
@@ -250,8 +372,8 @@ internal fun ChatFabMenu(
     val marginPx = with(density) { FabSlideTopMargin.toPx() }
     // 全静态菜单几何（Q3：tap 瞬时可算，无竞态）：span = N×44dp + (N−1)×4dp
     val menuSpanPx = with(density) {
-        (FabMenuItemHeight * FabMenuItemCount +
-            FabMenuItemSpacingVertical * (FabMenuItemCount - 1)).toPx()
+        (FabMenuItemHeight * entries.size +
+            FabMenuItemSpacingVertical * (entries.size - 1)).toPx()
     }
     val menuPadPx = with(density) { FabMenuPaddingBottomToken.toPx() }
 
@@ -312,6 +434,7 @@ internal fun ChatFabMenu(
             state = slideState,
             extraShift = { expandShift },
             onDragStart = {
+                alphaController?.notifyInteraction()
                 if (expanded) {
                     // D4：展开中拖动 → 收起，当前 shift 瞬时并入 offsetYPx（位置连续、
                     // 不双计），此后拖动直接跟手；effect 重启时 expandShift 已为 0，
@@ -326,6 +449,7 @@ internal fun ChatFabMenu(
                     expandShift = 0f
                 }
             },
+            onDragEnd = { alphaController?.notifyInteraction() },
         ),
     ) {
         Column(
@@ -338,62 +462,87 @@ internal fun ChatFabMenu(
                 exit = shrinkVertically(animationSpec = tween(ExpandShiftAnimMs)) + fadeOut(),
             ) {
                 Column(horizontalAlignment = Alignment.End) {
-                    FabMenuEntry(
-                        icon = Icons.Default.Checklist,
-                        label = stringResource(R.string.pending_tab_todo_plain),
-                        count = todoPendingCount,
-                        onClick = { expanded = false; onOpenEntry(ChatToolbarEntry.TODO) },
-                    )
-                    Spacer(Modifier.height(FabMenuItemSpacingVertical))
-                    FabMenuEntry(
-                        icon = Icons.Default.AccountTree,
-                        label = stringResource(R.string.toolbar_agent),
-                        count = agentRunningCount,
-                        onClick = { expanded = false; onOpenEntry(ChatToolbarEntry.AGENT) },
-                    )
-                    Spacer(Modifier.height(FabMenuItemSpacingVertical))
-                    FabMenuEntry(
-                        icon = Icons.Default.Flag,
-                        label = stringResource(R.string.toolbar_goal),
-                        count = 0,
-                        // #286：目标菜单项角标（phase 色；blocked 警示色 error）——
-                        // complete/无 goal 不渲染角标（Web 语义：完成态不渲染条目）
-                        badgeColor = when (goalPhase) {
-                            "blocked" -> MaterialTheme.colorScheme.error
-                            "active" -> MaterialTheme.colorScheme.primary
-                            "paused" -> MaterialTheme.colorScheme.secondary
-                            else -> null
-                        },
-                        onClick = { expanded = false; onOpenEntry(ChatToolbarEntry.GOAL) },
-                    )
-                    Spacer(Modifier.height(FabMenuItemSpacingVertical))
-                    FabMenuEntry(
-                        icon = Icons.Default.Terminal,
-                        label = stringResource(R.string.toolbar_shell),
-                        count = shellRunningCount,
-                        onClick = { expanded = false; onOpenEntry(ChatToolbarEntry.SHELL) },
-                    )
+                    // 统一审计批1：动态条目（能力位过滤后的 entries；顺序=列表序）
+                    entries.forEachIndexed { index, entry ->
+                        if (index > 0) Spacer(Modifier.height(FabMenuItemSpacingVertical))
+                        when (entry) {
+                            ChatToolbarEntry.TODO -> FabMenuEntry(
+                                icon = Icons.Default.Checklist,
+                                label = stringResource(R.string.pending_tab_todo_plain),
+                                count = todoPendingCount,
+                                onClick = { expanded = false; onOpenEntry(entry) },
+                            )
+                            ChatToolbarEntry.AGENT -> FabMenuEntry(
+                                icon = Icons.Default.AccountTree,
+                                label = stringResource(R.string.toolbar_agent),
+                                count = agentRunningCount,
+                                onClick = { expanded = false; onOpenEntry(entry) },
+                            )
+                            ChatToolbarEntry.GOAL -> FabMenuEntry(
+                                icon = Icons.Default.Flag,
+                                label = stringResource(R.string.toolbar_goal),
+                                count = 0,
+                                // #286：目标菜单项角标（phase 色；blocked 警示色 error）——
+                                // complete/无 goal 不渲染角标（Web 语义：完成态不渲染条目）
+                                badgeColor = when (goalPhase) {
+                                    "blocked" -> MaterialTheme.colorScheme.error
+                                    "active" -> MaterialTheme.colorScheme.primary
+                                    "paused" -> MaterialTheme.colorScheme.secondary
+                                    else -> null
+                                },
+                                onClick = { expanded = false; onOpenEntry(entry) },
+                            )
+                            ChatToolbarEntry.SHELL -> FabMenuEntry(
+                                icon = Icons.Default.Terminal,
+                                label = stringResource(R.string.toolbar_shell),
+                                count = shellRunningCount,
+                                onClick = { expanded = false; onOpenEntry(entry) },
+                            )
+                            ChatToolbarEntry.QUEUE -> FabMenuEntry(
+                                // #313：队列面板进 FAB 体系（用户「能力→容器」映射裁决）
+                                icon = Icons.Default.Schedule,
+                                label = stringResource(R.string.queue_title),
+                                count = queueCount,
+                                onClick = { expanded = false; onOpenEntry(entry) },
+                            )
+                        }
+                    }
                     // 列底距（FabMenuPaddingBottom token，与 #194 D2 溢出计算的
                     // menuPadPx 同源）：items 与 button 的间距
                     Spacer(Modifier.height(FabMenuPaddingBottomToken))
                 }
             }
             FloatingActionButton(
-                onClick = { expanded = !expanded }, // shift 计算在 LaunchedEffect(expanded) 内（Q3 瞬时稳定量）
+                // #451：tap 立刻不透明（notifyInteraction 翻转 tick → 环重置 → snap 1f）
+                onClick = {
+                    alphaController?.notifyInteraction()
+                    expanded = !expanded
+                }, // shift 计算在 LaunchedEffect(expanded) 内（Q3 瞬时稳定量）
                 // 描边（第二十轮，用户要求）：角半径冻结 16dp——形状恒定描边才贴边
                 modifier = Modifier
                     .size(48.dp)
                     .border(
                         1.dp,
-                        MaterialTheme.colorScheme.outline,
+                        MaterialTheme.colorScheme.outline.copy(alpha = fabAlpha),
                         RoundedCornerShape(16.dp),
                     ),
                 shape = RoundedCornerShape(16.dp),
                 // Secondary 变体（第十九轮，用户选 B）：secondaryContainer 系，
                 // 与用户气泡（primaryContainer 系）区分；展开态不 morph（稳定
                 // API 无 checked 色彩过渡，图标切换承担状态表达）
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                // #451 色料级透明：颜色 copy(alpha) 而非 layer-alpha——后者与
+                // M3 FAB 内部 Surface/阴影 RenderNode 互搏（真机像素实证：
+                // 半透明态容器整层不绘制、仅图标残影）
+                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = fabAlpha),
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = fabAlpha),
+                // 2026-09-27 用户裁决：FAB 按钮/菜单/菜单项全去阴影（恒 0；
+                // 亦规避「阴影不随色料 alpha 缩放」家族问题）
+                elevation = androidx.compose.material3.FloatingActionButtonDefaults.elevation(
+                    defaultElevation = 0.dp,
+                    pressedElevation = 0.dp,
+                    focusedElevation = 0.dp,
+                    hoveredElevation = 0.dp,
+                ),
             ) {
                 val desc = if (expanded) {
                     stringResource(R.string.chat_fab_menu_close)
@@ -404,32 +553,58 @@ internal fun ChatFabMenu(
                     Icon(
                         if (expanded) Icons.Default.Close else Icons.Default.Inbox,
                         contentDescription = desc,
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = fabAlpha),
                     )
                 }
                 if (!expanded && goalActive) {
                     // #286：goal 运行点角标（blocked 用警示色）——取代数字角标
-                    BadgedBox(
-                        badge = {
-                            Badge(
-                                containerColor = if (goalPhase == "blocked") {
-                                    MaterialTheme.colorScheme.error
-                                } else {
-                                    MaterialTheme.colorScheme.primary
-                                },
-                            ) {}
-                        }
+                    // #364：圆点尺寸 8dp（与新增消息点统一，M3 Badge 默认偏大）。
+                    FabDotBadge(
+                        color = (if (goalPhase == "blocked") {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        }).copy(alpha = fabAlpha),
                     ) { fabIcon() }
-                } else if (!expanded && totalBadge > 0) {
-                    BadgedBox(
-                        badge = { Badge { Text(totalBadge.coerceAtMost(99).toString()) } }
-                    ) { fabIcon() }
+                } else if (!expanded && (totalBadge > 0 || queueCount > 0)) {
+                    // #364（2026-09-08 用户裁决）：FAB 按钮角标=**圆点**（只提示有新
+                    // 消息，不展示条数）；TODO/智能体/Shell/排队队列任一非零即亮。
+                    FabDotBadge(color = MaterialTheme.colorScheme.primary.copy(alpha = fabAlpha)) { fabIcon() }
                 } else {
                     fabIcon()
                 }
             }
+
+            // 整体尾部 slot（2026-09-18）：菜单 button 下方的滚动到底部 FAB——
+            // 与 button 同列同右对齐，随整列贴边拖动联动（#192/#194 D5 容器机制）。
+            bottomSlot?.invoke()
         }
     }
+}
+
+/**
+ * #364：FAB 按钮圆点角标（8dp + surface 描边）——M3 空 Badge 默认尺寸偏大，
+ * 用户裁决缩小一号；goal 运行点与「有新消息」点共用同款保持同位一致。
+ */
+@Composable
+private fun FabDotBadge(
+    color: Color,
+    content: @Composable () -> Unit,
+) {
+    BadgedBox(
+        badge = {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(color, androidx.compose.foundation.shape.CircleShape)
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.surface,
+                        androidx.compose.foundation.shape.CircleShape,
+                    ),
+            )
+        },
+    ) { content() }
 }
 
 /** FAB 菜单入口项（M3 全默认：56dp primaryContainer 药丸/titleMedium/24dp 图标；角标挂 icon）。 */
@@ -455,6 +630,9 @@ private fun FabMenuEntry(
         // Secondary 变体（第十九轮）：药丸 secondaryContainer 系，与用户气泡区分
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        // 2026-09-27 用户裁决：菜单项无阴影（显式归零防 M3 默认漂移）
+        shadowElevation = 0.dp,
+        tonalElevation = 0.dp,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp),
@@ -463,7 +641,27 @@ private fun FabMenuEntry(
         ) {
             if (count > 0) {
                 BadgedBox(
-                    badge = { Badge { Text(count.coerceAtMost(99).toString()) } }
+                    // #364（2026-09-08 用户裁决）：菜单项计数角标缩小一号——
+                    // M3 默认 Badge(16dp/labelSmall) → 13dp 圆 + 8sp 数字（9+ 封顶）。
+                    badge = {
+                        Box(
+                            modifier = Modifier
+                                .size(13.dp)
+                                .background(MaterialTheme.colorScheme.error, androidx.compose.foundation.shape.CircleShape)
+                                .border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.surface,
+                                    androidx.compose.foundation.shape.CircleShape,
+                                ),
+                            contentAlignment = androidx.compose.ui.Alignment.Center,
+                        ) {
+                            Text(
+                                text = if (count > 9) "9+" else count.toString(),
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                                color = MaterialTheme.colorScheme.onError,
+                            )
+                        }
+                    }
                 ) {
                     Icon(icon, contentDescription = null)
                 }
@@ -484,46 +682,93 @@ private fun FabMenuEntry(
 }
 
 /**
- * 滚动到底部 FAB：底部左侧（与右下菜单 FAB 镜像，start 16dp=菜单内部横向 padding），
- * 与菜单 FAB 完全同规格：48dp（2026-08-23 用户「稍微再大一些」44→48dp）/圆角 16dp/
+ * FAB 组尾部高度过渡（2026-09-19 三轮定案）：自写不裁剪版「animateContentSize」
+ * ——实测 animateContentSize 会吞掉子内容（FAB）的 elevation 投影（像素对照
+ * darken 10.87 → 0.04），而 AnimatedVisibility 纯位移不吞。本 helper 用裸 layout
+ * 修饰动画化**报告给父的高度**（菜单 FAB 平滑推上/回落），子内容按完整尺寸
+ * 绘制并越界（不裁剪 → 投影全程跟随），显隐位移由内层 AnimatedVisibility 承担。
+ */
+@Composable
+internal fun FabSlotHeightReveal(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val fullHeightPx = remember { mutableFloatStateOf(0f) }
+    val progress = remember { Animatable(if (visible) 1f else 0f) }
+    LaunchedEffect(visible) {
+        if (fullHeightPx.floatValue > 0f) {
+            progress.animateTo(if (visible) 1f else 0f, tween(durationMillis = AppMotion.MEDIUM))
+        } else {
+            progress.snapTo(if (visible) 1f else 0f)
+        }
+    }
+    Box(
+        modifier = modifier.layout { measurable, constraints ->
+            val placeable = measurable.measure(constraints)
+            if (fullHeightPx.floatValue <= 0f && placeable.height > 0) {
+                fullHeightPx.floatValue = placeable.height.toFloat()
+            }
+            val h = (fullHeightPx.floatValue * progress.value).roundToInt()
+            layout(placeable.width, h) { placeable.placeRelative(0, 0) }
+        },
+    ) {
+        content()
+    }
+}
+
+/**
+ * 滚动到底部 FAB（2026-09-18 用户裁决：并入右下 FAB 组，菜单 FAB 下方成列）：
+ * 与菜单 FAB 完全同规格——48dp（2026-08-23 用户「稍微再大一些」44→48dp）/圆角 16dp/
  * secondaryContainer/1dp outline 描边/24dp 图标 onSecondaryContainer tint。
+ *
+ * 组件只承载按钮本体：显隐由调用方 AnimatedVisibility 驱动（动态推上/回落），
+ * 贴边拖动由容器（ChatFabMenu 的 fabEdgeVerticalSlide）统一承担——整列联动。
  *
  * 一致性关键（第二十一轮实测修复）：普通 FloatingActionButton 内部强制
  * LocalMinimumInteractiveComponentSize(48dp) 最小触达，44dp 会被顶到 48dp——
  * 与 Toggle FAB（不吃该机制）差 4dp。此处 provision 0dp 关闭强制
  * （FloatingActionButtonMenuItem 源码同款手法），双圆严格同径。
- * isAtBottom 的 .value 读取限制在本函数小作用域（B-F5 重组隔离沿袭）。
- *
- * #192 v6：贴边上下滑动（fabEdgeVerticalSlide）。
- * #194 D5：共用修好上限的滑动（容器实测高收界），位移与菜单 FAB 各自独立。
  */
 @Composable
 internal fun ChatScrollBottomFab(
-    isAtBottomState: State<Boolean>,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** #451 色料级透明度（lambda 内部读——动画帧只重组本组件）。 */
+    contentAlpha: () -> Float = { 1f },
+    // 2026-09-19 三轮用户反馈定案：显隐 = **纯位移动画、无 fade、原生 6dp 阴影
+    // 恒在**——不带 alpha（Compose 投影不随绘制层 alpha 变化：半透明按钮会挂全
+    // 尺寸阴影；而压 elevation + graphicsLayer 渐显的替代在本机实证不绘制，
+    // 终态阴影丢失）。按钮带着自己的原生投影整体滑入/滑出（位移不裁剪，阴影
+    // 全程跟随），终态与菜单 FAB 投影完全同款（像素基准 darken≈10.9 对齐）。
 ) {
-    if (isAtBottomState.value) return // 在底部时不显示
-    val slideState = rememberFabEdgeSlideState()
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+        // #451 色料级透明（同菜单 FAB：layer-alpha 与 M3 FAB 内部 Surface/阴影
+        // RenderNode 互搏——半透明态容器不绘制；颜色 copy(alpha) 无层参与）
+        val fabAlpha = contentAlpha()
         FloatingActionButton(
             onClick = onClick,
-            // 16dp 底距 = 菜单内部按钮下距（FabMenuButtonPaddingBottom），双 FAB 同基线
             modifier = modifier
-                .fabEdgeVerticalSlide(state = slideState)
-                // 2026-08-29 用户裁决「双 FAB 均贴边无边距」：去 start=16dp——该值
-                // 镜像的菜单按钮内部横距已随 08-27 稳定 API 复刻（按钮钉底贴边）
-                // 消失，保留即左右不对称（左 16dp/右 0，真机截图实证）。
-                .padding(bottom = 16.dp)
                 .size(48.dp)
-                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp)),
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = fabAlpha),
+                    RoundedCornerShape(16.dp),
+                ),
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = fabAlpha),
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = fabAlpha),
+            // 2026-09-27 用户裁决：全去阴影（恒 0）
+            elevation = androidx.compose.material3.FloatingActionButtonDefaults.elevation(
+                defaultElevation = 0.dp,
+                pressedElevation = 0.dp,
+                focusedElevation = 0.dp,
+                hoveredElevation = 0.dp,
+            ),
         ) {
             Icon(
                 Icons.Default.KeyboardArrowDown,
                 contentDescription = stringResource(R.string.chat_scroll_bottom),
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = fabAlpha),
             )
         }
     }

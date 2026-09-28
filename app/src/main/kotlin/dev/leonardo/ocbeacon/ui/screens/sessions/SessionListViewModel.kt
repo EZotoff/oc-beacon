@@ -11,10 +11,13 @@ import dev.leonardo.ocbeacon.BuildConfig
 import dev.leonardo.ocbeacon.ui.navigation.routes.safeDecodeParam
 import dev.leonardo.ocbeacon.ui.WhileSubscribed5s
 import dev.leonardo.ocbeacon.domain.model.AgentPreset
+import dev.leonardo.ocbeacon.domain.model.DshAgentPresetDocument
 import dev.leonardo.ocbeacon.domain.model.FileNode
 import dev.leonardo.ocbeacon.domain.model.McpServerStatus
 import dev.leonardo.ocbeacon.domain.model.Project
+import dev.leonardo.ocbeacon.domain.adapter.ServerAdapterResolver
 import dev.leonardo.ocbeacon.domain.model.ServerConnection
+import dev.leonardo.ocbeacon.domain.model.ServerFeatures
 import dev.leonardo.ocbeacon.domain.model.ServerPaths
 import dev.leonardo.ocbeacon.domain.model.Session
 import dev.leonardo.ocbeacon.domain.model.SessionStatus
@@ -23,7 +26,7 @@ import dev.leonardo.ocbeacon.domain.model.Tag
 import dev.leonardo.ocbeacon.domain.repository.ChatRepository
 import dev.leonardo.ocbeacon.domain.repository.DraftRepository
 import dev.leonardo.ocbeacon.domain.repository.DshSettingsForbiddenException
-import dev.leonardo.ocbeacon.domain.repository.DshSettingsRepository
+import dev.leonardo.ocbeacon.domain.repository.ServerSettingsRepository
 import dev.leonardo.ocbeacon.domain.repository.FileRepository
 import dev.leonardo.ocbeacon.domain.repository.McpRepository
 import dev.leonardo.ocbeacon.domain.repository.ServerRepository
@@ -40,6 +43,12 @@ import dev.leonardo.ocbeacon.domain.usecase.ManageSessionUseCase
 import dev.leonardo.ocbeacon.domain.usecase.ProbeDirectoryUseCase
 import dev.leonardo.ocbeacon.domain.usecase.SearchDirectoriesUseCase
 import dev.leonardo.ocbeacon.logging.AppLogger
+import dev.leonardo.ocbeacon.ui.screens.sessions.components.WorkspaceDialogEntry
+import dev.leonardo.ocbeacon.ui.screens.sessions.components.findReusableBlankSession
+import dev.leonardo.ocbeacon.ui.screens.sessions.components.projectDialogEntries
+import dev.leonardo.ocbeacon.ui.screens.sessions.components.recentSessionDirectories
+import dev.leonardo.ocbeacon.ui.screens.sessions.components.toDialogEntry
+import dev.leonardo.ocbeacon.ui.screens.sessions.components.workspaceDialogEntries
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -82,7 +91,7 @@ class SessionListViewModel @Inject constructor(
     private val deleteSessionUseCase: DeleteSessionUseCase,
     private val draftRepository: DraftRepository,
     private val mcpRepository: McpRepository,
-    private val dshSettingsRepository: DshSettingsRepository,
+    private val serverSettingsRepository: ServerSettingsRepository,
     private val scrollSignal: SessionScrollSignal,
     private val getSettingsFlowUseCase: GetSettingsFlowUseCase,
     // C5 拆分：标签/收藏方法自 SettingsRepository 独立成 SessionTagRepository
@@ -90,6 +99,12 @@ class SessionListViewModel @Inject constructor(
     private val serverRepository: ServerRepository,
     private val unreadBadgeService: dev.leonardo.ocbeacon.data.repository.UnreadBadgeService,
     private val chatRepository: ChatRepository,
+    // #354：对话框预设乐观回显（SessionAgentPresetChanged 合成事件注入——
+    // ChatViewModel 同款先例；session.list 基线不回带 agentPreset，事件竞丢
+    // 即永久丢失，select 成功后必须本地落槽）。
+    private val eventDispatcher: dev.leonardo.ocbeacon.data.repository.EventDispatcher,
+    // #311 Task4：会话行待审批/提问指示单源（PermissionAsked/QuestionAsked 分发点旁路记录）
+    private val pendingInteractionStore: dev.leonardo.ocbeacon.data.repository.PendingInteractionStore,
     // #176/#177：堆积队列手动「继续」入口（详情对话框）+ 计数可见性
     // 走查修复（UI→Data 分层）：经 domain 接口触发，不直依赖具体管线
     // #272：BM25 内容检索（FTS5 索引，纯本地）
@@ -98,6 +113,8 @@ class SessionListViewModel @Inject constructor(
     private val historySyncManager: dev.leonardo.ocbeacon.data.repository.HistorySyncManager,
     // #267：连接三态真源（断连条幅 + 删除/重命名快速失败守卫）
     private val sseConnectionManager: dev.leonardo.ocbeacon.service.SseConnectionManager,
+    /** #391：能力位唯一来源（适配器解析器）；UI 不接触服务器类型。 */
+    private val serverAdapters: ServerAdapterResolver,
 ) : ViewModel() {
 
     companion object {
@@ -111,6 +128,8 @@ class SessionListViewModel @Inject constructor(
 
         /** #267：写操作快速失败哨兵（error 通道复用；UI 映射本地化文案）。 */
         const val ERROR_SERVER_DISCONNECTED = "__server_disconnected__"
+        /** #311：归档失败哨兵（error 通道复用；UI 映射本地化文案）。 */
+        const val ERROR_ARCHIVE_FAILED = "__archive_failed__"
     }
 
     val serverId: String = safeDecodeParam(savedStateHandle.get<String>("serverId") ?: "")
@@ -122,6 +141,11 @@ class SessionListViewModel @Inject constructor(
         sseConnectionManager.observeLinkState(serverId)
             .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), sseConnectionManager.linkState(serverId))
 
+    /** #409：下次自动重连尝试时间（epochMs，null = 无排程）——断连条幅倒计时数据源。 */
+    val serverReconnectAt: kotlinx.coroutines.flow.StateFlow<Long?> =
+        sseConnectionManager.observeReconnectAt(serverId)
+            .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), null)
+
     /** #267：写操作（删除/重命名）断连快速失败——不发请求。 */
     private fun fastFailIfLinkBlocked(): Boolean {
         if (sseConnectionManager.linkState(serverId) == dev.leonardo.ocbeacon.service.ServerLinkState.Connected) return false
@@ -129,16 +153,49 @@ class SessionListViewModel @Inject constructor(
         return true
     }
 
+    // ============ #317 DSH 0.1.2 TokenNeeded UX（交换状态/对话框已下沉 DshTokenEntryViewModel） ============
+
+    /** 本服务器是否等待凭据输入（通用断连条幅回退依据；探测双形态 401 时置位）。 */
+    val authTokenNeeded: kotlinx.coroutines.flow.StateFlow<Boolean> =
+        sseConnectionManager.dshTokenNeededServers
+            .map { needed -> serverId in needed }
+            .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), false)
+
     // ============ 服务器配置异步加载（backlog #38：消除构造期主线程 runBlocking） ============
     private val _serverName = MutableStateFlow("")
     val serverName: StateFlow<String> = _serverName.asStateFlow()
 
     /** #276：服务器能力位（serverType 维度投影；配置加载完成前 permissive 全开放）。 */
     private val _serverCapabilities = MutableStateFlow(
-        dev.leonardo.ocbeacon.domain.model.ServerCapabilities.of(null)
+        serverAdapters.defaultCapabilities()
     )
     val serverCapabilities: StateFlow<dev.leonardo.ocbeacon.domain.model.ServerCapabilities> =
         _serverCapabilities.asStateFlow()
+
+    /** #391 切片9：本类型声明的界面插槽——通用屏幕按声明门禁渲染（能力位之外的先决条件）。 */
+    private val _uiSlots = MutableStateFlow<Set<dev.leonardo.ocbeacon.domain.model.ServerUiSlot>>(emptySet())
+    val uiSlots: StateFlow<Set<dev.leonardo.ocbeacon.domain.model.ServerUiSlot>> = _uiSlots.asStateFlow()
+
+    /** #311 Task3：本服务器是否 DSH（空 workspace 快照的回退分支判定——
+     * DSH=listProjects 投影（V011 workspace.list / V012 session.list distinct
+     * cwd），非 DSH=既有最近目录行为零回归）。 */
+    private val _usesWorkspaceProjections = MutableStateFlow(false)
+
+    // 以下五个可变状态**必须声明在 init 块之前**：init 的配置加载协程
+    // （Main.immediate——测试 Main=Unconfined 时 eager 执行）会触达
+    // loadPermissionDefault/loadAgentPresets，若声明在后则字段尚未初始化
+    // （构造序 = 声明序）→ NPE。公开投影仍在原分区（DSH 权限档/Agent 预设）。
+    private val _permissionDefault = MutableStateFlow<dev.leonardo.ocbeacon.domain.model.DshPermissionDefault?>(null)
+    private val _permissionDefaultBlocked = MutableStateFlow(false)
+    private val _agentPresets = MutableStateFlow<List<AgentPreset>>(emptyList())
+    private val _agentPresetDefault = MutableStateFlow<dev.leonardo.ocbeacon.domain.model.DshAgentPresetDefault?>(null)
+    private val _agentPresetDefaultBlocked = MutableStateFlow(false)
+    private val _agentPresetAuthorable = MutableStateFlow(false)
+    private val _agentPresetDocument = MutableStateFlow<DshAgentPresetDocument?>(null)
+    // #324④：插件清单 + 服务器配置动态表单
+    private val _pluginInventory = MutableStateFlow<dev.leonardo.ocbeacon.domain.model.DshPluginInventory?>(null)
+    private val _settingsForms = MutableStateFlow<List<dev.leonardo.ocbeacon.domain.model.DshSettingsNamespaceForm>>(emptyList())
+    private val _settingsFormsBlocked = MutableStateFlow(false)
 
     private val directoryManager = DirectoryManager(
         serverId = serverId,
@@ -170,11 +227,16 @@ class SessionListViewModel @Inject constructor(
             _mcpConn = conn
             mcpRepository.setConnection(conn)
             // #276：能力位投影（DSH 删除动作等 UI 门控依据）
-            _serverCapabilities.value = conn.capabilities
+            _serverCapabilities.value = serverAdapters.capabilities(conn)
+            _uiSlots.value = serverAdapters.uiSlots(conn)
+            // #311 Task3：DSH 判定（对话框回退分支）
+            // #391 切片9：能力位代替类型判定（服务器设置特权面 = workspace 投影域）
+            _usesWorkspaceProjections.value = ServerFeatures.WORKSPACE in _serverCapabilities.value
             // 权限预设切换器门控：DSH-only 读默认档（能力位内才发 settings.describe）
             loadPermissionDefault()
             // UI-B/UI-C：DSH-only 读 Agent 预设 roster + 默认档（能力位内才发请求）
             loadAgentPresets()
+            loadServerAdmin()  // #324④ 插件配置与清单
         }
     }
 
@@ -225,6 +287,13 @@ class SessionListViewModel @Inject constructor(
     private val serverSessionIds = sessionRepository.getServerSessionsFlow()
         .map { it[serverId].orEmpty() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    /** #311：workspace 快照归档集合（V012 follow baseline+增量单源，DshWorkspaceStore
+     * 直读投影；非 DSH 无 workspace 帧恒空集）。行去留以服务器回执为准的响应式源。 */
+    private val workspaceArchivedIds: StateFlow<Set<String>> = chatRepository
+        .getWorkspaceSnapshotFlow(serverId)
+        .map { it.archivedSessionIds.toSet() }
+        .stateIn(viewModelScope, WhileSubscribed5s, emptySet())
 
     /** 点击会话进入时记录——返回列表时立即标记已读（消除 popBackStack 1 帧红点）。 */
     fun onSessionOpened(sessionId: String) {
@@ -287,21 +356,19 @@ class SessionListViewModel @Inject constructor(
     val mcpError: SharedFlow<String> = _mcpError.asSharedFlow()
 
     // ============ DSH 新会话默认权限档 ============
-    private val _permissionDefault = MutableStateFlow<dev.leonardo.ocbeacon.domain.model.DshPermissionDefault?>(null)
     val permissionDefault: StateFlow<dev.leonardo.ocbeacon.domain.model.DshPermissionDefault?> = _permissionDefault.asStateFlow()
 
     /** #298：非 loopback 连接（Host 栅栏 403）——行保留但标注需 adb reverse。 */
-    private val _permissionDefaultBlocked = MutableStateFlow(false)
     val permissionDefaultBlocked: StateFlow<Boolean> = _permissionDefaultBlocked.asStateFlow()
 
     /** 读 settings.describe ns=permission 默认档（DSH-only；能力位外 no-op）。 */
     fun loadPermissionDefault() {
-        if (!_serverCapabilities.value.permissionSwitchSupported) return
+        if (ServerFeatures.PERMISSION_SWITCH !in _serverCapabilities.value) return
         val conn = _mcpConn ?: return
         viewModelScope.launch {
             _permissionDefaultBlocked.value = false
             try {
-                _permissionDefault.value = dshSettingsRepository.getPermissionDefault(conn)
+                _permissionDefault.value = serverSettingsRepository.getPermissionDefault(conn)
             } catch (e: DshSettingsForbiddenException) {
                 AppLogger.w(TAG_SESSION_LIST_VM, "permission default blocked: loopback-only connection (403)")
                 _permissionDefault.value = null
@@ -312,12 +379,12 @@ class SessionListViewModel @Inject constructor(
 
     /** 写 settings.mutate 默认档；成功后回读刷新（DSH-only）。 */
     fun setPermissionDefault(preset: String) {
-        if (!_serverCapabilities.value.permissionSwitchSupported) return
+        if (ServerFeatures.PERMISSION_SWITCH !in _serverCapabilities.value) return
         val conn = _mcpConn ?: return
         viewModelScope.launch {
             try {
-                if (dshSettingsRepository.setPermissionDefault(conn, preset)) {
-                    _permissionDefault.value = dshSettingsRepository.getPermissionDefault(conn)
+                if (serverSettingsRepository.setPermissionDefault(conn, preset)) {
+                    _permissionDefault.value = serverSettingsRepository.getPermissionDefault(conn)
                 }
             } catch (e: DshSettingsForbiddenException) {
                 _permissionDefaultBlocked.value = true
@@ -328,7 +395,6 @@ class SessionListViewModel @Inject constructor(
     // ============ DSH Agent 预设（设置页默认档 UI-C + 详情标签 UI-B） ============
 
     /** Agent 预设 roster（设置页默认档选项 + 详情标签 id→name 解析）。 */
-    private val _agentPresets = MutableStateFlow<List<AgentPreset>>(emptyList())
     val agentPresetsList: StateFlow<List<AgentPreset>> = _agentPresets.asStateFlow()
 
     /** preset id → roster name（详情标签 id 解析用）。 */
@@ -337,24 +403,36 @@ class SessionListViewModel @Inject constructor(
         .stateIn(viewModelScope, WhileSubscribed5s, emptyMap())
 
     /** 新会话默认 Agent 预设（settings ns=agent-presets default）。 */
-    private val _agentPresetDefault = MutableStateFlow<dev.leonardo.ocbeacon.domain.model.DshAgentPresetDefault?>(null)
     val agentPresetDefault: StateFlow<dev.leonardo.ocbeacon.domain.model.DshAgentPresetDefault?> = _agentPresetDefault.asStateFlow()
 
     /** #298：非 loopback 连接（Host 栅栏 403）——行保留但标注需 adb reverse。 */
-    private val _agentPresetDefaultBlocked = MutableStateFlow(false)
     val agentPresetDefaultBlocked: StateFlow<Boolean> = _agentPresetDefaultBlocked.asStateFlow()
+
+    // ============ #324② preset 管理（authorable 位 + 组成查看/复制/删除） ============
+
+    /** 部署是否开放用户预设创作（复制入口门控）。 */
+    val agentPresetAuthorable: StateFlow<Boolean> = _agentPresetAuthorable.asStateFlow()
+
+    /** 组成查看文档（当前打开的 preset；null = 未查看/加载中）。 */
+    val agentPresetDocument: StateFlow<DshAgentPresetDocument?> = _agentPresetDocument.asStateFlow()
 
     /** 读 roster + 默认档（DSH-only；能力位外 no-op；roster 失败软降级空列表）。 */
     fun loadAgentPresets() {
-        if (!_serverCapabilities.value.agentPresetSupported) return
+        if (ServerFeatures.AGENT_PRESET !in _serverCapabilities.value) return
         val conn = _mcpConn ?: return
         viewModelScope.launch {
             _agentPresetDefaultBlocked.value = false
-            chatRepository.listAgentPresets(serverId)
-                .onSuccess { list -> _agentPresets.value = list }
-                .onFailure { AppLogger.w(TAG_SESSION_LIST_VM, "listAgentPresets failed") }
+            // #324②：roster 直读（同时取 authorable；原 chatRepository 路径丢 trust/broken）
             try {
-                _agentPresetDefault.value = dshSettingsRepository.getDefaultAgentPreset(conn)
+                val roster = serverSettingsRepository.agentPresetRoster(conn)
+                _agentPresets.value = roster.presets
+                _agentPresetAuthorable.value = roster.authorable
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                AppLogger.w(TAG_SESSION_LIST_VM, "listAgentPresets failed: " + e.message)
+            }
+            try {
+                _agentPresetDefault.value = serverSettingsRepository.getDefaultAgentPreset(conn)
             } catch (e: DshSettingsForbiddenException) {
                 AppLogger.w(TAG_SESSION_LIST_VM, "agent preset default blocked: loopback-only connection (403)")
                 _agentPresetDefault.value = null
@@ -365,12 +443,12 @@ class SessionListViewModel @Inject constructor(
 
     /** 写 settings.mutate 默认 Agent 预设；成功后回读刷新（DSH-only）。 */
     fun setAgentPresetDefault(preset: String) {
-        if (!_serverCapabilities.value.agentPresetSupported) return
+        if (ServerFeatures.AGENT_PRESET !in _serverCapabilities.value) return
         val conn = _mcpConn ?: return
         viewModelScope.launch {
             try {
-                if (dshSettingsRepository.setDefaultAgentPreset(conn, preset)) {
-                    _agentPresetDefault.value = dshSettingsRepository.getDefaultAgentPreset(conn)
+                if (serverSettingsRepository.setDefaultAgentPreset(conn, preset)) {
+                    _agentPresetDefault.value = serverSettingsRepository.getDefaultAgentPreset(conn)
                 }
             } catch (e: DshSettingsForbiddenException) {
                 _agentPresetDefaultBlocked.value = true
@@ -378,11 +456,111 @@ class SessionListViewModel @Inject constructor(
         }
     }
 
-    // ============ 聚合 UI 状态（#23 状态切片：嵌套分组 combine） ============
+    /** #324②：组成查看（未知 id → null 保持对话框提示不可用）。 */
+    fun readAgentPreset(id: String) {
+        val conn = _mcpConn ?: return
+        viewModelScope.launch {
+            _agentPresetDocument.value = serverSettingsRepository.readAgentPreset(conn, id)
+        }
+    }
+
+    fun closeAgentPresetDocument() {
+        _agentPresetDocument.value = null
+    }
+
+    /** #324②：复制为 user 预设；成功后回读 roster。 */
+    fun copyAgentPreset(from: String, newId: String, name: String?) {
+        val conn = _mcpConn ?: return
+        viewModelScope.launch {
+            try {
+                if (serverSettingsRepository.copyAgentPreset(conn, from, newId, name)) {
+                    val roster = serverSettingsRepository.agentPresetRoster(conn)
+                    _agentPresets.value = roster.presets
+                    _agentPresetAuthorable.value = roster.authorable
+                }
+            } catch (e: DshSettingsForbiddenException) {
+                _agentPresetDefaultBlocked.value = true
+            }
+        }
+    }
+
+    /** #324②：删除 user 预设；成功后回读 roster。 */
+    fun deleteAgentPreset(id: String) {
+        val conn = _mcpConn ?: return
+        viewModelScope.launch {
+            try {
+                if (serverSettingsRepository.deleteAgentPreset(conn, id)) {
+                    val roster = serverSettingsRepository.agentPresetRoster(conn)
+                    _agentPresets.value = roster.presets
+                }
+            } catch (e: DshSettingsForbiddenException) {
+                _agentPresetDefaultBlocked.value = true
+            }
+        }
+    }
+
+    // ============ #324④ 插件配置与清单（设置页区块） ============
+
+    /** pluginInventory/list 清单（只读）。 */
+    val pluginInventory: StateFlow<dev.leonardo.ocbeacon.domain.model.DshPluginInventory?> = _pluginInventory.asStateFlow()
+
+    /** settings/describe 表单投影（空列表 = 未加载/无 ns）。 */
+    val settingsForms: StateFlow<List<dev.leonardo.ocbeacon.domain.model.DshSettingsNamespaceForm>> = _settingsForms.asStateFlow()
+
+    /** #298：配置面 loopback 栅栏。 */
+    val settingsFormsBlocked: StateFlow<Boolean> = _settingsFormsBlocked.asStateFlow()
+
+    /** 加载清单 + 配置表单（DSH-only；非 DSH no-op）。 */
+    fun loadServerAdmin() {
+        if (!_usesWorkspaceProjections.value) return
+        val conn = _mcpConn ?: return
+        viewModelScope.launch {
+            _pluginInventory.value = serverSettingsRepository.listPluginInventory(conn)
+        }
+        viewModelScope.launch {
+            _settingsFormsBlocked.value = false
+            try {
+                _settingsForms.value = serverSettingsRepository.describeSettingsForms(conn).orEmpty()
+            } catch (e: DshSettingsForbiddenException) {
+                AppLogger.w(TAG_SESSION_LIST_VM, "settings describe blocked: loopback-only connection (403)")
+                _settingsFormsBlocked.value = true
+            }
+        }
+    }
+
+    /** 单键保存（settings/mutate 乐观并发；成功后回读全量表单）。 */
+    fun saveSettingField(ns: String, revision: Long, op: dev.leonardo.ocbeacon.domain.model.DshSettingsOp) {
+        val conn = _mcpConn ?: return
+        viewModelScope.launch {
+            try {
+                if (serverSettingsRepository.mutateSettings(conn, ns, listOf(op), revision)) {
+                    _settingsForms.value = serverSettingsRepository.describeSettingsForms(conn).orEmpty()
+                }
+            } catch (e: DshSettingsForbiddenException) {
+                _settingsFormsBlocked.value = true
+            }
+        }
+    }
+
+    /** secret 字段保存（credentials/set；成功后回读披露态）。 */
+    fun saveSecretField(ref: String, value: String) {
+        val conn = _mcpConn ?: return
+        viewModelScope.launch {
+            try {
+                if (serverSettingsRepository.setSecret(conn, ref, value)) {
+                    _settingsForms.value = serverSettingsRepository.describeSettingsForms(conn).orEmpty()
+                }
+            } catch (e: DshSettingsForbiddenException) {
+                _settingsFormsBlocked.value = true
+            }
+        }
+    }
+
+    // ============     // ============ 聚合 UI 状态（#23 状态切片：嵌套分组 combine） ============
     // 分组设计：每组只携带自己拥有的字段（部分数据类），最终 dataFlow 合并 3 组。
     // 禁止"占位填充"（会重置其他组的字段）。
 
-    // 分组1：会话数据（6 源）→ 部分字段
+    // 分组1：会话数据（7 源）→ 部分字段
     private data class SessionDataPart(
         val sessions: List<Session>,
         val statuses: Map<String, SessionStatus>,
@@ -390,6 +568,8 @@ class SessionListViewModel @Inject constructor(
         val lastUserMessageTime: Map<String, Long>,
         val lastReplyTime: Map<String, Long>,
         val questions: Map<String, List<SseEvent.QuestionAsked>>,
+        // #311 Task4：待审批/提问指示（客户端本地域单源）
+        val pendingInteractions: Map<String, dev.leonardo.ocbeacon.data.repository.PendingInteractionKind>,
     )
 
     // kotlinx.coroutines combine 仅有 2-5 源的类型化重载；第 6 源用嵌套 combine 接入。
@@ -406,8 +586,15 @@ class SessionListViewModel @Inject constructor(
             SessionCorePart(sessions, statuses, serverSessionMap, lastUserMessageTime, lastReplyTime)
         },
         chatRepository.getAllQuestionsFlow().distinctUntilChanged(),
-    ) { core, questions ->
-        SessionDataPart(core.sessions, core.statuses, core.serverSessionMap, core.lastUserMessageTime, core.lastReplyTime, questions)
+        // #311 Task4：待审批/提问指示（客户端本地域单源；StateFlow 自身去重）
+        pendingInteractionStore.pendingBySession,
+    ) { core, questions, pendingEntries ->
+        // #344：store 条目化（kind+text）——行指示只取 kind，text 供通知补发载荷
+        SessionDataPart(
+            core.sessions, core.statuses, core.serverSessionMap,
+            core.lastUserMessageTime, core.lastReplyTime, questions,
+            pendingEntries.mapValues { it.value.kind },
+        )
     }
 
     /** 嵌套 combine 的中间载体（前 5 源）。 */
@@ -447,10 +634,10 @@ class SessionListViewModel @Inject constructor(
         MiscDataPart(favoritesOnly, allReadAt)
     }
 
-    // 数据流：3 组合并（3 源具名）
+    // 数据流：3 组合并 + #311 workspace 归档集合（4 源具名）
     private val dataFlow = combine(
-        sessionDataFlow, settingDataFlow, miscDataFlow,
-    ) { sessionData, settingData, miscData ->
+        sessionDataFlow, settingDataFlow, miscDataFlow, workspaceArchivedIds,
+    ) { sessionData, settingData, miscData, archivedIds ->
         SessionListDataInputs(
             sessions = sessionData.sessions,
             statuses = sessionData.statuses,
@@ -467,6 +654,10 @@ class SessionListViewModel @Inject constructor(
                 .filterValues { it.isNotEmpty() }
                 .keys
                 .toSet(),
+            // #311 Task4：服务器域内过滤（与 pendingQuestionIds 同款守卫）
+            pendingInteractions = sessionData.pendingInteractions
+                .filterKeys { it in sessionData.serverSessionMap[serverId].orEmpty() },
+            archivedSessionIds = archivedIds,
         )
     }
 
@@ -534,6 +725,29 @@ class SessionListViewModel @Inject constructor(
     val recentDirectoryCount: StateFlow<Int> = getSettingsFlowUseCase()
         .map { it.recentDirectoryCount }
         .stateIn(viewModelScope, WhileSubscribed5s, 20)
+
+    /**
+     * #311 Task3：新建会话对话框条目（快照→对话框状态映射，单源三态）：
+     * - V012（快照 workspaces 非空）：workspace 真建模条目（title + 在组未归档
+     *   计数 + stray 目录兜底，[workspaceDialogEntries]）；
+     * - 空快照 + DSH：listProjects 投影回退（V011 workspace.list / V012 空注册表
+     *   时 session.list distinct cwd——Task1 改造链）；
+     * - 空快照 + 非 DSH：既有最近目录行为（零回归裁决——不切 project.list）。
+     * 行序冻结在对话框组合时（NewSessionQuickDialog remember），此处随数据流更新。
+     */
+    val newSessionDialogEntries: StateFlow<List<WorkspaceDialogEntry>> = combine(
+        chatRepository.getWorkspaceSnapshotFlow(serverId),
+        sessionRepository.getSessionsFlow(serverId).distinctUntilChanged(),
+        _projects,
+        _usesWorkspaceProjections,
+        recentDirectoryCount,
+    ) { snapshot, sessions, projects, isDsh, limit ->
+        when {
+            snapshot.workspaces.isNotEmpty() -> workspaceDialogEntries(snapshot, sessions, limit)
+            isDsh -> projectDialogEntries(projects, sessions, limit)
+            else -> recentSessionDirectories(sessions, limit).map { it.toDialogEntry() }
+        }
+    }.stateIn(viewModelScope, WhileSubscribed5s, emptyList())
 
     init {
         loadSessions()
@@ -660,6 +874,12 @@ class SessionListViewModel @Inject constructor(
     private val _searchTimeRange = MutableStateFlow<String?>(null)
     val searchTimeRange: StateFlow<String?> = _searchTimeRange.asStateFlow()
 
+    // #322：DSH 服务端内容搜索（session/search 全历史会话命中；非 DSH 恒 null 零外溢）。
+    // 服务器无消息级锚点——snippet 只做会话级呈现（与本地 FTS 消息级跳转分工）。
+    private val _serverSearch = MutableStateFlow<dev.leonardo.ocbeacon.domain.model.SessionSearchResult?>(null)
+    val serverSearch: StateFlow<dev.leonardo.ocbeacon.domain.model.SessionSearchResult?> = _serverSearch.asStateFlow()
+    private var serverSearchJob: kotlinx.coroutines.Job? = null
+
     fun setSearchRole(role: String?) {
         if (_searchRole.value == role) return
         _searchRole.value = role
@@ -707,16 +927,42 @@ class SessionListViewModel @Inject constructor(
         )
     }
 
+    /**
+     * #322：DSH 服务器历史搜索（session/search）。失败/V011 unsupported 软降级为
+     * null（本地 FTS 照常呈现）——服务器区静默缺席，不外溢错误面。
+     */
+    private suspend fun runServerSearch(query: String): dev.leonardo.ocbeacon.domain.model.SessionSearchResult? =
+        sessionRepository.searchSessions(serverId, query)
+            .onFailure { e ->
+                AppLogger.w(
+                    "SessionListVM",
+                    "server search failed for '" + query.take(40) + "': " + e.message,
+                )
+            }
+            .getOrNull()
+
     fun setSearchQuery(query: String) {
         _searchQuery.value = query.ifBlank { null }
         contentSearchJob?.cancel()
+        serverSearchJob?.cancel()
         if (query.isBlank()) {
             _contentHits.value = emptyList()
+            _serverSearch.value = null
             return
         }
         contentSearchJob = viewModelScope.launch {
             delay(SEARCH_DEBOUNCE_MS)
             _contentHits.value = runContentSearch(query)
+        }
+        // #322：DSH 专属服务器历史搜索（防抖同窗；角色/时间 chips 仅作用本地
+        // FTS——服务器无对应过滤参数，chips 变化不重发）
+        if (_usesWorkspaceProjections.value) {
+            serverSearchJob = viewModelScope.launch {
+                delay(SEARCH_DEBOUNCE_MS)
+                _serverSearch.value = runServerSearch(query)
+            }
+        } else {
+            _serverSearch.value = null
         }
     }
 
@@ -724,6 +970,9 @@ class SessionListViewModel @Inject constructor(
         _searchQuery.value = null
         contentSearchJob?.cancel()
         _contentHits.value = emptyList()
+        // #322：服务器命中区一并清空
+        serverSearchJob?.cancel()
+        _serverSearch.value = null
         // 过滤条件保留（下次搜索沿用上次角色/时间偏好；chip 态在结果区可见可改）
     }
 
@@ -889,6 +1138,141 @@ class SessionListViewModel @Inject constructor(
                 _error.value = e.message ?: "Failed to delete session"
             }
         }
+    }
+
+    /**
+     * #311 归档动作：workspace/archiveSession RPC（DSH V012；回执=完整新归档集合）。
+     *
+     * 裁决记录：**不做乐观更新**——行去留以服务器回执为准（workspace/follow 增量
+     * → DshWorkspaceStore → 快照流 → dataFlow → contentState 响应式驱动），失败
+     * 仅 snackbar（行保持原位，重试无副作用——RPC 幂等 add-only）。
+     */
+    fun archiveSession(sessionId: String) {
+        if (fastFailIfLinkBlocked()) return  // #267
+        viewModelScope.launch {
+            chatRepository.archiveSession(serverId, sessionId)
+                .onSuccess { receipt ->
+                    AppLogger.i(TAG_SESSION_LIST_VM, "Archived session " + sessionId + " (server receipt: " + receipt.size + " archived)")
+                }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    AppLogger.e(TAG_SESSION_LIST_VM, "Failed to archive session " + sessionId, e)
+                    _error.value = ERROR_ARCHIVE_FAILED
+                }
+        }
+    }
+
+    // ============ #311 Task3：新建会话对话框连接语义（web connectWorkspace 对齐） ============
+
+    /** 对话框选择后的导航指令（Screen 收集执行——复用跳转/新建跳转/目录懒建三态）。 */
+    sealed interface NewSessionNavigation {
+        /** 复用既有会话或 workspace 连接新建成功——跳转会话。 */
+        data class ToSession(val sessionId: String) : NewSessionNavigation
+        /** stray/回退目录条目——沿既有目录导航（ChatScreen 懒建）。 */
+        data class ToDirectory(val directory: String) : NewSessionNavigation
+    }
+
+    private val _newSessionNavigation =
+        MutableSharedFlow<NewSessionNavigation>(extraBufferCapacity = 4)
+    val newSessionNavigation: SharedFlow<NewSessionNavigation> = _newSessionNavigation.asSharedFlow()
+
+    /**
+     * 对话框条目连接动作（web uiWorkspace.connectWorkspace mod29:46-58 逐字对齐）：
+     * - workspace 条目：优先复用组内 blank ∧ cwd===path ∧ 未归档会话（跳转不新建），
+     *   无则 createSession(workspaceId=…)（不传 cwd——服务器按 workspaceId 归属）；
+     * - workspace 已从快照消失（remove 未消费/竞态）：目录回退不阻断入口；
+     * - stray/回退条目（workspaceId=null）：目录导航懒建（现行为）。
+     * 复用候选来自 [ChatRepository.listSessionsIncludingBlank]（列表流滤除 blank）。
+     */
+    fun connectWorkspaceEntry(entry: WorkspaceDialogEntry, presetId: String? = null) {
+        val workspaceId = entry.workspaceId
+        if (workspaceId == null) {
+            _newSessionNavigation.tryEmit(NewSessionNavigation.ToDirectory(entry.path))
+            return
+        }
+        if (fastFailIfLinkBlocked()) return  // #267
+        viewModelScope.launch {
+            val snapshot = chatRepository.getWorkspaceSnapshotFlow(serverId).first()
+            val workspace = snapshot.workspaces.firstOrNull { it.workspaceId == workspaceId }
+            if (workspace == null) {
+                AppLogger.w(TAG_SESSION_LIST_VM, "workspace vanished before connect, fallback to directory nav: " + workspaceId)
+                _newSessionNavigation.tryEmit(NewSessionNavigation.ToDirectory(entry.path))
+                return@launch
+            }
+            val candidates = chatRepository.listSessionsIncludingBlank(serverId)
+                .getOrElse { e ->
+                    if (e is CancellationException) throw e
+                    AppLogger.w(TAG_SESSION_LIST_VM, "listSessionsIncludingBlank failed, fallback to create: " + e.message)
+                    emptyList()
+                }
+            val reuse = findReusableBlankSession(workspace, candidates, snapshot.archivedSessionIds.toSet())
+            if (reuse != null) {
+                AppLogger.i(TAG_SESSION_LIST_VM, "connectWorkspace reused blank session " + reuse.id + " for " + workspaceId)
+                // #354：blank 会话不在常规列表基线（filterByDirectory 滤 blank）→
+                // 先注入 store 再 select——否则乐观回显/真事件的 updateSession 恒
+                // no-op，agentPreset 永不落槽（详情行「—」+ 预设卡零高亮，13:46
+                // 真机实证）。create 分支同款注入。
+                sessionRepository.setSessions(serverId, listOf(reuse))
+                applyDialogPreset(reuse.id, presetId)
+                _newSessionNavigation.tryEmit(NewSessionNavigation.ToSession(reuse.id))
+                return@launch
+            }
+            val created = try {
+                Result.success(
+                    // #354：agentPreset 创建即带（SessionCreateRequest.agentPreset）——
+                    // 回显入槽，绕开 create-then-select 竞态；无预设（默认档）时缺席。
+                    manageSessionUseCase.createSession(
+                        serverId, directory = null, workspaceId = workspaceId,
+                        agentPreset = presetId,
+                    ),
+                )
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Result.failure<Session>(e)
+            }
+            created
+                .onSuccess { session ->
+                    // 注入仓库：列表立即可见（注册表 sessionIds 由 upsert 增量帧补真）
+                    sessionRepository.setSessions(serverId, listOf(session))
+                    AppLogger.i(TAG_SESSION_LIST_VM, "connectWorkspace created session " + session.id + " in " + workspaceId)
+                    _newSessionNavigation.tryEmit(NewSessionNavigation.ToSession(session.id))
+                }
+                .onFailure { e ->
+                    AppLogger.e(TAG_SESSION_LIST_VM, "connectWorkspace create failed for " + workspaceId, e)
+                    _error.value = e.message ?: "Failed to create session"
+                }
+        }
+    }
+
+    /**
+     * 批 3（§三-3 快速对话框内联预设选择）：[connectWorkspaceEntry] 复用分支的
+     * 预设应用腿（create 分支已改为创建即带 preset，不经此路）。
+     * #354 根治：select 成功即注入合成 SessionAgentPresetChanged 走既有折叠管线
+     * （ChatViewModel.selectAgentPreset 2026-08-31 乐观回显同款）——session.list
+     * 基线实测不回带 agentPreset，agent-preset/selected 真事件在新会话懒订阅期
+     * 可竞丢（mux 无消费端实证），丢失后无补齐来源。
+     * 软失败——locked/网络失败只记日志不阻断导航（会话内空态预设卡仍是改选通道）。
+     */
+    private suspend fun applyDialogPreset(sessionId: String, presetId: String?) {
+        if (presetId == null) return
+        chatRepository.selectAgentPreset(serverId, sessionId, presetId)
+            .onSuccess { ok ->
+                if (!ok) {
+                    AppLogger.w(TAG_SESSION_LIST_VM, "dialog preset select rejected for " + sessionId)
+                } else {
+                    eventDispatcher.processEvent(
+                        dev.leonardo.ocbeacon.domain.model.SseEvent.SessionAgentPresetChanged(
+                            sessionId = sessionId,
+                            agentPreset = presetId,
+                        ),
+                        serverId,
+                    )
+                }
+            }
+            .onFailure { e ->
+                if (e is CancellationException) throw e
+                AppLogger.w(TAG_SESSION_LIST_VM, "dialog preset select failed for " + sessionId + ": " + e.message)
+            }
     }
 
     fun renameSession(sessionId: String, newTitle: String) {

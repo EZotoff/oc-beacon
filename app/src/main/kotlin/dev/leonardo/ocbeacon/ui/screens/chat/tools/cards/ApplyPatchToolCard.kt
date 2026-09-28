@@ -20,6 +20,8 @@ import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.frozenDurationMs
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.timingStartMs
 
 /**
  * ApplyPatch 工具卡片 —— 显示文件路径 + diff 预览。
@@ -62,6 +64,9 @@ internal fun ApplyPatchToolCard(
         copyText = diffContent,
         isExpanded = isExpanded,
         isRunning = isRunning,
+        // #453：累积计时（运行中走动/终态冻结；无锚不显示）
+        runningStartMs = tool.state.timingStartMs(),
+        completedDurationMs = tool.state.frozenDurationMs(),
         hasContent = diffContent.isNotBlank(),
         isAmoled = isAmoled,
         onToggleExpand = onToggleExpand,

@@ -1,6 +1,7 @@
 package dev.leonardo.ocbeacon.ui.screens.chat
 
 import dev.leonardo.ocbeacon.logging.AppLogger
+import kotlinx.coroutines.flow.first
 
 import dev.leonardo.ocbeacon.BuildConfig
 import dev.leonardo.ocbeacon.domain.repository.MessageCacheRepository
@@ -143,6 +144,10 @@ internal class MessageDataDelegate(
     private var lastCombineSessionId: String? = null
     private val chatMessageCache = HashMap<String, ChatMessage>()
 
+    // #452 四点计时 P2 日志门控（size/sid 变化才发射一条）
+    private var lastCombineLogSize = -1
+    private var lastCombineLogSid = ""
+
     // ============ 工具展开状态 ============
     private val _toolExpandedStates = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val toolExpandedStates: StateFlow<Map<String, Boolean>> = _toolExpandedStates
@@ -175,6 +180,12 @@ internal class MessageDataDelegate(
     /**
      * 消息列表状态 —— 从 V1 chatRepository flow 派生。
      * 组合消息、parts 和工具展开状态。以 [sessionIdFlow] 为 key。
+     *
+     * #437 验收十五轮（发射隔离）：十源 combine 的任一源滴答都会整体重算——
+     * 发射频率由下方 partsByMessageId 收窄（本会话消息投影）+ StateFlow equals
+     * 去重共同收敛：内存 parts 本就按 48ms 批处理（MessageEventHandler delta
+     * 批），可见内容无变化 → 结构相等 → 零发射；后台会话噪音被投影隔离。
+     * （曾试 sample(48) 节流——破坏测试缝且属节流补丁，撤销；根因在作用域泄漏。）
      */
     val messageListState: StateFlow<MessageListState> = sessionIdFlow.flatMapLatest { sid ->
         combine(
@@ -240,25 +251,10 @@ internal class MessageDataDelegate(
                 }
             }
 
-            // P5-1：queuedMessageIds 从 FSM 状态派生 —— Idle 强制清空。
-            // 在完整可见列表（P5-3 过滤之前）上计算，因此 pending
-            // assistant 检测不受空 parts 过滤影响。
-            val fsmStatus = statuses[sid] ?: SessionStatus.Idle
-            val queuedMessageIds: Set<String> = if (fsmStatus is SessionStatus.Idle) {
-                emptySet()
-            } else {
-                val pendingAssistantIndex = visible.indexOfLast {
-                    it is Message.Assistant && it.time.completed == null
-                }
-                if (pendingAssistantIndex >= 0) {
-                    visible.drop(pendingAssistantIndex + 1)
-                        .filterIsInstance<Message.User>()
-                        .map { it.id }
-                        .toSet()
-                } else {
-                    emptySet()
-                }
-            }
+            // 2026-09-10（用户裁决⑦）：排队消息不上转录——原 P5-1 FSM 启发式
+            //（pending assistant 之后的 user 消息标「排队中」徽章上屏）整链移除：
+            // V2 排队 echo 在 V2SseMapper delivery=queue 处单点拦截（steer/直发
+            // 不受扰）；DSH 队列本就 inbox 帧；V1 无队列域。三面交互统一。
 
             // Assistant 消息始终可见 —— 不要过滤掉
             // 没有 parts 的消息。旧的 P5-3 过滤器（allParts[msg.id]?.isNotEmpty()）
@@ -294,12 +290,39 @@ internal class MessageDataDelegate(
                 isLoadingOlder = isLoadingOlder,
                 autoLoadPaused = autoLoadPaused,
                 toolExpandedStates = toolExpandedStates,
-                queuedMessageIds = queuedMessageIds,
                 // #44：原始消息与 parts 映射由唯一 combine 管道统一提供，
                 // sseJob 投影（messagesList/rawMessagesList）不再独立观察数据源。
                 rawMessages = sessionMessages,
-                partsByMessageId = allParts,
+                // #437 验收十五轮（发射隔离根修）：原样携带全局 parts 映射
+                //（getAllPartsMap=裸 eventDispatcher.parts，无会话过滤无 distinct——
+                // 对比同仓库 getParts(sessionId) 有过滤+distinct）。后台会话流式落库
+                // 时其 parts 持续增长 → MessageListState 结构不等 → StateFlow 的
+                // equals 去重被击穿 → 可见会话 UI 以「全局写库速率」整体重组
+                //（真机 flicker3 实证：回合结束后 MDappend=0/ENTRIES=0，而
+                // ItemDiag/InjCard 仍 ~30 次/秒，同一用户气泡 35s 重组 524 次）。
+                // 收窄为本会话消息的 parts 投影（稀疏：仅含非空 parts 的消息）：
+                // 唯一消费者 startObservingMessages 仅按 rawMessages（本会话）id 做
+                // isNotEmpty 查询，语义不变；后台噪音发射归零。
+                partsByMessageId = sessionMessages.mapNotNull { msg ->
+                    allParts[msg.id]?.takeIf { it.isNotEmpty() }?.let { msg.id to it }
+                }.toMap(),
             )
+            // #452 四点计时 P2（combine 发射）：size/sid 变化才打——流式期零刷屏；
+            // 「[msg] 已到而 visible 不动」即本管道与 EventDispatcher 之间的断点。
+            if (BuildConfig.DEBUG &&
+                (visibleMessages.size != lastCombineLogSize || sid != lastCombineLogSid)
+            ) {
+                lastCombineLogSize = visibleMessages.size
+                lastCombineLogSid = sid
+                AppLogger.d(
+                    "MessageDataDelegate",
+                    "[452-combine] sid=" + sid.takeLast(8) +
+                        " visible=" + visibleMessages.size +
+                        " raw=" + sessionMessages.size +
+                        " parts=" + (state.partsByMessageId.size) +
+                        " loading=" + loading,
+                )
+            }
             // DIAG 已移除（2026-08-10）：combine 每 48ms 触发的 MsgDiag 日志（每秒 ~80 条 logcat 写入）
             // 是真机掉帧的根因之一——debug 版 BuildConfig.DEBUG=true 时门控无效，必须彻底删除。
             state
@@ -468,6 +491,36 @@ internal class MessageDataDelegate(
     }
 
     /**
+     * 快速导航遮蔽域快照（2026-09-09 #378 折叠视图一致性）：压缩遮蔽 seq 区间
+     *（MessageEventHandler SurfaceRangeReplaced 台账；会话进入时历史 fold 重建）。
+     * 供 [dev.leonardo.ocbeacon.ui.screens.chat.util.extractJumpTargets] 剔除
+     * 不可跳转目标——导航列表与 displayItems 共用同一遮蔽视图。
+     * V1/V2/未压缩会话为空表（no-op）；IO 悬浮读取当前值。
+     */
+    suspend fun loadShadowedRanges(): List<LongRange> =
+        chatRepository.getShadowedRangesForSession(sessionIdFlow.value).first().also {
+            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                AppLogger.d(TAG, "[nav-suppress] sid=${sessionIdFlow.value.take(20)} shadowedRanges=${it.size} $it")
+            }
+        }
+
+    /**
+     * 压缩摘要表面载体 id 快照（复验 A 二层根因）：CompactionEntry.messageId——
+     * 该消息的正文由压缩 box 独占承载，displayItems 侧被绑定抑制（ChatScreen
+     * compactionBoundIds）；导航列表必须同路剔除，否则跳转永不命中。
+     */
+    suspend fun loadCompactionBoundMessageIds(): Set<String> =
+        chatRepository.getCompactionEntriesForSession(sessionIdFlow.value)
+            .first()
+            .mapNotNull { it.messageId }
+            .toSet()
+            .also {
+                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                    AppLogger.d(TAG, "[nav-suppress] boundIds=${it.size} $it")
+                }
+            }
+
+    /**
      * 2026-08-15（research/01）：进会话后**后台预取**全量消息落库（官方 TUI
      * index.tsx:314 模式：进入会话 sync，Timeline 打开零 IO）。由
      * loadMessagesForSession 完成后触发；失败静默（下次打开抽屉兜底）。
@@ -631,7 +684,14 @@ internal class MessageDataDelegate(
         val sid = sessionIdFlow.value
         val directory = sessionDirectoryProvider()
         try {
+            // #314：null=端点缺席（DSH）——SSE 存储为唯一权威源（冷启重放恢复、
+            // resolved 帧移除），跳过 REST 同步；旧实现把 stub 的 emptyList 当
+            // 权威空表 → 进会话即清空 pre-existing 问题（卡不渲染三复现根因）。
             val allQuestions = managePermissionUseCase.listPendingQuestions(serverId, directory = directory)
+                ?: run {
+                    if (BuildConfig.DEBUG) AppLogger.d(TAG, "listPendingQuestions endpoint absent (DSH) — SSE store authoritative, skip sync (sid=$sid)")
+                    return
+                }
             if (BuildConfig.DEBUG) AppLogger.d(TAG, "loadPendingQuestions: ${allQuestions.size} total pending (directory=$directory), filtering for session $sid")
 
             // 包含子智能体会话的问题
@@ -692,7 +752,13 @@ internal class MessageDataDelegate(
         val sid = sessionIdFlow.value
         val directory = sessionDirectoryProvider()
         try {
+            // #314：null=端点缺席（DSH）——同 loadPendingQuestions，跳过（本路径
+            // 本就只合并不清空，守卫仅为语义一致 + 跳过无谓过滤计算）。
             val allPermissions = managePermissionUseCase.listPendingPermissions(serverId, directory = directory)
+                ?: run {
+                    if (BuildConfig.DEBUG) AppLogger.d(TAG, "listPendingPermissions endpoint absent (DSH) — SSE store authoritative, skip sync (sid=$sid)")
+                    return
+                }
             if (BuildConfig.DEBUG) AppLogger.d(TAG, "loadPendingPermissions: ${allPermissions.size} total pending (directory=$directory), filtering for session $sid")
 
             // 包含子智能体会话的权限

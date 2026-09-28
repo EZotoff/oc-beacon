@@ -10,7 +10,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.leonardo.ocbeacon.BuildConfig
 import dev.leonardo.ocbeacon.domain.model.ApiVersion
 import dev.leonardo.ocbeacon.domain.model.MessageWithParts
+import dev.leonardo.ocbeacon.domain.adapter.ServerAdapterResolver
 import dev.leonardo.ocbeacon.domain.model.ServerConnection
+import dev.leonardo.ocbeacon.domain.model.ServerFeatures
 import dev.leonardo.ocbeacon.data.repository.ServerTerminalRegistry
 import dev.leonardo.ocbeacon.data.terminal.TerminalTabState
 import dev.leonardo.ocbeacon.data.terminal.TerminalTabUi
@@ -43,9 +45,12 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.map
@@ -100,6 +105,8 @@ class ChatViewModel @Inject constructor(
     private val historySyncManager: dev.leonardo.ocbeacon.data.repository.HistorySyncManager,
     // #267：连接三态真源（断连条幅 + 写操作快速失败守卫，spec docs/specs/2026-08-30-server-disconnect-gating-design.md）
     private val sseConnectionManager: dev.leonardo.ocbeacon.service.SseConnectionManager,
+    /** #391：能力位唯一来源（适配器解析器）；UI 不接触服务器类型。 */
+    private val serverAdapters: ServerAdapterResolver,
 ) : ViewModel() {
 
     // ============ 工具快照缓存（已提取到 ToolCacheDelegate） ============
@@ -121,6 +128,11 @@ class ChatViewModel @Inject constructor(
         sseConnectionManager.observeLinkState(serverId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), sseConnectionManager.linkState(serverId))
 
+    /** #409：下次自动重连尝试时间（epochMs，null = 无排程）——断连条幅倒计时数据源。 */
+    val serverReconnectAt: StateFlow<Long?> =
+        sseConnectionManager.observeReconnectAt(serverId)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     /**
      * #267 写操作快速失败哨兵——[sendFailure] 消费端（ChatScreen AlertDialog）
      * 据此映射本地化文案（VM 无 stringResource）。检测滞后由 UI 侧映射兜底。
@@ -141,13 +153,12 @@ class ChatViewModel @Inject constructor(
     // 服务器 API 版本（backlog #78：V2 服务器当前无 share 端点 → UI 隐藏
     // Share/Unshare 菜单项；V1 保留。加载完成前为 null（本地 Room 毫秒级）。
     // #172：UI 门控只读能力位（null 版本 = 全开放，与原 permissive 比较语义一致）
-    private val _serverCapabilities = MutableStateFlow(dev.leonardo.ocbeacon.domain.model.ServerCapabilities.of(null))
+    private val _serverCapabilities = MutableStateFlow(serverAdapters.defaultCapabilities())
     val serverCapabilities: StateFlow<dev.leonardo.ocbeacon.domain.model.ServerCapabilities> = _serverCapabilities.asStateFlow()
 
-    // 服务器类型（DSH 数据源门控：Shell 面板 jobs 分流 / token 弹窗子代理区）。
-    // 加载完成前缺省 OpenCode（面板走 V2 shell 行为，弹窗不渲染子代理区）。
-    private val _serverType = MutableStateFlow(dev.leonardo.ocbeacon.domain.model.ServerType.OpenCode)
-    val serverType: StateFlow<dev.leonardo.ocbeacon.domain.model.ServerType> = _serverType.asStateFlow()
+    /** #399：适配器声明的界面插槽（两级门禁第一级——通用壳据此决定是否调用注册表）。 */
+    private val _uiSlots = MutableStateFlow<Set<dev.leonardo.ocbeacon.domain.model.ServerUiSlot>>(emptySet())
+    val uiSlots: StateFlow<Set<dev.leonardo.ocbeacon.domain.model.ServerUiSlot>> = _uiSlots.asStateFlow()
 
     // ============ DSH Agent 预设（空白页预设卡，UI-A） ============
     private val _agentPresets = MutableStateFlow<List<AgentPreset>>(emptyList())
@@ -159,7 +170,7 @@ class ChatViewModel @Inject constructor(
 
     /** 读 roster（DSH-only；能力位外 no-op；失败软降级空列表 → 卡区隐藏）。 */
     fun loadAgentPresets() {
-        if (!_serverCapabilities.value.agentPresetSupported) return
+        if (ServerFeatures.AGENT_PRESET !in _serverCapabilities.value) return
         viewModelScope.launch {
             chatRepository.listAgentPresets(serverId)
                 .onSuccess { _agentPresets.value = it }
@@ -169,7 +180,7 @@ class ChatViewModel @Inject constructor(
 
     /** 点卡即 select（会话此时必 blank）；成功回显由 agent-preset/selected 事件驱动。 */
     fun selectAgentPreset(presetId: String) {
-        if (!_serverCapabilities.value.agentPresetSupported) return
+        if (ServerFeatures.AGENT_PRESET !in _serverCapabilities.value) return
         viewModelScope.launch {
             // 新会话懒创建：先 ensureSession 落 blank 会话（幂等；已有会话瞬时返回）再 select
             val sid = runCatching { sessionLifecycle.ensureSession() }.getOrElse { e ->
@@ -272,7 +283,10 @@ class ChatViewModel @Inject constructor(
         if (todoProbeStarted) return
         todoProbeStarted = true
         viewModelScope.launch {
-            val sid = sessionLifecycle.sessionId
+            // #373：空 scratch（sid 未落地）不发空 sid GET /session//todo——挂起等
+            // 会话物化（首条消息 ensureSession）后再探测；V1 由此不再因空 sid 400
+            // 误判「无 TODO 能力」隐藏入口。
+            val sid = sessionLifecycle.sessionIdFlow.first { it.isNotEmpty() }
             val result = runCatching { sessionRepository.getSessionTodos(serverId, sid).getOrThrow() }
             _todoCapable.value = result.isSuccess
             if (result.isFailure) {
@@ -318,7 +332,7 @@ class ChatViewModel @Inject constructor(
         chatRepository = chatRepository,
         shellJobsStore = shellJobsStore,
         dshJobsStore = dshJobsStore,
-        serverTypeFlow = serverType,
+        capabilitiesFlow = serverCapabilities,
         serverId = serverId,
         sessionIdFlow = sessionLifecycle.sessionIdFlow,
         scope = viewModelScope,
@@ -415,8 +429,8 @@ class ChatViewModel @Inject constructor(
             val conn = config?.let {
                 ServerConnection.from(it)
             } ?: ServerConnection.from("", "", null)
-            _serverCapabilities.value = conn.capabilities
-            _serverType.value = conn.serverType
+            _serverCapabilities.value = serverAdapters.capabilities(conn)
+            _uiSlots.value = serverAdapters.uiSlots(conn)
             terminalRegistry.updateConn(serverId, conn)
             // UI-A：DSH-only 读 Agent 预设 roster（能力位内才发 agentPreset.list）
             loadAgentPresets()
@@ -519,6 +533,7 @@ class ChatViewModel @Inject constructor(
     private val draftDelegate = DraftInputDelegate(
         draftRepository = draftRepository,
         manageAgentUseCase = manageAgentUseCase,
+        chatRepository = chatRepository,
         scope = viewModelScope,
         serverId = serverId,
         sessionIdProvider = { sessionLifecycle.sessionId },
@@ -584,20 +599,20 @@ class ChatViewModel @Inject constructor(
         // V2 事件驱动（started/delta/ended），HTTP 返回不杀进行中分割线；
         // V1 HTTP 挂起期间本地置态驱动同一分割线（单一数据源 compactionState）。
         compactionAsyncProvider = {
-            _serverCapabilities.value.compactionAsync
+            _serverCapabilities.value.coreFlags.compactionAsync
         },
         // #276 终验 V5：DSH /compact 命令通道与模型无关——「no model selected」
         // 护栏按能力位旁路（OpenCode 维持原拦截）。
         compactionModelIndependentProvider = {
-            _serverCapabilities.value.compactionModelIndependent
+            _serverCapabilities.value.coreFlags.compactionModelIndependent
         },
         // #276 后端接口补全：DSH 无 shell 域——runShellCommand 按能力位短路。
         shellCommandSupportedProvider = {
-            _serverCapabilities.value.shellCommandSupported
+            ServerFeatures.SHELL in _serverCapabilities.value
         },
         // #276 终验 V6：DSH 导出载荷是 ZIP 归档——写盘前显示名规范 .zip。
         exportIsArchiveProvider = {
-            _serverCapabilities.value.exportIsArchive
+            _serverCapabilities.value.coreFlags.exportIsArchive
         },
         compactionLocalState = { sid, started ->
             val next = if (started) {
@@ -609,6 +624,10 @@ class ChatViewModel @Inject constructor(
                 dev.leonardo.ocbeacon.domain.model.SseEvent.SessionNext(next),
                 serverId,
             )
+        },
+        // #391：子会话停止分流改由能力位驱动（界面不读服务器类型）
+        subagentsSupportedProvider = {
+            dev.leonardo.ocbeacon.domain.model.ServerFeatures.SUBAGENTS in serverCapabilities.value
         },
     )
 
@@ -681,6 +700,26 @@ class ChatViewModel @Inject constructor(
     )
 
     val sessionMetaState: StateFlow<SessionMetaState> get() = stateAggregator.sessionMetaState
+
+    /**
+     * 2026-09-26 回合级活动信号（流式滚动门控专用，宽限期防抖）：
+     * 真机取证（journal 验收十二轮）多步回合的步与步之间 SessionStateService 被
+     * SseStatus force-complete 打成 Idle（[meta] streaming true→false 闪断），
+     * 若门控直读 isStreaming，守卫/锚底在步间空窗被放行 → 用户观感「视窗被拖走/
+     * 像补偿逻辑」的闪烁。本信号上升沿立即为 true（isStreaming OR 存在未完结
+     * assistant 消息），下降沿延迟 [TURN_ACTIVE_GRACE_MS] 落地——步间空窗
+     * （实测 <2s）从构造上免疫；真实回合结束最多延迟 3s 静默。
+     */
+    @kotlinx.coroutines.FlowPreview
+    val turnActiveState: StateFlow<Boolean> = combine(
+        stateAggregator.sessionMetaState,
+        messageListState,
+    ) { meta, msgs ->
+        meta.isStreaming || msgs.messages.any { it.isAssistant && it.message.time.completed == null }
+    }.flatMapLatest { active ->
+        if (active) flowOf(true) else flowOf(false).debounce(TURN_ACTIVE_GRACE_MS)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     val tokenStatsState: StateFlow<TokenStatsState> get() = stateAggregator.tokenStatsState
     val directoryState: StateFlow<String> get() = stateAggregator.directoryState
 
@@ -704,19 +743,159 @@ class ChatViewModel @Inject constructor(
         }
     }.stateIn(viewModelScope, WhileSubscribed5s, null)
 
+    // ============ Plan 模式状态（#310③；DSH plan 投影 + /plan off 命令） ============
+
+    /**
+     * 当前会话 plan 投影（Session.plan，session/projection key=plan 裁剪视图
+     * {active,pending}，last-wins；OpenCode 恒 null）。PlanChip 经
+     * PlanChipGate.chipVisible(serverType, planState) 决定显隐与形态。
+     */
+    val planState: StateFlow<dev.leonardo.ocbeacon.domain.model.DshPlanProjection?> =
+        sessionLifecycle.sessionIdFlow.flatMapLatest { sid ->
+            sessionRepository.getSessionsFlow(serverId).map { sessions ->
+                sessions.firstOrNull { it.id == sid }?.plan
+            }
+        }.stateIn(viewModelScope, WhileSubscribed5s, null)
+
+    /**
+     * 退出 Plan 模式（#310③）：发 /plan off 经既有 commands/execute 斜杠命令链
+     *（DshApiClient.executeCommand line="/plan off"）。UI 回显由 plan 投影帧驱动
+     *（active+pending → effective=false → chip 退场），此处不乐观置态。
+     */
+    fun exitPlanMode(onResult: (Boolean) -> Unit = {}) =
+        sessionActions.executeCommand("plan", "off") { ok ->
+            if (!ok) AppLogger.w(TAG, "exitPlanMode /plan off failed")
+            onResult(ok)
+        }
+
+    // ============ 消息反馈 👍/👎（#310②；DSH 服务器门控） ============
+
+    private val messageFeedbackDelegate = MessageFeedbackDelegate(chatRepository, serverId)
+
+    /**
+     * 当前会话消息反馈快照（键 = 服务器规范消息 id，即
+     * Message.Assistant.wireId）。会话进入时 list 拉种子；非 DSH 清空
+     * （消息卡脚部动作位按 serverType 门控隐藏）。
+     */
+    val messageFeedbackItems: StateFlow<Map<String, dev.leonardo.ocbeacon.domain.model.MessageFeedbackItem>> =
+        messageFeedbackDelegate.items
+
+    init {
+        // sid+能力位变化即重拉种子（进入/切换会话、探测落定后）；
+        // 失败告警保留旧值。#366：serverType 特判收敛为 messageFeedbackSupported 位。
+        viewModelScope.launch {
+            combine(sessionLifecycle.sessionIdFlow, serverCapabilities) { sid, caps -> sid to caps }
+                .distinctUntilChanged()
+                .collect { (sid, caps) ->
+                    if (ServerFeatures.FEEDBACK in caps) {
+                        messageFeedbackDelegate.seed(sid)
+                    } else {
+                        messageFeedbackDelegate.reset()
+                    }
+                }
+        }
+    }
+
+    /**
+     * 点击 👍/👎（未评→评／同向→撤销／换向→换向；冲突重同步
+     * 重试一次）。结果交 ChatMessageList 映射 snackbar（Removed/Conflict/Failed）。
+     */
+    suspend fun toggleMessageFeedback(
+        messageId: String,
+        rating: dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating,
+    ): MessageFeedbackOutcome =
+        messageFeedbackDelegate.toggle(sessionLifecycle.sessionId, messageId, rating)
+
+    // ============ 子会话续聊 mode（#310① composer 门控数据源） ============
+
+    /**
+     * 当前会话的子智能体目录 mode（continuable|one-shot）；主会话/非 DSH/加载中/
+     * 失败 → null（保守隐藏 composer——防 one-shot 误发）。ChatScreenBottomBar 经
+     * [SubagentComposerGate] + [serverType] 决定 composer 显隐与 one-shot 只读提示行。
+     */
+    val subagentModeState: StateFlow<String?> = SubagentModeTracker(chatRepository, serverId)
+        .modeFlow(
+            sessionIdFlow = sessionLifecycle.sessionIdFlow,
+            sessionsFlow = sessionRepository.getSessionsFlow(serverId),
+            subagentsSupportedFlow = serverCapabilities.map { ServerFeatures.SUBAGENTS in it },
+        )
+        .stateIn(viewModelScope, WhileSubscribed5s, null)
+
     /** goal mutation 失败提示（resId：goal_failed/goal_busy）——GoalSheet collect 显示 snackbar。 */
     private val _goalError = MutableSharedFlow<Int>(extraBufferCapacity = 4)
     val goalError: SharedFlow<Int> = _goalError
 
-    // ============ 排队收件箱（2026-09-01 QueueDock） ============
+    // ============ 排队收件箱（2026-09-01 QueueDock；#356 扩 V2 拉取面） ============
 
-    /** 当前会话排队项（session/queue 整快照 last-wins；仅 queued placement 显示）。 */
+    /** #356：V2 inbox 排队快照（拉取面——GET inbox；DSH 走帧推送不经此）。 */
+    private val _v2QueueItems =
+        MutableStateFlow<List<dev.leonardo.ocbeacon.domain.model.QueuedInboxItem>>(emptyList())
+
+    /**
+     * 当前会话排队项：DSH=session/queue 帧整快照（last-wins）；V2=打开面板/
+     * 变更后拉取（首帧空防串会话）；仅 queued placement 显示。V1 两路皆空
+     * （queueSupported=false，FAB 入口隐藏）。
+     */
     val queueItems: StateFlow<List<dev.leonardo.ocbeacon.domain.model.QueuedInboxItem>> =
-        sessionLifecycle.sessionIdFlow.flatMapLatest { sid ->
-            dshQueueStore.queueBySession.map { all ->
-                all[sid].orEmpty().filter { it.isQueuedPlacement }
+        combine(serverCapabilities, sessionLifecycle.sessionIdFlow) { caps, sid -> caps to sid }
+            .flatMapLatest { (caps, sid) ->
+                // #391 切片9：数据源差异（服务器帧推送 vs 客户端拉取）只对上层暴露为能力位
+                if (ServerFeatures.QUEUE_PUSH in caps) {
+                    dshQueueStore.queueBySession.map { all ->
+                        all[sid].orEmpty().filter { it.isQueuedPlacement }
+                    }
+                } else {
+                    // 首帧空（会话切换防串旧值）→ 随后跟随拉取快照
+                    kotlinx.coroutines.flow.flow {
+                        emit(emptyList<dev.leonardo.ocbeacon.domain.model.QueuedInboxItem>())
+                        emitAll(_v2QueueItems)
+                    }
+                }
+            }.stateIn(viewModelScope, WhileSubscribed5s, emptyList())
+
+    /** #370：V2 拉取面曾活动过（面板打开/入队/变更后拉取）——轮终自动重拉的触发条件。 */
+    private var v2QueuePulled = false
+
+    /** #356：V2 inbox 排队拉取（QueueSheet 打开/变更后/进入会话；失败保旧值）。 */
+    fun refreshQueueItems() {
+        if (ServerFeatures.QUEUE_PUSH in _serverCapabilities.value) return
+        if (ServerFeatures.QUEUE !in _serverCapabilities.value) return
+        v2QueuePulled = true
+        viewModelScope.launch {
+            val sid = runCatching { sessionLifecycle.ensureSession() }.getOrElse { e ->
+                AppLogger.w(TAG, "ensureSession failed before listInbox: " + e.message)
+                return@launch
             }
-        }.stateIn(viewModelScope, WhileSubscribed5s, emptyList())
+            chatRepository.listQueueItems(serverId, sid)
+                ?.let { items -> _v2QueueItems.value = items.filter { it.isQueuedPlacement } }
+        }
+    }
+
+    init {
+        // #370：V2=拉取面（无帧推送；DSH=queueBySession 帧自达）——轮终（FSM core
+        // 转 Idle）时若 QueueSheet 曾打开过/队列数据在场（v2QueuePulled），自动
+        // 重拉一次：排队项轮末派发后服务器侧已变，面板不再陈旧。门控复用
+        // refreshQueueItems（DSH/queueSupported=false 均跳过，V1 两路皆空不受扰）。
+        viewModelScope.launch {
+            var trackedSid: String? = null
+            var previous: SessionStatus? = null
+            combine(sessionStateRepository.statusFlow, sessionLifecycle.sessionIdFlow) { statuses, sid ->
+                sid to statuses[sid]
+            }.collect { (sid, status) ->
+                if (sid != trackedSid) {
+                    trackedSid = sid
+                    previous = null
+                }
+                if (status is SessionStatus.Idle &&
+                    previous != null && previous !is SessionStatus.Idle &&
+                    v2QueuePulled
+                ) {
+                    refreshQueueItems()
+                }
+                previous = status
+            }
+        }
+    }
 
     /** updateQueue 结果提示（resId）——QueueDock collect 显示 snackbar。 */
     private val _queueActionResult = MutableSharedFlow<Int>(extraBufferCapacity = 4)
@@ -738,7 +917,9 @@ class ChatViewModel @Inject constructor(
                 return@launch
             }
             when (chatRepository.updateQueueItem(serverId, sid, itemId, action, editText)) {
-                dev.leonardo.ocbeacon.domain.model.QueueMutationResult.Accepted -> Unit
+                dev.leonardo.ocbeacon.domain.model.QueueMutationResult.Accepted ->
+                    // #356：V2 无帧推送——变更受理后立即拉取收敛（DSH 帧自达，拉取被门控跳过）。
+                    refreshQueueItems()
                 dev.leonardo.ocbeacon.domain.model.QueueMutationResult.SteerUnavailable ->
                     _queueActionResult.emit(R.string.queue_steer_unavailable)
                 dev.leonardo.ocbeacon.domain.model.QueueMutationResult.QueueItemNotFound,
@@ -765,7 +946,7 @@ class ChatViewModel @Inject constructor(
 
     /** goal.create（新会话懒建：先 ensureSession 落会话——goal 不破坏 blank，空白页卡不受扰）。 */
     fun createGoal(objective: String, maxGoalRounds: Long?) {
-        if (!_serverCapabilities.value.goalSupported) return
+        if (ServerFeatures.GOALS !in _serverCapabilities.value) return
         viewModelScope.launch {
             val sid = runCatching { sessionLifecycle.ensureSession() }.getOrElse { e ->
                 AppLogger.w(TAG, "ensureSession failed before createGoal: " + e.message)
@@ -802,6 +983,16 @@ class ChatViewModel @Inject constructor(
         val ref = currentGoalRef() ?: return
         viewModelScope.launch {
             chatRepository.resumeGoal(serverId, sessionId, ref)
+                .onSuccess { }
+                .onFailure { reportGoalFailure(it) }
+        }
+    }
+
+    /** goal.complete（#309 批1：标记目标完成——投影 phase 转 complete → 面板回创建表单，Web 对位第四钮）。 */
+    fun completeGoal() {
+        val ref = currentGoalRef() ?: return
+        viewModelScope.launch {
+            chatRepository.completeGoal(serverId, sessionId, ref)
                 .onSuccess { }
                 .onFailure { reportGoalFailure(it) }
         }
@@ -988,6 +1179,14 @@ class ChatViewModel @Inject constructor(
 
         // 加载数据
         if (!isNewSession) {
+            // #333：窗口外/未开流会话聚焦 follow 兜底——DSH 限界窗口（#319）外的
+            // 旧会话连接期不 follow、无 added/status/activity 事件可触发动态补开，
+            // REST history 腿又依赖 session.list projections.asOfSeq（冷会话无投影
+            // 缓存时合法缺席，服务器 summarizeCold/projectionsFor 实证）——重进呈
+            // 转录空白态。进 ChatRoute 即请求开流：follow snapshot（cursor+尾页
+            // records）作转录基线，观察写回投影缓存后 REST 分页随之恢复。非 DSH
+            // 服务器无登记帧源，返回 false 静默跳过。
+            sseConnectionManager.requestDshSessionFollow(serverId, sessionId)
             viewModelScope.launch {
                 try { sessionLifecycle.loadSession() } catch (e: Exception) { if (e is CancellationException) throw e; AppLogger.e(TAG, "loadSession failed", e) }
                 // #271：loadSession 完成后首开自动 drain 全量历史（后台静默分页拉取，
@@ -1016,6 +1215,8 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             sessionLifecycle.sessionIdFlow.collect { sid ->
                 if (sid.isNotBlank()) modelConfig.loadCommands(sid)
+                // #324⑤：会话技能触发组（会话维度；缓存命中即回放）
+                modelConfig.loadSkills(sid)
             }
         }
         // #285：DSH 命令注册表全局帧（commands/change）——命令注册/注销即重载
@@ -1023,6 +1224,11 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             eventDispatcher.commandsChanged.collect {
                 modelConfig.loadCommands(sessionLifecycle.sessionId.ifBlank { null })
+                // #324⑤：命令注册表变更同步技能面（服务器插件加载/卸载可能改变技能集；缓存失效需重拉）
+                sessionLifecycle.sessionId.takeIf { it.isNotBlank() }?.let {
+                    modelConfig.invalidateSkillsCache(it)
+                    modelConfig.loadSkills(it)
+                }
             }
         }
         // #287：DSH 附件字节拉取驱动——url 缺席的附件 Part.File 即拉取回填
@@ -1158,18 +1364,24 @@ class ChatViewModel @Inject constructor(
             eventDispatcher.clearSessionErrors(sessionId)
         },
         draftDelegate = draftDelegate,
+        // #391：子会话续聊分流改由能力位驱动（界面不读服务器类型）
+        subagentsSupportedProvider = {
+            dev.leonardo.ocbeacon.domain.model.ServerFeatures.SUBAGENTS in serverCapabilities.value
+        },
+        // #362：busy+queue 提交后刷新队列投影（V2 拉取；DSH 内部自门控跳过）
+        onQueueSubmitted = { refreshQueueItems() },
     )
 
     // #267：断连快速失败——不发请求（OkHttp retryOnConnectionFailure 会悬挂
     // 15s+），草稿自然保留（sendDelegate 未执行，输入框不清空）。
-    fun sendMessage(text: String, attachments: List<PromptPart> = emptyList()) {
+    fun sendMessage(text: String, attachments: List<PromptPart> = emptyList(), steer: Boolean = false) {
         if (fastFailIfLinkBlocked()) return
-        sendDelegate.sendMessage(text, attachments)
+        sendDelegate.sendMessage(text, attachments, steer)
     }
 
-    fun sendMessage(promptParts: List<PromptPart>, attachments: List<PromptPart>, rawText: String) {
+    fun sendMessage(promptParts: List<PromptPart>, attachments: List<PromptPart>, rawText: String, steer: Boolean = false) {
         if (fastFailIfLinkBlocked()) return
-        sendDelegate.sendMessage(promptParts, attachments, rawText)
+        sendDelegate.sendMessage(promptParts, attachments, rawText, steer)
     }
 
     // ============ 权限/问题回复（门面 —— SessionActionsDelegate） ============
@@ -1300,9 +1512,9 @@ class ChatViewModel @Inject constructor(
     fun onSessionUpdated(session: Session) =
         sessionActions.onSessionUpdated(session)
 
-    fun forkSession(onResult: (Session?) -> Unit) {
+    fun forkSession(anchorMessageId: String? = null, onResult: (Session?) -> Unit) {
         if (fastFailIfLinkBlocked()) return  // #267：断连快速失败（不回调——对话框已给反馈）
-        sessionActions.forkSession(onResult)
+        sessionActions.forkSession(anchorMessageId, onResult)
     }
 
     fun renameSession(title: String, onResult: (Boolean) -> Unit) =
@@ -1350,6 +1562,8 @@ class ChatViewModel @Inject constructor(
 
 
     companion object {
+        /** 回合级活动信号下降沿宽限（ms）——覆盖多步回合的步间 Idle 空窗。 */
+        private const val TURN_ACTIVE_GRACE_MS = 3_000L
         /** #182：Task 卡片全量输出翻页拉取——单页条数与页数上限（老卡片防漏）。 */
         private const val TASK_FETCH_PAGE_LIMIT = 50
         private const val TASK_FETCH_MAX_PAGES = 10

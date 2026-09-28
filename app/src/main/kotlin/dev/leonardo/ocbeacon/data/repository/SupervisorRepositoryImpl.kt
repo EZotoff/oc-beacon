@@ -1,8 +1,7 @@
 package dev.leonardo.ocbeacon.data.repository
 
 import dev.leonardo.ocbeacon.BuildConfig
-import dev.leonardo.ocbeacon.data.api.message.MessageApi
-import dev.leonardo.ocbeacon.data.api.session.SessionApi
+import dev.leonardo.ocbeacon.data.adapter.ServerAdapterRegistry
 import dev.leonardo.ocbeacon.data.dto.request.PromptPart
 import dev.leonardo.ocbeacon.domain.model.BeaconReply
 import dev.leonardo.ocbeacon.domain.model.SupervisorAttentionItem
@@ -30,8 +29,7 @@ import javax.inject.Singleton
 class SupervisorRepositoryImpl @Inject constructor(
     private val files: FileRepository,
     private val servers: ServerRepository,
-    private val sessions: SessionApi,
-    private val messages: MessageApi,
+    private val adapters: ServerAdapterRegistry,
     private val json: Json,
 ) : SupervisorRepository {
 
@@ -109,14 +107,15 @@ class SupervisorRepositoryImpl @Inject constructor(
             runCatchingCancellable {
                 require(root.isNotBlank()) { "reply target root is blank" }
                 val conn = servers.resolveConnection(serverId)
+                val ports = adapters.ports(conn)
                 val inboxTitle = inboxSessionTitle(root)
                 // 收件箱会话按标题精确匹配；未命中则创建（重复创建对 supervisor 无害——
                 // 它按标题约定匹配收件箱，不依赖单一会话实例）。
-                val inbox = sessions.listSessions(conn, directory = root, search = null, cursor = null, limit = 100)
+                val inbox = ports.session.listSessions(conn, directory = root, search = null, cursor = null, limit = 100)
                     .firstOrNull { it.title == inboxTitle }
-                    ?: sessions.createSession(conn, title = inboxTitle, parentId = null, directory = root)
+                    ?: ports.session.createSession(conn, title = inboxTitle, parentId = null, directory = root)
                 val envelope = reply.envelopeJson(UuidV7.generate())
-                messages.promptAsync(
+                ports.message.promptAsync(
                     conn,
                     sessionId = inbox.id,
                     parts = listOf(PromptPart(type = "text", text = envelope)),

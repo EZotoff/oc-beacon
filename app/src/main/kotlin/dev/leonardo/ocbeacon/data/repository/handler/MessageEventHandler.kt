@@ -47,6 +47,11 @@ class MessageEventHandler @Inject constructor(
             is SseEvent.MessagePartUpdated -> { handleMessagePartUpdated(event); true }
             is SseEvent.MessagePartDelta -> { handleMessagePartDelta(event); true }
             is SseEvent.MessagePartRemoved -> { handleMessagePartRemoved(event); true }
+            // #453：块完结时间补丁（DSH block-end）——无 kind 的终态化信号
+            is SseEvent.MessagePartTimePatch -> { handleMessagePartTimePatch(event); true }
+            // #378：表面区间替换（user/message surfaceOp.replace）——被遮蔽旧消息
+            // 折叠的权威指令：台账记账 + 内存/热表移除（幂等，实况/历史同事件）。
+            is SseEvent.SurfaceRangeReplaced -> { handleSurfaceRangeReplaced(event); true }
             else -> false
         }
     }
@@ -61,6 +66,25 @@ class MessageEventHandler @Inject constructor(
          * 冷存桶 + loadAround 按需分页加载，不依赖热视图）。
          */
         internal const val MEMORY_SESSION_MESSAGE_LIMIT = 1000
+
+        /**
+         * #340：全量 upsert 合并刷洗参数——消息数阈值 / 最大时延 / 刷洗
+         * 周期 tick。真机 resync 洪峰（数千事件/秒）下按 128 条或 250ms
+         * 批量落库，吞吐数量级提升且不再丢弃写请求。
+         */
+        internal const val UPSERT_BATCH_THRESHOLD = 128
+        internal const val UPSERT_BATCH_MAX_LATENCY_MS = 250L
+        internal const val UPSERT_BATCH_TICK_MS = 25L
+        // #437 cadence 裁决 3 收编：常量归引擎域（ScrollCompensation.STREAM_FLUSH_INTERVAL_MS）——
+        // 数据层消费引擎节奏（spec「引擎接管 SSE cadence」的结构落位）
+        private const val STREAM_FLUSH_INTERVAL_MS =
+            dev.leonardo.ocbeacon.ui.screens.chat.components.STREAM_FLUSH_INTERVAL_MS
+
+        /**
+         * #338：历史残留 completed 的物理不可能阈值——超会话域水位此时长
+         * 即判旧本地钟回填残留（实证残留 +3.5h；合法完结与水位差恒小）。
+         */
+        internal const val POLLUTED_COMPLETED_MARGIN_MS = 10 * 60_000L
     }
 
     private val _messages = MutableStateFlow<Map<String, List<Message>>>(emptyMap())
@@ -100,12 +124,18 @@ class MessageEventHandler @Inject constructor(
     /** debug 级 delta flush 节流计数器（仅 DEBUG 构建使用）。 */
     private var deltaFlushCounter = 0
 
-    // ---- 持久化 actor（#57）----
-    // 所有 SSE 双写落盘请求经 Channel 入队，由单一写协程串行处理：
-    // - 协程数恒为 1（原实现每 48ms flush 一个 fire-and-forget 协程，
-    //   活跃流式下无上限创建）
-    // - Channel BUFFERED 提供背压（写入慢时请求排队，不丢）
-    // - App 进程消亡时随进程终止（MessageEventHandler 为 @Singleton）
+    // ---- 持久化 actor（#57 → #340 合并写重构）----
+    // 所有 SSE 双写落盘请求由单一写协程串行处理（协程数恒为 1，
+    // App 进程消亡时随进程终止）。
+    //
+    // #340 根因修复：原 Channel.BUFFERED(64) + trySend 满即丢——真机 resync 期
+    // 实证 dropped 1150→1500 连发（Room 写入慢于 SSE 生产时丢弃最新写
+    // 请求，含终态修复写）。两路重构：
+    // - 增量 delta：UNLIMITED channel 保序入队不丢（流式生产速率有界：48ms 批）；
+    // - 全量 upsert：按 (sessionId, messageId) 最新快照合并（latest-wins，快照语义
+    //   天然幂等），内存占用=窗口内不同消息数（阈值刷洗封顶）；
+    // - 刷洗策略：消息数≥阈值或 最老条目时延≥上限时刷洗（每会话
+    //   单次 upsertMessages 调用=单事务）——吞吐数量级提升，不再丢写。
     private data class PersistRequest(
         val store: MessageCacheRepository,
         val sessionId: String,
@@ -114,46 +144,214 @@ class MessageEventHandler @Inject constructor(
         val incrementalDeltas: List<dev.leonardo.ocbeacon.data.local.PartDelta> = emptyList(),
     )
 
-    private val persistQueue = Channel<PersistRequest>(Channel.BUFFERED)
+    /** #340：增量写保序队（UNLIMITED——流式速率有界，永不丢）。 */
+    private val deltaPersistQueue = Channel<PersistRequest>(Channel.UNLIMITED)
 
-    /** N-1：persistQueue 满时 trySend 静默丢写的可观测性计数（内存视图不受影响，落盘由后续写补齐）。 */
-    private var droppedPersistWrites = 0
+    /** #340：写协程唤醒信号（CONFLATED 天然合并突发）。 */
+    private val persistWakeups = Channel<Unit>(Channel.CONFLATED)
 
-    private fun onPersistQueueFull() {
-        droppedPersistWrites++
-        if (droppedPersistWrites == 1 || droppedPersistWrites % 50 == 0) {
-            AppLogger.w(TAG, "persist queue full, dropped $droppedPersistWrites write requests (Room slower than SSE production)")
+    /** #340：全量 upsert 合并缓冲（sessionId → messageId → 最新快照；pendingUpsertsLock 保护）。 */
+    private val pendingUpserts = HashMap<String, HashMap<String, MessageWithParts>>()
+    private val pendingUpsertsLock = Any()
+    private var pendingUpsertCount = 0
+    private var oldestPendingUpsertAt = 0L
+
+    /**
+     * #437 验收十五轮：待删行队列（sessionId → messageId 集合；与 [pendingUpserts]
+     * 同锁域）。原拆除删除走旁路并行协程（batchScope=Dispatchers.Default 多线程），
+     * 与合并缓冲的时延批 upsert 无顺序保证——真机 flicker3 实证：pending-* 播种
+     * upsert 事务 42:57.686 才提交，拆除 delete 42:57.519 先行 → 后到 upsert 重插
+     * 已删行 → 幽灵行留存热表 → REST 刷新/分页合并回灌复活为可见重复气泡
+     * （u_pending-…f74 挂屏 6 分钟，1956 行日志取证）。并入单写协程后天然串行：
+     * 拆除先从合并缓冲撤下未写行（重放安全），删除在既有写入之后执行——写序
+     * 竞态构造性消除；同 id 再到达时 enqueueUpsert 撤销待删（事件时间最后操作胜出）。
+     */
+    private val pendingDeletes = HashMap<String, HashSet<String>>()
+
+    /**
+     * #338：会话时间域基准——最近观察到的该会话「消息/事件时刻」（DSH=服务器
+     * 信封时刻、V2=本地构造时刻——与该会话消息 created 腿**同钟域**）。
+     * [markSessionIdle] 回填 completed 时优先取该值，杜绝跨钟域回填：
+     * 真机实证（2026-09-06 E2E B4）DSH 工具宿主 completed 被本地钟回填成
+     * created+3.5h（resync 期回填），且 merge 语义 incoming ?: existing
+     * 使污染永久残留；DSH/V1 的 created 腿为服务器时刻，设备钟慢 207ms 时
+     * 流式 ticker 还会短暂显示负时长（同族症状）。
+     */
+    private val lastDomainEventTimeMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** #338：EventDispatcher 分发点采集（MessageUpdated.created / SessionIdle.time）。 */
+    fun recordDomainTime(sessionId: String, timeMs: Long) {
+        if (timeMs <= 0L) return
+        lastDomainEventTimeMs.merge(sessionId, timeMs) { old, new -> maxOf(old, new) }
+    }
+
+    /** #338：域内「现在」——有基准用基准（与 created 同域），无基准回退本地钟。 */
+    private fun domainNowMs(sessionId: String): Long =
+        lastDomainEventTimeMs[sessionId] ?: System.currentTimeMillis()
+
+    /**
+     * #338 历史残留消毒：本事件不携带权威 completed（DSH 工具宿主整装/回放
+     * 腿恒 null）而存量 completed 超出会话域水位（本事件 created 与已采集
+     * 域基准的较大者）[POLLUTED_COMPLETED_MARGIN_MS] 以上——物理不可能
+     * （消息不可能在会话事件流之后许久才完结）＝旧版本本地钟回填残留
+     * （真机实证 completed=created+3.5h）→ 归 null（时长未知），随同点
+     * 落盘修复 Room 行；下一次 resync 后旧污染自愈。
+     */
+    private fun sanitizeLegacyPollutedCompleted(
+        sessionId: String,
+        incoming: Message.Assistant,
+        merged: Message.Assistant,
+    ): Message.Assistant {
+        if (incoming.time.completed != null) return merged
+        val completed = merged.time.completed ?: return merged
+        val watermark = maxOf(lastDomainEventTimeMs[sessionId] ?: 0L, incoming.time.created)
+        if (completed - watermark > POLLUTED_COMPLETED_MARGIN_MS) {
+            return merged.copy(time = merged.time.copy(completed = null))
         }
+        return merged
     }
 
     init {
+        // #340：单写协程——唤醒后先保序排空增量队，再按阈值/时延批量刷洗
+        // 全量 upsert 合并缓冲（刷洗周期 tick 间继续排空 delta）。
         batchScope.launch {
-            for (req in persistQueue) {
-                try {
-                    if (req.incrementalDeltas.isNotEmpty()) {
-                        // #97（H-6）：增量写——只追加 delta 文本 + 骨架消息
-                        req.store.appendPartTexts(req.sessionId, req.payload, req.incrementalDeltas)
+            for (wakeup in persistWakeups) {
+                drainDeltaPersistQueue()
+                while (pendingUpsertCountSnapshot() > 0) {
+                    val n = pendingUpsertCountSnapshot()
+                    val age = oldestPendingUpsertAtSnapshot().takeIf { it > 0 }
+                        ?.let { System.currentTimeMillis() - it } ?: 0L
+                    if (n >= UPSERT_BATCH_THRESHOLD || age >= UPSERT_BATCH_MAX_LATENCY_MS) {
+                        flushPendingUpserts()
                     } else {
-                        req.store.upsertMessages(req.sessionId, req.payload, persistOldBeyondWindow = false)
+                        delay(UPSERT_BATCH_TICK_MS)
+                        drainDeltaPersistQueue()
                     }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    // 写失败静默（MessageStore 内部已捕获，内存视图不受影响）
+                }
+                // #437 十五轮：删除并入同一写协程——与既有 upsert 事务天然串行
+                flushPendingDeletes()
+            }
+        }
+    }
+
+    /** #340：保序排空增量队（写失败静默——MessageStore 内部已捕获，内存视图不受影响）。 */
+    internal suspend fun drainDeltaPersistQueue() {
+        while (true) {
+            val req = deltaPersistQueue.tryReceive().getOrNull() ?: break
+            try {
+                // #97（H-6）：增量写——只追加 delta 文本 + 骨架消息
+                req.store.appendPartTexts(req.sessionId, req.payload, req.incrementalDeltas)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // 写失败静默
+            }
+        }
+    }
+
+    /** #340：全量 upsert 入合并缓冲（同消息最新快照胜出）。 */
+    private fun enqueueUpsert(store: MessageCacheRepository, sessionId: String, payload: List<MessageWithParts>) {
+        synchronized(pendingUpsertsLock) {
+            if (pendingUpsertCount == 0) oldestPendingUpsertAt = System.currentTimeMillis()
+            val byMsg = pendingUpserts.getOrPut(sessionId) { HashMap() }
+            for (mwp in payload) {
+                if (byMsg.put(mwp.info.id, mwp) == null) pendingUpsertCount++
+                // #437 十五轮：同 id 到达撤销待删（事件时间最后操作=upsert 胜出）
+                pendingDeletes[sessionId]?.remove(mwp.info.id)
+            }
+        }
+        persistWakeups.trySend(Unit)
+    }
+
+    /** #437 十五轮：排空待删队列（单写协程内串行——晚于本协程既有 upsert 执行）。 */
+    internal suspend fun flushPendingDeletes() {
+        val store = messageStore ?: return
+        val batches: Map<String, List<String>>
+        synchronized(pendingUpsertsLock) {
+            if (pendingDeletes.isEmpty()) return
+            batches = pendingDeletes.mapValues { (_, ids) -> ids.toList() }
+            pendingDeletes.clear()
+        }
+        for ((sessionId, ids) in batches) {
+            for (id in ids) {
+                try {
+                    store.deleteMessage(sessionId, id)
+                } catch (ce: CancellationException) {
+                    throw ce
+                } catch (_: Exception) {
+                    // 写失败静默（同 persist 纪律；内存视图不受影响）
                 }
             }
         }
     }
 
+    /** #340：刷洗合并缓冲——每会话单次批量写（单事务）。 */
+    internal suspend fun flushPendingUpserts() {
+        val store = messageStore
+        val batches: Map<String, List<MessageWithParts>>
+        synchronized(pendingUpsertsLock) {
+            if (pendingUpserts.isEmpty()) return
+            batches = pendingUpserts.mapValues { (_, byMsg) -> byMsg.values.toList() }
+            pendingUpserts.clear()
+            pendingUpsertCount = 0
+            oldestPendingUpsertAt = 0L
+        }
+        if (store == null) return
+        var total = 0
+        for ((sessionId, payload) in batches) {
+            total += payload.size
+            try {
+                store.upsertMessages(sessionId, payload, persistOldBeyondWindow = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // 写失败静默（内存视图不受影响；后续写补齐）
+            }
+        }
+        if (BuildConfig.DEBUG && total >= UPSERT_BATCH_THRESHOLD) {
+            AppLogger.d(TAG, "[persist] coalesced flush: sessions=" + batches.size + " msgs=" + total)
+        }
+    }
+
+    private fun pendingUpsertCountSnapshot(): Int = synchronized(pendingUpsertsLock) { pendingUpsertCount }
+
+    private fun oldestPendingUpsertAtSnapshot(): Long = synchronized(pendingUpsertsLock) { oldestPendingUpsertAt }
+
     private fun scheduleFlush() {
-        // 不要取消进行中的定时器——那会在 token 到达速率 > 1/48ms 时
+        // 不要取消进行中的定时器——那会在 token 到达速率 > 1/flush 间隔 时
         // 饿死 flush。让 delta 累积；运行中的定时器触发时会一次性 flush 它们。
         if (batchJob?.isActive == true) return
         batchJob = batchScope.launch {
-            delay(48)
+            delay(streamFlushIntervalMs())
             flushPendingDeltas()
         }
     }
+
+    /**
+     * #437 高度引擎 cadence（spec 2026-09-26 裁决：引擎接管 SSE 节奏 48ms→100ms
+     * tunable）。二十四世轮真机取证：48ms 批的「append→markdown 排版→cap 全子树
+     * 测量→布局→配对滚动」全链成本压在单帧主线程——贴底跟随帧 p50=18ms、伴随
+     * append/measure 的帧间隙 p50=72ms，即用户体感「流式高度变化一顿一顿」；
+     * 间隔翻倍 → 重帧频率减半。后续单帧成本根修（测量增量化）另行批次。
+     *
+     * 可调（仅 DEBUG）：adb shell setprop debug.ocbeacon.streamflush <ms>（16-500）。
+     */
+    private fun streamFlushIntervalMs(): Long {
+        // 反射读 SystemProperties 每 flush 一次无谓开销——缓存（setprop 调优本就要求重启进程）
+        cachedFlushIntervalMs?.let { return it }
+        val v = if (!BuildConfig.DEBUG) STREAM_FLUSH_INTERVAL_MS
+        else try {
+            @Suppress("PrivateApi")
+            val sp = Class.forName("android.os.SystemProperties")
+            (sp.getMethod("get", String::class.java).invoke(null, "debug.ocbeacon.streamflush") as? String)
+                ?.toLongOrNull()?.coerceIn(16L, 500L) ?: STREAM_FLUSH_INTERVAL_MS
+        } catch (_: Throwable) {
+            STREAM_FLUSH_INTERVAL_MS
+        }
+        cachedFlushIntervalMs = v
+        return v
+    }
+    @Volatile private var cachedFlushIntervalMs: Long? = null
 
     private fun flushPendingDeltas() {
         val batch: List<PendingDelta>
@@ -246,17 +444,16 @@ class MessageEventHandler @Inject constructor(
                 )
             }
             val payload = msgs.map { MessageWithParts(it, _parts.value[it.id] ?: emptyList()) }
-            if (persistQueue.trySend(
-                    PersistRequest(
-                        store = store,
-                        sessionId = sessionId,
-                        payload = payload,
-                        incrementalDeltas = incrementalDeltas,
-                    )
-                ).isFailure
-            ) {
-                onPersistQueueFull()
-            }
+            // #340：增量写走保序无限队（流式速率有界，永不丢）
+            deltaPersistQueue.trySend(
+                PersistRequest(
+                    store = store,
+                    sessionId = sessionId,
+                    payload = payload,
+                    incrementalDeltas = incrementalDeltas,
+                )
+            )
+            persistWakeups.trySend(Unit)
         }
     }
 
@@ -270,6 +467,16 @@ class MessageEventHandler @Inject constructor(
 
     internal fun handleMessageUpdated(event: SseEvent.MessageUpdated) {
         val sessionId = event.info.sessionId
+        // #378：迟到的被遮蔽消息（older page 回放在 surfaceOp 之后到达）——台账
+        // 拦截，不重加（否则压缩在翻页场景下被视觉撤销）。
+        DshMessageId.seqOf(event.info.id)?.let { seq ->
+            if (isShadowed(sessionId, seq)) {
+                if (BuildConfig.DEBUG) {
+                    AppLogger.d(TAG, "[surface] drop shadowed msg " + event.info.id.take(12))
+                }
+                return
+            }
+        }
         if (BuildConfig.DEBUG) {
             val role = event.info.role
             val completed = (event.info as? Message.Assistant)?.time?.completed
@@ -289,7 +496,12 @@ class MessageEventHandler @Inject constructor(
                 // 改为非空字段合并：incoming 缺失的元数据保留 existing。
                 val existing = msgs[idx]
                 msgs[idx] = if (existing is Message.Assistant && event.info is Message.Assistant) {
-                    MessageMergeEngine.mergeAssistantMeta(existing, event.info)
+                    // #338：合并后过历史残留消毒（旧本地钟回填 completed 自愈）
+                    sanitizeLegacyPollutedCompleted(
+                        sessionId,
+                        event.info,
+                        MessageMergeEngine.mergeAssistantMeta(existing, event.info),
+                    )
                 } else {
                     event.info
                 }
@@ -454,10 +666,8 @@ class MessageEventHandler @Inject constructor(
         if (msgs.isEmpty()) return
         val parts = _parts.value
         val payload = msgs.map { MessageWithParts(it, parts[it.id] ?: emptyList()) }
-        // #57：入队由单写协程处理（不再每 48ms 创建 fire-and-forget 协程）
-        if (persistQueue.trySend(PersistRequest(store, sessionId, payload)).isFailure) {
-            onPersistQueueFull()
-        }
+        // #340：全量写入合并缓冲（同消息最新快照胜出；单写协程批量刷洗）
+        enqueueUpsert(store, sessionId, payload)
     }
 
     /**
@@ -490,6 +700,111 @@ class MessageEventHandler @Inject constructor(
         }
         _parts.update { it - event.messageId }
         assistantMessageIds.remove(event.messageId)
+        // 四层根修（2026-09-09）：Room 行同删——echo 拆除此前只清内存，pending-*
+        // 幽灵行留存热表，任何 Room 回灌都会复活（实测：压缩后幽灵气泡重回 UI、
+        // 快速定位列出不可跳转条目）。
+        // #437 验收十五轮（写序根修）：原 batchScope 并行 launch 删除与合并缓冲的
+        // 时延批 upsert 无顺序保证（真机：upsert 事务晚 167ms 提交重插已删行 → 幽灵
+        // 复活挂屏 6 分钟）。改记入待删队列：先从合并缓冲撤下未写行（该行从未落库），
+        // 删除由单写协程在既有写入之后串行执行。
+        synchronized(pendingUpsertsLock) {
+            val byMsg = pendingUpserts[event.sessionId]
+            if (byMsg?.remove(event.messageId) != null && pendingUpsertCount > 0) {
+                pendingUpsertCount--
+                if (pendingUpsertCount == 0) oldestPendingUpsertAt = 0L
+            }
+            pendingDeletes.getOrPut(event.sessionId) { HashSet() }.add(event.messageId)
+        }
+        persistWakeups.trySend(Unit)
+    }
+
+    // ============ #378 表面区间折叠（surfaceOp.replace 消费面） ============
+
+    /**
+     * 被遮蔽表面区间台账（sessionId → 闭区间列表）。来源 = SurfaceRangeReplaced
+     * 事件（实况/历史 dispatch 同路径）；内存态，进程内跨页持久（older page 回放
+     * 防护），重进由最新窗 surfaceOp 重播种（翻页向旧推进时先见 surfaceOp 后见
+     * 遮蔽消息，天然满足）。读侧查询：[isShadowed] / [shadowedRanges]。
+     */
+    private val shadowedRanges =
+        java.util.concurrent.ConcurrentHashMap<String, List<LongRange>>()
+
+    /** #378：遮蔽区间的响应式镜像（UI 读侧抑制订阅；写点仅 [handleSurfaceRangeReplaced]）。 */
+    private val _shadowedRangesFlow = MutableStateFlow<Map<String, List<LongRange>>>(emptyMap())
+    val shadowedRangesFlow: StateFlow<Map<String, List<LongRange>>> = _shadowedRangesFlow.asStateFlow()
+
+    /** #378：区间是否被任一已记账的折叠遮蔽（O(区间数)，每会话个位数）。 */
+    fun isShadowed(sessionId: String, seq: Long): Boolean =
+        shadowedRanges[sessionId]?.any { seq in it } == true
+
+    /** #378：该会话已记账的遮蔽区间快照（UI 读侧抑制/仓储页过滤共用）。 */
+    fun shadowedRanges(sessionId: String): List<LongRange> = shadowedRanges[sessionId].orEmpty()
+
+    /**
+     * #378：user/message surfaceOp.replace 到达——seq ∈ [startSeq, endSeq] 的
+     * 表面消息由 [SseEvent.SurfaceRangeReplaced.byMessageId] 取代。
+     *
+     * 三动作（幂等，重放安全）：
+     * 1. 台账记账（拦截后续迟到 MessageUpdated/Part 重加——历史 older page 在
+     *    surfaceOp 之后到达的场景）；
+     * 2. 内存移除（消息 + parts + assistant 索引）；
+     * 3. 热表全量替换（replaceSessionMessages——#224 同款「消除本地幽灵消息」
+     *    原语；同时净化 #340 合并刷洗缓冲中该会话的待写快照，防迟到 flush 复活）。
+     * 冷存桶（更早历史）不动——读侧抑制（UI 归并按台账过滤）统一兜住。
+     */
+    internal fun handleSurfaceRangeReplaced(event: SseEvent.SurfaceRangeReplaced) {
+        val range = LongRange(event.startSeq, event.endSeq)
+        var flowDirty = false
+        shadowedRanges.compute(event.sessionId) { _, existing ->
+            if (existing != null && range in existing) {
+                existing
+            } else {
+                flowDirty = true
+                val merged = mutableListOf<LongRange>()
+                if (existing != null) merged.addAll(existing)
+                merged.add(range)
+                merged.toList()
+            }
+        }
+        if (flowDirty) {
+            _shadowedRangesFlow.update { it + (event.sessionId to shadowedRanges[event.sessionId].orEmpty()) }
+        }
+        val removedIds = _messages.value[event.sessionId]
+            ?.filter { DshMessageId.seqOf(it.id)?.let { s -> s in range } == true }
+            ?.map { it.id }
+            .orEmpty()
+        if (removedIds.isNotEmpty()) {
+            _messages.update { current ->
+                val kept = current[event.sessionId]?.filter { it.id !in removedIds } ?: return@update current
+                current + (event.sessionId to kept)
+            }
+            _parts.update { it.filterKeys { id -> id !in removedIds } }
+            assistantMessageIds.removeAll(removedIds)
+            purgePendingUpserts(event.sessionId, removedIds.toSet())
+            if (BuildConfig.DEBUG) {
+                AppLogger.d(TAG, "[surface] replaced seq " + event.startSeq + ".." + event.endSeq + " by " + event.byMessageId.take(12) + ": removed " + removedIds.size + " msgs")
+            }
+        }
+        val store = messageStore ?: return
+        val payload = _messages.value[event.sessionId].orEmpty().map {
+            MessageWithParts(it, _parts.value[it.id].orEmpty())
+        }
+        batchScope.launch {
+            runCatching { store.replaceSessionMessages(event.sessionId, payload) }
+                .onFailure { AppLogger.w(TAG, "[surface] persist replacement failed: " + it.message) }
+        }
+    }
+
+    /** #378：从 #340 合并刷洗缓冲剔除已遮蔽消息（防迟到 flush 复活幽灵行）。 */
+    private fun purgePendingUpserts(sessionId: String, removedIds: Set<String>) {
+        if (removedIds.isEmpty()) return
+        synchronized(pendingUpsertsLock) {
+            pendingUpserts[sessionId]?.let { buf ->
+                val before = buf.size
+                buf.keys.removeAll(removedIds)
+                pendingUpsertCount -= before - buf.size
+            }
+        }
     }
 
     /**
@@ -629,6 +944,52 @@ class MessageEventHandler @Inject constructor(
         }
     }
 
+    /**
+     * #453：DSH block-end 的块完结时间补丁——按 `_ord_{ordinal}` 后缀扫描定位
+     * （不分 kind：block-end 帧无 blockType，kind 编码的派生 id 无法单侧构造）。
+     *
+     * 只补 time.end == null 的流式 Text/Reasoning part（已终态的幂等跳过——
+     * 流式时序上 block-end 只针对当前活动块，跨 kind 同 ordinal 的历史块早已
+     * 终态化，不误伤）。end 与 start 同域钳制（chunk 信封时刻同域，防御性
+     * maxOf——负跨度由显示层按未知处理，与 markSessionIdle 同口径）。
+     */
+    internal fun handleMessagePartTimePatch(event: SseEvent.MessagePartTimePatch) {
+        val suffix = "_ord_" + event.ordinal
+        var changed = false
+        _parts.update { current ->
+            val messageParts = current[event.messageId] ?: return@update current
+            val updatedParts = messageParts.map { part ->
+                when {
+                    part is Part.Text && part.time?.end == null && part.id.endsWith(suffix) -> {
+                        changed = true
+                        val start = part.time?.start?.takeIf { it > 0 } ?: 0L
+                        part.copy(time = Part.Text.Time(
+                            start = start.takeIf { it > 0 } ?: event.endMs,
+                            end = maxOf(event.endMs, start),
+                        ))
+                    }
+                    part is Part.Reasoning && part.time?.end == null && part.id.endsWith(suffix) -> {
+                        changed = true
+                        // #263 round2 同款哨兵：start 未知（0）不伪造 start=end——
+                        // 显示层走本地冻结实测时长，不显示伪造 0ms。
+                        val start = part.time?.start?.takeIf { it > 0 } ?: 0L
+                        part.copy(time = Part.Reasoning.Time(
+                            start = start,
+                            end = maxOf(event.endMs, start),
+                        ))
+                    }
+                    else -> part
+                }
+            }
+            if (changed) current + (event.messageId to updatedParts) else current
+        }
+        if (changed) {
+            // 落盘闭环：重启/离线 seed 后计时冻结不回涨（对齐 markSessionIdle 的
+            // persistSseUpdate 语义——内存态 part 变更必须同步 Room）。
+            persistSseUpdate(event.sessionId, listOf(event.messageId))
+        }
+    }
+
     // ============ 统一合并入口 ============
 
     /**
@@ -748,6 +1109,10 @@ class MessageEventHandler @Inject constructor(
             val merged = mergeSortedMessages(existing, incomingSorted) { e, inc ->
                 if (e is Message.Assistant && inc is Message.Assistant) {
                     MessageMergeEngine.mergeAssistantMeta(e, inc)
+                } else if (e is Message.User && inc is Message.User) {
+                    // #395：REST 权威覆盖用户消息，但保留客户端发送路径标记 viaSteer
+                    //（V2 REST 持久化载荷不含 delivery，纯覆盖会丢插话徽标）。
+                    if (e.viaSteer) inc.copy(viaSteer = true) else inc
                 } else {
                     inc
                 }
@@ -813,6 +1178,7 @@ class MessageEventHandler @Inject constructor(
         _messages.update { it - sessionId }
         _parts.update { it - messageIds }
         assistantMessageIds.removeAll(messageIds)
+        lastDomainEventTimeMs.remove(sessionId)
         // 可观测性（#89 验证）：记录清理量
         dev.leonardo.ocbeacon.logging.AppLogger.d(
             "MsgEvent",
@@ -833,6 +1199,7 @@ class MessageEventHandler @Inject constructor(
         _messages.value = emptyMap()
         _parts.value = emptyMap()
         assistantMessageIds.clear()
+        lastDomainEventTimeMs.clear()
     }
 
     /**
@@ -845,14 +1212,18 @@ class MessageEventHandler @Inject constructor(
      */
     fun markSessionIdle(sessionId: String, messageId: String = "") {
         var changedIds: List<String>? = null
+        // #338：completed 回填与 created 腿同钟域——优先取分发点采集的域内基准
+        //（DSH=服务器信封时刻），无基准回退本地钟（V2 本地构造域，语义不变）。
+        // 逐消息 max(基准, 自身 created) 兜底：骨架消息（本地钟）在设备钟快于
+        // 服务器时不产生负跨度（0 跨度由显示层按未知处理）。
+        val fillNow = domainNowMs(sessionId)
         _messages.update { current ->
             val sessionMessages = current[sessionId] ?: return@update current
-            val now = System.currentTimeMillis()
             val updated = sessionMessages.map { msg ->
                 if (msg is Message.Assistant && msg.time.completed == null &&
                     (messageId.isEmpty() || msg.id == messageId)
                 ) {
-                    msg.copy(time = msg.time.copy(completed = now))
+                    msg.copy(time = msg.time.copy(completed = maxOf(fillNow, msg.time.created)))
                 } else {
                     msg
                 }
@@ -881,22 +1252,29 @@ class MessageEventHandler @Inject constructor(
             for (msgId in messageIds) {
                 val msgParts = updated[msgId] ?: continue
                 val updatedParts = msgParts.map { part ->
-                    val partEnd = System.currentTimeMillis()
+                    // #338：part end 同消息 completed 口径——域内基准（与 part start 同域）
+                    val partEnd = fillNow
                     when {
                         part is Part.Text && part.time?.end == null -> {
                             changed = true
+                            // #338：end 与 start 同域钳制（DSH part start=chunk 信封
+                            // 时刻，早于最后一条消息事件的域内基准时取 start——
+                            // 零跨度由显示层按未知处理，不产生负跨度）。
+                            val start = part.time?.start?.takeIf { it > 0 } ?: 0L
+                            val end = maxOf(partEnd, start)
                             part.copy(time = Part.Text.Time(
-                                start = part.time?.start ?: partEnd,
-                                end = partEnd
+                                start = start.takeIf { it > 0 } ?: end,
+                                end = end
                             ))
                         }
                         part is Part.Reasoning && part.time?.end == null -> {
                             changed = true
-                            // #263 round2：start 未知时不得伪造 start=end=partEnd（恒 0ms 症状）。
+                            // #263 round2：start 未知时不得伪造 start=end（恒 0ms 症状）。
                             // 0 = 未知哨兵，显示层走本地冻结实测时长，不显示伪造值。
+                            val rStart = part.time?.start?.takeIf { it > 0 } ?: 0L
                             part.copy(time = Part.Reasoning.Time(
-                                start = part.time?.start?.takeIf { it > 0 } ?: 0L,
-                                end = partEnd
+                                start = rStart,
+                                end = maxOf(partEnd, rStart)
                             ))
                         }
                         else -> part

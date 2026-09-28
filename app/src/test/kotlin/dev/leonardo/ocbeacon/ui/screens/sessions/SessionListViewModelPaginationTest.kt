@@ -1,5 +1,6 @@
 package dev.leonardo.ocbeacon.ui.screens.sessions
 
+import dev.leonardo.ocbeacon.testing.FakeServerAdapterResolver
 import android.util.Log
 import dev.leonardo.ocbeacon.domain.model.SessionStatus
 import dev.leonardo.ocbeacon.domain.repository.FileRepository
@@ -44,6 +45,8 @@ class SessionListViewModelPaginationTest {
     private val sseConnectionManager = io.mockk.mockk<dev.leonardo.ocbeacon.service.SseConnectionManager>(relaxed = true).also {
         io.mockk.every { it.linkState(any()) } returns dev.leonardo.ocbeacon.service.ServerLinkState.Connected
         io.mockk.every { it.observeLinkState(any()) } returns kotlinx.coroutines.flow.flowOf(dev.leonardo.ocbeacon.service.ServerLinkState.Connected)
+        // #317：TokenNeeded 流（VM 属性初始化即订阅）
+        io.mockk.every { it.dshTokenNeededServers } returns kotlinx.coroutines.flow.MutableStateFlow(emptySet<String>())
     }
 
     private val sessionRepository: SessionRepository = mockk(relaxed = true)
@@ -142,6 +145,7 @@ class SessionListViewModelPaginationTest {
             )
         )
         return SessionListViewModel(
+            serverAdapters = FakeServerAdapterResolver(),
             sseConnectionManager = sseConnectionManager,
             savedStateHandle = savedStateHandle,
             sessionRepository = sessionRepository,
@@ -157,7 +161,7 @@ class SessionListViewModelPaginationTest {
             deleteSessionUseCase = deleteSessionUseCase,
             draftRepository = mockk(relaxed = true),
             mcpRepository = mockk(relaxed = true),
-            dshSettingsRepository = mockk(relaxed = true),
+            serverSettingsRepository = mockk(relaxed = true),
             scrollSignal = SessionScrollSignal(),
             unreadBadgeService = io.mockk.mockk<dev.leonardo.ocbeacon.data.repository.UnreadBadgeService> {
                 io.mockk.every { mergedReadTimes(any()) } returns kotlinx.coroutines.flow.flowOf(emptyMap<String, Long>())
@@ -167,8 +171,12 @@ class SessionListViewModelPaginationTest {
             sessionTagRepository = mockk(relaxed = true),
             serverRepository = mockk(relaxed = true),
             chatRepository = mockk(relaxed = true),
+            eventDispatcher = io.mockk.mockk(relaxed = true),
             messageFtsIndex = mockk(relaxed = true),
             historySyncManager = mockk(relaxed = true),
+            pendingInteractionStore = io.mockk.mockk<dev.leonardo.ocbeacon.data.repository.PendingInteractionStore> {
+                io.mockk.every { pendingBySession } returns kotlinx.coroutines.flow.MutableStateFlow(emptyMap<String, dev.leonardo.ocbeacon.data.repository.PendingInteractionEntry>())
+            },
         )
     }
 }

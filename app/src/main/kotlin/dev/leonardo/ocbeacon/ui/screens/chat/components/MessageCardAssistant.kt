@@ -1,18 +1,27 @@
 package dev.leonardo.ocbeacon.ui.screens.chat.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.SuggestionChipDefaults
@@ -25,15 +34,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,31 +60,57 @@ import dev.leonardo.ocbeacon.domain.model.Message
 import dev.leonardo.ocbeacon.ui.screens.chat.components.RenderReadiness
 import dev.leonardo.ocbeacon.domain.model.Part
 import dev.leonardo.ocbeacon.domain.model.SseEvent
-import dev.leonardo.ocbeacon.ui.components.AmoledDefaultBorder
 import dev.leonardo.ocbeacon.ui.components.ProviderIcon
 import dev.leonardo.ocbeacon.ui.screens.chat.ChatMessage
 import dev.leonardo.ocbeacon.ui.screens.chat.dialog.QuestionCard
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.ContextToolGroupCard
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.PartGroup
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderableTurn
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.turnLedgerSummary
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.MessageDetailInput
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.RowCapabilities
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.TurnNumber
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.MessageStatusBadge
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.messageRowTail
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.statusBadgeFor
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalHapticFeedbackEnabled
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalShowTurnDividers
 import dev.leonardo.ocbeacon.ui.screens.chat.util.agentColor
 import dev.leonardo.ocbeacon.ui.screens.chat.util.formatDuration
 import dev.leonardo.ocbeacon.util.DateFormatters
+import dev.leonardo.ocbeacon.ui.screens.chat.util.performHaptic
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
 import dev.leonardo.ocbeacon.ui.theme.ChatDensity
 import dev.leonardo.ocbeacon.ui.theme.LocalChatDensity
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
+import dev.leonardo.ocbeacon.util.copyToClipboard
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalOnToggleToolExpanded
+import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalToolExpandedStates
+import dev.leonardo.ocbeacon.ui.screens.chat.util.toolExpandedOrDefault
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material3.Icon
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.alpha
+import kotlin.math.sin
 
 /**
- * 智能体消息气泡——统一容器（MessageBubble）：
- * 标签栏（时间 + "智能体"）+ 正文（renderItems：文本/推理/工具卡片/分隔线）+
- * 统计栏（agent 标签 / 提供商·模型 / 时长 / 复制）+ 错误展示（气泡内）。
- * 左对齐 + surfaceVariant 底色 + ShapeTokens.medium 圆角。
+ * 智能体消息（v2 两段式：正文 + 尾部统计栏）——扁平，无气泡容器、无头部标签栏。
+ * 正文 = renderItems（文本 / 推理 / 工具卡片 / 分隔线）+ 错误展示；
+ * 尾部 = 逐消息 agent 标签 / 提供商·模型 / 时长 + 复制 + 「详情」入口（时间
+ *        与低频动作在详情弹窗里）。流式态：右缘为三点动态 loading，复制/
+ *        详情与「正在流式输出」徽标不渲染（2026-09-27 用户裁决，统计栏空间
+ *        紧张）；步/工具计数文本已移除，历史轮产出文件展开保留为裸 chevron。
  */
 @Composable
 internal fun MessageCardAssistant(
@@ -97,6 +138,25 @@ internal fun MessageCardAssistant(
     questionAnswersCache: dev.leonardo.ocbeacon.ui.screens.chat.QuestionAnswerStore? = null,
     /** #234：事件卡统一展开表——本函数仅在防御性 SyntheticNotice 分支使用。 */
     eventExpandedStates: MutableMap<String, Boolean>,
+    /**
+     * #310② 消息反馈：脚部 👍/👎 动作位。仅 **已完结** assistant
+     * 消息（!isStreaming）且 onRateMessage 非 null（DSH serverType 门）
+     * 时渲染——SSE 流式铁律：流式 turn 的高度补偿不受
+     * 脚部内容变化影响（图标随完结态一次性出现，与复制键同一时刻）。
+     */
+    messageFeedback: dev.leonardo.ocbeacon.domain.model.MessageFeedbackItem? = null,
+    onRateMessage: ((dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating) -> Unit)? = null,
+    /** 2026-09-12 扁平化：第 N 轮编号（server 优先；null = 不渲染——US#28）。 */
+    turnNumber: TurnNumber? = null,
+    /** 2026-09-12 扁平化：「从此轮分支」尾部动作（null = 不显示——US#11）。 */
+    onForkFromTurn: (() -> Unit)? = null,
+    /** 2026-09-12 扁平化：删除消息（能力位就绪才传入——US#35）。 */
+    onDeleteMessage: (() -> Unit)? = null,
+    /** 2026-09-12 扁平化：行模型能力位（尾部字段/动作门控单源）。 */
+    caps: RowCapabilities? = null,
+    /** #422 历史懒加载:大组拆条目发射时尾片置 true——StepGroup 条目整体
+     *  跳过(折叠行由 ChatEntry.StepGroupHead 条目渲染,内容由 Body 条目)。 */
+    skipStepGroupItem: Boolean = false,
 ) {
     // D2-L22：原 if(isAmoled) 两分支相同（死条件）——直接取 onSurface
     val textColor = MaterialTheme.colorScheme.onSurface
@@ -122,7 +182,6 @@ internal fun MessageCardAssistant(
     val isStreaming = isStreamingTurn || (assistantMsg?.time?.completed == null)
 
     // 预计算的元数据
-    val agentName = renderableTurn.agentName
     val copyText = renderableTurn.copyText
     val modelId = renderableTurn.modelId
 
@@ -170,105 +229,30 @@ internal fun MessageCardAssistant(
     var qEntered by rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     LaunchedEffect(Unit) { qEntered = true }
 
-    // 统一统计栏 —— 消息气泡页脚（流式/完成是同一事物的两种状态，2026-08-07 合并）。
-    // 流式：显示实时耗时（ticker 每秒刷新）；完成：显示固定时长 + 复制按钮。
-    // 显示条件：流式必有；完成态有统计内容（时长/模型/agent）或仅需复制按钮时显示。
-    val durationMs = renderableTurn.durationMs
-    val hasFooter = (durationMs ?: 0) > 0 || !modelId.isNullOrBlank() || !agentName.isNullOrBlank()
-    val showStatsBar = isStreaming || hasFooter || (copyText != null && isTurnLast)
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.Start
-    ) {
-        MessageBubble(
+    MessageBubble(
             alignEnd = false,
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            border = if (isAmoled) AmoledDefaultBorder else null,
-            shape = ShapeTokens.medium,
-            label = stringResource(R.string.chat_label_agent),
-            // 2026-08-16（标题栏规范·类型图标）：智能体=SmartToy
-            labelLeading = {
-                androidx.compose.material3.Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Filled.SmartToy,
-                    contentDescription = null,
-                    modifier = Modifier.size(13.dp),
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
+            containerColor = Color.Transparent,
+            flat = true,
+            tailExtra = {
+                // #410：尾部单点（主路径与分片/分段共用；产出行流式完结门控在内部）
+                AssistantTurnTail(
+                    renderableTurn = renderableTurn,
+                    assistantMsg = assistantMsg,
+                    isTurnLast = isTurnLast,
+                    isStreaming = isStreaming,
+                    agents = agents,
+                    onAgentClick = onAgentClick,
+                    onCopy = onCopy,
+                    messageFeedback = messageFeedback,
+                    onRateMessage = onRateMessage,
+                    turnNumber = turnNumber,
+                    onForkFromTurn = onForkFromTurn,
+                    onDeleteMessage = onDeleteMessage,
+                    onOpenFile = onOpenFile,
+                    caps = caps,
                 )
             },
-            timeMs = currentMessage.message.time.created,
-            statsBar = if (showStatsBar) {
-                {
-                    // 耗时显示：流式 = 实时 ticker（独立子 composable，重组只限单个 Text，
-                    // 不触发整个 footer Row——#47：原 100ms ticker 在 footer 级 state，
-                    // 与 48ms flush 叠加 ~30 次/s footer 重组）；完成 = 固定时长。
-                    val startMs = renderableTurn.turnStartMs ?: assistantMsg?.time?.created
 
-                    // Agent 名称标签（2026-08-12：与输入组件 agent 选择器同款紧凑标签——
-                    // M3 SuggestionChip 32dp 偏大，用户确认改回紧凑样式）
-                    if (!agentName.isNullOrBlank()) {
-                        val tagColor = agentColor(agentName, agents)
-                        AgentTag(agent = agentName, tagColor = tagColor, onClick = { onAgentClick?.invoke(agentName) })
-                    }
-                    // 提供商图标 + 模型名
-                    val hasProviderOrModel = assistantMsg?.providerId != null || !modelId.isNullOrBlank()
-                    if (hasProviderOrModel) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            if (assistantMsg?.providerId != null) {
-                                ProviderIcon(
-                                    providerId = assistantMsg.providerId,
-                                    size = 10.dp,
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT)
-                                )
-                            }
-                            if (!modelId.isNullOrBlank()) {
-                                Text(
-                                    text = modelId,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                    // 2026-08-15 用户要求：移除 Token 占比圆环——无信息量。
-                    // 统计栏仅保留：agent 徽标 / 模型图标+模型名 / 耗时 / 右对齐复制。
-                    // 耗时（流式 = 实时 ticker 子 composable；完成 = 固定）
-                    if (isStreaming && startMs != null) {
-                        StreamingElapsedText(startMs)
-                    } else if (!isStreaming && (durationMs ?: 0L) > 0) {
-                        Text(
-                            text = formatDuration(durationMs!!),
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT)
-                        )
-                    }
-                    // 完成时刻（2026-09-17，对齐 opencode TUI turn-summary 时间戳补丁）：
-                    // 流式结束且拿到 completed 时刻 → 追加 "HH:mm"（跨天含日期），与耗时并列。
-                    if (!isStreaming && renderableTurn.completedTimeMs != null) {
-                        Text(
-                            text = remember(renderableTurn.completedTimeMs) {
-                                DateFormatters.turnCompletionTimestamp(renderableTurn.completedTimeMs)
-                            },
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT)
-                        )
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
-                    // 复制按钮（仅完成态）
-                    if (!isStreaming && copyText != null) {
-                        CopyButton(
-                            text = copyText,
-                            modifier = Modifier.size(14.dp),
-                            onCopied = onCopy
-                        )
-                    }
-                }
-            } else null,
         ) {
             // 渲染预计算项 —— 组合期间零过滤/零分组。
             for (item in renderableTurn.renderItems) {
@@ -291,6 +275,10 @@ internal fun MessageCardAssistant(
                     is RenderItem.RepeatingTool -> {
                         // #247（2026-08-28 用户裁决）：回合内连续同键 tool 卡折叠——
                         // 首张正常渲染 + ×N 徽标（与 #243 合成卡去重同款交互）。
+                        // #463 三轮:最后消息首组被折叠为首张时,线随首张首帧出现。
+                        if (item.part.id == renderableTurn.lastStepDividerBeforePartId) {
+                            StepDivider(0)
+                        }
                         key(item.part.id) {
                             Box {
                                 PartContent(
@@ -343,7 +331,14 @@ internal fun MessageCardAssistant(
                                     onOpenFile = onOpenFile ?: {},
                                 )
                             }
-                            is PartGroup.Single -> key(item.group.part.id) {
+                            is PartGroup.Single -> {
+                                // #463 三轮:最后消息(最新 step)首组前插分割线——
+                                // 平铺分支无 stepStarts,装配层按 part-id 身份标记,
+                                // 线随新 step 首个内容块首帧出现(不后补)。
+                                if (item.group.part.id == renderableTurn.lastStepDividerBeforePartId) {
+                                    StepDivider(0)
+                                }
+                                key(item.group.part.id) {
                                 // 滚动预解析消费：长文本 part 取 Parsed state（与驱动端
                                 // key 约定：partId；阈值一致 ≥200 字符）。
                                 // 2026-08-20 滚动卡顿根因修复：原 current() 走快照 Map 读
@@ -388,31 +383,123 @@ internal fun MessageCardAssistant(
                                 // 2026-08-17（多卡片修复）：锚定 questionAnchorPartId——
                                 // 只在锚 part 后渲染一张（原条件会按 part 数量重复渲染）。
                                 // 2026-08-30 用户裁决：撤销展开补偿，回归 AV 出厂默认
-                                androidx.compose.animation.AnimatedVisibility(
-                                    visible = qEntered && pendingQuestion != null &&
-                                        item.group.part.id == effectiveAnchorId,
-                                    enter = CardExpandEnterTransition,
-                                    exit = CardExpandExitTransition,
-                                ) {
-                                    val avQuestion = pendingQuestion ?: lastQuestion
-                                    if (avQuestion != null &&
-                                        item.group.part.id == effectiveAnchorId
+                                // #456(2026-09-28)间距根修：提问槽位仅在「本 turn 锚定过
+                                // 提问」（effectiveAnchorId != null：活提问，或提问刚消失的
+                                // exit 动画窗——retainedAnchorId 保留）时才渲染。原无条件渲染
+                                // 的恒 visible=false 槽位是零高 AnimatedVisibility——外层
+                                // Column(spacedBy(sectionGap)) 对零高子项**照样计数**，每个
+                                // Single part 与下一元素之间多吃一档间距（真机定罪：卡↔正文
+                                // /跨 StepGroup 边界 44/43px=16dp vs 组内卡间 24-27px=8dp）。
+                                // 「#389 三轮c：空内容动画收起为 0 高度不再占 spacedBy 间距」
+                                // 的旧注释是对 Arrangement.spacedBy 语义的误解——0 高度子项
+                                // 仍是直接子项，两侧各计一档 spacing。
+                                // 已知残差：提问提交/忽略后 exit 播完，槽位零高常驻（锚
+                                // part 后单处双倍间距）——待 CardExpandReveal 暴露动画完成
+                                // 回调后随槽位一并移除。
+                                if (effectiveAnchorId != null) {
+                                    CardExpandReveal(
+                                        visible = qEntered && pendingQuestion != null &&
+                                            item.group.part.id == effectiveAnchorId,
                                     ) {
-                                        QuestionCard(
-                                            question = avQuestion,
-                                            onSubmit = { answers ->
-                                                onQuestionSubmit?.invoke(avQuestion.id, answers)
-                                            },
-                                            onReject = {
-                                                onQuestionReject?.invoke(avQuestion.id)
-                                            },
-                                            answersStore = questionAnswersCache,
-                                        )
+                                        val avQuestion = pendingQuestion ?: lastQuestion
+                                        if (avQuestion != null &&
+                                            item.group.part.id == effectiveAnchorId
+                                        ) {
+                                            QuestionCard(
+                                                question = avQuestion,
+                                                onSubmit = { answers ->
+                                                    onQuestionSubmit?.invoke(avQuestion.id, answers)
+                                                },
+                                                onReject = {
+                                                    onQuestionReject?.invoke(avQuestion.id)
+                                                },
+                                                answersStore = questionAnswersCache,
+                                            )
+                                        }
                                     }
+                                }
                                 }
                             }
                         }
                     }
+
+                    // #422:step 折叠组——流式 turn 恒平铺(跟随生成,DSH 同款时机);
+                    // 非流式走 StepGroupCard 折叠(最终回答=最后消息恒平铺,装配层保证);
+                    // 历史懒加载拆条目时本 item 由 Head/Body 条目承担,此处整体跳过
+                    is RenderItem.StepGroup -> key(item.msgId) {
+                        // [DEBUG-hflick] #437 十三轮仪器：流式平铺↔折叠组分支翻转探针。
+                        // 两分支内容树不同构（平铺=PartContent 直出；折叠=切片+账本+
+                        // heavyComposed 门控），互换即整树重测量——结构性高度跳变源。
+                        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                            val prevStreaming = HflickProbe.branchStates[item.msgId]
+                            if (prevStreaming != null && prevStreaming != isStreaming) {
+                                dev.leonardo.ocbeacon.logging.AppLogger.w(
+                                    "HFLICK",
+                                    "[DEBUG-hflick] BRANCH id=" + item.msgId.takeLast(12) +
+                                        " streaming " + prevStreaming + "->" + isStreaming +
+                                        " grp=" + item.groups.size,
+                                )
+                            }
+                            HflickProbe.putBranch(item.msgId, isStreaming)
+                        }
+                        if (skipStepGroupItem) {
+                            // 大组展开态:内容已拆为独立 LazyItem(见 buildChatEntries)
+                        } else if (isStreaming) {
+                            item.groups.forEachIndexed { gi, g ->
+                                // #463:step 边界(消息边界)插分割线+步序
+                                dev.leonardo.ocbeacon.ui.screens.chat.tools.stepDividerBefore(gi, item.stepStarts)
+                                    ?.let { ord -> StepDivider(ord) }
+                                val sp = (g as? PartGroup.Single)?.part
+                                if (sp != null) {
+                                    key(sp.id) {
+                                        PartContent(
+                                            part = sp,
+                                            textColor = textColor,
+                                            isUser = false,
+                                            onViewSubSession = onViewSubSession,
+                                            onOpenFile = onOpenFile,
+                                            asyncParse = false,
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            StepGroupCard(
+                                step = item,
+                                textColor = textColor,
+                                isAmoled = isAmoled,
+                                onViewSubSession = onViewSubSession,
+                                onOpenFile = onOpenFile,
+                                onLocateTask = onLocateTask,
+                                eventExpandedStates = eventExpandedStates,
+                                renderableTurn = renderableTurn,
+                                compact = compact,
+                                readinessRegistry = readinessRegistry,
+                            )
+                        }
+                    }
+                }
+            }
+
+            // #319（用户裁决：提问卡进主对话流）：DSH 0.1.2 waterfall 提问无
+            // tool/part 锚（questionAnchorPartId=null 且无 retained 锚）——气泡尾
+            // fallback 槽位：卡渲染在本 turn 内容之后、错误展示之前，与 OpenCode
+            // 锚定路径同一 QuestionCard 组件/动画语言（样式统一）；随消息流滚动。
+            CardExpandReveal(
+                visible = qEntered && pendingQuestion != null && effectiveAnchorId == null,
+            ) {
+                val avQuestion = pendingQuestion ?: lastQuestion
+                if (avQuestion != null) {
+                    QuestionCard(
+                        question = avQuestion,
+                        onSubmit = { answers ->
+                            onQuestionSubmit?.invoke(avQuestion.id, answers)
+                        },
+                        onReject = {
+                            onQuestionReject?.invoke(avQuestion.id)
+                        },
+                        answersStore = questionAnswersCache,
+                    )
                 }
             }
 
@@ -433,7 +520,7 @@ internal fun MessageCardAssistant(
                 }
             }
         }
-    }
+    // #410：详情弹窗装配随尾部单点（AssistantTurnTail）内移——主路径不再持有。
 }
 
 /**
@@ -449,7 +536,10 @@ private fun StreamingElapsedText(startMs: Long) {
     var elapsedText by remember { mutableStateOf("0s") }
     LaunchedEffect(startMs) {
         while (true) {
-            val elapsedMs = System.currentTimeMillis() - startMs
+            // #338：下限钳制 0——startMs 可能是服务器信封时刻（DSH created 腿），
+            // 设备钟慢于服务器时前 ~skew 窗口内差值为负（真机实证 -207ms 闪现）。
+            // 与 ReasoningBlock 计时器同款钳制（跨钟域差值不显示负数）。
+            val elapsedMs = (System.currentTimeMillis() - startMs).coerceAtLeast(0L)
             elapsedText = formatDuration(elapsedMs)
             delay(100)
         }
@@ -459,6 +549,56 @@ private fun StreamingElapsedText(startMs: Long) {
         style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT)
     )
+}
+
+/**
+ * #310② 消息反馈 👍/👎 轻量图标钮对（统计栏尾部动作位）。
+ *
+ * 已评态（current.rating 匹配）图标亮起（primary）；点击统一走
+ * onRate（未评→评／同向→撤销／换向→换向的裁决在
+ * [dev.leonardo.ocbeacon.ui.screens.chat.MessageFeedbackDelegate]）。仅已完结
+ * assistant 消息渲染（调用方门控）——不进入流式 turn 高度补偿。
+ */
+@Composable
+internal fun MessageFeedbackButtons(
+    current: dev.leonardo.ocbeacon.domain.model.MessageFeedbackItem?,
+    onRate: (dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating) -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        IconButton(
+            onClick = { onRate(dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating.Positive) },
+            modifier = Modifier.size(18.dp),
+        ) {
+            androidx.compose.material3.Icon(
+                imageVector = androidx.compose.material.icons.Icons.Filled.ThumbUp,
+                contentDescription = stringResource(R.string.chat_feedback_positive),
+                modifier = Modifier.size(14.dp),
+                tint = if (current?.rating == dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating.Positive) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.MUTED)
+                },
+            )
+        }
+        IconButton(
+            onClick = { onRate(dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating.Negative) },
+            modifier = Modifier.size(18.dp),
+        ) {
+            androidx.compose.material3.Icon(
+                imageVector = androidx.compose.material.icons.Icons.Filled.ThumbDown,
+                contentDescription = stringResource(R.string.chat_feedback_negative),
+                modifier = Modifier.size(14.dp),
+                tint = if (current?.rating == dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating.Negative) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.MUTED)
+                },
+            )
+        }
+    }
 }
 
 /**
@@ -491,11 +631,17 @@ internal fun ChunkedAssistantMessage(
     onLocateTask: ((String) -> Unit)?,
     /** #234：事件卡统一展开表。 */
     eventExpandedStates: MutableMap<String, Boolean>,
+    /** #310②：分片 turn 恒已完结——反馈动作位直接门控于回调非 null。 */
+    messageFeedback: dev.leonardo.ocbeacon.domain.model.MessageFeedbackItem? = null,
+    onRateMessage: ((dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating) -> Unit)? = null,
+    turnNumber: TurnNumber? = null,
+    onForkFromTurn: (() -> Unit)? = null,
+    onDeleteMessage: (() -> Unit)? = null,
+    caps: RowCapabilities? = null,
 ) {
     if (renderableTurn.isEmpty) return
     val compact = LocalChatDensity.current == ChatDensity.Compact
     val textColor = MaterialTheme.colorScheme.onSurface
-    val containerColor = MaterialTheme.colorScheme.surfaceVariant
     val readinessRegistry = LocalRenderReadiness.current
     val assistantMsg = currentMessage.message as? Message.Assistant
 
@@ -505,54 +651,30 @@ internal fun ChunkedAssistantMessage(
             ((item.group as PartGroup.Single).part.id == chunk.plan.partId)
     }
     val range = chunk.plan.ranges[chunk.chunkIndex]
-    val horizPad = if (compact) 10.dp else SpacingTokens.LG.dp
-    val vertPad = if (compact) SpacingTokens.SM.dp else 14.dp
 
-    // 分段 shape：首段顶圆角 / 中段直角 / 末段底圆角（12dp = ShapeTokens.medium）
-    val shape = when {
-        chunk.isFirst -> RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
-        chunk.isLast -> RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
-        else -> RoundedCornerShape(0.dp)
-    }
-
-    Surface(color = containerColor, shape = shape, modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(
-                start = horizPad, end = horizPad,
-                top = if (chunk.isFirst) vertPad else 0.dp,
-                bottom = if (chunk.isLast) vertPad else 0.dp,
-            ),
-        ) {
-            // ① 标签栏（仅首段）——与 MessageBubble 标签栏视觉一致
-            if (chunk.isFirst) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.padding(bottom = if (compact) SpacingTokens.XS.dp else 10.dp),
-                ) {
-                    Text(
-                        text = remember(currentMessage.message.time.created) {
-                            dev.leonardo.ocbeacon.util.DateFormatters.messageTimestamp(currentMessage.message.time.created)
-                        },
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
-                    )
-                    androidx.compose.material3.Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Filled.SmartToy,
-                        contentDescription = null,
-                        modifier = Modifier.size(13.dp),
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
-                    )
-                    Text(
-                        text = stringResource(R.string.chat_label_agent),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.MUTED),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                }
-            }
+    // 2026-09-12 扁平化：分片路径同样走三段式（首段头部 / 末段尾部），
+    // 去容器外观——三段式布局单点 = MessageSectionScaffold。
+    MessageSectionScaffold(
+        showTail = chunk.isLast,
+        tail = {
+            AssistantTurnTail(
+                renderableTurn = renderableTurn,
+                assistantMsg = assistantMsg,
+                isTurnLast = isTurnLast,
+                isStreaming = false,
+                agents = agents,
+                onAgentClick = onAgentClick,
+                onCopy = onCopy,
+                messageFeedback = messageFeedback,
+                onRateMessage = onRateMessage,
+                turnNumber = turnNumber,
+                onForkFromTurn = onForkFromTurn,
+                onDeleteMessage = onDeleteMessage,
+                onOpenFile = onOpenFile,
+                caps = caps,
+            )
+        },
+    ) {
             // ② 首段：巨型 part 之前的 renderItems（reasoning / 工具卡等）
             if (chunk.isFirst && targetIdx > 0) {
                 ChunkAssistantItems(
@@ -620,23 +742,14 @@ internal fun ChunkedAssistantMessage(
                         )
                     }
                 }
-                ChunkStatsBar(
-                    renderableTurn = renderableTurn,
-                    assistantMsg = assistantMsg,
-                    isTurnLast = isTurnLast,
-                    agents = agents,
-                    onAgentClick = onAgentClick,
-                    onCopy = onCopy,
-                )
             }
-        }
     }
 }
 
 /** 分片场景的 renderItems 渲染（复制自 MessageCardAssistant 主循环的精简版：
  *  无 pendingQuestion / 无 question 锚定——历史已完结 turn 不含待处理提问）。 */
 @Composable
-private fun ChunkAssistantItems(
+internal fun ChunkAssistantItems(
     items: List<RenderItem>,
     textColor: Color,
     isAmoled: Boolean,
@@ -674,6 +787,10 @@ private fun ChunkAssistantItems(
             }
             is RenderItem.RepeatingTool -> {
                 // #247：分片路径同款折叠渲染（分片 turn 恒非流式）
+                // #463 三轮:最后消息首组被折叠为首张时,线随首张首帧出现。
+                if (item.part.id == renderableTurn.lastStepDividerBeforePartId) {
+                    StepDivider(0)
+                }
                 key(item.part.id) {
                     Box {
                         PartContent(
@@ -710,7 +827,12 @@ private fun ChunkAssistantItems(
                         onOpenFile = onOpenFile ?: {},
                     )
                 }
-                is PartGroup.Single -> key(item.group.part.id) {
+                is PartGroup.Single -> {
+                    // #463 三轮:分片路径同款——最后消息首组分割线(身份匹配)。
+                    if (item.group.part.id == renderableTurn.lastStepDividerBeforePartId) {
+                        StepDivider(0)
+                    }
+                    key(item.group.part.id) {
                     val part = item.group.part
                     val preParsed = (part as? Part.Text)
                         ?.takeIf { it.text.length >= 200 && it.synthetic != true && it.ignored != true && !it.text.contains("User has answered") }
@@ -729,7 +851,36 @@ private fun ChunkAssistantItems(
                         asyncParse = true,
                         turnAgentName = if (part is Part.Tool && part.tool == "task") renderableTurn.taskAgentName else null,
                     )
+                    }
                 }
+            }
+            // #422:step 折叠组——递归复用本函数渲染 groups(不无限递归:StepGroup
+            // 在此解开为 GroupedParts 序列);分片 turn 恒非流式,无流式豁免
+            is RenderItem.StepGroup -> key(item.msgId) {
+                // [DEBUG-hflick] #437 十三轮仪器：分片路径 StepGroup 子树重建取证
+                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                    val prevStreaming = HflickProbe.branchStates[item.msgId]
+                    if (prevStreaming != null && prevStreaming != false) {
+                        dev.leonardo.ocbeacon.logging.AppLogger.w(
+                            "HFLICK",
+                            "[DEBUG-hflick] BRANCH(chunk) id=" + item.msgId.takeLast(12) +
+                                " streaming " + prevStreaming + "->false grp=" + item.groups.size,
+                        )
+                    }
+                    HflickProbe.putBranch(item.msgId, false)
+                }
+                StepGroupCard(
+                    step = item,
+                    textColor = textColor,
+                    isAmoled = isAmoled,
+                    onViewSubSession = onViewSubSession,
+                    onOpenFile = onOpenFile,
+                    onLocateTask = onLocateTask,
+                    eventExpandedStates = eventExpandedStates,
+                    renderableTurn = renderableTurn,
+                    compact = compact,
+                    readinessRegistry = readinessRegistry,
+                )
             }
         }
     }
@@ -757,11 +908,17 @@ internal fun SegmentedAssistantMessage(
     onLocateTask: ((String) -> Unit)?,
     /** #234：事件卡统一展开表。 */
     eventExpandedStates: MutableMap<String, Boolean>,
+    /** #310②：分段 turn 恒已完结——反馈动作位直接门控于回调非 null。 */
+    messageFeedback: dev.leonardo.ocbeacon.domain.model.MessageFeedbackItem? = null,
+    onRateMessage: ((dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating) -> Unit)? = null,
+    turnNumber: TurnNumber? = null,
+    onForkFromTurn: (() -> Unit)? = null,
+    onDeleteMessage: (() -> Unit)? = null,
+    caps: RowCapabilities? = null,
 ) {
     if (renderableTurn.isEmpty) return
     val compact = LocalChatDensity.current == ChatDensity.Compact
     val textColor = MaterialTheme.colorScheme.onSurface
-    val containerColor = MaterialTheme.colorScheme.surfaceVariant
     val readinessRegistry = LocalRenderReadiness.current
     val assistantMsg = currentMessage.message as? Message.Assistant
 
@@ -777,52 +934,29 @@ internal fun SegmentedAssistantMessage(
         }
         acc += seg.chunkCount
     }
-    val horizPad = if (compact) 10.dp else SpacingTokens.LG.dp
-    val vertPad = if (compact) SpacingTokens.SM.dp else 14.dp
-    val shape = when {
-        chunk.isFirst -> RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
-        chunk.isLast -> RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
-        else -> RoundedCornerShape(0.dp)
-    }
-
-    Surface(color = containerColor, shape = shape, modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(
-                start = horizPad, end = horizPad,
-                top = if (chunk.isFirst) vertPad else 0.dp,
-                bottom = if (chunk.isLast) vertPad else 0.dp,
-            ),
-        ) {
-            // ① 标签栏（仅首段）——与 ChunkedAssistantMessage 视觉一致
-            if (chunk.isFirst) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.padding(bottom = if (compact) SpacingTokens.XS.dp else 10.dp),
-                ) {
-                    Text(
-                        text = remember(currentMessage.message.time.created) {
-                            dev.leonardo.ocbeacon.util.DateFormatters.messageTimestamp(currentMessage.message.time.created)
-                        },
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
-                    )
-                    androidx.compose.material3.Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Filled.SmartToy,
-                        contentDescription = null,
-                        modifier = Modifier.size(13.dp),
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
-                    )
-                    Text(
-                        text = stringResource(R.string.chat_label_agent),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.MUTED),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                }
-            }
+    // 2026-09-12 扁平化：分段路径同样走三段式（首段头部 / 末段尾部），
+    // 去容器外观——三段式布局单点 = MessageSectionScaffold。
+    MessageSectionScaffold(
+        showTail = chunk.isLast,
+        tail = {
+            AssistantTurnTail(
+                renderableTurn = renderableTurn,
+                assistantMsg = assistantMsg,
+                isTurnLast = isTurnLast,
+                isStreaming = false,
+                agents = agents,
+                onAgentClick = onAgentClick,
+                onCopy = onCopy,
+                messageFeedback = messageFeedback,
+                onRateMessage = onRateMessage,
+                turnNumber = turnNumber,
+                onForkFromTurn = onForkFromTurn,
+                onDeleteMessage = onDeleteMessage,
+                onOpenFile = onOpenFile,
+                caps = caps,
+            )
+        },
+    ) {
             // ② 段主体
             when (val seg = segment) {
                 is TurnSegmentPlan.Segment.Items -> {
@@ -875,89 +1009,578 @@ internal fun SegmentedAssistantMessage(
                         )
                     }
                 }
-                ChunkStatsBar(
-                    renderableTurn = renderableTurn,
-                    assistantMsg = assistantMsg,
-                    isTurnLast = isTurnLast,
-                    agents = agents,
-                    onAgentClick = onAgentClick,
-                    onCopy = onCopy,
-                )
             }
-        }
     }
 }
 
-/** 分片场景统计栏（历史消息：isStreaming=false 恒成立）。 */
+/**
+ * #410：助手消息尾部统计栏**单点**——主路径与分片 / 分段路径共用一份语义
+ * （此前主路径 statsBar 与 ChunkStatsBar 约 120 行同构，评审 S1）。
+ *
+ * 信息簇：状态徽标（v2 尾部化）→ 逐消息 agent 标签 → provider·模型 → 耗时
+ * （流式实时 ticker / 完成固定）→ 步数·工具摘要（US#14 历史轮展开）；动作簇：
+ * 复制 + 「详情」入口（时间 / 低频动作在 [MessageDetailDialog]）。产出行流式
+ * 完结门控（SSE 铁律）与详情弹窗装配都在本单点内。
+ */
 @Composable
-private fun ChunkStatsBar(
+private fun AssistantTurnTail(
     renderableTurn: RenderableTurn,
     assistantMsg: Message.Assistant?,
     isTurnLast: Boolean,
+    isStreaming: Boolean,
     agents: List<AgentInfo>,
     onAgentClick: ((String) -> Unit)?,
     onCopy: (() -> Unit)?,
+    messageFeedback: dev.leonardo.ocbeacon.domain.model.MessageFeedbackItem? = null,
+    onRateMessage: ((dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating) -> Unit)? = null,
+    turnNumber: TurnNumber? = null,
+    onForkFromTurn: (() -> Unit)? = null,
+    onDeleteMessage: (() -> Unit)? = null,
+    onOpenFile: ((String) -> Unit)? = null,
+    caps: RowCapabilities? = null,
 ) {
-    val agentName = renderableTurn.agentName
+    val hapticView = LocalView.current
+    val hapticOn = LocalHapticFeedbackEnabled.current
     val copyText = renderableTurn.copyText
     val modelId = renderableTurn.modelId
     val durationMs = renderableTurn.durationMs
-    val hasFooter = (durationMs ?: 0) > 0 || !modelId.isNullOrBlank() || !agentName.isNullOrBlank()
-    if (!hasFooter && !(copyText != null && isTurnLast)) return
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(SpacingTokens.SM.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val ledger = turnLedgerSummary(renderableTurn, turnNumber?.value ?: 0)
+    val toolCallCount = ledger.toolCallCount
+    val tailModel = messageRowTail(
+        turn = renderableTurn,
+        ledger = ledger,
+        turnNumber = turnNumber,
+        userMessage = null,
+        caps = caps ?: RowCapabilities.NONE,
+        isStreaming = isStreaming,
+        hasCopy = copyText != null && onCopy != null,
+        hasRevert = false,
+        hasJump = onForkFromTurn != null,
+        hasFeedbackSheetItem = onRateMessage != null,
+        hasDeleteSheetItem = onDeleteMessage != null,
+        hasMarkdownCopySheetItem = copyText != null,
+        providerId = assistantMsg?.providerId,
+    )
+    var showDetailDialog by remember { mutableStateOf(false) }
+    val moreClipboard = LocalClipboard.current
+    val moreScope = rememberCoroutineScope()
+    // US#14：最新轮尾部常显；历史轮默认收起、点击 chevron 展开（产出文件行
+    // 随之显隐；步/工具摘要文本已按 2026-09-27 用户裁决移除）。
+    var tailExpandedOverride by remember { mutableStateOf<Boolean?>(null) }
+    val tailExpanded = tailExpandedOverride ?: isTurnLast
+    val statusBadge = statusBadgeFor(
+        isStreaming = isStreaming,
+        finish = assistantMsg?.finish,
+        hasError = assistantMsg?.error != null,
+    )
+    // 耗时：流式 = 实时 ticker（独立子 composable，重组只限单个 Text，#47）；
+    // 完成 = 固定时长。
+    val startMs = renderableTurn.turnStartMs ?: assistantMsg?.time?.created
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
     ) {
-        if (!agentName.isNullOrBlank()) {
-            AgentTag(agent = agentName, tagColor = agentColor(agentName, agents), onClick = { onAgentClick?.invoke(agentName) })
-        }
-        val hasProviderOrModel = assistantMsg?.providerId != null || !modelId.isNullOrBlank()
-        if (hasProviderOrModel) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                if (assistantMsg?.providerId != null) {
-                    ProviderIcon(
-                        providerId = assistantMsg.providerId,
-                        size = 10.dp,
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
-                    )
-                }
-                if (!modelId.isNullOrBlank()) {
-                    Text(
-                        text = modelId,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                // #455（2026-09-27 用户裁决）：统计栏行高与 user 侧外置统计栏
+                // （UserBubbleExternalActions 的 28dp 图标命中区）严格等高。
+                .heightIn(min = 28.dp),
+            horizontalArrangement = Arrangement.spacedBy(SpacingTokens.SM.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // ① 状态徽标（v2：从头部迁到尾部信息簇首位；完成态不渲染）。
+            //    流式态徽标亦不渲染——统计栏空间紧张，进行中语义由右缘三点
+            //    loading 承担（2026-09-27 用户裁决）；中断/出错仍常显。
+            if (statusBadge != null && statusBadge != MessageStatusBadge.STREAMING) {
+                MessageStatusBadgeLabel(statusBadge)
+            }
+            // ② 逐消息 agent 标签（v2：OpenCode 逐消息 agent；DSH 恒 null → 走会话级）
+            val tailAgent = tailModel.agentName
+            if (!tailAgent.isNullOrBlank()) {
+                AgentTag(
+                    agent = tailAgent,
+                    tagColor = agentColor(tailAgent, agents),
+                    onClick = onAgentClick?.let { cb -> { cb(tailAgent) } },
+                )
+            }
+            // ③ 提供商图标 + 模型名
+            val hasProviderOrModel = assistantMsg?.providerId != null || !modelId.isNullOrBlank()
+            if (hasProviderOrModel) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    if (assistantMsg?.providerId != null) {
+                        ProviderIcon(
+                            providerId = assistantMsg.providerId,
+                            size = 10.dp,
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT)
+                        )
+                    }
+                    if (!modelId.isNullOrBlank()) {
+                        Text(
+                            text = modelId,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
+            // ④ 耗时（流式 = 实时 ticker 子 composable；完成 = 固定）
+            if (isStreaming && startMs != null) {
+                StreamingElapsedText(startMs)
+            } else if (!isStreaming && (durationMs ?: 0L) > 0) {
+                Text(
+                    text = formatDuration(durationMs!!),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT)
+                )
+            }
+            // ⑤ US#14 历史轮产出文件展开入口。2026-09-27 用户裁决：步/工具
+            //    计数文本移除（统计栏空间紧张）；仅保留裸 chevron，且只在历史
+            //    轮、步骤完结且确有产出文件时出现（无文件=无展开语义=不占位）。
+            if (!isTurnLast && renderableTurn.allStepsCompleted && tailModel.producedFiles.isNotEmpty()) {
+                Icon(
+                    imageVector = if (tailExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = stringResource(
+                        if (tailExpanded) R.string.chat_turn_ledger_collapse
+                        else R.string.chat_turn_ledger_expand,
+                    ),
+                    modifier = Modifier
+                        .size(14.dp)
+                        .clip(ShapeTokens.small)
+                        .clickable(
+                            onClickLabel = stringResource(
+                                if (tailExpanded) R.string.chat_turn_ledger_collapse
+                                else R.string.chat_turn_ledger_expand,
+                            ),
+                        ) {
+                            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                dev.leonardo.ocbeacon.logging.AppLogger.d(
+                                    "SGB",
+                                    "TAILCLICK turn=" + turnNumber + " tailExpanded=" + tailExpanded,
+                                )
+                            }
+                            tailExpandedOverride = !tailExpanded
+                        },
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
+                )
+            }
+            if (!isStreaming && renderableTurn.completedTimeMs != null) {
+                Text(
+                    text = remember(renderableTurn.completedTimeMs) {
+                        DateFormatters.turnCompletionTimestamp(renderableTurn.completedTimeMs)
+                    },
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
+                )
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            // ⑥⑦ 右缘操作区（2026-09-27 用户裁决）：流式态 = 三点动态 loading，
+            //    复制/详情按钮不渲染（空间紧张，进行中语义由 loading 承担）；
+            //    流式完毕恢复常驻复制 + 详情。
+            if (isStreaming) {
+                StreamingDotsIndicator()
+            } else {
+                // ⑥ 复制常显（US#9）
+                if (copyText != null && onCopy != null) {
+                    CopyButton(
+                        text = copyText,
+                        modifier = Modifier.size(14.dp),
+                        onCopied = onCopy
+                    )
+                }
+                // ⑦ 「详情」入口（v2：取代「更多」溢出菜单；每条角色消息常驻）
+                androidx.compose.material3.Icon(
+                    imageVector = Icons.Outlined.Info,
+                    contentDescription = stringResource(R.string.a11y_message_detail),
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable {
+                            performHaptic(hapticView, hapticOn)
+                            showDetailDialog = true
+                        },
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
+                )
+            }
         }
-        if ((durationMs ?: 0L) > 0) {
-            Text(
-                text = formatDuration(durationMs!!),
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
+        // 产出行：SSE 铁律——仅在轮完结后挂载（流式中途写类工具完成即非空 → 脚部高度突变）
+        if (tailExpanded && renderableTurn.allStepsCompleted && tailModel.producedFiles.isNotEmpty()) {
+            ProducedFilesRow(
+                files = renderableTurn.deliverableFiles,
+                onOpenFile = onOpenFile,
             )
         }
-        // 完成时刻（2026-09-17，对齐 opencode TUI turn-summary 时间戳补丁）。
-        if (renderableTurn.completedTimeMs != null) {
-            Text(
-                text = remember(renderableTurn.completedTimeMs) {
-                    DateFormatters.turnCompletionTimestamp(renderableTurn.completedTimeMs)
-                },
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
+    }
+
+    // 消息详情弹窗（v2：US#13/#45）
+    if (showDetailDialog) {
+        MessageDetailDialog(
+            input = MessageDetailInput(
+                isUser = false,
+                timeMs = assistantMsg?.time?.created ?: 0L,
+                agentName = renderableTurn.agentName,
+                providerId = assistantMsg?.providerId,
+                modelId = renderableTurn.modelId,
+                durationMs = renderableTurn.durationMs,
+                stepCount = renderableTurn.stepCount,
+                toolCallCount = toolCallCount,
+                tokensTotal = ledger.tokensTotal,
+                cost = assistantMsg?.cost,
+            ),
+            feedback = messageFeedback,
+            onRate = onRateMessage,
+            onCopyMarkdownSource = copyText?.let { src ->
+                {
+                    moreScope.launch {
+                        moreClipboard.copyToClipboard("copy", src)
+                        onCopy?.invoke()
+                    }
+                }
+            },
+            onForkFromTurn = onForkFromTurn,
+            onDelete = onDeleteMessage,
+            onDismiss = { showDetailDialog = false },
+        )
+    }
+}
+
+
+/**
+ * #422 折叠组展开表 key(单一真相源):「step_」前缀与 part id 不冲突
+ * (MessageCardAssistant/ChatMessageList 三消费方共用,防手拼漂移断链)。
+ */
+internal fun stepGroupStateKey(msgId: String): String = "step_" + msgId
+
+/** #423 批次七:折叠行位置上报(结构裂变重锚的实测源)。key=stateKey。 */
+internal val LocalFoldRowYReport = staticCompositionLocalOf<((String, Float) -> Unit)?> { null }
+
+/** #423 批次七:折叠行点击快照钩(toggle 瞬间冻结点击行屏位,供重建后重锚)。 */
+internal val LocalFoldRowClick = staticCompositionLocalOf<((String) -> Unit)?> { null }
+
+/**
+ * #422 折叠组计数行(共享组件):Layers 图标 + 「N 步 · M 个工具」,点击 toggle
+ * 展开态。StepGroupCard(小组动画路径)与 ChatEntry.StepGroupHead 条目
+ * (大组懒加载路径)共用——同一交互入口。
+ */
+@Composable
+internal fun StepGroupFoldRow(
+    step: RenderItem.StepGroup,
+    modifier: Modifier = Modifier,
+    /** #423 批次七:#sgt 尾行不参与重锚(与 #sgh 同 stateKey,防 60px 歧义)。 */
+    pinEligible: Boolean = true,
+    /**
+     * #429:展开集高度计算期——true 时层叠图标换小 spinner(loading 过渡,
+     * 用户裁决 2026-09-24;计算期=点击→Phase A 落地,幕布接续)。
+     */
+    expanding: Boolean = false,
+) {
+    val onToggleToolExpanded = LocalOnToggleToolExpanded.current
+    val hapticView = LocalView.current
+    val hapticOn = LocalHapticFeedbackEnabled.current
+    val stateKey = stepGroupStateKey(step.msgId)
+    val expanded = toolExpandedOrDefault(stateKey)
+    // #429:计算期 spinner——本参(小组卡内路径)或共享表命中(大组外层行)皆显示
+    val computingShared = dev.leonardo.ocbeacon.ui.screens.chat.util.LocalStepGroupComputing.current
+    val showComputing = expanding || (computingShared.value[stateKey] == true)
+    val reportY = LocalFoldRowYReport.current
+    val clickHook = LocalFoldRowClick.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .onGloballyPositioned {
+                // 批次七:逐放置上报屏位(常态每布局一次,零日志;重锚消费)
+                if (pinEligible) reportY?.invoke(stateKey, it.positionInRoot().y)
+            }
+            .clickable {
+                clickHook?.invoke(stateKey)
+                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                    dev.leonardo.ocbeacon.logging.AppLogger.d(
+                        "SGB",
+                        "CLICK key=" + stateKey.takeLast(12) + " expanded=" + expanded +
+                            " steps=" + step.textCount + " tools=" + step.toolCount,
+                    )
+                }
+                performHaptic(hapticView, hapticOn)
+                // 第二参=「未被 toggle 过时的默认态」(委托语义 !(map[id] ?: default)),
+                // 非期望下一态。传 !expanded 会让收起态首点写入 false = 静默无效
+                // (真机取证:click 日志在、toggle 写入 false、无 SGBODY/episode,
+                // 每组每冷启首点必哑——用户观感「点了没反应/加载慢」)。
+                onToggleToolExpanded(stateKey, expanded)
+            },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
+    ) {
+        if (showComputing) {
+            // #429:loading 过渡——高度计算期(先算后展)的可见反馈
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Default.Layers,
+                contentDescription = stringResource(if (expanded) R.string.a11y_icon_collapse else R.string.a11y_icon_expand),
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.MUTED),
             )
         }
-        Spacer(modifier = Modifier.weight(1f))
-        if (copyText != null) {
-            CopyButton(text = copyText, modifier = Modifier.size(14.dp), onCopied = onCopy)
+        Text(
+            text = stringResource(R.string.chat_msg_tail_summary, step.textCount.coerceAtLeast(1), step.toolCount),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.MUTED),
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * #463(2026-09-29 用户提案→二轮简化):turn 内 step 边界分割线——React 密集
+ * 轮次的步间视觉分隔。用户裁决(验收二轮):不要「第 x 步」序号,只留简单
+ * 分割线(消息边界=step 边界,#422 既有语义);首 step 不插(turn 开始处)。
+ */
+@Composable
+private fun StepDivider(stepOrdinal: Int) {
+    HorizontalDivider(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = AlphaTokens.FAINT),
+    )
+}
+
+/**
+ * #422 step 过程组卡——**#430(2026-09-24 用户裁决)过程卡片退役**:折叠行与
+ * CardExpandReveal 包裹撤除,过程内容(思考/工具/文本 parts)默认全展示。
+ * 流式 turn 的平铺路径(见 AssistantMessageCard 分支)语义不变;大组仍走
+ * 切片+窗口化(视口±1 屏才组合,成本与总高无关)+片高账本(跨回收存活)。
+ * 高度设置引擎本体不动——PartContent 折叠族(工具卡/推理块)继续使用。
+ */
+@Composable
+private fun StepGroupCard(
+    step: RenderItem.StepGroup,
+    textColor: Color,
+    isAmoled: Boolean,
+    onViewSubSession: ((String) -> Unit)?,
+    onOpenFile: ((String) -> Unit)?,
+    onLocateTask: ((String) -> Unit)?,
+    eventExpandedStates: MutableMap<String, Boolean>,
+    renderableTurn: RenderableTurn,
+    compact: Boolean,
+    readinessRegistry: RenderReadinessRegistry,
+) {
+    // #427 P3:切片表+片高账本提升到卡体(卡体常驻,账本跨回收存活)。
+    // #463:step 首组 part id → 序号——窗口化分支分割线定位(片内组与全局
+    // 索引因 splitHeavyTextPart 展开而错位,按身份匹配;split 派生段 #sgN
+    // 不在 map=正确不插;Context 组无单一 part id=罕见边界不插)。
+    val stepFirstGroupIds = androidx.compose.runtime.remember(step.groups, step.stepStarts) {
+        step.stepStarts.mapIndexedNotNull { ord, gi ->
+            (step.groups.getOrNull(gi) as? PartGroup.Single)?.part?.id?.let { it to (ord + 1) }
+        }.toMap()
+    }
+    val stepSlices = androidx.compose.runtime.remember(step.groups) {
+        sliceStepGroupBodies(step.groups)
+    }
+    val stepFingerprints = androidx.compose.runtime.remember(stepSlices) {
+        stepSlices.map { sliceFingerprint(it) }
+    }
+    val stepNeedsSlicing = androidx.compose.runtime.remember(step.groups) {
+        stepGroupNeedsSlicing(step.groups)
+    }
+    val stepLedger = rememberStepGroupLedger(step.msgId)
+    // #427 竞态修复:重内容门控上提卡体——原在 fraction 门控内容内,收起离树
+    // 即弃置,预热/重展开重入时 Spacer(63px) 首帧与真实内容互换=单帧弹跳
+    // (用户「收起后上推再弹回」成分之一);上提后卡存期内恒真,重入即真实内容
+    // (账本暖时展开即时,占位使命已由账本接管)。
+    // #437 验收十三轮根修一：门控键撤除 step.msgId——组重派生（分页截断/REST
+    // 刷新/回合结束换装）改变组首消息 id 时，remember(msgId){false} 会把数千
+    // px 组体打回桩一帧再逐帧长回（真机 RESIZE 4958→774→5648 塌缩-弹开实证，
+    // 2026-09-26 日志 /tmp/flicker-logcat）。子树存续期间恒保持已组合；子树
+    // 重建（key 变更/分支互换）由账本 Σ 桩高兜底（见下方桩分支根修二）。
+    var heavyComposed by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(false)
+    }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        androidx.compose.runtime.withFrameNanos { }
+        heavyComposed = true
+    }
+    // [DEBUG-hflick] #437 十三轮仪器：组身份/账本/门控取证（grep HFLICK 定位/清理）。
+    // fresh=子树重建（分支互换/key 变更）；old->new=同子树内身份漂移。
+    val hflickPrevId = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+        val idNow = step.msgId
+        if (hflickPrevId.value != idNow) {
+            dev.leonardo.ocbeacon.logging.AppLogger.w(
+                "HFLICK",
+                "[DEBUG-hflick] STEP id " + (hflickPrevId.value?.takeLast(12) ?: "fresh") + "->" + idNow.takeLast(12) +
+                    " grp=" + step.groups.size + " slices=" + stepSlices.size +
+                    " warm=" + stepLedger.isWarm(stepFingerprints) + " heavy=" + heavyComposed +
+                    " ledgerTotal=" + stepLedger.totalHeight(stepFingerprints),
+            )
+            hflickPrevId.value = idNow
+        }
+    }
+    // #430(用户裁决 2026-09-24):过程卡片退役——过程内容默认全展示,不再经
+    // 折叠行/CardExpandReveal 展开。理由:大内容原地展开的组合成本(36k px
+    // ≈1.6s 冻结)不随位移配对改善,分批只是把冻结拆段;默认展示=滚动接近时
+    // 才组合(窗口化),无展开动作=无瞬态。高度设置引擎本身不动(PartContent
+    // 折叠族仍在用);切片/账本/重组门全保留——它们管的是"接近时才付钱"。
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
+    ) {
+                if (!heavyComposed) {
+                    // #437 验收十三轮根修二：桩帧高度 = 账本 Σ+片间距（全暖时），
+                    // 与 StepGroupWindowedBody 总高累加式逐像素对齐——分支互换/
+                    // 子树重建的首帧不再塌到 24dp 固定桩（RESIZE 4958→774 的 774
+                    // 帧即旧桩+气泡 chrome）。全冷（真首组合，通常屏外预取）才
+                    // 退 24dp。
+                    val stubPx = stubHeightPx(
+                        ledger = stepLedger,
+                        fingerprints = stepFingerprints,
+                        sliceCount = stepSlices.size,
+                        spacingPx = with(androidx.compose.ui.platform.LocalDensity.current) {
+                            SpacingTokens.XS.dp.roundToPx()
+                        },
+                    )
+                    Spacer(
+                        modifier = Modifier.fillMaxWidth().height(
+                            if (stubPx != null) {
+                                with(androidx.compose.ui.platform.LocalDensity.current) { stubPx.toDp() }
+                            } else {
+                                24.dp
+                            },
+                        ),
+                    )
+                } else if (!stepNeedsSlicing) {
+                // #463:小组直渲染——step 边界(消息边界)插分割线+步序
+                step.groups.forEachIndexed { gi, g ->
+                    dev.leonardo.ocbeacon.ui.screens.chat.tools.stepDividerBefore(gi, step.stepStarts)
+                        ?.let { ord -> StepDivider(ord) }
+                    ChunkAssistantItems(
+                        items = listOf(RenderItem.GroupedParts(g)),
+                        textColor = textColor,
+                        isAmoled = isAmoled,
+                        onViewSubSession = onViewSubSession,
+                        onOpenFile = onOpenFile,
+                        onLocateTask = onLocateTask,
+                        eventExpandedStates = eventExpandedStates,
+                        renderableTurn = renderableTurn,
+                        compact = compact,
+                        readinessRegistry = readinessRegistry,
+                    )
+                }
+                } else {
+                // #427 P3:大组切片+窗口化——组合成本与「视口±1 屏」成正比、
+                // 与内容总高无关(展开 ε 组合/收起弃树都只付窗口内的钱);片高
+                // 空闲预量入账本,总高=Σ片高对引擎透明(lastMeasuredH 即 Σ)。
+                // 小组路径(上方分支)零改动——spec 用户故事 8。切片/账本在卡体
+                // 上方已备,此处仅建窗口规格(捕获卡体级实例,收起后存活)。
+                val spec = androidx.compose.runtime.remember(stepFingerprints, stepLedger) {
+                    StepGroupWindowSpec(
+                        sliceCount = stepSlices.size,
+                        heightOf = { i -> stepLedger.heightOf(stepFingerprints[i]) },
+                        isWarm = { stepLedger.isWarm(stepFingerprints) },
+                        onMeasured = { i, h, w ->
+                            stepLedger.record(w, stepFingerprints[i], h)
+                            stepLedger.prune(stepFingerprints)
+                        },
+                    )
+                }
+                StepGroupWindowedBody(spec = spec) { i ->
+                    // #463:片内逐组渲染——step 首组(按 part id 匹配)前插分割线
+                    stepSlices[i].forEach { g ->
+                        (g as? PartGroup.Single)?.part?.id
+                            ?.let { stepFirstGroupIds[it] }
+                            ?.let { ord -> StepDivider(ord) }
+                        ChunkAssistantItems(
+                            items = listOf(RenderItem.GroupedParts(g)),
+                            textColor = textColor,
+                            isAmoled = isAmoled,
+                            onViewSubSession = onViewSubSession,
+                            onOpenFile = onOpenFile,
+                            onLocateTask = onLocateTask,
+                            eventExpandedStates = eventExpandedStates,
+                            renderableTurn = renderableTurn,
+                            compact = compact,
+                            readinessRegistry = readinessRegistry,
+                        )
+                    }
+                }
+    }
+    }
+}
+
+/**
+ * #427:片高账本随卡持久化——条目回收/滚动离屏后二次展开账本即热(零等待,
+ * spec 用户故事 4)。
+ * #437 验收十三轮根修三：rememberSaveable("sg_ledger_"+msgId) 在
+ * key(item.msgId) 子树重建或流式/折叠分支互换时整本蒸发（saveable 只跨
+ * 配置变更/进程死亡恢复，不跨分支互换）→ 冷账本 → Σ 桩缺失+多帧重测爬升。
+ * 改挂进程级 LRU 店 [StepGroupLedgerStore]——分支互换/回收/组重派生全存活。
+ */
+@Composable
+private fun rememberStepGroupLedger(msgId: String): StepGroupHeightLedger =
+    androidx.compose.runtime.remember(msgId) { StepGroupLedgerStore.getOrCreate(msgId) }
+
+/**
+ * [DEBUG-hflick] #437 十三轮：高度闪烁取证探针数据面（grep HFLICK 定位/清理）。
+ * 进程级 map，容量封顶防膨胀；DEBUG 专用，release 由调用点 BuildConfig 门控。
+ */
+internal object HflickProbe {
+    private const val CAP = 256
+    private val branch = HashMap<String, Boolean>()
+
+    fun putBranch(id: String, streaming: Boolean) {
+        if (branch.size >= CAP && !branch.containsKey(id)) branch.remove(branch.keys.first())
+        branch[id] = streaming
+    }
+
+    val branchStates: Map<String, Boolean> get() = branch
+}
+
+/** 三点 loading 行波周期（ms）。呼吸 800ms 过快，行波序列取 1200ms 更接近
+ *  常见输入指示器节奏。 */
+private const val STREAMING_DOTS_CYCLE_MS = 1200
+
+/**
+ * 三点动态 loading 指示器（2026-09-27 用户裁决）：流式态右缘占位，取代
+ * 复制/详情按钮。正弦行波相位逐点错开 1/3 周期，alpha 基线 0.25 → 峰值 1.0；
+ * 纯 rememberInfiniteTransition 驱动（无额外依赖库，SSE 铁律无关——不触碰
+ * 滚动/高度管线）。
+ */
+@Composable
+private fun StreamingDotsIndicator(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "streamingDots")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2.0 * Math.PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = STREAMING_DOTS_CYCLE_MS, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "streamingDotPhase",
+    )
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(3) { index ->
+            val offset = (index / 3f) * (2.0 * Math.PI).toFloat()
+            val wave = 0.5f + 0.5f * sin(phase - offset)
+            Box(
+                modifier = Modifier
+                    .size(3.5.dp)
+                    .alpha(0.25f + 0.75f * wave)
+                    .background(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        shape = CircleShape,
+                    ),
+            )
         }
     }
 }

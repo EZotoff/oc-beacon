@@ -11,13 +11,24 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.leonardo.ocbeacon.domain.model.AgentInfo
+import dev.leonardo.ocbeacon.domain.model.DshCustomProviderDraft
+import dev.leonardo.ocbeacon.domain.model.DshDiscoveredModel
+import dev.leonardo.ocbeacon.domain.model.DshProviderDirectoryEntry
 import dev.leonardo.ocbeacon.domain.model.GlobalConfig
 import dev.leonardo.ocbeacon.domain.model.GlobalConfigPatch
 import dev.leonardo.ocbeacon.domain.model.ModelCatalog
 import dev.leonardo.ocbeacon.domain.model.ProviderAuthMethod
 import dev.leonardo.ocbeacon.domain.model.ProviderCatalog
 import dev.leonardo.ocbeacon.domain.model.ProviderOauthAuthorization
+import dev.leonardo.ocbeacon.domain.model.ServerConfig
+import dev.leonardo.ocbeacon.domain.model.ServerCapabilities
+import dev.leonardo.ocbeacon.domain.model.ServerConnection
+import dev.leonardo.ocbeacon.domain.model.ServerFeatures
+import dev.leonardo.ocbeacon.domain.model.ServerUiSlot
+import dev.leonardo.ocbeacon.domain.adapter.ServerAdapterResolver
 import dev.leonardo.ocbeacon.domain.repository.AgentRepository
+import dev.leonardo.ocbeacon.domain.repository.DshSettingsForbiddenException
+import dev.leonardo.ocbeacon.domain.repository.ServerSettingsRepository
 import dev.leonardo.ocbeacon.domain.repository.ProviderRepository
 import dev.leonardo.ocbeacon.domain.repository.ServerConfigRepository
 import dev.leonardo.ocbeacon.domain.repository.SettingsRepository
@@ -45,7 +56,15 @@ data class ServerSettingsUiState(
     val pendingOauth: PendingOauth? = null,
     val isSaving: Boolean = false,
     val isLoading: Boolean = true,
-    val error: String? = null
+    val error: String? = null,
+    // ============ #324① DSH provider 目录/自定义增删 ============
+    /** DSH 专属区块显隐（V1/V2 走既有 auth 管理）。 */
+    val dshDirectory: List<DshProviderDirectoryEntry> = emptyList(),
+    val dshDirectoryLoading: Boolean = false,
+    /** DSH 目录/CRUD 失败提示（含 loopback 403 标注）；null = 无错。 */
+    val dshProviderError: String? = null,
+    /** settings.* 特权面 403 → 目录只读（创建/删除入口禁用 + 标注）。 */
+    val dshSettingsBlocked: Boolean = false,
 )
 
 data class PendingOauth(
@@ -89,7 +108,12 @@ class ServerSettingsViewModel @Inject constructor(
     private val providerRepository: ProviderRepository,
     private val agentRepository: AgentRepository,
     private val settingsRepository: SettingsRepository,
-    private val serverConfigRepository: ServerConfigRepository) : ViewModel() {
+    private val serverConfigRepository: ServerConfigRepository,
+    // #324①：DSH provider 目录/凭据/自定义增删（仅 DSH 连接使用）
+    private val serverSettingsRepository: ServerSettingsRepository,
+    /** #391：能力位唯一来源（适配器解析器）。 */
+    private val serverAdapters: ServerAdapterResolver,
+) : ViewModel() {
 
     private companion object {
         /** #134（D2-L36）：初始加载源数量（config + hidden + providers + config + agents + authMethods）。 */
@@ -100,9 +124,19 @@ class ServerSettingsViewModel @Inject constructor(
         savedStateHandle.get<String>("serverId") ?: ""
     )
     private var serverDisplayName: String = ""
+    /** #324①：DSH 连接配置缓存（conn 构建 + 能力位门控）。 */
+    private var serverConfig: ServerConfig? = null
     /** 服务器 API 版本（V2 配置只读——PATCH /api/config 404，见 backlog #85）。init 时从 ServerConfig 读取。 */
     // #172：配置可写能力位（V2 只读 #85）——版本比较收编进 ServerCapabilities
     private var configEditable = true
+
+    /** #391 切片5：能力位流——插槽贡献按能力过滤，界面不读服务器类型。 */
+    private val _serverCapabilities = MutableStateFlow(serverAdapters.defaultCapabilities())
+    val serverCapabilities: StateFlow<ServerCapabilities> = _serverCapabilities.asStateFlow()
+
+    /** #391 切片5：该服务器类型声明的界面插槽集合——通用屏幕按声明渲染，未声明即不渲染。 */
+    private val _uiSlots = MutableStateFlow<Set<ServerUiSlot>>(emptySet())
+    val uiSlots: StateFlow<Set<ServerUiSlot>> = _uiSlots.asStateFlow()
 
     private val _allProviders = MutableStateFlow<List<ProviderCatalog>>(emptyList())
     private val _providerCatalog = MutableStateFlow<List<ProviderCatalog>>(emptyList())
@@ -126,9 +160,16 @@ class ServerSettingsViewModel @Inject constructor(
             val config = serverConfigRepository.getServer(serverId)
             if (config != null) {
                 serverDisplayName = config.displayName
-                // #276：能力位带 serverType 维度（DSH settings 特权面不开放 UI）
-                configEditable = dev.leonardo.ocbeacon.domain.model.ServerCapabilities.of(config.serverType, config.apiVersion).configEditable
+                // #276/#391：能力位带 serverType 维度（DSH settings 特权面不开放 UI）
+                _serverCapabilities.value = serverAdapters.capabilities(ServerConnection.from(config))
+                _uiSlots.value = serverAdapters.uiSlots(ServerConnection.from(config))
+                configEditable = _serverCapabilities.value.coreFlags.configEditable
                 _uiState.update { it.copy(serverName = serverDisplayName) }
+                // #391 切片5：私有提供商目录按能力位加载（端口缺席即不加载，不读服务器类型）
+                if (ServerFeatures.SERVER_SETTINGS in _serverCapabilities.value) {
+                    serverConfig = config
+                    loadDshProviderDirectory()
+                }
             }
             markInitialLoadDone()
         }
@@ -539,6 +580,100 @@ class ServerSettingsViewModel @Inject constructor(
 
     private fun modelVisible(hidden: Set<String>, providerId: String, model: ModelCatalog): Boolean {
         return "$providerId:${model.id}" !in hidden
+    }
+
+
+    // ============ #324① DSH provider 目录/自定义增删 ============
+
+    /** DSH 连接构建（config 缓存缺席 → null 调用方直接返回）。 */
+    private fun dshConn(): ServerConnection? = serverConfig?.let { ServerConnection.from(it) }
+
+    /** 目录加载（llm/listProviders × listConfigurableProviders × credentials/describe 合流）。 */
+    fun loadDshProviderDirectory() {
+        val conn = dshConn() ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(dshDirectoryLoading = true, dshProviderError = null) }
+            try {
+                val directory = serverSettingsRepository.listProviderDirectory(conn)
+                _uiState.update { it.copy(dshDirectory = directory, dshDirectoryLoading = false) }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (e is DshSettingsForbiddenException) {
+                    // #298 同栅栏：保留目录（可能空）但标注 loopback 只读
+                    _uiState.update { it.copy(dshDirectoryLoading = false, dshSettingsBlocked = true) }
+                } else {
+                    AppLogger.w(TAG, "loadDshProviderDirectory failed: " + e.message)
+                    _uiState.update {
+                        it.copy(dshDirectoryLoading = false, dshProviderError = e.message ?: "directory load failed")
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * llm/discoverModels（表单内探查按钮）：baseURL + 可选 apiKey 即可探测；
+     * 失败回 Result.failure 由对话框内联提示（不动全局 error）。
+     */
+    suspend fun discoverDshModels(baseURL: String, apiKey: String): Result<List<DshDiscoveredModel>> {
+        val conn = dshConn() ?: return Result.failure(IllegalStateException("no connection"))
+        return try {
+            val models = serverSettingsRepository.discoverModels(
+                conn,
+                dev.leonardo.ocbeacon.domain.model.DshModelDiscoveryRequest(
+                    settingsNs = dev.leonardo.ocbeacon.domain.model.DshCustomProviders.SETTINGS_NS,
+                    baseURL = baseURL.takeIf { it.isNotBlank() },
+                    apiKey = apiKey.takeIf { it.isNotBlank() },
+                ),
+            )
+            Result.success(models)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            AppLogger.w(TAG, "discoverDshModels failed: " + e.message)
+            Result.failure(e)
+        }
+    }
+
+    /** 新建自定义 provider（成功后刷新目录；失败内联提示）。 */
+    fun createDshCustomProvider(draft: DshCustomProviderDraft, onDone: (Boolean, String?) -> Unit) {
+        val conn = dshConn() ?: return
+        viewModelScope.launch {
+            try {
+                val ok = serverSettingsRepository.createCustomProvider(conn, draft)
+                if (ok) loadDshProviderDirectory()
+                onDone(ok, null)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (e is DshSettingsForbiddenException) {
+                    _uiState.update { it.copy(dshSettingsBlocked = true) }
+                    onDone(false, context.getString(R.string.dsh_settings_loopback_required))
+                } else {
+                    AppLogger.w(TAG, "createDshCustomProvider failed: " + e.message)
+                    onDone(false, e.message)
+                }
+            }
+        }
+    }
+
+    /** 删除自定义 provider（成功后刷新目录）。 */
+    fun deleteDshCustomProvider(route: String, onDone: (Boolean, String?) -> Unit) {
+        val conn = dshConn() ?: return
+        viewModelScope.launch {
+            try {
+                val ok = serverSettingsRepository.deleteCustomProvider(conn, route)
+                if (ok) loadDshProviderDirectory()
+                onDone(ok, null)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (e is DshSettingsForbiddenException) {
+                    _uiState.update { it.copy(dshSettingsBlocked = true) }
+                    onDone(false, context.getString(R.string.dsh_settings_loopback_required))
+                } else {
+                    AppLogger.w(TAG, "deleteDshCustomProvider failed: " + e.message)
+                    onDone(false, e.message)
+                }
+            }
+        }
     }
 
 }

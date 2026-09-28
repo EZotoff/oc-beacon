@@ -3,6 +3,15 @@ package dev.leonardo.ocbeacon.ui.screens.sessions
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+// 2026-09-10（用户裁决⑤优化）：内容命中逐行呈现——角色标签 + [..] 命中段高亮
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.foundation.layout.widthIn
+import dev.leonardo.ocbeacon.data.local.ContentSearchFilterValues
+import dev.leonardo.ocbeacon.data.local.ContentSearchHit
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +45,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,9 +67,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.leonardo.ocbeacon.R
+import dev.leonardo.ocbeacon.domain.model.AgentPreset
+import dev.leonardo.ocbeacon.domain.model.ServerFeatures
+import dev.leonardo.ocbeacon.domain.model.ServerUiSlot
 import dev.leonardo.ocbeacon.service.ServerLinkState
 import dev.leonardo.ocbeacon.ui.components.ServerLinkBanner
-import dev.leonardo.ocbeacon.ui.screens.sessions.components.ContentSearchFilterChips
+import dev.leonardo.ocbeacon.ui.components.ZeroTopAppBarWindowInsets
+import dev.leonardo.ocbeacon.ui.extension.LocalServerUiSlots
+import dev.leonardo.ocbeacon.ui.extension.SessionListHeaderSlotHost
+import dev.leonardo.ocbeacon.ui.screens.sessions.components.AgentPresetContentDialog
+import dev.leonardo.ocbeacon.ui.screens.sessions.components.AgentPresetCopyDialog
+import dev.leonardo.ocbeacon.ui.screens.sessions.components.AgentPresetDeleteConfirmDialog
+import dev.leonardo.ocbeacon.ui.screens.sessions.components.ContentSearchFilterMenu
 import dev.leonardo.ocbeacon.ui.screens.sessions.components.DeleteSessionDialog
 import dev.leonardo.ocbeacon.ui.screens.sessions.components.NewSessionQuickDialog
 import dev.leonardo.ocbeacon.ui.screens.sessions.components.OpenProjectDialog
@@ -85,6 +104,8 @@ fun SessionListScreen(
     val content by viewModel.contentState.collectAsStateWithLifecycle()
     val shell by viewModel.shellState.collectAsStateWithLifecycle()
     val recentDirectoryCount by viewModel.recentDirectoryCount.collectAsStateWithLifecycle()
+    // #311 Task3：新建会话对话框条目（快照→对话框状态映射，VM 单源三态）
+    val newSessionDialogEntries by viewModel.newSessionDialogEntries.collectAsStateWithLifecycle()
     val isAmoled = isAmoledTheme()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -111,17 +132,25 @@ var showMoreMenu by remember { mutableStateOf(false) }
     var assignTagIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     val sessionTags by viewModel.sessionTags.collectAsStateWithLifecycle()
+    // #324②：preset 管理对话框状态
+    var pendingViewPreset by remember { mutableStateOf<AgentPreset?>(null) }
+    var pendingCopyPreset by remember { mutableStateOf<AgentPreset?>(null) }
+    var pendingDeletePreset by remember { mutableStateOf<AgentPreset?>(null) }
     val sessionTagAssignments by viewModel.sessionTagAssignments.collectAsStateWithLifecycle()
     val tagFilters by viewModel.tagFilters.collectAsStateWithLifecycle()
     val favoriteSessionIds by viewModel.favoriteSessionIds.collectAsStateWithLifecycle()
     val favoritesOnly by viewModel.favoritesOnly.collectAsStateWithLifecycle()
     // #272：BM25 内容命中（FTS5 本地检索）——搜索词非空时聚合展示
     val contentHits by viewModel.contentHits.collectAsStateWithLifecycle()
+    // #322：DSH 服务器历史命中（session/search 全历史；非 DSH 恒 null）
+    val serverSearch by viewModel.serverSearch.collectAsStateWithLifecycle()
     // #272/Q6c：内容检索过滤（角色 + 时间范围，chip 单选）
     val searchRole by viewModel.searchRole.collectAsStateWithLifecycle()
     val searchTimeRange by viewModel.searchTimeRange.collectAsStateWithLifecycle()
     // #271：drain 同步状态（长按菜单详情区数据源）
     val syncStates by viewModel.syncStates.collectAsStateWithLifecycle()
+    // #391 切片9：适配器声明的界面插槽（通用屏幕的渲染先决条件）
+    val sessionUiSlots by viewModel.uiSlots.collectAsStateWithLifecycle()
 
     val pagerState = rememberPagerState(pageCount = { 2 })
     val currentViewMode by viewModel.viewMode.collectAsStateWithLifecycle()
@@ -143,13 +172,15 @@ viewModel.consumePendingReadSessionId()
 
     // #267：写操作错误 snackbar 面（原非空列表下 _error 无可视面）——哨兵映射本地化
     val disconnectedMsg = stringResource(R.string.server_link_disconnected_message)
+    // #311：归档失败哨兵同款映射
+    val archiveFailedMsg = stringResource(R.string.session_archive_failed)
     LaunchedEffect(Unit) {
         viewModel.error.collect { msg ->
             if (!msg.isNullOrBlank()) {
-                val text = if (msg == SessionListViewModel.ERROR_SERVER_DISCONNECTED) {
-                    disconnectedMsg
-                } else {
-                    msg
+                val text = when (msg) {
+                    SessionListViewModel.ERROR_SERVER_DISCONNECTED -> disconnectedMsg
+                    SessionListViewModel.ERROR_ARCHIVE_FAILED -> archiveFailedMsg
+                    else -> msg
                 }
                 snackbarHostState.showSnackbar(text)
                 viewModel.consumeError()
@@ -163,10 +194,32 @@ viewModel.consumePendingReadSessionId()
             Column {
                 // #267：断连常驻细条幅（恢复自动消失）
                 val serverLinkState by viewModel.serverLinkState.collectAsStateWithLifecycle()
+                // #317：token 待输入优先于一般断连横幅（给出路而非干等重连）
+                val authTokenNeeded by viewModel.authTokenNeeded.collectAsStateWithLifecycle()
+                // #409：下次自动重连时间（倒计时）
+                val serverReconnectAt by viewModel.serverReconnectAt.collectAsStateWithLifecycle()
+                // #408：只有真有横幅渲染时才把状态栏 inset 让给横幅（槽未声明且非 token 态时无横幅）
+                val headerBannerShown = serverLinkState != ServerLinkState.Connected &&
+                    (ServerUiSlot.SESSION_LIST_HEADER in sessionUiSlots || !authTokenNeeded)
                 if (serverLinkState != ServerLinkState.Connected) {
-                    ServerLinkBanner()
+                    // #391 切片9：类型私有横幅经 SESSION_LIST_HEADER 插槽渲染——通用屏幕只
+                    // 提供断连上下文与出路回调；两级门禁：适配器声明先决 + 贡献方能力过滤。
+                    if (ServerUiSlot.SESSION_LIST_HEADER in sessionUiSlots) {
+                        LocalServerUiSlots.current.Render(
+                            slot = ServerUiSlot.SESSION_LIST_HEADER,
+                            caps = viewModel.serverCapabilities.collectAsStateWithLifecycle().value,
+                            host = SessionListHeaderSlotHost(tokenNeeded = authTokenNeeded),
+                        )
+                    }
+                    if (!authTokenNeeded) ServerLinkBanner(retryAtEpochMs = serverReconnectAt)
                 }
+                // #408：横幅在上时本栏归零状态栏 inset——否则状态栏高度被计两次
                 TopAppBar(
+                windowInsets = if (headerBannerShown) {
+                    ZeroTopAppBarWindowInsets
+                } else {
+                    TopAppBarDefaults.windowInsets
+                },
                 title = {
                     Text(
                         text = shell.serverName.ifEmpty { stringResource(R.string.sessions_title) },
@@ -339,20 +392,83 @@ viewModel.consumePendingReadSessionId()
                                 },
                             )
 
+                            val titles = content.sessions.associate { it.id to (it.title ?: it.id) }
+
+                            // #355：已归档会话不展示于检索结果（三面统一：标题命中列表
+                            // 本就只搜主列表；此处再滤内容命中与服务器命中两区）。
+                            val archivedIds = content.archivedSessions.map { it.session.id }.toSet()
+                            val visibleContentHits = if (archivedIds.isEmpty()) contentHits else {
+                                contentHits.filter { it.sessionId !in archivedIds }
+                            }
+
+                            // #322：DSH 服务器历史命中区（session/search 全历史会话命中）。
+                            // 呈现裁决：本地 FTS 已覆盖的会话不在此重复（本地行有消息级跳转，
+                            // 服务器行只有会话级跳转——wire 无 messageId 锚点，如实呈现不伪造跳转）。
+                            val serverRows = SessionSearchMerge.serverRows(serverSearch, visibleContentHits, archivedIds)
+                            if (!content.searchQuery.isNullOrBlank() && serverRows.isNotEmpty()) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 240.dp)
+                                        .verticalScroll(rememberScrollState())
+                                        .padding(bottom = SpacingTokens.SM.dp),
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.search_server_hits),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(vertical = SpacingTokens.XS.dp),
+                                    )
+                                    serverRows.forEach { hit ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { onNavigateToChat(hit.sessionId, false, null) }
+                                                .padding(vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = titles[hit.sessionId] ?: ("…" + hit.sessionId.takeLast(10)),
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    maxLines = 1,
+                                                )
+                                                Text(
+                                                    text = hit.snippet,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 2,
+                                                )
+                                            }
+                                        }
+                                    }
+                                    if (serverSearch?.hasMore == true) {
+                                        Text(
+                                            text = stringResource(R.string.search_server_more),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+
                             // #272：内容命中聚合区（FTS5 BM25 本地检索，纯本地）。
                             // Q6c：过滤激活（角色/时间任一非空）时即使 0 命中也保留本区——
                             // 否则过滤后无结果会把过滤 chips 一并藏掉，用户无法切回「全部」。
                             val searchFiltersActive = searchRole != null || searchTimeRange != null
-                            if (!content.searchQuery.isNullOrBlank() && (contentHits.isNotEmpty() || searchFiltersActive)) {
-                                val titles = content.sessions.associate { it.id to (it.title ?: it.id) }
-                                // B1 链：命中组携带跳转目标 messageId（rank 最优）——点击即定位该消息
-                                val groups: List<Triple<String, Int, Pair<String?, String>>> =
-                                    contentHits.groupBy { it.sessionId }
+                            if (!content.searchQuery.isNullOrBlank() && (visibleContentHits.isNotEmpty() || searchFiltersActive)) {
+                                // 2026-09-10（用户裁决⑤）：逐命中行——每条命中独立呈现
+                                //（角色标签 + 高亮摘要 + 各自跳转 messageId）；会话分组保归属。
+                                // 原「每会话仅取 first().snippet」在 BM25 短文档偏置下
+                                //（user 提示短、rank 恒靠前）把同会话 AI 命中折叠不可见
+                                //——「全部」过滤只剩人类消息的根因。
+                                val groups: List<Pair<String, List<ContentSearchHit>>> =
+                                    visibleContentHits.groupBy { it.sessionId }
                                         .map { (sid, hits) ->
-                                            val best = dev.leonardo.ocbeacon.ui.screens.sessions.ContentHitNavigation.jumpTarget(hits)
-                                            Triple(sid, hits.size, (best?.second to hits.first().snippet))
+                                            // #393：去重 + 组内按角色交错（见 interleaveSearchHits）
+                                            sid to interleaveSearchHits(hits)
                                         }
-                                        .sortedByDescending { it.second }
+                                        .sortedByDescending { it.second.size }
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -364,52 +480,72 @@ viewModel.consumePendingReadSessionId()
                                         text = stringResource(R.string.search_content_hits),
                                         style = MaterialTheme.typography.labelLarge,
                                         color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(vertical = 4.dp),
+                                        modifier = Modifier.padding(vertical = SpacingTokens.XS.dp),
                                     )
-                                    // #272/Q6c：角色 + 时间过滤 chips（切换即重查）
-                                    ContentSearchFilterChips(
+                                    // #355（用户裁决）：筛选改标准列表样式（DropdownMenu
+                                    // 单选列表——「筛选不要 tag 形式」）；选项语义与原 chips 共源
+                                    ContentSearchFilterMenu(
                                         role = searchRole,
                                         timeRange = searchTimeRange,
                                         onRoleChange = { viewModel.setSearchRole(it) },
                                         onTimeRangeChange = { viewModel.setSearchTimeRange(it) },
                                     )
-                                    if (contentHits.isEmpty()) {
+                                    if (visibleContentHits.isEmpty()) {
                                         Text(
                                             text = stringResource(R.string.search_content_no_hits),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(vertical = 4.dp),
+                                            modifier = Modifier.padding(vertical = SpacingTokens.XS.dp),
                                         )
                                     }
-                                    groups.forEach { group ->
-                                        val sid = group.first
-                                        val count = group.second
-                                        val (messageId, snippet) = group.third
+                                    groups.forEach { (sid, hits) ->
+                                        // 会话头行：标题 + 命中计数（归属可扫读）
                                         Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable { onNavigateToChat(sid, false, messageId) }
-                                                .padding(vertical = 6.dp),
+                                            modifier = Modifier.fillMaxWidth().padding(top = SpacingTokens.XS.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = titles[sid] ?: ("…" + sid.takeLast(10)),
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    maxLines = 1,
-                                                )
-                                                Text(
-                                                    text = snippet,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 2,
-                                                )
-                                            }
                                             Text(
-                                                text = stringResource(R.string.search_content_hit_count, count),
+                                                text = titles[sid] ?: ("…" + sid.takeLast(10)),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Medium,
+                                                maxLines = 1,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                            Text(
+                                                text = stringResource(R.string.search_content_hit_count, hits.size),
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
+                                        }
+                                        // 逐命中行：角色标签 + 高亮摘要；点击跳该条消息
+                                        hits.forEach { hit ->
+                                            val isUser = hit.role == ContentSearchFilterValues.ROLE_USER
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable { onNavigateToChat(sid, false, hit.messageId) }
+                                                    .padding(vertical = 3.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Text(
+                                                    text = stringResource(
+                                                        if (isUser) R.string.chat_label_user else R.string.chat_label_agent,
+                                                    ),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (isUser) {
+                                                        MaterialTheme.colorScheme.primary
+                                                    } else {
+                                                        MaterialTheme.colorScheme.tertiary
+                                                    },
+                                                    modifier = Modifier.widthIn(min = SpacingTokens.XXL.dp).padding(end = SpacingTokens.SM.dp),
+                                                )
+                                                // FTS snippet() 以 [..] 标记命中段——高亮渲染
+                                                HighlightedHitSnippet(
+                                                    snippet = hit.snippet,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -465,6 +601,9 @@ viewModel.consumePendingReadSessionId()
                                         syncStates = syncStates,
                                         onRequestSync = { sessionId -> viewModel.requestHistorySync(sessionId) },
                                         onCancelSync = { sessionId -> viewModel.cancelHistorySync(sessionId) },
+                                        // #311 归档：已归档折叠区数据（workspace 快照集合驱动）+ 归档动作
+                                        archivedSessions = content.archivedSessions,
+                                        onArchive = { sessionId -> viewModel.archiveSession(sessionId) },
                                     )
                                 }
                             }
@@ -486,19 +625,58 @@ viewModel.consumePendingReadSessionId()
                         onUpdateTag = viewModel::updateSessionTag,
                         onDeleteTag = viewModel::removeSessionTag,
                         onRemoveTagAssignment = viewModel::removeSessionTagAssignment,
-                        permissionSwitchSupported = viewModel.serverCapabilities.collectAsStateWithLifecycle().value.permissionSwitchSupported,
+                        permissionSwitchSupported = (ServerFeatures.PERMISSION_SWITCH in viewModel.serverCapabilities.collectAsStateWithLifecycle().value),
                         permissionDefault = viewModel.permissionDefault.collectAsStateWithLifecycle().value,
                         onSetPermissionDefault = viewModel::setPermissionDefault,
                         permissionDefaultBlocked = viewModel.permissionDefaultBlocked.collectAsStateWithLifecycle().value,
-                        agentPresetSupported = viewModel.serverCapabilities.collectAsStateWithLifecycle().value.agentPresetSupported,
+                        agentPresetSupported = (ServerFeatures.AGENT_PRESET in viewModel.serverCapabilities.collectAsStateWithLifecycle().value),
                         agentPresets = viewModel.agentPresetsList.collectAsStateWithLifecycle().value,
                         agentPresetDefault = viewModel.agentPresetDefault.collectAsStateWithLifecycle().value,
                         onSetAgentPresetDefault = viewModel::setAgentPresetDefault,
                         agentPresetDefaultBlocked = viewModel.agentPresetDefaultBlocked.collectAsStateWithLifecycle().value,
+                        // #324②：preset 管理动作（对话框宿主在本层下方对话框群）
+                        agentPresetAuthorable = viewModel.agentPresetAuthorable.collectAsStateWithLifecycle().value,
+                        onViewAgentPreset = { preset ->
+                            pendingViewPreset = preset
+                            viewModel.readAgentPreset(preset.id)
+                        },
+                        onCopyAgentPreset = { preset -> pendingCopyPreset = preset },
+                        onDeleteAgentPreset = { preset -> pendingDeletePreset = preset },
+                        // #391 切片9：SERVER_SETTINGS 插槽两级门禁（声明 + 能力位）
+                        serverCapabilities = viewModel.serverCapabilities.collectAsStateWithLifecycle().value,
+                        serverUiSlots = sessionUiSlots,
                     )
                 }
             }
         }
+    }
+
+    // #324②：preset 管理三对话框（组成查看/复制/删除确认）
+    val agentPresetDoc by viewModel.agentPresetDocument.collectAsStateWithLifecycle()
+    if (pendingViewPreset != null) {
+        agentPresetDoc?.let { doc ->
+            AgentPresetContentDialog(document = doc, onDismiss = {
+                pendingViewPreset = null
+                viewModel.closeAgentPresetDocument()
+            })
+        }
+    }
+    pendingCopyPreset?.let { preset ->
+        AgentPresetCopyDialog(
+            preset = preset,
+            onConfirm = { newId, name ->
+                viewModel.copyAgentPreset(preset.id, newId, name)
+                pendingCopyPreset = null
+            },
+            onDismiss = { pendingCopyPreset = null },
+        )
+    }
+    pendingDeletePreset?.let { preset ->
+        AgentPresetDeleteConfirmDialog(
+            preset = preset,
+            onConfirm = { viewModel.deleteAgentPreset(preset.id) },
+            onDismiss = { pendingDeletePreset = null },
+        )
     }
 
     // 打开项目对话框
@@ -515,21 +693,41 @@ viewModel.consumePendingReadSessionId()
         )
     }
 
-    // 快速新建会话对话框（最近目录）
+    // 快速新建会话对话框（#311 Task3：workspace 真建模条目——V012 快照 /
+    // V011 listProjects 回退 / 非 DSH 最近目录；连接语义在 VM）。
+    // 批 3（§三-3）：DSH 预设 roster 在场时对话框内联预设选择行（同屏一步
+    // 选工作区+预设）；opencode 面 roster 恒空表行不渲染。
     if (showQuickNewSession) {
+        val dialogAgentPresets by viewModel.agentPresetsList.collectAsStateWithLifecycle()
         NewSessionQuickDialog(
-            sessions = content.sessions,
+            entries = newSessionDialogEntries,
             limit = recentDirectoryCount,
-            onSelectDirectory = { directory ->
+            onSelectEntry = { entry, presetId ->
                 showQuickNewSession = false
-                onNavigateToNewChat(directory)
+                viewModel.connectWorkspaceEntry(entry, presetId)
             },
             onBrowse = {
                 showQuickNewSession = false
                 showOpenProject = true
             },
-            onDismiss = { showQuickNewSession = false }
+            onDismiss = { showQuickNewSession = false },
+            agentPresets = dialogAgentPresets,
         )
+    }
+
+    // #311 Task3：对话框连接语义导航事件（复用/新建跳转 + 目录懒建）
+    LaunchedEffect(Unit) {
+        viewModel.newSessionNavigation.collect { nav ->
+            when (nav) {
+                is SessionListViewModel.NewSessionNavigation.ToSession -> {
+                    // 与 SessionTreeList 行点击同款：先记已读水位，再跳转
+                    viewModel.onSessionOpened(nav.sessionId)
+                    onNavigateToChat(nav.sessionId, false, null)
+                }
+                is SessionListViewModel.NewSessionNavigation.ToDirectory ->
+                    onNavigateToNewChat(nav.directory)
+            }
+        }
     }
 
     // 重命名对话框
@@ -575,3 +773,46 @@ viewModel.consumePendingReadSessionId()
         )
     }
 }
+
+/**
+ * 2026-09-10（用户裁决⑤优化1）：内容命中摘要——FTS snippet() 的 [..] 命中段
+ * 以背景色高亮（原中括号裸文本标记改为视觉高亮）；LIKE 降级路径无标记纯文本。
+ */
+@Composable
+private fun HighlightedHitSnippet(
+    snippet: String,
+    style: androidx.compose.ui.text.TextStyle,
+    color: androidx.compose.ui.graphics.Color,
+) {
+    val highlight = MaterialTheme.colorScheme.primaryContainer
+    val annotated = remember(snippet) { buildHighlightedSnippet(snippet, highlight) }
+    Text(
+        text = annotated,
+        style = style,
+        color = color,
+        maxLines = 2,
+    )
+}
+
+/** 解析 FTS snippet 的 [命中] 标记对 → 背景色 SpanStyle（未配对标记按原文保留）。 */
+private fun buildHighlightedSnippet(snippet: String, highlight: androidx.compose.ui.graphics.Color): AnnotatedString =
+    buildAnnotatedString {
+        var i = 0
+        while (i < snippet.length) {
+            val open = snippet.indexOf('[', i)
+            if (open < 0) {
+                append(snippet.substring(i))
+                break
+            }
+            val close = snippet.indexOf(']', open + 1)
+            if (close < 0) {
+                append(snippet.substring(i))
+                break
+            }
+            if (open > i) append(snippet.substring(i, open))
+            withStyle(SpanStyle(background = highlight)) {
+                append(snippet.substring(open + 1, close))
+            }
+            i = close + 1
+        }
+    }

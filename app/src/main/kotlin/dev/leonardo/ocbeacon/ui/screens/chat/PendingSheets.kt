@@ -1,5 +1,9 @@
 package dev.leonardo.ocbeacon.ui.screens.chat
 
+import dev.leonardo.ocbeacon.ui.screens.chat.components.SmallSheetDragHandle
+import dev.leonardo.ocbeacon.ui.screens.chat.components.sheetContentGestureIsolation
+import dev.leonardo.ocbeacon.ui.screens.chat.components.sheetNonScrollableDragBlock
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -38,7 +42,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -51,32 +54,22 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import dev.leonardo.ocbeacon.R
-import dev.leonardo.ocbeacon.domain.model.JobStatus
-import dev.leonardo.ocbeacon.domain.model.JobView
-import dev.leonardo.ocbeacon.domain.model.ServerType
 import dev.leonardo.ocbeacon.domain.model.ShellJob
 import dev.leonardo.ocbeacon.domain.model.SseEvent
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.TaskStatus
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.TaskStatusIcon
-import dev.leonardo.ocbeacon.ui.screens.chat.util.formatDuration
-import dev.leonardo.ocbeacon.ui.theme.AgentError
-import dev.leonardo.ocbeacon.ui.theme.AgentSuccess
-import dev.leonardo.ocbeacon.ui.theme.AgentWarning
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
-import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.theme.SheetTokens
 import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 import dev.leonardo.ocbeacon.util.DateFormatters
@@ -102,16 +95,21 @@ internal fun SheetScaffold(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        dragHandle = {},
+        // #379：统一小样式手柄（行高很小）
+        dragHandle = { SmallSheetDragHandle() },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                // #379：内容手势隔离——内部拖拽/fling 不致收起（仅手柄/点外/返回）
+                .sheetContentGestureIsolation()
+                // #405：非滚动区（标题带/空白带）也不发起收起（指针层兜底）
+                .sheetNonScrollableDragBlock()
                 .height(
                     LocalConfiguration.current.screenHeightDp.dp *
                         SheetTokens.ChatSheetHeightFraction
                 )
-                .padding(bottom = 24.dp)
+                .padding(bottom = SpacingTokens.XL.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -288,12 +286,8 @@ internal fun ShellSheet(
     onRemoveShell: (String) -> Unit,
     shellOutputProvider: (ShellJob) -> String?,
 ) {
-    // DSH 任务源分流（仓库层 serverType 门控）：DSH 会话渲染 session/jobs 快照的
-    // JobView 行；V2/OpenCode 走既有 ShellJob 列表（零改动）。
-    if (state.serverType == ServerType.Dsh) {
-        DshJobSheet(state = state, onDismiss = onDismiss)
-        return
-    }
+    // #369 死代码清理（2026-09-10）：原 serverType==Dsh 分流分支不可达——DSH 无
+    // shell 域能力位，SHELL 入口永不添加，本 sheet 恒为 V2/OpenCode ShellJob 列表。
     var selectedShellId by rememberSaveable { mutableStateOf<String?>(null) }
     val selected = state.shells.firstOrNull { it.id == selectedShellId }
     if (selected != null) {
@@ -383,119 +377,6 @@ internal fun ShellSheet(
     }
 }
 
-// ============ DSH 后台任务面板（session/jobs 整快照 JobView 行） ============
-
-/** DSH shell sheet：JobView 整快照列表（状态点 + kind 徽章 + label + detail + 时长）。 */
-@Composable
-private fun DshJobSheet(
-    state: TaskUiState,
-    onDismiss: () -> Unit,
-) {
-    SheetScaffold(
-        title = stringResource(R.string.toolbar_shell) + " (" + state.dshJobs.size + ")",
-        onDismiss = onDismiss,
-    ) {
-        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-            if (state.dshJobs.isEmpty()) {
-                item { EmptyHint(stringResource(R.string.dsh_jobs_empty)) }
-            } else {
-                itemsIndexed(state.dshJobs, key = { _, it -> it.id }) { index, job ->
-                    if (index > 0) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = SpacingTokens.LG.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = AlphaTokens.FAINT)
-                        )
-                    }
-                    DshJobRow(job = job)
-                }
-            }
-        }
-    }
-}
-
-/** DSH 后台任务单行：状态点（颜色语义对齐面板既有状态点）+ kind 徽章 + label（mono）。 */
-@Composable
-private fun DshJobRow(job: JobView) {
-    ListItem(
-        leadingContent = {
-            Icon(
-                imageVector = Icons.Default.FiberManualRecord,
-                contentDescription = dshJobStatusLabel(job.statusKind, job.status),
-                modifier = Modifier.size(12.dp),
-                tint = dshJobStatusColor(job.statusKind),
-            )
-        },
-        headlineContent = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Surface(
-                    shape = ShapeTokens.small,
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                ) {
-                    Text(
-                        text = job.kind,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                    )
-                }
-                Text(
-                    text = job.label,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FontFamily.Monospace,
-                )
-            }
-        },
-        supportingContent = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                job.detail?.takeIf { it.isNotBlank() }?.let { detail ->
-                    Text(
-                        text = detail,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AlphaTokens.MUTED),
-                    )
-                }
-                Text(
-                    text = dshJobStatusLabel(job.statusKind, job.status) + " · " + formatDuration(dshJobDurationMs(job)),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AlphaTokens.MUTED),
-                )
-            }
-        },
-    )
-}
-
-/** 状态点颜色：running=primary · stopping/killed=警告 · completed=完成绿 · failed=失败红。 */
-@Composable
-private fun dshJobStatusColor(status: JobStatus): Color = when (status) {
-    JobStatus.RUNNING -> MaterialTheme.colorScheme.primary
-    JobStatus.STOPPING, JobStatus.KILLED -> AgentWarning
-    JobStatus.COMPLETED -> AgentSuccess
-    JobStatus.FAILED -> AgentError
-    JobStatus.UNKNOWN -> MaterialTheme.colorScheme.outline
-}
-
-/** 状态文案本地化（闭集五值；UNKNOWN=服务器新增枚举 → 原串兜底）。 */
-@Composable
-private fun dshJobStatusLabel(status: JobStatus, raw: String): String = when (status) {
-    JobStatus.RUNNING -> stringResource(R.string.dsh_job_status_running)
-    JobStatus.STOPPING -> stringResource(R.string.dsh_job_status_stopping)
-    JobStatus.KILLED -> stringResource(R.string.dsh_job_status_killed)
-    JobStatus.COMPLETED -> stringResource(R.string.dsh_job_status_completed)
-    JobStatus.FAILED -> stringResource(R.string.dsh_job_status_failed)
-    JobStatus.UNKNOWN -> raw
-}
-
-/** 时长：finishedAt 或 now（运行中）——实时走时可选，此处静态（重进面板重算）。 */
-private fun dshJobDurationMs(job: JobView): Long =
-    ((job.finishedAt ?: System.currentTimeMillis()) - job.startedAt).coerceAtLeast(0L)
-
 @Composable
 private fun TodoList(todos: List<SseEvent.TodoUpdated.Todo>) {
     if (todos.isEmpty()) {
@@ -539,7 +420,7 @@ private fun EmptyHint(text: String) {
         text = text,
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AlphaTokens.MUTED),
-        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = SpacingTokens.XL.dp),
         textAlign = TextAlign.Center,
     )
 }
@@ -561,8 +442,8 @@ private fun ShellDetailView(
                 LocalConfiguration.current.screenHeightDp.dp *
                     SheetTokens.ChatSheetHeightFraction
             )
-            .padding(horizontal = 16.dp)
-            .padding(bottom = 24.dp)
+            .padding(horizontal = SpacingTokens.LG.dp)
+            .padding(bottom = SpacingTokens.XL.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             androidx.compose.material3.Icon(
@@ -578,7 +459,7 @@ private fun ShellDetailView(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = SpacingTokens.SM.dp),
             )
             IconButton(onClick = onClose) {
                 Icon(Icons.Default.Close, contentDescription = stringResource(R.string.shell_close))
@@ -599,7 +480,7 @@ private fun ShellDetailView(
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 12.dp)
+                .padding(top = SpacingTokens.MD.dp)
                 .weight(1f)
                 .verticalScroll(rememberScrollState()),
         )

@@ -47,6 +47,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.frozenDurationMs
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.timingStartMs
 
 /**
  * Edit 工具卡片 —— 显示文件路径 + 红/绿着色行的 diff。
@@ -103,6 +106,9 @@ internal fun EditToolCard(
         copyText = copyText,
         isExpanded = isExpanded,
         isRunning = isRunning,
+        // #453：累积计时（运行中走动/终态冻结；无锚不显示）
+        runningStartMs = tool.state.timingStartMs(),
+        completedDurationMs = tool.state.frozenDurationMs(),
         hasContent = hasContent,
         isAmoled = isAmoled,
         onToggleExpand = onToggleExpand,
@@ -141,7 +147,7 @@ internal fun EditToolCard(
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                             ),
                             textColor = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.padding(4.dp),
+                            modifier = Modifier.padding(SpacingTokens.XS.dp),
                         )
                     }
                 } else {
@@ -164,7 +170,7 @@ internal fun EditToolCard(
                                             color = if (isAmoled) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AlphaTokens.AMOLED) else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = AlphaTokens.HIGH)
                                         ),
                                         modifier = Modifier
-                                            .padding(4.dp)
+                                            .padding(SpacingTokens.XS.dp)
                                             .codeHorizontalScroll()
                                     )
                                 }

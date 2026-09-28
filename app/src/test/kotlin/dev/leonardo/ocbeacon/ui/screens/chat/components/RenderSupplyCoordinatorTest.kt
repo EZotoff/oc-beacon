@@ -7,9 +7,12 @@ import dev.leonardo.ocbeacon.domain.model.ToolState
 import dev.leonardo.ocbeacon.ui.screens.chat.ChatMessage
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.computeRenderableTurn
 import dev.leonardo.ocbeacon.ui.screens.chat.util.computeTurnGroups
+import java.util.concurrent.Executors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -37,10 +40,19 @@ import org.junit.Test
  * - T9 C-R4c 陈旧丢弃（turn 消失 → pending 真正清空）
  * - T10 流式 turn 记录 + 窗口清理（recentStreamedTurnKeys）
  *
- * 真实 RenderReadinessRegistry + 真实 markdown 解析（Dispatchers.Default，
- * await Parsed 终态同步）；Unconfined 作用域保证相位打点即时生效。
+ * 真实 RenderReadinessRegistry + 真实 markdown 解析（#407：测试私有的单线程
+ * dispatcher，不再用共享 Dispatchers.Default——全量跑时邻居/机器负载会拖穿 15s
+ * 等待预算导致 T8/T11 间歇超时）；Unconfined 作用域保证相位打点即时生效。
  */
 class RenderSupplyCoordinatorTest {
+
+    private companion object {
+        /** #407：测试私有解析线程（daemon，不阻塞 JVM 退出；fork 内仅本类使用）。 */
+        val parseDispatcher: ExecutorCoroutineDispatcher =
+            Executors.newSingleThreadExecutor { r ->
+                Thread(r, "render-parse-test").apply { isDaemon = true }
+            }.asCoroutineDispatcher()
+    }
 
     private class Env {
         val registry = RenderReadinessRegistry()
@@ -49,7 +61,8 @@ class RenderSupplyCoordinatorTest {
         val coordinator = RenderSupplyCoordinator(
             registry,
             CoroutineScope(Dispatchers.Unconfined + SupervisorJob()),
-            jumpPhase,
+            parseDispatcher = parseDispatcher,
+            jumpPhase = jumpPhase,
             clock = { now },
         )
 
@@ -308,12 +321,25 @@ class RenderSupplyCoordinatorTest {
         // 视口挪远（确保出带），让重析后的 plan 走 pending→commit 常规路径之外也有覆盖保障
         env.coordinator.onViewportChanged(0, 0, env.world(20, partFor = grownPart))
         awaitParsedBlocking(env, partId)
-        delay(150) // T11 二阶段重析不走 pending 队列（直接覆盖已提交项）——探针不适用
         env.coordinator.onViewportChanged(0, 0, env.world(20, partFor = grownPart))
-        delay(100)
-
-        val refreshed = env.coordinator.chunkPlans.value.getValue(partId)
-        val newBlocks = refreshed.state.node.children.size
+        // #414：二阶段重析不走 pending 队列（直接覆盖已提交项）——原固定
+        // delay(150)+delay(100) 满载下不足（同批一次失败一次通过，隔离恒绿）。
+        // 改轮询断言前提（awaitPendingEnqueued 同哲学）：确定性收敛，超时才报。
+        val refreshed = runBlocking {
+            kotlinx.coroutines.withTimeoutOrNull(15_000) {
+                var plan = env.coordinator.chunkPlans.value.getValue(partId)
+                while (plan.state.node.children.size <= staleBlocks) {
+                    delay(10)
+                    plan = env.coordinator.chunkPlans.value.getValue(partId)
+                }
+                plan
+            }
+        }
+        org.junit.Assert.assertNotNull(
+            "文本增长后 plan 必须被刷新覆盖（15s 内仍为 stale=$staleBlocks blocks）",
+            refreshed,
+        )
+        val newBlocks = refreshed!!.state.node.children.size
         assertTrue(
             "文本增长后 plan 必须被刷新覆盖（stale=$staleBlocks blocks vs new=$newBlocks）",
             newBlocks > staleBlocks,

@@ -29,9 +29,51 @@ data class RenderableTurn(
     /** turn 全部完成后：末条 assistant 消息的 completed 时刻（epoch-ms）；流式中为 null（对齐 opencode TUI 时间戳补丁）。 */
     val completedTimeMs: Long?,
     val turnStartMs: Long?,
+    /**
+     * US#28：服务器会话内轮次号（DSH data.turn；OpenCode 恒 null）。
+     * 第 N 轮编号服务器优先，否则客户端锚点序号。
+     */
+    val serverTurn: Long? = null,
+    /**
+     * #343 完结信号（与时长解耦）：turn 内存在 assistant 消息且全部带
+     * completed（computeRenderableTurn 语义）。durationMs 只回答「跨度
+     * 可测与否」——DSH 整装事件 created==completed 同信封（零跨度）时
+     * 轮已完结但时长未知（null → 台账"-"），被中断轮同款。此前台账/产出行
+     * 门控用 durationMs==null 兼当完结判定，把零跨度完结轮整行吞掉。
+     */
+    val allStepsCompleted: Boolean = false,
     val stepFinishes: List<Part.StepFinish>,
     val taskAgentName: String?,
     val copyText: String?,
+    /**
+     * #310④ 轨迹台账：步骤数 = turn 内 assistant 消息数。
+     * 后端无关真相源——V2 每个 step 产出一条 assistant 消息；DSH
+     * assistant/message 事件同构（每 step 一帧）。不用 StepFinish parts
+     * 计数（DSH step/end 不产 part，见 DshEventMapper LIFECYCLE_NOISE）。
+     */
+    val stepCount: Int = 0,
+    /**
+     * #310④ 轨迹台账：token 总量 = Σ 消息级 tokens（total ?: input+output）。
+     * 消息级 tokens 双后端均写入（V2 session.step.ended/REST tokens 字段、
+     * DSH usage 桶）；任一消息缺席 → null（严格语义，与 durationMs 的
+     * 「全完结才给值」同哲学）。
+     */
+    val tokensTotal: Long? = null,
+    /**
+     * #463 三轮：最后消息（最终回答/流式中的最新 step）首组 part id——非 null
+     * 表示该 part 渲染前应插 step 分割线。根因：流式中最新消息走 GroupedParts
+     * 平铺分支（无 stepStarts 信息），线等消息完结并入 StepGroup 且下一条消息
+     * 开始流式才后补 = 晚一个 step；改由装配层按消息序直接标记，线随新 step
+     * 首个内容块首帧出现。Context 组（无单一 part id）/空前序 = null 不插。
+     */
+    val lastStepDividerBeforePartId: String? = null,
+    /**
+     * #311 Task4 deliverables：turn 内产出文件（成功写类工具调用 args 路径，
+     * 首见序去重；TurnDeliverables fold 契约 ②）。从**原始 parts** 折（非
+     * renderItems——#247 同键折叠会吞后续同键卡的 args）；空列表 = 该轮
+     * 无产出（尾部行不挂载）。
+     */
+    val deliverableFiles: List<String> = emptyList(),
 )
 
 @Immutable
@@ -50,6 +92,22 @@ sealed class RenderItem {
      */
     @Immutable
     data class RepeatingTool(val part: Part.Tool, val count: Int) : RenderItem()
+
+    /**
+     * #422 step 自动折叠（2026-09-20 用户裁决）：turn 内**非最后一条**
+     * assistant 消息（V2/DSH step.finish 落一条消息 → 消息边界=step 边界）
+     * 的整组渲染项——默认折叠为计数行（复用 chat_msg_tail_summary），
+     * 点击展开；流式 turn 渲染层恒平铺（跟随生成，DSH 同款时机）。
+     */
+    @Immutable
+    data class StepGroup(
+        val msgId: String,
+        val groups: List<PartGroup>,
+        val toolCount: Int,
+        val textCount: Int,
+        /** #463:每个 step(消息边界)首组索引(升序,首元素通常 0)——分割线判定用。 */
+        val stepStarts: List<Int> = emptyList(),
+    ) : RenderItem()
 }
 
 /**
@@ -60,7 +118,9 @@ sealed class RenderItem {
 // #247 回合内连续同键 tool 卡去重（2026-08-28 用户裁决：首张 + ×N，同 #243 先例）
 // ---------------------------------------------------------------------------
 
-private val NON_DEDUP_TOOLS = setOf("todoread", "todowrite", "question")
+// #311 Task5：ask_user_question（DSH 恒名，契约 ③）与 skill 每次调用
+// 各自成行（答案/指令全文不可被 ×N 折叠吞掉）——同 question 先例入集。
+private val NON_DEDUP_TOOLS = setOf("todoread", "todowrite", "question", "ask_user_question", "skill")
 
 private fun ToolState.displayTitle(): String? = when (this) {
     is ToolState.Running -> title
@@ -90,6 +150,17 @@ internal fun toolDedupKey(part: Part.Tool): String? {
 
 private fun RenderItem.singleTool(): Part.Tool? =
     (this as? RenderItem.GroupedParts)?.group?.let { g -> g as? PartGroup.Single }?.part as? Part.Tool
+
+/**
+ * #463:step 边界分割线判定(纯函数,可单测)——第 k≥2 个 step 的首组前插线
+ * 并标序号 k(1-based);首 step/组内/边界外一律 null。step 边界=消息边界
+ * (#422 既有语义:V2/DSH step.finish 落一条消息)。
+ */
+internal fun stepDividerBefore(groupIndex: Int, stepStarts: List<Int>): Int? {
+    if (groupIndex <= 0) return null
+    val pos = stepStarts.indexOf(groupIndex)
+    return if (pos > 0) pos + 1 else null
+}
 
 /**
  * 折叠回合内连续同键 tool 卡：首张保留为 [RenderItem.RepeatingTool]（×N），
@@ -146,6 +217,16 @@ fun computeRenderableTurn(
 
     // 单次遍历：过滤 + 分组 + 分隔线 + synthetic 卡片
     val renderItems = mutableListOf<RenderItem>()
+    // #422 二轮:turn 级折叠累积器(全部非最后消息并入一个 StepGroup)
+    var pendingStepMsgId: String? = null
+    val pendingStepGroups = mutableListOf<PartGroup>()
+    // #463:每 step(消息)首组索引——StepGroup 分割线序号判定用
+    val pendingStepStarts = mutableListOf<Int>()
+    // #463 三轮:旧侧(更早 step)带渲染组的消息数——最后消息分割线标记的前提
+    var priorStepsWithContent = 0
+    var lastStepDividerBeforePartId: String? = null
+    var pendingToolCount = 0
+    var pendingTextCount = 0
     for ((msgIndex, msg) in ordered.withIndex()) {
         if (msg.isSynthetic) {
             // synthetic 通知：不渲染其 text parts（原文是 <task> 结构化标签），
@@ -158,11 +239,46 @@ fun computeRenderableTurn(
         }
         val msgParts = filterRenderableParts(msg.parts)
         val groups = groupContextParts(msgParts)
-        for (group in groups) {
-            renderItems.add(RenderItem.GroupedParts(group))
-        }
-        if (msgIndex < ordered.lastIndex && msgParts.isNotEmpty()) {
-            renderItems.add(RenderItem.TurnDivider(msg.message.id))
+        // #422 二轮(用户裁决:整个 turn 收成一个,非每 step 一个):非最后消息
+        // 的内容累积到 turn 级待折叠组,最后消息(最终回答)前统一 flush 为单个
+        // StepGroup;流式豁免在渲染层(LocalInStreamingTurn)——装配与流式解耦,
+        // turn 完结后重组装配即自动折叠(DSH 同款时机)。
+        val isLastStep = msgIndex == ordered.lastIndex
+        if (!isLastStep && msgParts.isNotEmpty()) {
+            if (pendingStepMsgId == null) pendingStepMsgId = msg.message.id
+            if (groups.isNotEmpty()) {
+                pendingStepStarts.add(pendingStepGroups.size)
+                priorStepsWithContent++
+            }
+            pendingStepGroups.addAll(groups)
+            pendingToolCount += msgParts.count { it is Part.Tool }
+            pendingTextCount += msgParts.count { it is Part.Text }
+        } else {
+            // #463 三轮:最后消息首组前存在带内容的旧侧消息 = 非 首 step,
+            // 标记首组 part id(线随其首帧渲染;平铺分支无 stepStarts 可查)。
+            if (isLastStep && priorStepsWithContent >= 1) {
+                lastStepDividerBeforePartId =
+                    (groups.firstOrNull() as? PartGroup.Single)?.part?.id
+            }
+            if (pendingStepGroups.isNotEmpty()) {
+                renderItems.add(
+                    RenderItem.StepGroup(
+                        msgId = pendingStepMsgId!!,
+                        groups = pendingStepGroups.toList(),
+                        toolCount = pendingToolCount,
+                        textCount = pendingTextCount,
+                        stepStarts = pendingStepStarts.toList(),
+                    ),
+                )
+                pendingStepMsgId = null
+                pendingStepGroups.clear()
+                pendingStepStarts.clear()
+                pendingToolCount = 0
+                pendingTextCount = 0
+            }
+            for (group in groups) {
+                renderItems.add(RenderItem.GroupedParts(group))
+            }
         }
     }
 
@@ -192,12 +308,18 @@ fun computeRenderableTurn(
     // turn 起点 —— turn 内首条 assistant 消息的 created。
     // turn 分组只含 assistant 消息；minOf 比较时间戳不依赖列表顺序。
     val turnStartMs: Long? = assistantsForMeta.minOfOrNull { it.time.created }
+    val serverTurn: Long? = (firstAssistant ?: currentAssistant)?.turnNumber
 
     // 时长 —— turn 级跨度：首条 created → 末条 completed。
-    // 仅当 turn 内所有 assistant 消息均 completed 时给值；任一仍流式 → null（流式 ticker 接管）。
+    // 完结信号与时长测量解耦（#343）：allStepsCompleted 回答「轮是否完结」
+    // （全部 assistant 消息带 completed），durationMs 只回答「跨度可测与否」。
     val completedTimes = assistantsForMeta.mapNotNull { it.time.completed }
-    val durationMs: Long? = if (turnStartMs != null && completedTimes.size == assistantsForMeta.size) {
-        completedTimes.max() - turnStartMs
+    val allStepsCompleted = assistantsForMeta.isNotEmpty() && completedTimes.size == assistantsForMeta.size
+    val durationMs: Long? = if (turnStartMs != null && allStepsCompleted) {
+        // #338：零/负跨度 = 时长未知（DSH 整装事件 created=completed 同信封、
+        // 被中断轮同款）——null（台账回落 "-"，宁缺毋谎，与 tokensTotal 缺席
+        // 即 null 同哲学），不以 0ms 冒充实测值。
+        (completedTimes.max() - turnStartMs).takeIf { it > 0 }
     } else {
         null
     }
@@ -208,6 +330,17 @@ fun computeRenderableTurn(
     } else {
         null
     }
+    // #310④ 轨迹台账预计算（后端无关）：步骤数 = assistant 消息数；
+    // token 总量 = Σ 消息级 tokens（严格：任一缺席即 null——混合求和会
+    // 低估整轮用量，宁可缺席不撒谎）。UI 侧只做纯投影（TurnLedger.kt）。
+    val ledgerStepCount = assistantsForMeta.size
+    val ledgerTokensTotal: Long? = assistantsForMeta.mapNotNull { it.tokens }
+        .takeIf { it.size == assistantsForMeta.size }
+        ?.sumOf { t -> (t.total ?: (t.input + t.output)).toLong() }
+
+    // #311 Task4 deliverables 预计算：成功写类调用 args 路径（首见序去重）。
+    // 输入 = 原始 parts（ordered 消息视觉序，含 DSH 工具卡宿主消息）。
+    val deliverablePaths = turnProducedFiles(ordered)
 
     // 用于 token 统计的 StepFinish
     val stepFinishes = if (isTurnLast) {
@@ -235,13 +368,19 @@ fun computeRenderableTurn(
         renderItems = collapseConsecutiveToolCards(renderItems),
         isEmpty = renderItems.isEmpty() && errorText == null,
         errorText = errorText,
+        lastStepDividerBeforePartId = lastStepDividerBeforePartId,
         agentName = agentName,
         modelId = modelId,
         durationMs = durationMs,
         completedTimeMs = completedTimeMs,
         turnStartMs = turnStartMs,
+        serverTurn = serverTurn,
+        allStepsCompleted = allStepsCompleted,
         stepFinishes = stepFinishes,
         taskAgentName = taskAgentName,
         copyText = copyText,
+        stepCount = ledgerStepCount,
+        tokensTotal = ledgerTokensTotal,
+        deliverableFiles = deliverablePaths,
     )
 }

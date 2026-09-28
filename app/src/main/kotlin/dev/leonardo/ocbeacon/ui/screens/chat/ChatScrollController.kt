@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import dev.leonardo.ocbeacon.logging.AppLogger
+import dev.leonardo.ocbeacon.ui.screens.chat.scroll.PreRenderCoordinator
 import dev.leonardo.ocbeacon.ui.screens.chat.util.snapToBottom
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -99,6 +100,13 @@ internal fun rememberChatScrollController(
      *  收敛，超时终态=底部——用户点最早消息落点在最新区）。 */
     jumpLockActive: androidx.compose.runtime.State<Boolean> =
         androidx.compose.runtime.mutableStateOf(false),
+    /** #437 验收六轮（引擎底层重构，用户授权）：流式输出进行中——
+     * MSGEFFECT 锚底与 GUARD 重锚在此期间完全静默（贴底原点由 reverseLayout
+     * 物理跟随；非贴底由高度引擎配对 set 保持画面）。两者原为「非流式异步
+     * 增长」（打开会话/展开卡片后内容长高漂移）设计；流式期间运行会与配对
+     * set 互搏：MSGEFFECT 每 part 拉底=用户上滑瞬间被拽回；GUARD 把配对位移
+     * 当离底漂移重锚=拉锯震荡。 */
+    streamingActive: () -> Boolean = { false },
 ): ChatScrollController {
     val autoScrollEnabled = rememberSaveable { mutableStateOf(true) }
     val forceScrollTick = remember { mutableIntStateOf(0) }
@@ -132,10 +140,13 @@ internal fun rememberChatScrollController(
                 }
                 if (scrolling) {
                     autoScrollEnabled.value = false
-                } else if (atBottom) {
+                } else if (atBottom && !streamingActive()) {
                     // #301：稳定贴底去抖再武装（原瞬时再武装与下跳守卫组成自持
                     // 拉底循环——拉底→贴底→再武装→闪断帧守卫再拉底；真机 LEAP
                     // 0↔2000px 弹跳签名，用户体感「上滑被高频拽回最底」）。
+                    // #437 验收六轮：流式中不 rearm——贴底原点物理跟随无需 autoOn，
+                    // 提前 rearm 会在流式结束瞬间（streamingActive 翻 false）由
+                    // GUARD 对已非贴底视口补拉一次=「输出完成后拉一段」。
                     AutoScrollArbiter.rearmWhenSettledAtBottom(
                         isScrolling = { listState.isScrollInProgress },
                         isAtBottom = { isAtBottomState.value },
@@ -157,7 +168,14 @@ internal fun rememberChatScrollController(
                     " idx=" + listState.firstVisibleItemIndex
             )
         }
-        if (messageCount > 0 && autoScrollEnabled.value && !jumpLockActive.value) {
+        // #423 I3(视口租约):在途渲染前事务(卡片展开/收起 episode)期间让位——
+        // 锚底 requestScrollToItem 与 episode 配对位移互搏(±H 战争)从构造上消除。
+        // 本周期跳过的锚定由 A4 守卫 catch-up:episode 结束(租约释放)后,持续运行
+        // 的守卫 snapshotFlow 见离底即按去抖重锚,消息不丢。
+        if (messageCount > 0 && autoScrollEnabled.value && !jumpLockActive.value &&
+            !PreRenderCoordinator.hasActiveTransactions &&
+            !streamingActive() // #437 验收六轮：流式中静默（物理跟随+配对 set 各司其职）
+        ) {
             // [probe] msgCount effect n=$messageCount autoScroll=${autoScrollEnabled.value} scrollInProgress=${listState.isScrollInProgress}
             // 2026-08-16 根治：死代码根因。原实现 `!listState.isScrollInProgress`
             // 条件失败（新消息恰逢用户 fling 惯性中到达）时静默跳过且不重试。
@@ -173,7 +191,10 @@ internal fun rememberChatScrollController(
             // 仍 true），等待 fling 结束后无条件 requestScrollToItem(0) 会把
             // 用户正翻看的历史位置强拉回底部。等待结束后**重新校验**：用户
             // 拖动已置 autoScroll=false 则放弃锚定（尊重用户的阅读位置）。
-            if (autoScrollEnabled.value) {
+            // #423 I3 复查补遗(评审阻断项):fling 等待窗(≤2s)内 episode 可启动
+            // (点按不置 isScrollInProgress),恢复后须再验租约——与 A9 横幅双检
+            // 同款,否则「带锚穿越」重开 ±H 互搏。
+            if (autoScrollEnabled.value && !PreRenderCoordinator.hasActiveTransactions) {
                 if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                     AppLogger.w(
                         TAG,
@@ -181,7 +202,8 @@ internal fun rememberChatScrollController(
                             listState.firstVisibleItemScrollOffset
                     )
                 }
-                listState.requestScrollToItem(0)
+                dev.leonardo.ocbeacon.ui.screens.chat.components.ViewportDispatchGateway
+                    .bottomFollow(listState, "MSGEFFECT", "autoOn=" + autoScrollEnabled.value)
                 // 2026-08-30 下跳回归根修：requestScrollToItem 是一次性锚定——
                 // 打开时默认展开的卡（shell/事件卡）+ RB/TC/Markdown 异步内容
                 // 在打开后持续长高（实测 600ms-数秒不等），把 item0 渐渐顶离
@@ -201,7 +223,16 @@ internal fun rememberChatScrollController(
                             listState.firstVisibleItemScrollOffset < 100,
                     )
                 }.collectLatest { (scrolling, autoOn, atBottom) ->
-                    if (!scrolling && autoOn && !atBottom && !jumpLockActive.value) {
+                    // #423 I3:episode 静默窗(settle≤600ms+PhaseB 240ms)远超 250ms 去抖——
+                    // 无租约时去抖到期即在动画中段插入重锚。入口+复查双检查(复查点承重)。
+                    // #437 验收六轮：流式中守卫静默（防与配对 set 拉锯）。
+                    if (!scrolling && autoOn && !atBottom && !jumpLockActive.value &&
+                        !PreRenderCoordinator.hasActiveTransactions &&
+                        !streamingActive()
+                    ) {
+                        // #435:stream-instant 退役——流式增长已并入引擎统一配对
+                        // (StreamingGrowLedger:贴底跟随态零派发,锚即意图),震荡根源
+                        // 从构造上消失;守卫回落纯安全网(#301 去抖语义)。
                         // #301：守卫去抖——拖动→fling 交接瞬间 isScrollInProgress
                         // 闪断一帧，原同步开火把上滑用户拉回底部（循环的点火器）。
                         AutoScrollArbiter.reanchorWhenSettledOffBottom(
@@ -212,6 +243,7 @@ internal fun rememberChatScrollController(
                                     listState.firstVisibleItemScrollOffset < 100
                             },
                             jumpLockActive = { jumpLockActive.value },
+                            leaseActive = { PreRenderCoordinator.hasActiveTransactions },
                             reanchor = {
                                 if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                                     AppLogger.w(
@@ -220,7 +252,8 @@ internal fun rememberChatScrollController(
                                             " off=" + listState.firstVisibleItemScrollOffset
                                     )
                                 }
-                                listState.requestScrollToItem(0)
+                                dev.leonardo.ocbeacon.ui.screens.chat.components.ViewportDispatchGateway
+                                    .bottomFollow(listState, "GUARD", "settled-reanchor")
                             },
                         )
                     }
@@ -238,7 +271,10 @@ internal fun rememberChatScrollController(
             // 永不重跑的谓词内）都不执行 —— tick 路径完全不滚。
             // 现改为经 [ForceScrollExecutor] 订阅 LazyListState.layoutInfo
             // （derived state，随组合/布局更新重新求值）等待真实增长。
-            ForceScrollExecutor(gate = LazyListStateGate(listState)).execute()
+            ForceScrollExecutor(
+                gate = LazyListStateGate(listState),
+                leaseActive = { PreRenderCoordinator.hasActiveTransactions },
+            ).execute()
         }
     }
 
@@ -254,7 +290,9 @@ internal fun rememberChatScrollController(
                     snapshotFlow { listState.isScrollInProgress }.first { !it }
                 }
             }
-            if (autoScrollEnabled.value) {
+            // #423 I3:animateScrollToItem 走 scroll{} → isScrollInProgress → 取消
+            // 在途 episode(用户展开动画);让位本周期,下一 pendingCount 变化重触发。
+            if (autoScrollEnabled.value && !PreRenderCoordinator.hasActiveTransactions) {
                 if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                     AppLogger.w(
                         TAG,
@@ -266,7 +304,7 @@ internal fun rememberChatScrollController(
                 // 2026-08-30 问题卡方向修复：snapToBottom 的瞬跳把整个对话
                 // 一把推上去（用户观感「向上展开」）；animateScrollToItem 平滑
                 // 下滑揭示，问题卡随视口自头部下方逐帧展开 = 向下展开。
-                listState.animateScrollToItem(0)
+                dev.leonardo.ocbeacon.ui.screens.chat.components.ViewportDispatchGateway.explicitAnimatePin(listState, "PENDING")
             }
         }
     }
@@ -325,11 +363,15 @@ internal class LazyListStateGate(private val state: LazyListState) : ScrollListG
  * @param onGrowthTimeout 消息增长等待超时的日志回调（测试中兼作断言探针）
  * @param waitOneFrame 等一帧布局的挂起块（生产 `withFrameNanos`；测试注入空实现，
  *        因 JVM 单测无 MonotonicFrameClock，`withFrameNanos` 会永久挂起）
+ * @param leaseActive #423 I3 视口租约探针（活动渲染前事务>0）。强滚锚底与在途
+ *        episode 的 end-restore 配对位移互搏——等待租约释放再锚定;超时仍强制
+ *        （发送后跟随之义,用户显式意图优先）。
  */
 internal class ForceScrollExecutor(
     private val gate: ScrollListGate,
     private val onGrowthTimeout: (String) -> Unit = { AppLogger.d(TAG, it) },
     private val waitOneFrame: suspend () -> Unit = { withFrameNanos { } },
+    private val leaseActive: () -> Boolean = { false },
 ) {
     /** 底部判定：首项 index==0 且偏移 < 100（reverseLayout 下 0 即最底）。 */
     private fun atBottom(): Boolean =
@@ -350,14 +392,22 @@ internal class ForceScrollExecutor(
             }
         }
 
-        gate.requestScrollToItem(0)
+        // #423 I3:视口租约有界等待——快照可观察(生产读 PreRenderCoordinator.activeCount,
+        // 快照 int state;测试读 mutableStateOf)。免等待路径:lease 空闲时零开销直过。
+        if (leaseActive()) {
+            withTimeoutOrNull(LEASE_WAIT_MS) {
+                snapshotFlow { leaseActive() }.first { !it }
+            }
+        }
+
+        dev.leonardo.ocbeacon.ui.screens.chat.components.ViewportDispatchGateway.explicitPinAction("ForceScroll", "primary") { gate.requestScrollToItem(0) }
 
         // 滚后校验：超时兜底路径（grew==null，消息未到/发送失败）与补偿后未到位时重滚一次
         waitOneFrame()
         if (!atBottom()) {
             withTimeoutOrNull(VERIFY_TIMEOUT_MS) {
                 snapshotFlow { atBottom() }.first { it }
-            } ?: gate.requestScrollToItem(0)
+            } ?: dev.leonardo.ocbeacon.ui.screens.chat.components.ViewportDispatchGateway.explicitPinAction("ForceScroll", "verify-retry") { gate.requestScrollToItem(0) }
         }
 
         if (grew == null) {
@@ -370,6 +420,9 @@ internal class ForceScrollExecutor(
         const val FLING_TIMEOUT_MS = 2_000L
         const val VERIFY_TIMEOUT_MS = 1_000L
         const val AT_BOTTOM_OFFSET_MAX = 100
+
+        /** #423 I3:episode 最坏链(settle 600+stab 700+phaseB 240+收尾)≈2s,3s 富余。 */
+        const val LEASE_WAIT_MS = 3_000L
     }
 }
 
@@ -405,15 +458,20 @@ internal object AutoScrollArbiter {
      * #301：守卫重锚——稳定非滚动 [GUARD_DEBOUNCE_MS] 且四条件复查仍成立才
      * 执行 [reanchor]。同由 collectLatest 驱动——闪断帧不点火（循环的下半环）；
      * 真实离底漂移（异步内容长高，600ms-数秒）稳定超窗，本职保留。
+     *
+     * #423 I3：[leaseActive] = 视口租约(活动渲染前事务)。复查点为承重检查——
+     * episode 静默窗(settle+PhaseB)不产生 Triple 再发射,去抖在动画中段到期,
+     * 仅入口判定不足以关闭战争窗。租约释放后由下一次条件变化/新快照触发 catch-up。
      */
     suspend fun reanchorWhenSettledOffBottom(
         isScrolling: () -> Boolean,
         autoScrollOn: () -> Boolean,
         isAtBottom: () -> Boolean,
         jumpLockActive: () -> Boolean,
+        leaseActive: () -> Boolean = { false },
         reanchor: () -> Unit,
     ) {
         delay(GUARD_DEBOUNCE_MS)
-        if (!isScrolling() && autoScrollOn() && !isAtBottom() && !jumpLockActive()) reanchor()
+        if (!isScrolling() && autoScrollOn() && !isAtBottom() && !jumpLockActive() && !leaseActive()) reanchor()
     }
 }

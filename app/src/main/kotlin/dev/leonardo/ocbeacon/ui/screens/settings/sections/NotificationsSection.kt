@@ -34,6 +34,7 @@ import dev.leonardo.ocbeacon.service.ChannelSound
 import dev.leonardo.ocbeacon.ui.screens.settings.SettingsViewModel
 import dev.leonardo.ocbeacon.ui.screens.settings.components.SectionHeader
 import dev.leonardo.ocbeacon.ui.theme.ListItemTokens
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 @Composable
 fun NotificationsSection(viewModel: SettingsViewModel) {
@@ -111,7 +112,7 @@ fun NotificationsSection(viewModel: SettingsViewModel) {
         }.padding(ListItemTokens.ContentPaddingMedium)
     )
 
-    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+    HorizontalDivider(modifier = Modifier.padding(vertical = SpacingTokens.XS.dp))
 }
 
 @Composable

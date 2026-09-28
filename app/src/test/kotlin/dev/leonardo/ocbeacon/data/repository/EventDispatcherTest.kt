@@ -61,9 +61,13 @@ class EventDispatcherTest {
             ownershipRegistry = StreamingOwnershipRegistry(),
             // #122 接线新增：自动批准（relaxed mock——shouldAutoApprove 恒 false，既有用例不受影响）
             permissionAutoApprover = io.mockk.mockk<dev.leonardo.ocbeacon.data.repository.PermissionAutoApprover>(relaxed = true),
+            pendingInteractionStore = io.mockk.mockk<dev.leonardo.ocbeacon.data.repository.PendingInteractionStore>(relaxed = true),
             historySyncManagerProvider = javax.inject.Provider { io.mockk.mockk<dev.leonardo.ocbeacon.data.repository.HistorySyncManager>(relaxed = true) },
             dshJobsHandler = io.mockk.mockk<dev.leonardo.ocbeacon.data.repository.handler.DshJobsHandler>(relaxed = true),
             dshQueueHandler = dev.leonardo.ocbeacon.data.repository.handler.DshQueueHandler(mockk(relaxed = true)),
+            dshWorkspaceHandler = dev.leonardo.ocbeacon.data.repository.handler.DshWorkspaceHandler(
+                dev.leonardo.ocbeacon.data.repository.DshWorkspaceStore(),
+            ),
 
         )
     }
@@ -396,15 +400,14 @@ class EventDispatcherTest {
     @Test
     fun `second server events for claimed session are skipped`() = runTest {
         val session = testSession("s1")
-        // Server1 声明所有权
+        // Server1 声明所有权（#303：生命周期事件豁免拦截，但仍 claim 占位）
         dispatcher.processEvent(SseEvent.SessionCreated(session), "server1")
 
-        // Server2 发送同一会话的更新 —— 应被跳过
-        dispatcher.processEvent(
-            SseEvent.SessionUpdated(session.copy(title = "From Server2")), "server2"
-        )
+        // Server2 发送同一会话的流式事件 —— 应被跳过（去重保留给非幂等事件）
+        val msg = Message.User(id = "m1", sessionId = "s1", time = TimeInfo(1000L))
+        dispatcher.processEvent(SseEvent.MessageUpdated(msg), "server2")
 
-        assertEquals("Test", dispatcher.sessions.value.first().title)
+        assertNull(dispatcher.messages.value["s1"])
     }
 
     @Test

@@ -20,8 +20,18 @@
     <string name="sessions_new">جلسة جديدة</string>
     <string name="session_status_idle">خامل</string>
     <string name="session_status_busy">يعمل…</string>
+    <string name="session_status_retry_countdown">إعادة المحاولة خلال %1$d ثانية</string>
     <string name="session_status_retry">إعادة المحاولة (%1$d)</string>
+    <string name="turn_max_tokens_title">تم الوصول إلى حد الإخراج</string>
+    <string name="turn_max_tokens_continue">متابعة</string>
+    <string name="command_feedback_running">قيد التشغيل…</string>
+    <string name="command_feedback_accepted">تم القبول</string>
+    <string name="command_feedback_completed">اكتمل</string>
+    <string name="command_feedback_failed">فشل</string>
+    <string name="command_feedback_a11y_running">الأمر قيد التنفيذ</string>
     <!-- Chat Screen -->
+    <string name="chat_mention_session_a11y">الجلسة %1$s</string>
+    <string name="chat_mention_same_workspace">نفس مساحة العمل</string>
     <string name="chat_send">إرسال</string>
     <string name="chat_send_queued">إرسال (في الانتظار)</string>
     <string name="chat_empty">ابدأ جلسة</string>
@@ -119,6 +129,9 @@
     <string name="session_rename_button">إعادة تسمية</string>
     <string name="session_delete">حذف الجلسة</string>
     <string name="session_delete_confirm">حذف "%1$s"؟ لا يمكن التراجع عن ذلك.</string>
+    <string name="session_menu_archive">أرشفة</string>
+    <string name="session_archived_section_title">المؤرشفة (%1$d)</string>
+    <string name="session_archive_failed">تعذّر أرشفة الجلسة</string>
     <string name="chat_stop">إيقاف</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->
@@ -137,6 +150,8 @@
     <string name="pending_item_sending">جارٍ الإرسال…</string>
     <string name="todo_empty">لا توجد عناصر TODO</string>
     <string name="chat_copy">نسخ</string>
+    <string name="table_copy_cell">نسخ الخلية</string>
+    <string name="table_copy_table">نسخ الجدول (TSV)</string>
     <string name="terminal_copy">نسخ</string>
     <string name="terminal_paste">لصق</string>
     <string name="terminal_more">المزيد…</string>
@@ -163,6 +178,11 @@
     <string name="chat_share_url_copied">تم نسخ رابط المشاركة</string>
     <string name="chat_share_failed">فشل في مشاركة الجلسة</string>
     <string name="chat_copied_clipboard">تم النسخ إلى الحافظة</string>
+    <string name="chat_feedback_positive">تقييم كمفيد</string>
+    <string name="chat_feedback_negative">تقييم كغير مفيد</string>
+    <string name="chat_feedback_removed">تمت إزالة التقييم</string>
+    <string name="chat_feedback_conflict">تم تغيير التقييم في مكان آخر، حاول مرة أخرى</string>
+    <string name="chat_feedback_failed">فشل حفظ التقييم</string>
     <string name="image_count_single">صورة واحدة</string>
     <string name="image_count_multiple">%1$d صور</string>
     <string name="sessions_new_dialog_title">جلسة جديدة</string>
@@ -174,6 +194,7 @@
     <string name="sessions_working">يعمل</string>
     <string name="sessions_retrying">إعادة المحاولة</string>
     <string name="session_pending_question">في انتظار الإجابة</string>
+    <string name="session_pending_approval">في انتظار الموافقة</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
     <string name="chat_response">الرد</string>
@@ -213,7 +234,16 @@
     <string name="chat_event_task_failed">فشل الوكيل الفرعي</string>
     <string name="chat_event_shell_completed">اكتمل أمر الخلفية</string>
     <string name="chat_event_shell_failed">فشل أمر الخلفية</string>
-    <string name="chat_event_generic">حدث</string>
+    <string name="chat_turn_ledger_expand">إظهار تفاصيل الدور</string>
+    <string name="chat_turn_ledger_collapse">إخفاء تفاصيل الدور</string>
+    <string name="chat_turn_fork_from_here">تفرع من هذا الدور</string>
+    <!-- #311 Task4 deliverables 产出文件行 + Task5 skill 工具卡 -->
+    <string name="chat_produced_files_label">النواتج</string>
+    <string name="chat_produced_files_more">+%1$d أخرى</string>
+    <string name="chat_produced_files_open">فتح %1$s</string>
+    <string name="chat_skill_title">Skill</string>
+    <string name="chat_skill_instructions">التعليمات</string>
+    <string name="chat_event_generic">إشعار</string>
     <string name="chat_event_locate_task">تحديد موقع المهمة</string>
     <string name="task_sheet_subagent_completed">مكتمل</string>
     <string name="agent_tree_diagnostic_corrupt">إدخال وكيل فرعي تالف</string>
@@ -221,6 +251,42 @@
     <string name="agent_tree_diagnostic_unavailable">إدخال وكيل فرعي غير متوفر</string>
     <string name="chat_label_user">المستخدم</string>
     <string name="chat_label_agent">الوكيل</string>
+    <string name="chat_steer">مقاطعة</string>
+
+    <string name="chat_msg_status_streaming">جارٍ البث</string>
+    <string name="chat_msg_status_interrupted">تم الإيقاف</string>
+    <string name="chat_msg_status_error">خطأ</string>
+    <string name="chat_msg_detail_title">تفاصيل الرسالة</string>
+    <string name="chat_detail_time">الوقت</string>
+    <string name="chat_detail_duration">المدة</string>
+    <string name="chat_detail_tokens">الرموز</string>
+    <string name="chat_copy_markdown_source">نسخ مصدر Markdown</string>
+    <string name="chat_delete_message">حذف الرسالة</string>
+    <string name="chat_delete_message_title">حذف الرسالة؟</string>
+    <string name="chat_delete_message_message">سيؤدي هذا إلى إزالة الرسالة من جلسة الخادم. لا يمكن التراجع عن هذا الإجراء.</string>
+    <string name="chat_message_deleted">تم حذف الرسالة</string>
+    <string name="chat_message_delete_failed">فشل في حذف الرسالة</string>
+    <string name="chat_stats_ttft">TTFT</string>
+    <string name="chat_stats_tokens_per_second">tokens/s</string>
+    <string name="chat_msg_tail_summary">%1$d خطوات · %2$d أدوات</string>
+    <string name="a11y_message_detail">تفاصيل الرسالة</string>
+    <string name="chat_stats_session_title">إحصاءات الجلسة</string>
+    <string name="chat_stats_summary">الدور %1$d · %2$d خطوات · %3$s LLM · %4$s أدوات</string>
+    <string name="chat_stats_ttft_avg">متوسط TTFT: %1$s</string>
+    <string name="chat_stats_decode">%1$s tokens/s</string>
+    <string name="chat_stats_per_turn_title">تفاصيل كل دور</string>
+    <string name="chat_stats_turn_row">الدور %1$d · %2$s · %3$s</string>
+    <string name="chat_stats_input">الإدخال</string>
+    <string name="chat_stats_output">الإخراج</string>
+    <string name="chat_stats_reasoning">الاستدلال</string>
+    <string name="chat_stats_cache_read">قراءة المخزن المؤقت</string>
+    <string name="chat_stats_cache_write">كتابة المخزن المؤقت</string>
+    <string name="chat_stats_cost">التكلفة</string>
+    <string name="chat_stats_model">النموذج</string>
+    <string name="chat_stats_steps">الخطوات</string>
+    <string name="chat_stats_tools">الأدوات</string>
+    <string name="chat_stats_expand">إظهار تفاصيل الدور</string>
+    <string name="chat_stats_collapse">إخفاء تفاصيل الدور</string>
     <string name="chat_subagent_completed_notification">اكتمل الوكيل الفرعي</string>
     <string name="chat_subagent_failed_notification">فشل الوكيل الفرعي</string>
     <string name="chat_status_updating_tasks">تحديث المهام</string>
@@ -401,7 +467,9 @@
     <string name="chat_shell_placeholder">أدخل أمر شل...</string>
     <string name="chat_shell_failed">فشل تشغيل أمر الشل</string>
     <string name="chat_shell_empty">يرجى إدخال أمر شل أولاً</string>
+    <string name="chat_subagent_one_shot_read_only">جلسة وكيل فرعي للاستخدام مرة واحدة: لا يتم دعم الرسائل التابعة</string>
     <string name="chat_shell_attachments_unsupported">وضع الشل لا يدعم المرفقات</string>
+    <string name="chat_command_images_unsupported">أوامر الشرطة المائلة لا تدعم مرفقات الصور</string>
     <string name="chat_terminal_connect_failed">فشل فتح الطرفية</string>
     <string name="server_settings_providers">المزودون</string>
     <string name="server_settings_providers_desc">تفعيل أو تعطيل المزودين لهذا الخادم</string>
@@ -475,6 +543,7 @@
     <string name="session_details_diff">Diff</string>
     <string name="session_details_diff_summary">+%1$d −%2$d (%3$d ملف)</string>
     <string name="chat_thinking_complete">تفكير لمدة %1$s</string>
+    <string name="chat_thinking_complete_unknown">اكتمل التفكير</string>
     <string name="chat_token_usage_total">%,d رمزي</string>
     <string name="chat_token_input">الإدخال</string>
     <string name="chat_token_output">الإخراج</string>
@@ -498,13 +567,11 @@
     <string name="settings_delete_rule">حذف القاعدة</string>
     <string name="settings_expand_reasoning">توسيع الاستدلال تلقائيًا</string>
     <string name="settings_expand_reasoning_desc">عرض عملية التفكير بشكل افتراضي؛ انقر على العنوان للتبديل</string>
-    <string name="chat_meta_tokens">%d رمزي</string>
     <string name="chat_glob_match_count">%d تطابق</string>
     <string name="tool_web_fetch">WebFetch</string>
     <string name="chat_webfetch_prompt">الملف: %s</string>
     <string name="tool_web_search">WebSearch</string>
     <string name="chat_context_usage">السياق: %1$d%%</string>
-    <string name="chat_queued">في الانتظار</string>
     <string name="chat_retry_send">إعادة المحاولة</string>
     <string name="chat_title_placeholder">Chat</string>
     <string name="chat_context_detail_title">تفاصيل استخدام السياق</string>
@@ -539,6 +606,7 @@
     <string name="a11y_icon_navigate_forward">التقدم للأمام</string>
     <string name="a11y_locate_task">تحديد موقع المهمة الأصلية</string>
     <string name="chat_locate_task_not_found">لم يتم العثور على المهمة الأصلية في هذه الجلسة</string>
+    <string name="chat_locate_message_not_found">لم يتم العثور على الرسالة في هذه الجلسة</string>
     <string name="a11y_icon_add">إضافة</string>
     <string name="a11y_icon_share">مشاركة</string>
     <string name="a11y_icon_unlink">إزالة الربط</string>
@@ -763,9 +831,15 @@
     <string name="settings_storage_clear_confirm">مسح</string>
     <string name="settings_storage_cleared">تم مسح الأرشيف</string>
     <string name="search_content_hits">مطابقات الرسائل</string>
+    <!-- #322：DSH 服务器历史命中（session/search） -->
+    <string name="search_server_hits">مطابقات الجلسات</string>
+    <string name="search_server_more">يتم عرض أول 20 مطابقة فقط</string>
     <string name="search_content_coverage_hint">لم تتم مزامنة السجل الكامل لهذه الجلسة</string>
     <string name="search_content_hit_count">%1$d من الرسائل</string>
     <string name="search_filter_role_all">كل الأدوار</string>
+    <string name="search_filter_menu">تصفية</string>
+    <string name="search_filter_role_section">الدور</string>
+    <string name="search_filter_time_section">المدة</string>
     <string name="search_filter_role_user">المستخدم</string>
     <string name="search_filter_role_assistant">الذكاء الاصطناعي</string>
     <string name="search_filter_time_all">كل الفترات</string>
@@ -778,10 +852,19 @@
     <string name="permission_custom">مخصص</string>
     <string name="permission_custom_hint">إعداد إذن مخصص</string>
     <string name="permission_switch_failed">فشل تبديل إعداد الإذن</string>
+    <string name="permission_full_access_confirm_title">التبديل إلى الوصول الكامل؟</string>
+    <string name="permission_full_access_confirm_message">يتيح الوصول الكامل للوكيل تشغيل الأوامر وتعديل الملفات دون قيود رملية. فعّله فقط للمهام الموثوقة.</string>
+    <string name="permission_full_access_confirm_button">التبديل إلى الوصول الكامل</string>
     <string name="a11y_icon_permission_preset">إعداد الإذن</string>
+    <string name="plan_chip_label">Plan</string>
+    <string name="plan_chip_active_a11y">وضع Plan مفعّل — انقر لإيقافه (/plan off)</string>
+    <string name="plan_chip_pending_a11y">جارٍ التبديل إلى وضع Plan — انقر للإلغاء (/plan off)</string>
+    <string name="plan_exit_failed">تعذّر الخروج من وضع Plan</string>
     <string name="server_settings_default_permission">الصلاحية الافتراضية للجلسات الجديدة</string>
     <string name="agent_preset_locked">تم قفل إعداد الوكيل لهذه الجلسة</string>
     <string name="agent_preset_switch_failed">فشل تبديل إعداد الوكيل</string>
+    <string name="sessions_new_dialog_preset_label">إعداد الوكيل</string>
+    <string name="sessions_new_dialog_preset_default">افتراضي</string>
     <string name="agent_preset_cards_title">اختر إعداد الوكيل</string>
     <string name="server_settings_default_agent_preset">إعداد الوكيل الافتراضي للجلسات الجديدة</string>
     <string name="session_details_agent_preset">إعداد الوكيل</string>
@@ -797,6 +880,7 @@
         <string name="goal_blocked_reason">السبب: %1$s</string>
         <string name="goal_action_pause">إيقاف مؤقت</string>
         <string name="goal_action_resume">استئناف</string>
+        <string name="goal_action_complete">وسم كمكتمل</string>
         <string name="goal_action_edit">تعديل</string>
         <string name="goal_action_clear">مسح</string>
         <string name="goal_create_heading">إنشاء هدف</string>
@@ -816,10 +900,13 @@
     <string name="queue_remove">إزالة الرسالة من قائمة الانتظار</string>
     <string name="queue_steer">توجيه إلى الدور التالي</string>
     <string name="queue_edit_hint">تحرير الرسالة في قائمة الانتظار</string>
+    <string name="queue_title">قائمة الانتظار</string>
+    <string name="queue_empty">لا توجد رسائل في قائمة الانتظار</string>
     <string name="queue_steer_unavailable">التوجيه متاح فقط أثناء تشغيل الجلسة</string>
     <string name="queue_action_failed">فشل إجراء قائمة الانتظار</string>
     <!-- #267 Server disconnect awareness (banner + fast-fail message) -->
     <string name="server_link_disconnected_banner">تم قطع اتصال الخادم، جارٍ إعادة الاتصال…</string>
+    <string name="server_link_disconnected_banner_countdown">انقطع الاتصال بالخادم، جارٍ إعادة الاتصال… (إعادة المحاولة خلال %1$d ثانية)</string>
     <string name="server_link_disconnected_message">الخادم غير متصل، لم يتم إرسال العملية</string>
 
     <!-- #154a 崩溃启动提示 -->
@@ -866,4 +953,77 @@
     <string name="supervisor_notification_root_failing_title">المشرف: %1$d جذر فاشل</string>
     <string name="supervisor_notification_error_peak_title">المشرف: ذروة الأخطاء ترتفع</string>
     <string name="supervisor_notification_error_peak">ذروة الأخطاء: %1$d</string>
+    <string name="dsh_token_banner_text">يتطلب هذا الخادم رمز دخول</string>
+    <string name="dsh_token_banner_action">إدخال الرمز</string>
+    <string name="dsh_token_dialog_title">رمز الدخول مطلوب</string>
+    <string name="dsh_token_dialog_message">الصق الرمز أو عنوان URL الكامل من سطر بدء تشغيل الخادم (يحتوي على token=...).</string>
+    <string name="dsh_token_dialog_hint">الرمز أو عنوان URL</string>
+    <string name="dsh_token_dialog_connect">اتصال</string>
+    <string name="dsh_token_dialog_rejected">رفض الخادم الرمز. تحقق منه وحاول مجددًا.</string>
+    <string name="server_pair_help_title">الإقران الأول</string>
+    <string name="server_pair_help_manual">يدويًا: احفظ هذا الخادم واتصل به، ثم انقر على "إدخال الرمز" في الشريط العلوي والصق الرمز من سطر بدء تشغيل الخادم</string>
+    <string name="server_pair_help_adb">عبر USB (إصدارات التطوير): شغّل ./scripts/dsh-pair.sh على المضيف — يتم إدخال الرمز تلقائيًا</string>
+    <string name="server_pair_help_deeplink">أو شغّل ./scripts/dsh-pair.sh --lan على المضيف وامسح رابط ocbeacon:// أو انقر عليه لتعبئة هذا النموذج تلقائيًا</string>
+
+    <!-- #324① DSH provider 目录/自定义增删 -->
+    <string name="dsh_settings_loopback_required">يتطلب هذا الإجراء اتصال loopback (عبر adb reverse إلى 127.0.0.1).</string>
+    <string name="dsh_providers_section_title">دليل مزودي DSH</string>
+    <string name="dsh_providers_empty">لم يُبلغ الخادم عن أي مزودين.</string>
+    <string name="dsh_provider_add_custom">إضافة مزود مخصص</string>
+    <string name="dsh_provider_route">معرّف المسار</string>
+    <string name="dsh_provider_route_hint">أحرف صغيرة وأرقام وشرطات؛ يجب أن يبدأ بحرف.</string>
+    <string name="dsh_provider_route_invalid">يجب أن يتكون المسار من أحرف صغيرة وأرقام وشرطات وأن يبدأ بحرف.</string>
+    <string name="dsh_provider_route_taken">هذا المسار مستخدم بالفعل.</string>
+    <string name="dsh_provider_display_name">اسم العرض (اختياري)</string>
+    <string name="dsh_provider_base_url">عنوان URL الأساسي</string>
+    <string name="dsh_provider_api_key">مفتاح API (اختياري)</string>
+    <string name="dsh_provider_api_key_hint">يُخزَّن في بيانات اعتماد الخادم؛ ولن تُعرض القيمة مرة أخرى أبدًا.</string>
+    <string name="dsh_provider_discover">اكتشاف النماذج</string>
+    <string name="dsh_provider_discover_failed">فشل الاكتشاف: %1$s</string>
+    <string name="dsh_provider_models_none">لم تُكتشف أي نماذج بعد. أدخل عنوان URL الأساسي واضغط اكتشاف.</string>
+    <string name="dsh_provider_model_select">اختر النماذج المراد تضمينها</string>
+    <string name="dsh_provider_create">إنشاء</string>
+    <string name="dsh_provider_delete">حذف</string>
+    <string name="dsh_provider_delete_confirm_title">حذف المزود المخصص</string>
+    <string name="dsh_provider_delete_confirm_text">حذف المزود المخصص %1$s؟ سيُزال مفتاح الاعتماد المخزَّن (إن وُجد) أيضًا.</string>
+    <string name="dsh_provider_credential_configured">مفتاح الاعتماد مُهيأ</string>
+    <string name="dsh_provider_credential_missing">مفتاح الاعتماد غير مضبوط</string>
+    <string name="dsh_provider_active">نشط في وقت التشغيل</string>
+    <string name="dsh_provider_inactive">غير نشط في وقت التشغيل</string>
+
+    <!-- #324② preset 管理 -->
+    <string name="dsh_preset_view">عرض التركيبة</string>
+    <string name="dsh_preset_copy_title">تكرار الإعداد %1$s</string>
+    <string name="dsh_preset_copy_id">معرّف الإعداد الجديد</string>
+    <string name="dsh_preset_copy_name">اسم جديد (اختياري)</string>
+    <string name="dsh_preset_copy">تكرار</string>
+    <string name="dsh_preset_delete_confirm_title">حذف الإعداد</string>
+    <string name="dsh_preset_delete_confirm_text">حذف إعداد المستخدم %1$s؟ الجلسات الجارية لا تتأثر؛ الجلسات الجديدة تعود إلى الافتراضي.</string>
+    <string name="dsh_preset_broken_badge">تالف: %1$s</string>
+
+    <!-- #324③ 插件配置与清单 -->
+    <string name="dsh_plugins_inventory_title">إضافات الخادم</string>
+    <string name="dsh_plugins_inventory_empty">لم يُبلَّغ عن قائمة إضافات.</string>
+    <string name="dsh_plugin_enabled">مُمكّن</string>
+    <string name="dsh_plugin_disabled">معطّل</string>
+    <string name="dsh_plugin_conditional">مشروط</string>
+    <string name="dsh_plugin_preset_group">الإعداد: %1$s</string>
+    <string name="dsh_server_config_title">إعدادات الخادم</string>
+    <string name="dsh_config_applies_live">يسري فورًا</string>
+    <string name="dsh_config_applies_restart">يتطلب إعادة التشغيل</string>
+    <string name="dsh_secret_no_ref">يُدار خارج هذا التطبيق (لا يوجد مرجع اعتماد معلن).</string>
+
+    <!-- #324④ skills 触发组 -->
+    <string name="slash_skills_group">المهارات</string>
+    <string name="slash_skill_model_invocable">مهارة يستدعيها النموذج</string>
+    <string name="chat_busy_menu_send_now">إرسال الآن</string>
+    <string name="chat_busy_menu_send_now_desc">يُدرج في الدور الجاري ويظهر فورًا</string>
+    <string name="chat_busy_menu_queue">إضافة إلى قائمة الانتظار</string>
+    <string name="chat_busy_menu_queue_desc">يُرسل تلقائيًا عند انتهاء هذا الدور</string>
+    <string name="chat_busy_menu_queue_no_attachments">الرسائل ذات المرفقات يجب إرسالها الآن</string>
+    <!-- #385: DSH context injection compact card labels (source.kind) -->
+    <string name="chat_injection_agent_instructions">تعليمات مساحة العمل</string>
+    <string name="chat_injection_skill_catalog">كتالوج المهارات</string>
+    <string name="chat_injection_plugin">إعدادات الإضافات</string>
+    <string name="chat_injection_context">إدراج السياق</string>
 </resources>

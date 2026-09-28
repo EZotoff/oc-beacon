@@ -3,3 +3,53 @@ dist/
 build/
 app/build/
 local.properties
+vcs.xml
+
+# OS
+.DS_Store
+
+# Obsidian editor workspace（个人学习专区实时状态，不入库）
+docs/learning/.obsidian/
+
+# AI tool artifacts
+.superpowers/
+.worktrees/
+.post-dev-verification/
+.replicant/
+replicant/
+.run/
+
+# Temp files
+null
+tmp_diff.txt
+lokit.lock
+*.tmp
+/tmp-verify/
+/.tmp-verify/
+
+# Test evidence screenshots
+docs/test-evidence/
+test_screenshots/
+screenshots/
+eng.traineddata
+
+# Maestro local run data
+.maestro/
+
+# E2E test screenshots
+*.png
+*.jpg
+
+# Git worktrees
+/.worktrees/
+
+# 验证产物（截图/诊断日志）
+/verify-shots/
+
+nul
+*.swp
+.probe
+
+# 三面回归运行时（含真实密钥/隔离 HOME/测试仓库——setup-secrets.sh 从宿主提取，绝不入库）
+scripts/regression/runtime/
+scripts/regression/.env

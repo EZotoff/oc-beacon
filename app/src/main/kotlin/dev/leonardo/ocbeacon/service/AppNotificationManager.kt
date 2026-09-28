@@ -299,8 +299,8 @@ class AppNotificationManager @Inject constructor(
         sessionId: String
     ) {
         val (sessionTitle, _) = getSessionInfo(sessionId)
-        val displayName = sessionTitle?.takeIf { it.isNotBlank() }
-            ?: appContext.getString(R.string.notification_new_session)
+        // #320：标题回退会话 id（title 缺失时直接可辨识，不再落泛化文案）
+        val displayName = SessionNotificationIds.notificationTitle(sessionTitle, sessionId)
 
         val typeLabel = appContext.getString(R.string.notification_tag_ready)
         val title = "$typeLabel · $displayName"
@@ -344,8 +344,8 @@ class AppNotificationManager @Inject constructor(
         if (!shouldNotifyPermission(server.id, sessionId, permission)) return
 
         val (sessionTitle, _) = getSessionInfo(sessionId)
-        val displayName = sessionTitle?.takeIf { it.isNotBlank() }
-            ?: appContext.getString(R.string.notification_new_session)
+        // #320：标题回退会话 id（title 缺失时直接可辨识，不再落泛化文案）
+        val displayName = SessionNotificationIds.notificationTitle(sessionTitle, sessionId)
         val title = "${appContext.getString(R.string.notification_tag_permission)} · $displayName"
         val contentText = findLatestUserMessages(sessionId, 1).firstOrNull()?.text
             ?: permission.ifBlank { appContext.getString(R.string.notification_new_message) }
@@ -353,6 +353,10 @@ class AppNotificationManager @Inject constructor(
         val notifId = eventNotificationId(server.id, sessionId, 1000)
         val pendingIntent = createSessionPendingIntent(server, sessionId, notifId)
 
+        // #346：权限类退出 server 分组——组汇总挂在 LOW 重要度 tasks_silent
+        // 通道，MIUI 整组折叠成一行静默项，高重要度子卡不可见（用户实测「没看到
+        // 问题通知」而 dumpsys 在场）；独立卡形态同时解决组卡子项 tap 不可达
+        //（E4②）。轮完成（静默流）保留分组语义。
         val notification = NotificationCompat.Builder(appContext, NOTIFICATION_CHANNEL_PERMISSIONS_ID)
             .setContentTitle(title)
             .setContentText(contentText)
@@ -362,12 +366,10 @@ class AppNotificationManager @Inject constructor(
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setVibrate(longArrayOf(0, 300, 100, 300))
-            .setGroup("server_${server.id}")
             .build()
 
         markPermissionNotified(server.id, sessionId, permission)
         systemNotificationManager.notify(notifId, notification)
-        showServerGroupSummary(server)
     }
 
     fun showQuestionNotification(
@@ -378,8 +380,8 @@ class AppNotificationManager @Inject constructor(
         // 去重 + 抑制：key 含 serverId，避免跨服务器同 sessionId 误判
         if (!shouldNotifyQuestion(server.id, sessionId, questionText)) return
         val (sessionTitle, _) = getSessionInfo(sessionId)
-        val displayName = sessionTitle?.takeIf { it.isNotBlank() }
-            ?: appContext.getString(R.string.notification_new_session)
+        // #320：标题回退会话 id（title 缺失时直接可辨识，不再落泛化文案）
+        val displayName = SessionNotificationIds.notificationTitle(sessionTitle, sessionId)
         val title = "${appContext.getString(R.string.notification_tag_question)} · $displayName"
         // P3（2026-08-19）：正文优先问题文本本身——短且直接（"What is your
         // favorite animal?"）；此前优先最后一条用户消息，正文是触发 prompt
@@ -393,6 +395,7 @@ class AppNotificationManager @Inject constructor(
         val notifId = eventNotificationId(server.id, sessionId, 2000)
         val pendingIntent = createSessionPendingIntent(server, sessionId, notifId)
 
+        // #346：同权限——问题类退出 server 分组（静默组汇总埋卡，见权限处注释）
         val notification = NotificationCompat.Builder(appContext, NOTIFICATION_CHANNEL_QUESTIONS_ID)
             .setContentTitle(title)
             .setContentText(contentText)
@@ -402,12 +405,10 @@ class AppNotificationManager @Inject constructor(
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setVibrate(longArrayOf(0, 300, 100, 300))
-            .setGroup("server_${server.id}")
             .build()
 
         markQuestionNotified(server.id, sessionId, questionText)
         systemNotificationManager.notify(notifId, notification)
-        showServerGroupSummary(server)
     }
 
     /**
@@ -466,8 +467,8 @@ class AppNotificationManager @Inject constructor(
     ) {
         if (sessionId == null) return
         val (sessionTitle, _) = getSessionInfo(sessionId)
-        val displayName = sessionTitle?.takeIf { it.isNotBlank() }
-            ?: appContext.getString(R.string.notification_new_session)
+        // #320：标题回退会话 id（title 缺失时直接可辨识，不再落泛化文案）
+        val displayName = SessionNotificationIds.notificationTitle(sessionTitle, sessionId)
         val title = "${appContext.getString(R.string.notification_tag_error)} · $displayName"
         // 错误内容：JSON/数组错误包不可读但不应完全丢弃，保留前 200 字符
         val safeError = error.trim().let { raw ->
@@ -489,12 +490,10 @@ class AppNotificationManager @Inject constructor(
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
-            .setGroup("server_${server.id}")
             .build()
 
         if (sessionFocusHolder.shouldSuppress(server.id, sessionId)) return
         systemNotificationManager.notify(notifId, notification)
-        showServerGroupSummary(server)
     }
 
     // ============ 通知去重 / 会话辅助方法 ============
@@ -588,7 +587,9 @@ class AppNotificationManager @Inject constructor(
 
     /**
      * 提取最新的 N 条用户消息（非合成）用于通知正文预览（InboxStyle/纯文本）。
-     * 消息按从旧到新排序。
+     * 消息按从旧到新排序。#344：跳过服务器注入语料（<system-reminder> 前缀的
+     * 用户行——DSH 把 skill catalog / workspace 指引按 user/message 入库，晚于
+     * 真 prompt 毫秒级，恰好成为「最新用户消息」，通知回退曾把它当正文）。
      */
     fun findLatestUserMessages(sessionId: String, limit: Int): List<UserMessagePreview> {
         val sessionMessages = eventDispatcher.messages.value[sessionId] ?: return emptyList()
@@ -600,10 +601,12 @@ class AppNotificationManager @Inject constructor(
                 val parts = partsMap[userMsg.id] ?: return@mapNotNull null
                 val text = parts
                     .filterIsInstance<Part.Text>()
-                    .firstOrNull { it.synthetic != true && it.ignored != true && it.text.isNotBlank() }
+                    .firstOrNull { it.synthetic != true && it.ignored != true && isNotificationPreviewText(it.text) }
                     ?.text
                     ?: return@mapNotNull null
-                val cleanText = text.replace("\n", " ").trim()
+                // #344：预览管线统一消毒（嵌闭合块剥除；全剥离→空 → 跳过该行）
+                val cleanText = sanitizeNotificationText(text)?.replace("\n", " ")?.trim()
+                    ?: return@mapNotNull null
                 UserMessagePreview(
                     text = if (cleanText.length > 100) cleanText.take(100) + "…" else cleanText,
                     timestamp = userMsg.time.created
@@ -632,6 +635,28 @@ class AppNotificationManager @Inject constructor(
         lastNotifiedAssistantMessageBySession.remove(notifKey)
         // #155：进入会话 → 错误 streak 随去重一并重置（spec §5.3）
         feedbackPlayer.onSessionEntered(serverId, sessionId)
+    }
+
+    /**
+     * #320：撤指定 kind 的会话事件通知（PendingInteraction 三清除径同点撤除）。
+     *
+     * 与 [cancelSessionNotifications]（进会话全撤 + 全去重重置 + streak 重置）的
+     * 差异：只撤该 kind 槽位、只重置该槽去重（下一轮同类事件可再通知）；
+     * turn 完成/错误通知不动（信息性，发出后不撤）。
+     */
+    fun cancelInteractionNotifications(
+        serverId: String,
+        sessionId: String,
+        kind: SessionNotificationKind,
+    ) {
+        val notifId = SessionNotificationIds.of(serverId, sessionId, kind)
+        systemNotificationManager.cancel(notifId)
+        val notifKey = sessionNotificationKey(serverId, sessionId)
+        when (kind) {
+            SessionNotificationKind.PERMISSION -> lastNotifiedPermissionBySession.remove(notifKey)
+            SessionNotificationKind.QUESTION -> lastNotifiedQuestionBySession.remove(notifKey)
+            else -> Unit
+        }
     }
 
     /**
@@ -759,20 +784,8 @@ class AppNotificationManager @Inject constructor(
         return stableHash(serverId, sessionId) + typeOffset
     }
 
-    /**
-     * FNV-1a 32 位稳定 hash。
-     * 相比字符串拼接 + hashCode()：无拼接歧义（"a"+"bc" 与 "ab"+"c" 不再同值），
-     * 且跨 JVM/平台行为一致，语义明确。
-     */
-    private fun stableHash(vararg parts: String): Int {
-        var hash = 0x811c9dc5.toInt()
-        for (part in parts) {
-            for (i in part.indices) {
-                hash = (hash xor part[i].code) * 0x01000193
-            }
-        }
-        return hash
-    }
+    /** FNV-1a 32 位稳定 hash（#320 实现收口至 SessionNotificationIds.stableHashOf，值不变）。 */
+    private fun stableHash(vararg parts: String): Int = SessionNotificationIds.stableHashOf(*parts)
 
     companion object {
         const val PERSISTENT_NOTIFICATION_ID = 1001

@@ -5,6 +5,7 @@ import dev.leonardo.ocbeacon.domain.model.Message
 import dev.leonardo.ocbeacon.domain.model.Part
 import dev.leonardo.ocbeacon.domain.model.SessionStatus
 import dev.leonardo.ocbeacon.domain.model.SseEvent
+import dev.leonardo.ocbeacon.domain.model.SessionNextEvent
 import dev.leonardo.ocbeacon.domain.model.TimeInfo
 import dev.leonardo.ocbeacon.domain.model.ToolState
 import kotlinx.serialization.json.Json
@@ -54,20 +55,103 @@ class DshEventMapperTest {
     private fun eventsOf(mapped: List<DshMappedEvent>): List<SseEvent> =
         mapped.filterIsInstance<DshMappedEvent.Sse>().map { it.event }
 
+    // ---- host/session-added：updatedAt 透传 + parentId origin 判别（#331）--------
+
+    /** #331：added 帧携带 updatedAt（服务器 summaryFor 实证）→ SessionCreated
+     *  time.updated 采真值——否则 epoch0 使新会话行按 updated 倒序沉列表底部。 */
+    @Test
+    fun `host session-added maps wire updatedAt into time updated`() {
+        val events = eventsOf(
+            DshEventMapper.mapFrame(
+                "host/session-added",
+                json.parseToJsonElement(
+                    """{"sessionId":"s1","cwd":"/tmp","updatedAt":1788626112891}""",
+                ).let { it as JsonObject },
+                "",
+            ),
+        )
+        val created = events.filterIsInstance<SseEvent.SessionCreated>().single()
+        assertEquals(1788626112891L, created.info.time.updated)
+    }
+
+    /** #331/#333：fork 子会话 added 帧（parentSessionId 在、origin 缺席）→ parentId
+     *  null（普通会话——validateAddress 对 origin!=subagent 恒给 session 地址；
+     *  app 侧 parentId=「durable subagent 父」语义，非 subagent 不占用）。 */
+    @Test
+    fun `host session-added fork child without origin keeps parentId null`() {
+        val events = eventsOf(
+            DshEventMapper.mapFrame(
+                "host/session-added",
+                json.parseToJsonElement(
+                    """{"sessionId":"s-fork","cwd":"/w","parentSessionId":"s-parent","updatedAt":5}""",
+                ).let { it as JsonObject },
+                "",
+            ),
+        )
+        val created = events.filterIsInstance<SseEvent.SessionCreated>().single()
+        assertNull(created.info.parentId)
+    }
+
+    // ---- host/session-activity:列表排序位即时更新(A2 2026-09-06 全量 E2E) -------
+
+    /** A2:activity 帧(api-session/activity 合成)→ 最小 SessionUpdated,
+     * time.updated=载荷 updatedAt;title/created 缺席由 defendSessionReplacement
+     * 回填缓存——web mod04 mutation kind=activity 同款语义的单调重排数据腿。 */
+    @Test
+    fun `host session-activity maps to SessionUpdated with wire updatedAt`() {
+        val events = eventsOf(
+            DshEventMapper.mapFrame(
+                "host/session-activity",
+                json.parseToJsonElement(
+                    """{"sessionId":"s1","updatedAt":1788626112891}""",
+                ).let { it as JsonObject },
+                "",
+            ),
+        )
+        val updated = events.filterIsInstance<SseEvent.SessionUpdated>().single()
+        assertEquals("s1", updated.info.id)
+        assertEquals(1788626112891L, updated.info.time.updated)
+    }
+
+    /** A2:载荷缺 updatedAt → MALFORMED 忽略(不产噪声事件)。 */
+    @Test
+    fun `host session-activity without updatedAt is ignored`() {
+        val mapped = DshEventMapper.mapFrame(
+            "host/session-activity",
+            json.parseToJsonElement("""{"sessionId":"s1"}""").let { it as JsonObject },
+            "",
+        )
+        assertEquals(1, mapped.count { it is DshMappedEvent.Ignored })
+        assertEquals(1, mapped.size)
+    }
+
+    /** origin=subagent added 帧 → parentId 保留（#310① 既有 durable 语义回归钉）。 */
+    @Test
+    fun `host session-added subagent child keeps parentId`() {
+        val events = eventsOf(
+            DshEventMapper.mapFrame(
+                "host/session-added",
+                json.parseToJsonElement(
+                    """{"sessionId":"s-child","cwd":"/w","parentSessionId":"s-parent","origin":"subagent","updatedAt":5}""",
+                ).let { it as JsonObject },
+                "",
+            ),
+        )
+        val created = events.filterIsInstance<SseEvent.SessionCreated>().single()
+        assertEquals("s-parent", created.info.parentId)
+    }
+
     // ============ mux 帧面：连接信号 ============
 
     @Test
-    fun `session subscribed frame maps to baseline signal and clears jobs`() {
+    fun `session subscribed frame maps to baseline signal only`() {
         val m = mappedFrames("dsh/mux-frames.jsonl")[0] // 黄金样本行 1：session/subscribed
         assertEquals("session/subscribed", m.method)
-        // 对齐官方 client.js:8314：subscribed 基线先行清空 jobs，服务器随后重推快照；
-        // 2026-09-01（QueueDock）：同帧清空队列（queueMirror.reset）——服务器随后重推
+        // #404（2026-09-12 根因修复）：不再同帧清空 jobs/queue——本版本服务器只在变更时
+        // 增量推送，清空会抹掉 WS onOpen 的 session/control 基线且永不重推（冷进入暂缺）。
+        // 权威快照由 control baseline 承担，subscribed 只产对账基线信号。
         assertEquals(
-            listOf(
-                DshMappedEvent.Subscribed(DshSubscribed(sessionId = "fixture-0001", lastSeq = 15L)),
-                DshMappedEvent.Sse(SseEvent.JobsSnapshot(sessionId = "fixture-0001", jobs = emptyList())),
-                DshMappedEvent.Sse(SseEvent.QueueSnapshot(sessionId = "fixture-0001", items = emptyList())),
-            ),
+            listOf(DshMappedEvent.Subscribed(DshSubscribed(sessionId = "fixture-0001", lastSeq = 15L))),
             m.mapped,
         )
     }
@@ -108,12 +192,18 @@ class DshEventMapperTest {
     }
 
     @Test
-    fun `block end chunk is ignored to avoid terminal wipe`() {
-        // 偏离任务草案的定点裁决：DSH block-end 不携带文本，而 mergePart 的 isTerminal
-        // 覆盖语义假定 incoming 是全量终值（2026-08-16 官方 text.ended 契约）——发空文本
-        // 终态 part 会清空已流式文本。终态化改由 turn/end → SessionIdle → markSessionIdle 承担。
+    fun `block end chunk maps to time patch without kind guess`() {
+        // #453：原整帧忽略（mergePart isTerminal 覆盖语义下空文本终态 part 会清空
+        // 流式文本），块终态化拖到 turn/end 的 markSessionIdle——思考块完毕、正文
+        // 流式期间思考卡计时持续虚涨的根因。block-end 无 blockType，改发无 kind
+        // 的时间补丁（消费端按 `_ord_{index}` 后缀扫描定位，见
+        // MessageEventHandler.handleMessagePartTimePatch）。
         val m = mappedFrames("dsh/mux-frames-extra.jsonl")[9]
-        assertEquals(listOf(DshMappedEvent.Ignored(DshIgnoreReason.CHUNK_BLOCK_END)), m.mapped)
+        val patch = eventsOf(m.mapped).single() as SseEvent.MessagePartTimePatch
+        assertEquals("fixture-0001", patch.sessionId)
+        assertEquals("dsh-t2s1", patch.messageId)
+        assertEquals(0L, patch.ordinal)
+        assertEquals(1788109002002L, patch.endMs)
     }
 
     @Test
@@ -125,7 +215,7 @@ class DshEventMapperTest {
     @Test
     fun `unknown session event type inside frame is unignorable`() {
         val m = mappedFrames("dsh/mux-frames-extra.jsonl")[11] // team/task
-        assertEquals(listOf(DshMappedEvent.Ignored(DshIgnoreReason.UNKNOWN_UNIGNORABLE)), m.mapped)
+        assertEquals(listOf(DshMappedEvent.Ignored(DshIgnoreReason.UNKNOWN_DEGRADED)), m.mapped)
     }
 
     @Test
@@ -539,15 +629,15 @@ class DshEventMapperTest {
         assertEquals(2, mapped.size)
         val user = (mapped[0] as DshMappedEvent.Sse).event as SseEvent.MessageUpdated
         assertEquals(
-            Message.User(id = "seq-100", sessionId = "fixture-0001", time = TimeInfo(created = 1788109999000L)),
+            Message.User(id = "seq-fixture-0001-100", sessionId = "fixture-0001", time = TimeInfo(created = 1788109999000L)),
             user.info,
         )
         val part = (mapped[1] as DshMappedEvent.Sse).event as SseEvent.MessagePartUpdated
         assertEquals(
             Part.Text(
-                id = "seq-100_text_ord_0",
+                id = "seq-fixture-0001-100_text_ord_0",
                 sessionId = "fixture-0001",
-                messageId = "seq-100",
+                messageId = "seq-fixture-0001-100",
                 text = "hello beacon",
                 time = Part.Text.Time(start = 1788109999000L, end = 1788109999000L),
             ),
@@ -571,17 +661,17 @@ class DshEventMapperTest {
         assertEquals("dsh-t3s2", removed.messageId) // 同 turn/step 的实况流式宿主被整装替换
         val msg = (mapped[1] as DshMappedEvent.Sse).event as SseEvent.MessageUpdated
         val assistant = msg.info as Message.Assistant
-        assertEquals("seq-100", assistant.id)
+        assertEquals("seq-fixture-0001-100", assistant.id)
         assertEquals(TimeInfo(created = 1788109999000L, completed = 1788109999000L), assistant.time) // 红点水位线依赖 completed（§2.3）
         assertEquals(10, assistant.tokens!!.input)
         assertEquals(5, assistant.tokens!!.output)
         assertEquals(15, assistant.tokens!!.total)
         val reasoning = ((mapped[2] as DshMappedEvent.Sse).event as SseEvent.MessagePartUpdated).part as Part.Reasoning
-        assertEquals("seq-100_reasoning_ord_0", reasoning.id)
+        assertEquals("seq-fixture-0001-100_reasoning_ord_0", reasoning.id)
         assertEquals("why", reasoning.text)
         assertEquals(1788109999000L, reasoning.time!!.end) // 整装即终态（#266 迟到 delta 守卫）
         val text = ((mapped[3] as DshMappedEvent.Sse).event as SseEvent.MessagePartUpdated).part as Part.Text
-        assertEquals("seq-100_text_ord_1", text.id)
+        assertEquals("seq-fixture-0001-100_text_ord_1", text.id)
         assertEquals("answer body", text.text)
     }
 
@@ -604,6 +694,8 @@ class DshEventMapperTest {
         assertEquals("""{"command":"ls"}""", pending.raw) // 原始参数串保真
         assertEquals(setOf("command"), pending.input.keys) // 可解析时同步展开 input map
         assertEquals("ls", (pending.input["command"] as kotlinx.serialization.json.JsonPrimitive).content)
+        // #453：调用信封时刻 = 工具卡累积计时锚
+        assertEquals(1788109999000L, pending.time!!.start)
     }
 
     @Test
@@ -620,6 +712,9 @@ class DshEventMapperTest {
         assertEquals("dsh-call-call_1", tool.messageId)
         val completed = tool.state as ToolState.Completed
         assertEquals("file-a\nfile-b", completed.output)
+        // #453：终态 time（start=0 哨兵——真实 start 由 mergePart 从 Pending 锚继承）
+        assertEquals(0L, completed.time!!.start)
+        assertEquals(1788109999000L, completed.time!!.end)
     }
 
     @Test
@@ -634,6 +729,152 @@ class DshEventMapperTest {
         val tool = (eventsOf(mapped).single() as SseEvent.MessagePartUpdated).part as Part.Tool
         val error = tool.state as ToolState.Error
         assertEquals("exit 1", error.error)
+        // #453：Error 终态同补 time（错误调用同样显示累积时长）
+        assertEquals(1788109999000L, error.time!!.end)
+    }
+
+    // ============ #349：subagent 族 code-dispatch 子代理卡 ============
+
+    /** code-dispatch-start(subagent) → Running 卡（key={root}:subagent，arguments→input）。 */
+    @Test
+    fun `code dispatch start maps subagent to running card on root keyed host`() {
+        val mapped = DshEventMapper.mapSessionEvent(
+            "fixture-0001",
+            sessionEvent(
+                "tool/code-dispatch-start",
+                """{"rootCallId":"call_r1","parentCallId":"call_r1","subCallId":"call_r1:code:1","name":"subagent","arguments":{"description":"Run trivial subagent test","prompt":"do it"}}""",
+            ),
+        )
+        assertEquals(2, mapped.size)
+        val host = ((mapped[0] as DshMappedEvent.Sse).event as SseEvent.MessageUpdated).info as Message.Assistant
+        assertEquals("dsh-call-call_r1:subagent", host.id)
+        val tool = ((mapped[1] as DshMappedEvent.Sse).event as SseEvent.MessagePartUpdated).part as Part.Tool
+        assertEquals("call_r1:subagent", tool.id)
+        assertEquals("subagent", tool.tool)
+        val running = tool.state as ToolState.Running
+        assertEquals(setOf("description", "prompt"), running.input.keys)
+    }
+
+    /** 非子代理内层工具（bash/ask_user_question 等）维持 CODE_DISPATCH 忽略。 */
+    @Test
+    fun `non subagent code dispatch stays ignored`() {
+        listOf("bash", "ask_user_question", "read").forEach { name ->
+            val mapped = DshEventMapper.mapSessionEvent(
+                "fixture-0001",
+                sessionEvent(
+                    "tool/code-dispatch",
+                    """{"rootCallId":"call_r1","subCallId":"call_r1:code:1","name":"$name","arguments":{},"content":[{"type":"text","text":"ok"}]}""",
+                ),
+            )
+            assertEquals("name=$name", listOf(DshMappedEvent.Ignored(DshIgnoreReason.CODE_DISPATCH)), mapped)
+        }
+    }
+
+    /** bg 回执 "started subagent <uuid>" → Completed + metadata sessionId/sessionID 双写。 */
+    @Test
+    fun `background code dispatch completes card with started subagent run id`() {
+        val mapped = DshEventMapper.mapSessionEvent(
+            "fixture-0001",
+            sessionEvent(
+                "tool/code-dispatch",
+                """{"rootCallId":"call_r1","subCallId":"call_r1:code:1","name":"subagent","arguments":{"description":"Count slowly"},"isError":false,"content":[{"type":"text","text":"started subagent bd5a33c9-cd05-4d73-baff-2319c036681e"}]}""",
+            ),
+        )
+        val tool = (eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>().single().part as Part.Tool)
+        assertEquals("call_r1:subagent", tool.id)
+        val completed = tool.state as ToolState.Completed
+        assertEquals("started subagent bd5a33c9-cd05-4d73-baff-2319c036681e", completed.output)
+        assertEquals(
+            "bd5a33c9-cd05-4d73-baff-2319c036681e",
+            (completed.metadata?.get("sessionId") as kotlinx.serialization.json.JsonPrimitive).content,
+        )
+        assertEquals(
+            "bd5a33c9-cd05-4d73-baff-2319c036681e",
+            (completed.metadata?.get("sessionID") as kotlinx.serialization.json.JsonPrimitive).content,
+        )
+    }
+
+    /** fg 回执 = 子代理报告（无 id）→ Completed 无 metadata（id 由根信封关联补写）。 */
+    @Test
+    fun `foreground code dispatch completes card without session id`() {
+        val mapped = DshEventMapper.mapSessionEvent(
+            "fixture-0001",
+            sessionEvent(
+                "tool/code-dispatch",
+                """{"rootCallId":"call_r1","subCallId":"call_r1:code:1","name":"subagent","arguments":{},"content":[{"type":"text","text":"1. 17 × 23 = 391"}]}""",
+            ),
+        )
+        val tool = (eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>().single().part as Part.Tool)
+        val completed = tool.state as ToolState.Completed
+        assertEquals("1. 17 × 23 = 391", completed.output)
+        assertEquals(null, completed.metadata)
+    }
+
+    /** fg 根 tool/result 信封 {kind:foreground,runId,output} → 追加子卡 metadata 补写事件。 */
+    @Test
+    fun `foreground root tool result envelope links subagent card metadata`() {
+        val envelope = "{\\\"kind\\\":\\\"foreground\\\",\\\"runId\\\":\\\"219905a7-5819-4d06-872f-f4df1f60f5e4\\\",\\\"output\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"Done: 391\\\"}]}"
+        val mapped = DshEventMapper.mapSessionEvent(
+            "fixture-0001",
+            sessionEvent(
+                "tool/result",
+                """{"turn":8,"step":1,"message":{"source":{"kind":"tool","callId":"call_r1"},"content":[{"type":"tool-result","toolCallId":"call_r1","content":[{"type":"text","text":"$envelope"}]}]}}""",
+            ),
+        )
+        assertEquals("根卡 + 子卡补写共 2 个 part 事件", 2, eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>().size)
+        val sub = eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>()
+            .map { it.part as Part.Tool }
+            .first { it.id == "call_r1:subagent" }
+        assertEquals("", sub.tool) // 名缺席——mergePart 保留 existing 名
+        val completed = sub.state as ToolState.Completed
+        assertEquals("Done: 391", completed.output)
+        assertEquals(
+            "219905a7-5819-4d06-872f-f4df1f60f5e4",
+            (completed.metadata?.get("sessionId") as kotlinx.serialization.json.JsonPrimitive).content,
+        )
+    }
+
+    /** 真机形态（fb650391 seq12556）：信封连发两份 "{…}\n{…}" → 取首份关联。 */
+    @Test
+    fun `doubled envelope text still links via first object extraction`() {
+        val one = "{\\\"kind\\\":\\\"foreground\\\",\\\"runId\\\":\\\"219905a7-5819-4d06-872f-f4df1f60f5e4\\\",\\\"output\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"Done\\\"}]}"
+        val doubled = one + "\\n" + one
+        val mapped = DshEventMapper.mapSessionEvent(
+            "fixture-0001",
+            sessionEvent(
+                "tool/result",
+                """{"turn":8,"step":1,"message":{"source":{"kind":"tool","callId":"call_r1"},"content":[{"type":"tool-result","toolCallId":"call_r1","content":[{"type":"text","text":"$doubled"}]}]}}""",
+            ),
+        )
+        val sub = eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>()
+            .map { it.part as Part.Tool }
+            .first { it.id == "call_r1:subagent" }
+        val completed = sub.state as ToolState.Completed
+        assertEquals(
+            "219905a7-5819-4d06-872f-f4df1f60f5e4",
+            (completed.metadata?.get("sessionId") as kotlinx.serialization.json.JsonPrimitive).content,
+        )
+    }
+
+    /** bg 信封（kind=background）与普通 run_code 文本结果都不触发子卡补写。 */
+    @Test
+    fun `background envelope and plain result emit no subagent link events`() {
+        val bg = DshEventMapper.mapSessionEvent(
+            "fixture-0001",
+            sessionEvent(
+                "tool/result",
+                """{"turn":8,"step":1,"message":{"source":{"kind":"tool","callId":"call_r1"},"content":[{"type":"tool-result","toolCallId":"call_r1","content":[{"type":"text","text":"{\\\"kind\\\":\\\"background\\\",\\\"runId\\\":\\\"abc\\\",\\\"output\\\":[]}"}]}]}}""",
+            ),
+        )
+        assertEquals(1, eventsOf(bg).filterIsInstance<SseEvent.MessagePartUpdated>().size)
+        val plain = DshEventMapper.mapSessionEvent(
+            "fixture-0001",
+            sessionEvent(
+                "tool/result",
+                """{"turn":8,"step":1,"message":{"source":{"kind":"tool","callId":"call_r1"},"content":[{"type":"tool-result","toolCallId":"call_r1","content":[{"type":"text","text":"3.14159"}]}]}}""",
+            ),
+        )
+        assertEquals(1, eventsOf(plain).filterIsInstance<SseEvent.MessagePartUpdated>().size)
     }
 
     // ============ SessionEvent 内层：会话态族 ============
@@ -653,6 +894,62 @@ class DshEventMapperTest {
             // #294：time 透传（sessionEvent 助手固定 time=1788109999000）
             listOf(DshMappedEvent.Sse(SseEvent.SessionIdle("s9", 1788109999000))),
             DshEventMapper.mapSessionEvent("s9", sessionEvent("turn/end", """{"turn":1,"reason":{"kind":"completed"}}""")),
+        )
+    }
+
+    /**
+     * #309 批1⑤：llm/retry（dsh-llm-retry :100-122 载荷）→ SessionStatus.Retry
+     *（attempt=retry 次数、next=事件时刻+delayMs——sessionEvent 助手固定 time=1788109999000）；
+     * llm/retry-started → Busy（横幅退场）。turn/end reason：error → +SessionError
+     *（D1③ 转录内错误行链现成）；max-tokens → +TurnMaxTokens（通知卡带继续钮）。
+     */
+    @Test
+    fun `llm retry maps to SessionStatus Retry with countdown`() {
+        val mapped = DshEventMapper.mapSessionEvent(
+            "s9",
+            sessionEvent("llm/retry", """{"retryId":"r1","turn":2,"step":1,"retry":3,"delayMs":15000,"failure":{"message":"rate limited"}}"""),
+        )
+        val status = eventsOf(mapped).single() as SseEvent.SessionStatus
+        val retry = status.status as SessionStatus.Retry
+        assertEquals(3, retry.attempt)
+        assertEquals("rate limited", retry.message)
+        assertEquals(1788109999000L + 15000L, retry.next)
+    }
+
+    @Test
+    fun `llm retry started maps back to Busy`() {
+        assertEquals(
+            listOf(DshMappedEvent.Sse(SseEvent.SessionStatus("s9", SessionStatus.Busy))),
+            DshEventMapper.mapSessionEvent("s9", sessionEvent("llm/retry-started", """{"retryId":"r1","turn":2,"step":1,"retry":3}""")),
+        )
+    }
+
+    @Test
+    fun `turn end error reason emits SessionError after idle`() {
+        assertEquals(
+            listOf(
+                DshMappedEvent.Sse(SseEvent.SessionIdle("s9", 1788109999000)),
+                // #339：错误事件携带原始信封时刻（通知层陈旧过滤依据）
+                DshMappedEvent.Sse(SseEvent.SessionError(sessionId = "s9", error = "provider quota exceeded", time = 1788109999000)),
+            ),
+            DshEventMapper.mapSessionEvent(
+                "s9",
+                sessionEvent("turn/end", """{"turn":4,"reason":{"kind":"error","error":{"message":"provider quota exceeded","code":"QUOTA"}}}"""),
+            ),
+        )
+    }
+
+    @Test
+    fun `turn end max-tokens reason emits TurnMaxTokens notice`() {
+        assertEquals(
+            listOf(
+                DshMappedEvent.Sse(SseEvent.SessionIdle("s9", 1788109999000)),
+                DshMappedEvent.Sse(SseEvent.TurnMaxTokens(sessionId = "s9", turn = 7)),
+            ),
+            DshEventMapper.mapSessionEvent(
+                "s9",
+                sessionEvent("turn/end", """{"turn":7,"reason":{"kind":"max-tokens"}}"""),
+            ),
         )
     }
 
@@ -686,6 +983,80 @@ class DshEventMapperTest {
         )
         assertEquals(
             listOf(DshMappedEvent.Sse(SseEvent.SessionCompacted(sessionId = "s9"))),
+            mapped,
+        )
+    }
+
+    /**
+     * #309 批1：压缩呈现接线——start/summary 不再 Ignored。
+     * 载荷形状对齐 dsh-compaction-basic（:437/:589）：start={compactionId,turn}、
+     * summary={...,summary}；DSH 无 V2 的 message id/reason，置空。
+     */
+    @Test
+    fun `compaction start maps to SessionNext CompactionStarted`() {
+        val mapped = DshEventMapper.mapSessionEvent(
+            "s9",
+            sessionEvent("compaction/start", """{"compactionId":"c-1","turn":3}"""),
+        )
+        assertEquals(
+            listOf(
+                DshMappedEvent.Sse(
+                    SseEvent.SessionNext(SessionNextEvent.CompactionStarted(sessionId = "s9", messageId = "", reason = ""))
+                ),
+                DshMappedEvent.Sse(
+                    SseEvent.CompactionStarted(sessionId = "s9", compactionId = "c-1", seq = 100, time = 1788109999000)
+                ),
+            ),
+            mapped,
+        )
+    }
+
+    @Test
+    fun `compaction summary maps to SessionNext CompactionDelta with full text`() {
+        val mapped = DshEventMapper.mapSessionEvent(
+            "s9",
+            sessionEvent("compaction/summary", """{"compactionId":"c-1","summary":"压缩摘要全文","shadowedTokenCount":100}"""),
+        )
+        assertEquals(
+            listOf(
+                DshMappedEvent.Sse(
+                    SseEvent.SessionNext(SessionNextEvent.CompactionDelta(sessionId = "s9", messageId = "", delta = "压缩摘要全文"))
+                ),
+                DshMappedEvent.Sse(
+                    SseEvent.CompactionSummary(sessionId = "s9", compactionId = "c-1", summaryText = "压缩摘要全文", seq = 100, time = 1788109999000)
+                ),
+            ),
+            mapped,
+        )
+    }
+
+    @Test
+    fun `compaction summary without text stays ignored`() {
+        assertEquals(
+            listOf(DshMappedEvent.Ignored(DshIgnoreReason.COMPACTION)),
+            DshEventMapper.mapSessionEvent("s9", sessionEvent("compaction/summary", """{"compactionId":"c-1"}""")),
+        )
+    }
+
+    /** #309 批1：失败压缩（end 带 error）加发 CompactionEnded(error)——#219 失败 snackbar 通道。 */
+    @Test
+    fun `compaction end with error also emits CompactionEnded failure`() {
+        val mapped = DshEventMapper.mapSessionEvent(
+            "s9",
+            sessionEvent("compaction/end", """{"compactionId":"c-1","turn":3,"error":"summary too large"}"""),
+        )
+        assertEquals(
+            listOf(
+                DshMappedEvent.Sse(SseEvent.SessionCompacted(sessionId = "s9")),
+                DshMappedEvent.Sse(
+                    SseEvent.SessionNext(
+                        SessionNextEvent.CompactionEnded(sessionId = "s9", messageId = "", error = "summary too large")
+                    )
+                ),
+                DshMappedEvent.Sse(
+                    SseEvent.CompactionFinished(sessionId = "s9", compactionId = "c-1", error = "summary too large", seq = 100, time = 1788109999000)
+                ),
+            ),
             mapped,
         )
     }
@@ -765,16 +1136,33 @@ class DshEventMapperTest {
 
     // ============ Tier2 / Tier3 目录：具名忽略 ============
 
+    /** #309 批1：compaction/start|summary 已接线（下方专门断言），移出具名忽略目录。 */
     @Test
     fun `tier2 catalog types are ignored with named reasons`() {
         val cases = mapOf(
-            "compaction/start" to DshIgnoreReason.COMPACTION,
-            "compaction/summary" to DshIgnoreReason.COMPACTION,
             "compaction/prune" to DshIgnoreReason.COMPACTION,
             "subagent/descriptor" to DshIgnoreReason.SUBAGENT_DESCRIPTOR,
         )
         cases.forEach { (type, reason) ->
             assertEquals("type=$type", listOf(DshMappedEvent.Ignored(reason)), DshEventMapper.mapSessionEvent("s9", sessionEvent(type)))
+        }
+    }
+
+    /**
+     * #310① A8轮3（2026-09-05）：model/selection 与 subagent/model-selection-policy
+     * 是服务器 known-event-types 词汇内的 log-only 事件（dts 原话 "Log-only: it never
+     * enters derived model history"），子会话 journal 首个模型请求前必写后者——缺席
+     * 折叠词汇曾使子会话 history fold 全量拒绝重建（a8r2.log "history fold refused
+     * rebuild … [subagent/model-selection-policy]"），重入转录恒空。
+     */
+    @Test
+    fun `model selection journal types are log-only ignorable`() {
+        listOf("model/selection", "subagent/model-selection-policy").forEach { type ->
+            assertEquals(
+                "type=$type",
+                listOf(DshMappedEvent.Ignored(DshIgnoreReason.LOG_ONLY)),
+                DshEventMapper.mapSessionEvent("s9", sessionEvent(type)),
+            )
         }
     }
 
@@ -785,13 +1173,18 @@ class DshEventMapperTest {
             // 三 knob（sandbox/mode、approval/policy、permission/preset）已映射为
             // SessionPermissionChanged，不在噪声目录（见下方专门断言）。
             "plan/mode",
-            "agent/inbox/spliced", "step/end", "llm/retry", "llm/retry-started",
-            "command/run", "command/done", "request/header", "request/context",
+            "agent/inbox/spliced", "step/end", // llm/retry|retry-started 已映射（#309 批1⑤，见专门断言）
+            // command/run|done 已映射为 CommandRunStarted/CommandDone（#323——真实转录事件，见专门测试）
+            "request/header", "request/context",
             "session/end-seed", "tool/code-dispatch", "tool/code-dispatch-start",
             "approval/asked", "approval/decided", "web/deepseek-search-llm-request",
             "schedule/change", "feedback/record",
             // E2E 回归（2026-08-31）：llm/failover 曾致整会话拒绝重建；known-49 插件域收尾
             "llm/failover", "session/title-llm-request",
+            // #310① A8轮3（2026-09-05）：model/selection（普通会话）与
+            // subagent/model-selection-policy（子会话）缺席曾致 fold 全量拒绝重建
+            // ——子会话 journal 必含后者，重入转录恒空（a8r2.log 135+451 次）。
+            "model/selection", "subagent/model-selection-policy",
             "hook/invoked", "hook/result",
             "team/task", "team/member", "team/message/delivered", "team/message/queued",
             "tool-workflow/run-start", "tool-workflow/agent-start",
@@ -801,7 +1194,7 @@ class DshEventMapperTest {
             val mapped = DshEventMapper.mapSessionEvent("s9", sessionEvent(type))
             assertEquals("type=$type", 1, mapped.size)
             val ignored = mapped.single() as DshMappedEvent.Ignored
-            assertTrue("type=$type 不得落入 unignorable", ignored.reason != DshIgnoreReason.UNKNOWN_UNIGNORABLE)
+            assertTrue("type=$type 不得落结构性违约", ignored.reason != DshIgnoreReason.STRUCTURAL_VIOLATION)
         }
     }
 
@@ -1002,7 +1395,7 @@ class DshEventMapperTest {
         )
         val file = eventsOf(mapped)[1] as SseEvent.MessagePartUpdated
         val f = file.part as Part.File
-        assertEquals("seq-12_file_ord_0", f.id)
+        assertEquals("seq-s1-12_file_ord_0", f.id)
         assertEquals("image/png", f.mime)
         assertEquals("shot.png", f.filename)
         assertNull(f.url)
@@ -1019,7 +1412,7 @@ class DshEventMapperTest {
         )
         val parts = eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>()
         val f = parts.single().part as Part.File
-        assertEquals("seq-30_file_ord_0", f.id)
+        assertEquals("seq-s1-30_file_ord_0", f.id)
         assertEquals("application/pdf", f.mime)
         assertEquals("spec.pdf", f.filename)
         assertEquals("https://x/spec.pdf", f.url)
@@ -1092,11 +1485,13 @@ class DshEventMapperTest {
     }
 
     @Test
-    fun `subscribed frame clears queue alongside jobs`() {
+    fun `subscribed frame no longer clears queue or jobs (control baseline owns snapshots)`() {
+        // #404：权威快照来自 session/control baseline；subscribed 不再发空快照清空镜像，
+        // 否则冷进入会话时基线被抹掉且无变更不重推（钉底任务卡/队列角标暂缺）。
         val m = mappedFrames("dsh/mux-frames.jsonl")[0]
         val snapshots = m.mapped.filterIsInstance<DshMappedEvent.Sse>().map { it.event }
-        assertTrue(snapshots.any { it is SseEvent.QueueSnapshot && it.items.isEmpty() })
-        assertTrue(snapshots.any { it is SseEvent.JobsSnapshot && it.jobs.isEmpty() })
+        assertTrue(snapshots.none { it is SseEvent.QueueSnapshot })
+        assertTrue(snapshots.none { it is SseEvent.JobsSnapshot })
     }
 
     @Test
@@ -1110,5 +1505,58 @@ class DshEventMapperTest {
             )
             assertEquals("$type", listOf(DshMappedEvent.Ignored(DshIgnoreReason.WORKFLOW_AGENT)), mapped)
         }
+    }
+
+    // ============ #312⑤ seq 锚点反解（messageId 契约双向）============
+
+    /** seqOf："seq-{seq}" → seq；其余（null/V2 msg_x 形态/流式宿主/残缺/非数/负数）→ null。 */
+    @Test
+    fun `seqOf parses seq message id and rejects others`() {
+        assertEquals(42L, DshEventMapper.seqOf("seq-42"))
+        assertEquals(0L, DshEventMapper.seqOf("seq-0"))
+        assertNull(DshEventMapper.seqOf(null))
+        assertNull(DshEventMapper.seqOf("msg_abc"))
+        assertNull(DshEventMapper.seqOf("dsh-t2s1"))
+        assertNull(DshEventMapper.seqOf("dsh-call-x"))
+        assertNull(DshEventMapper.seqOf("seq-"))
+        assertNull(DshEventMapper.seqOf("seq-abc"))
+        assertNull(DshEventMapper.seqOf("seq--5"))
+    }
+
+    // ============ #385：注入类消息 injectionKind 透传 ============
+
+    @Test
+    fun `injection user message carries source kind as injectionKind`() {
+        val mapped = DshEventMapper.mapSessionEvent(
+            "fixture-0001",
+            sessionEvent(
+                "user/message",
+                """{"content":[{"type":"text","text":"- xlsx skill"}],"source":{"kind":"skill-catalog"}}""",
+            ),
+        )
+        val user = (mapped[0] as DshMappedEvent.Sse).event as SseEvent.MessageUpdated
+        assertEquals("skill-catalog", (user.info as Message.User).injectionKind)
+    }
+
+    @Test
+    fun `human message keeps injectionKind null and compaction carrier still binds`() {
+        val human = DshEventMapper.mapSessionEvent(
+            "fixture-0001",
+            sessionEvent("user/message", """{"content":[{"type":"text","text":"hi"}],"source":{"kind":"user","rpcId":"r1"}}""")
+        )
+        val hu = (human[0] as DshMappedEvent.Sse).event as SseEvent.MessageUpdated
+        assertNull((hu.info as Message.User).injectionKind)
+
+        val carrier = DshEventMapper.mapSessionEvent(
+            "fixture-0001",
+            sessionEvent(
+                "user/message",
+                """{"content":[{"type":"text","text":"summary text"}],"source":{"kind":"plugin","compactionId":"c1","sourceCommandId":"cmd-1"}}""",
+            ),
+        )
+        val cu = (carrier[0] as DshMappedEvent.Sse).event as SseEvent.MessageUpdated
+        assertEquals("plugin", (cu.info as Message.User).injectionKind)
+        // 载体绑定事件保持（既有行为不回归）
+        assertTrue(carrier.any { (it as? DshMappedEvent.Sse)?.event is SseEvent.CompactionSurfaceBound })
     }
 }

@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import dev.leonardo.ocbeacon.BuildConfig
+import dev.leonardo.ocbeacon.data.api.dsh.DshPairPayload
 import dev.leonardo.ocbeacon.ui.theme.AppMotion
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.*
@@ -82,6 +83,8 @@ fun NavGraph(
     debugChannelFlow: MutableSharedFlow<String>,
     supervisorNavFlow: MutableSharedFlow<SupervisorNavEvent>,
     sharedImagesFlow: SharedFlow<List<Uri>>,
+    // #325②：DSH 配对深链（ocbeacon://pair）——预填服务器添加对话框
+    pairRequestFlow: MutableSharedFlow<DshPairPayload>,
     settingsRepository: SettingsRepository,
     serverRepository: ServerRepository,
     sessionRepository: SessionRepository,
@@ -89,6 +92,8 @@ fun NavGraph(
 ) {
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
+    // #339：通知深链的重连腿——Activity 级 HomeViewModel（binder + connectToServer）
+    val homeViewModel: dev.leonardo.ocbeacon.ui.screens.home.HomeViewModel = hiltViewModel()
 
     // 默认使用原生 UI（WebView 为旧版实现）
     val useNativeUi = true
@@ -205,6 +210,19 @@ fun NavGraph(
         }
     }
 
+    // #325②：DSH 配对深链——回到 Home 并预填服务器添加对话框（token 已在
+    // MainActivity 后台交换；深链只填表，保存仍需用户确认）
+    var pendingPairRequest by remember { mutableStateOf<DshPairPayload?>(null) }
+    LaunchedEffect(Unit) {
+        pairRequestFlow.collect { payload ->
+            // 消费事件，避免重组时重放（debugChannelFlow 同款）
+            pairRequestFlow.resetReplayCache()
+            AppLogger.i(TAG, "Pair deep-link → Home prefill: " + payload.baseUrl)
+            navController.popBackStack(HomeNav.route, inclusive = false)
+            pendingPairRequest = payload
+        }
+    }
+
     // 监听来自通知点击的深度链接事件
     LaunchedEffect(Unit) {
         deepLinkFlow.collect { deepLink ->
@@ -222,6 +240,18 @@ fun NavGraph(
                     ?: deepLink.sessionId.takeIf { it.isNotBlank() }
 
                 if (sessionId != null) {
+                    // #339（2026-09-07 用户裁决）：挂起通知点击时服务器可能已断开——
+                    // 先尝试重连（幂等；已连接则直通），连得上才进会话，
+                    // 连不上退回服务器选择页（通知本体按裁决保持滞留）。
+                    val reachable = homeViewModel.awaitServerReachable(deepLink.serverId)
+                    if (!reachable) {
+                        AppLogger.i(TAG, "Deep-link reconnect failed → server selection page: " + deepLink.serverId)
+                        navController.navigate(HomeNav.route) {
+                            popUpTo(HomeNav.route) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                        return@collect
+                    }
                     val route = ChatNav.createRoute(
                         serverId = deepLink.serverId,
                         sessionId = sessionId
@@ -292,7 +322,10 @@ fun NavGraph(
                 },
                 onNavigateToAbout = {
                     navController.navigate(AboutNav.route)
-                }
+                },
+                // #325②：配对深链预填载荷（Home 消费后置 null 防重放）
+                pendingPairRequest = pendingPairRequest,
+                onPairRequestConsumed = { pendingPairRequest = null },
             )
         }
 

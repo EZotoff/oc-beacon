@@ -1,0 +1,362 @@
+[
+ {
+  "face": "v1",
+  "group": "health",
+  "name": "GET /global/health",
+  "status": "PASS",
+  "detail": "status=200 body={\"healthy\":true,\"version\":\"1.18.32\"}",
+  "evidence": "{\"healthy\":true,\"version\":\"1.18.32\"}"
+ },
+ {
+  "face": "v1",
+  "group": "health",
+  "name": "V1 版本锚定=1.18.x",
+  "status": "PASS",
+  "detail": "version=1.18.32",
+  "evidence": ""
+ },
+ {
+  "face": "v1",
+  "group": "auth",
+  "name": "无凭据 GET /session → 401",
+  "status": "PASS",
+  "detail": "status=401",
+  "evidence": ""
+ },
+ {
+  "face": "v1",
+  "group": "inventory",
+  "name": "参考文档端点清单",
+  "status": "PASS",
+  "detail": "解析到 103 个端点（文档口径 129）",
+  "evidence": ""
+ },
+ {
+  "face": "v1",
+  "group": "session",
+  "name": "POST /session 建靶会话",
+  "status": "PASS",
+  "detail": "status=200 id=ses_f1b58a71",
+  "evidence": "{\"id\":\"ses_f1b58a71cffeoET1SaSs47Ai5Z\",\"slug\":\"misty-sailor\",\"projectID\":\"489399e9cc0fae330bf708f7132dcf9a6a331873\",\"directory\":\"/tmp/triface/workspace\",\"path\":\"\",\"cost\":0,\"tokens\":{\"input\":0,\"output\""
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /global/config",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"$schema\":\"https://opencode.ai/config.json\",\"provider\":{\"zhipuai\":{\"name\":\"zhipuai\",\"npm\":\"@ai-sdk/openai-compatible\",\"options\":{\"apiKey\":\""
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /config",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"$schema\":\"https://opencode.ai/config.json\",\"command\":{},\"plugin\":[],\"username\":\"leonardo\",\"mode\":{},\"agent\":{},\"provider\":{\"zhipuai\":{\"nam"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /config/providers",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"providers\":[{\"id\":\"zai\",\"name\":\"Z.AI\",\"source\":\"env\",\"env\":[\"ZHIPU_API_KEY\"],\"key\":\"138e4ae5d44945b88424d1b258b8dd4c.EVmCs7TsZIX2AGfv\",\"op"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /provider",
+  "status": "PASS",
+  "detail": "status=200 keys=all,default,connected",
+  "evidence": "HTTP 200 {\"all\":[{\"id\":\"deepinfra\",\"name\":\"Deep Infra\",\"source\":\"custom\",\"env\":[\"DEEPINFRA_API_KEY\"],\"options\":{},\"models\":{\"tencent/Hy3\":{\"id\":\"tenc"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /provider/auth",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"openai\":[{\"type\":\"oauth\",\"label\":\"ChatGPT Pro/Plus (browser)\"},{\"type\":\"oauth\",\"label\":\"ChatGPT Pro/Plus (headless)\"},{\"type\":\"api\",\"label"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /mcp",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {}"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /project",
+  "status": "PASS",
+  "detail": "status=200 2 projects",
+  "evidence": "HTTP 200 [{\"id\":\"489399e9cc0fae330bf708f7132dcf9a6a331873\",\"worktree\":\"/tmp/triface/workspace\",\"vcs\":\"git\",\"time\":{\"created\":1790526476012,\"updated\":"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /project/current",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"id\":\"489399e9cc0fae330bf708f7132dcf9a6a331873\",\"worktree\":\"/tmp/triface/workspace\",\"vcs\":\"git\",\"time\":{\"created\":1790526476012,\"updated\":1"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /command",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 [{\"name\":\"init\",\"description\":\"guided AGENTS.md setup\",\"source\":\"command\",\"template\":\"Create or update `AGENTS.md` for this repository.\\n\\nT"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /find?query=README",
+  "status": "FAIL",
+  "detail": "期望 (200,) 实得 400",
+  "evidence": "HTTP 400 {\"name\":\"BadRequest\",\"data\":{\"message\":\"Missing key\\n  at [\\\"pattern\\\"]\",\"kind\":\"Query\"}}"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /find/file?query=README",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 [\"README.md\"]"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /find/symbol?query=readme",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 []"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /file?path=/",
+  "status": "FAIL",
+  "detail": "期望 (200,) 实得 500",
+  "evidence": "HTTP 500 {\"name\":\"UnknownError\",\"data\":{\"message\":\"Unexpected server error. Check server logs for details.\",\"ref\":\"err_616a6f37\"}}"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /file/content?path=README.md",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"type\":\"text\",\"content\":\"# regression workspace\"}"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /file/status?path=README.md",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 []"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /vcs",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"branch\":\"master\",\"default_branch\":\"master\"}"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /vcs/status",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 [{\"file\":\"config.json\",\"additions\":3,\"deletions\":0,\"status\":\"added\"}]"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /vcs/diff",
+  "status": "PASS",
+  "detail": "status=400",
+  "evidence": "HTTP 400 {\"name\":\"BadRequest\",\"data\":{\"message\":\"Missing key\\n  at [\\\"mode\\\"]\",\"kind\":\"Query\"}}"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /doc",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"openapi\":\"3.1.0\",\"info\":{\"title\":\"opencode\",\"version\":\"1.0.0\",\"description\":\"opencode api\"},\"paths\":{\"/auth/{providerID}\":{\"put\":{\"tags\":["
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /session",
+  "status": "PASS",
+  "detail": "status=200 1 sessions",
+  "evidence": "HTTP 200 [{\"id\":\"ses_f1b58a71cffeoET1SaSs47Ai5Z\",\"slug\":\"misty-sailor\",\"projectID\":\"489399e9cc0fae330bf708f7132dcf9a6a331873\",\"directory\":\"/tmp/trifa"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /session/ses_f1b58a71cffeoET1SaSs47Ai5Z",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"id\":\"ses_f1b58a71cffeoET1SaSs47Ai5Z\",\"slug\":\"misty-sailor\",\"projectID\":\"489399e9cc0fae330bf708f7132dcf9a6a331873\",\"directory\":\"/tmp/trifac"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /session/status",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {}"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /session/ses_f1b58a71cffeoET1SaSs47Ai5Z/message",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 []"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "POST /session/ses_f1b58a71cffeoET1SaSs47Ai5Z/revert",
+  "status": "PASS",
+  "detail": "status=400",
+  "evidence": "HTTP 400 {\"name\":\"BadRequest\",\"data\":{\"message\":\"Missing key\\n  at [\\\"messageID\\\"]\",\"kind\":\"Payload\"}}"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "POST /session/ses_f1b58a71cffeoET1SaSs47Ai5Z/share",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"id\":\"ses_f1b58a71cffeoET1SaSs47Ai5Z\",\"slug\":\"misty-sailor\",\"projectID\":\"489399e9cc0fae330bf708f7132dcf9a6a331873\",\"directory\":\"/tmp/trifac"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "POST /session/ses_f1b58a71cffeoET1SaSs47Ai5Z/shell",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"info\":{\"id\":\"msg_0e4a768c700176yTSEIwzwZAcV\",\"sessionID\":\"ses_f1b58a71cffeoET1SaSs47Ai5Z\",\"role\":\"assistant\",\"time\":{\"created\":17905425717"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /session/ses_f1b58a71cffeoET1SaSs47Ai5Z/todo",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 []"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "PATCH /session/ses_f1b58a71cffeoET1SaSs47Ai5Z",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"id\":\"ses_f1b58a71cffeoET1SaSs47Ai5Z\",\"slug\":\"misty-sailor\",\"projectID\":\"489399e9cc0fae330bf708f7132dcf9a6a331873\",\"directory\":\"/tmp/trifac"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "PATCH /session/ses_f1b58a71cffeoET1SaSs47Ai5Z",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 {\"id\":\"ses_f1b58a71cffeoET1SaSs47Ai5Z\",\"slug\":\"misty-sailor\",\"projectID\":\"489399e9cc0fae330bf708f7132dcf9a6a331873\",\"directory\":\"/tmp/trifac"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /permission",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 []"
+ },
+ {
+  "face": "v1",
+  "group": "api",
+  "name": "GET /question",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": "HTTP 200 []"
+ },
+ {
+  "face": "v1",
+  "group": "error-path",
+  "name": "GET /session/__bogus__",
+  "status": "PASS",
+  "detail": "status=500",
+  "evidence": "HTTP 500 {\"name\":\"UnknownError\",\"data\":{\"message\":\"Unexpected server error. Check server logs for details.\",\"ref\":\"err_0426fb0d\"}}"
+ },
+ {
+  "face": "v1",
+  "group": "error-path",
+  "name": "POST /session/ses_f1b58a71cffeoET1SaSs47Ai5Z/prompt_async",
+  "status": "PASS",
+  "detail": "status=400",
+  "evidence": "HTTP 400 {\"name\":\"BadRequest\",\"data\":{\"message\":\"Missing key\\n  at [\\\"parts\\\"]\",\"kind\":\"Payload\"}}"
+ },
+ {
+  "face": "v1",
+  "group": "llm",
+  "name": "POST prompt_async（glm-5.3 实况）",
+  "status": "PASS",
+  "detail": "status=204",
+  "evidence": ""
+ },
+ {
+  "face": "v1",
+  "group": "llm",
+  "name": "POST abort",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": ""
+ },
+ {
+  "face": "v1",
+  "group": "llm",
+  "name": "POST summarize（压缩）",
+  "status": "PASS",
+  "detail": "status=400",
+  "evidence": "{\"name\":\"BadRequest\",\"data\":{\"message\":\"Expected object, got undefined\",\"kind\":\"Payload\"}}"
+ },
+ {
+  "face": "v1",
+  "group": "llm",
+  "name": "GET message 回读实况",
+  "status": "PASS",
+  "detail": "status=200 条数=4",
+  "evidence": ""
+ },
+ {
+  "face": "v1",
+  "group": "sse",
+  "name": "SSE /event 连接与信封 {id,type,properties}",
+  "status": "FAIL",
+  "detail": "帧数=80 type命中=78",
+  "evidence": "观测类型: ?, catalog.updated, integration.updated, message.part.updated, message.updated, plugin.added, reference.updated, server.connected, server.heartbeat, session.diff, session.idle, session.status, session.updated"
+ },
+ {
+  "face": "v1",
+  "group": "inventory",
+  "name": "文档清单触达率",
+  "status": "PASS",
+  "detail": "26/103（TUI/dispose/find-symbol 参数域按策略未全触达）",
+  "evidence": ""
+ },
+ {
+  "face": "v1",
+  "group": "session",
+  "name": "DELETE /session/{id} 清理",
+  "status": "PASS",
+  "detail": "status=200",
+  "evidence": ""
+ }
+]

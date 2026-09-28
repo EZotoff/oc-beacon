@@ -50,7 +50,17 @@ sealed class Message {
         val summary: UserSummary? = null,
         val system: String? = null,
         val tools: Map<String, Boolean>? = null,
-        val variant: String? = null
+        val variant: String? = null,
+        /** #385：DSH 注入类消息 source.kind 透传（agent-instructions/skill-catalog/plugin…宿主上下文注入；null=普通用户消息）——注入内容按精简折叠卡渲染（对齐 DSH Web）。 */
+        val injectionKind: String? = null,
+
+        /**
+         * #395：本消息由「立即发送/插话」（steer）路径上屏——客户端发送路径标记，非 wire 字段。
+         * 随消息持久化：V2 REST 持久化载荷不含 delivery（steer 档位只在 SSE 事件），
+         * 合并路径（[dev.leonardo.ocbeacon.data.mapper.MessageMergeEngine.mergeMessageMeta]
+         * 与 MessageEventHandler REST_AUTHORITY）会保留既有 true 值，避免 L3 兜底刷新 /
+         * 分页回补 / 重进会话后徽标丢失。*/
+        val viaSteer: Boolean = false,
     ) : Message() {
         @Serializable
         data class Model(
@@ -91,7 +101,29 @@ sealed class Message {
         val error: ErrorInfo? = null,
         val structured: JsonElement? = null,
         val variant: String? = null,
-        val summary: Boolean? = null
+        /**
+         * #310②：服务器规范消息 id（DSH assistant/message 帧的
+         * data.message.id——消息反馈 CAS 地址；OpenCode/V1 恒 null。
+         * 转录本地 id 仍是 [id]（seq-N 派生）——两址域经此桥接。
+         */
+        val wireId: String? = null,
+        val summary: Boolean? = null,
+        /**
+         * (2026-09-12 消息层扁平化 US#28)：服务器会话内轮次号（DSH
+         * assistant/message 的 data.turn）。OpenCode 恒 null → 客户端锚点
+         * 序号兜底。会话内稳定、分页不漂移。
+         */
+        val turnNumber: Long? = null,
+        /**
+         * #411：DSH 逐轮 timing（客户端派生：step/start → 首 token（isTokenDelta
+         * 规则）→ assistant/message 结算）。null = 缺席（无 stream / 无 step/start /
+         * OpenCode 面）——UI「宁缺勿谎」整项隐藏。
+         */
+        val ttftMs: Long? = null,
+        /** 首 token → 消息整装到达的解码墙钟时长（ms）。 */
+        val decodeMs: Long? = null,
+        /** 与 [decodeMs] 同步采集的 provider 输出 token 数。 */
+        val decodeTokens: Long? = null,
     ) : Message() {
         @Serializable
         data class PathInfo(

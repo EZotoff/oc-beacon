@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -15,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.TextLayoutResult
@@ -34,8 +36,10 @@ import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.markdownAnimations
 import com.mikepenz.markdown.model.markdownPadding
+import com.mikepenz.markdown.model.parseMarkdown
 import com.mikepenz.markdown.model.parseMarkdownFlow
 import org.intellij.markdown.MarkdownTokenTypes
+import org.intellij.markdown.ast.ASTNode
 import com.mikepenz.markdown.utils.getUnescapedTextInNode
 import com.mikepenz.markdown.model.rememberMarkdownState
 import com.mikepenz.markdown.model.MarkdownState
@@ -120,6 +124,11 @@ internal fun normalizeMarkdown(raw: String, isUser: Boolean): String {
     // JetBrains markdown 解析器仅在块边界处检测表格；
     // 紧跟在段落后的表格（无空行）会渲染为纯文本。
     result = ensureBlankLineBeforeGfmTables(result)
+
+    // #312② 数学块降级（方案 C）：成对数学定界符（$$...$$ / \(...\) / \[...\]）
+    // → tex 围栏/行内代码（见 transformMathFallback KDoc——流式取舍同注）。
+    // 置于用户单换行空行化之前：多行公式块的行结构先成围栏、不被打散。
+    result = transformMathFallback(result)
 
     if (!isUser) return result
     // 用户消息：单个 \n 在 Markdown 中不换行（软换行）。
@@ -500,6 +509,8 @@ internal fun MarkdownContent(
                 // TEXT/EMPH/LINK 等）——标题节点产出空串，H1 退化成「只剩分隔
                 // 线」。标题文本直接取节点 ATX_CONTENT 子节点转义文本（与库默认
                 // MarkdownHeader 的 MarkdownText(contentChildType=ATX_CONTENT) 一致）。
+                // #437 崩溃修复：ATX 提取本身走 getTextInNode——流式 snapshot
+                // 失配帧（AST 非空 + content 空）会越界，统一走安全辅助。
                 val h1Text = remember(model.content, model.node) {
                     val atx = model.node.children.firstOrNull { it.type == MarkdownTokenTypes.ATX_CONTENT }
                     val target = atx ?: model.node
@@ -539,6 +550,16 @@ internal fun MarkdownContent(
             table = { model ->
                 SimpleMarkdownTable(model.content, model.node, model.typography.table, uriHandler, linkColor)
             },
+            // #437 崩溃修复：heading2-6 原走库默认组件（无越界兜底）——真机
+            // 13:59 崩溃栈定罪（MarkdownHeader→buildMarkdownAnnotatedString→
+            // getTextInNode, AST[3,29] vs content len0：流式 snapshot 失配帧）。
+            // 同款兜底覆盖（heading1 同构 + #432 buildClickableMarkdown 内越界
+            // 降级），ATX_CONTENT 提取走安全辅助。
+            heading2 = { model -> SafeHeading(model, typography.h2, linkListener, linkColor, uriHandler) },
+            heading3 = { model -> SafeHeading(model, typography.h3, linkListener, linkColor, uriHandler) },
+            heading4 = { model -> SafeHeading(model, typography.h4, linkListener, linkColor, uriHandler) },
+            heading5 = { model -> SafeHeading(model, typography.h5, linkListener, linkColor, uriHandler) },
+            heading6 = { model -> SafeHeading(model, typography.h6, linkListener, linkColor, uriHandler) },
         )
     }
 
@@ -593,18 +614,56 @@ internal fun MarkdownContent(
     // 归一化让位（冲突①裁决）：流中 append 原始 delta，完结由上方 preParsedState
     // 分支的既有归一化+分片路径接管，跳变由高度补偿吸收（V6 验证项）。
     // 回退 = flavor 的 STREAMING_MD_PILOT 置 false。
-    if (overrideState == null && !asyncParse && StreamingMarkdownPilot.enabled && !isUser) {
+    // #461：准入收为 streamingPilotEligible 纯函数——静态文本(asyncParse=true)
+    // 不得误入(空 state 靠逐帧 append 填充,ε 窗竞态 → H=0 僵尸展开态)。
+    // #472 完结换装无缝:async 终态源提升到固定组合位(条件创建在稳定位置,
+    // hold 期与切换后同一实例——切换帧不再二次 remember 重解析)。完结前
+    // (asyncParse=false)不创建,流式路径零额外成本。
+    val asyncTerminal: com.mikepenz.markdown.model.MarkdownState? =
+        if (overrideState == null && asyncParse && markdown.length > ASYNC_PARSE_MIN_CHARS) {
+            rememberAsyncMarkdownState(markdown, isUser)
+        } else {
+            null
+        }
+    val asyncTerminalState = asyncTerminal?.state?.collectAsState()?.value
+    val asyncTerminalReady = asyncTerminalState != null && asyncTerminalState !is State.Loading
+    var pilotEverRendered by remember { androidx.compose.runtime.mutableStateOf(false) }
+    val holdPilotTerminal = StreamingMarkdownPilot.enabled &&
+        pilotTerminalHold(pilotEverRendered, asyncTerminalReady)
+    if (streamingPilotEligible(overrideState != null, asyncParse, isUser) && StreamingMarkdownPilot.enabled ||
+        holdPilotTerminal
+    ) {
+        // #437：pilotState.state 只收 SafePrefixGate 放行的定案内容；
+        // 扣留尾部（heldTail）超龄后由降亮区呈现（锁高裁剪+呼吸光标，
+        // 高度流=低频量子，与 #435 引擎配对兼容）。回退 = STABLE_REVEAL_PILOT
+        // 置 false（gate 旁路，pilot 原行为）。
+        pilotEverRendered = true
         val pilotState = rememberPilotStreamingMarkdownState(markdown)
-        Markdown(
-            streamingMarkdownState = pilotState,
-            colors = colors,
-            typography = typography,
-            components = components,
-            padding = padding,
-            animations = animations,
-            imageTransformer = Coil3ImageTransformerImpl,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        androidx.compose.foundation.layout.Column {
+            // #437 崩溃修复：非前缀重建（resetKey++）换 state 实例的同一帧，
+            // 库 Markdown 内部 collectAsState 对流实例的记忆可能残留旧 snapshot
+            // （旧 AST）与新实例空 content 组成失配帧（getTextInNode 越界）。
+            // key(state) 强制实例变化时整个子树重建——失配帧从构造上消失。
+            androidx.compose.runtime.key(pilotState.state) {
+            Markdown(
+                streamingMarkdownState = pilotState.state,
+                colors = colors,
+                typography = typography,
+                components = components,
+                padding = padding,
+                animations = animations,
+                imageTransformer = Coil3ImageTransformerImpl,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            }
+            if (StreamingMarkdownPilot.stableReveal) {
+                val held by pilotState.heldTail
+                HeldTailReveal(
+                    tail = held,
+                    textStyle = typography.paragraph.copy(fontFamily = null),
+                )
+            }
+        }
         return
     }
 
@@ -612,8 +671,28 @@ internal fun MarkdownContent(
     // 在主线程同步 parseBlocking（字节码实证 parse$2 内联 parseBlocking，无
     // flowOn）；预解析 miss 时冷态快滑巨帧 84ms（framestats vsync→input）。
     // asyncParse=true 时归一化+解析全程 Default 线程，主线程仅收 StateFlow 发射。
-    val markdownState = overrideState ?: if (asyncParse) {
-        rememberAsyncMarkdownState(markdown, isUser)
+    //
+    // #428（2026-09-23 根因修复）：异步路径首组合帧恒 State.Loading 占位——
+    // 大卡展开把恢复位邻域条目逐出组合窗后，收起闭合帧原子重组时小文本
+    // （<preParsed 门槛 200 字符,不查渲染供给 registry）以 Loading 短高入测
+    // （真机 #s1 条目 199px），Default 线程解析完成于下一帧回填真高（467px）
+    // → 其下内容 +268px 二次重排=「收起末尾上推然后突然高度复位」主诉。
+    // 小文本（≤[ASYNC_PARSE_MIN_CHARS]）回归库同步解析：parseBlocking 于
+    // remember 内联执行（1-3ms 有界,无跨线程等待=非 runBlocking 家族）,
+    // 首测即终高,占位帧从构造上消失;大文本保持异步（84ms 冷滑巨帧防线,
+    // 且 ≥200 字符有 registry 预解析覆盖）。
+    val markdownState = overrideState ?: asyncTerminal ?: if (asyncParse) {
+        if (markdown.length > ASYNC_PARSE_MIN_CHARS) {
+            // #472:常规此处已被 asyncTerminal 覆盖;防御保留(条件变动时兜底)
+            rememberAsyncMarkdownState(markdown, isUser)
+        } else {
+            // #428:小文本同步解析——remember 内联调用库的非 suspend 入口
+            // parseMarkdown(纯 CPU 计算,≤[ASYNC_PARSE_MIN_CHARS] 有界 1-3ms),
+            // 首组合首测即终高。异步路径(与库 rememberMarkdownState 的效果路径)
+            // 首帧恒 State.Loading 占位——大卡收起闭合帧原子重组时以短高入测、
+            // 解析回填帧二次重排(真机 #s1 条目 199→467,+268px 跳变)即其泄露。
+            rememberSyncMarkdownState(markdown, isUser)
+        }
     } else {
         // 流式/同步路径：归一化保留在此分支（流式单条增量成本可控）
         val normalizedForLib = remember(markdown, isUser) { normalizeForRender(markdown, isUser) }
@@ -653,6 +732,9 @@ private class AsyncMarkdownStateImpl : MarkdownState {
     override val links: StateFlow<Map<String, String>> = _links.asStateFlow()
     private var lastContent: String = ""
 
+    /** 当前状态(终态读取:#428 缓存入账)。 */
+    fun currentState(): State = _state.value
+
     /** 后台归一化+解析并持续回写状态（suspend 到完成；全程 Default 线程）。 */
     suspend fun parseAsync(content: String, isUser: Boolean) {
         lastContent = content
@@ -681,11 +763,83 @@ private class AsyncMarkdownStateImpl : MarkdownState {
     private var lastIsUser: Boolean = false
 }
 
+/** #428:异步解析的最小文本长度(字符)——短于此走同步解析,首组合即终高。 */
+private const val ASYNC_PARSE_MIN_CHARS = 2048
+
+/**
+ * #428 同族加固:跨组合解析终态缓存(有界 LRU,线程安全,JVM 可单测)。
+ *
+ * 动机:>[ASYNC_PARSE_MIN_CHARS] 的文本 part 走 [rememberAsyncMarkdownState],
+ * 首组合帧恒 `State.Loading` 占位。渲染供给 registry 的 Parsed 条目会被
+ * 视口离场 remove(RenderReadiness D-7 语义)且 <200 字符不查 registry——
+ * 大卡收起闭合帧原子重组恢复位邻域条目时,任何 miss 都让条目以 Loading
+ * 短高入测、解析回填帧二次重排(真机 #s1 199→467,+268px 跳变同族)。
+ * 本缓存以内容为键保留解析终态:同内容跨组合(收起闭合帧/滚出滚回)命中
+ * 即同步终态,首测即终高。上界 [MAX_ENTRIES] 条 × 大文本(~20KB)≈ 0.7MB
+ * 内存换零占位帧;AST 不可变,跨 Markdown() 实例共享安全。
+ */
+internal object MarkdownParsedStateCache {
+    internal const val MAX_ENTRIES = 32
+
+    private val lock = Any()
+    private val map = object : LinkedHashMap<String, State>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, State>): Boolean =
+            size > MAX_ENTRIES
+    }
+
+    /** 命中返回解析终态;miss 返回 null。 */
+    fun get(content: String): State? = synchronized(lock) { map[content] }
+
+    /** 终态入缓存(Loading 不入——非终态占位无复用价值)。 */
+    fun put(content: String, state: State) {
+        if (state is State.Loading) return
+        synchronized(lock) { map[content] = state }
+    }
+
+    fun size(): Int = synchronized(lock) { map.size }
+
+    /** 仅测试用。 */
+    fun clearForTest() = synchronized(lock) { map.clear() }
+}
+
+/**
+ * #428:同步解析的 MarkdownState——remember 时内联 parse 出终态,无 Loading 帧。
+ *
+ * 库的 [com.mikepenz.markdown.model.parseMarkdown] 为非 suspend 纯函数入口
+ * (与 parseMarkdownFlow 的终态发射同源);调用发生在 remember 计算内
+ * (组合线程内联 CPU 计算,≤2KB 有界),**不是** runBlocking 等待后台流的
+ * 禁用家族(2026-09-23 ANR 教训仅针对跨线程阻塞等待)。
+ * [parse] 防御实现直接返回已持有终态(Markdown 可组合项按 0.43 字节码核对
+ * 不调用它;0.45 语义兼容)。
+ */
+private class SyncMarkdownState(parsed: State) : MarkdownState {
+    private val _state = MutableStateFlow<State>(parsed)
+    override val state: StateFlow<State> = _state.asStateFlow()
+    private val _links = MutableStateFlow<Map<String, String>>(emptyMap())
+    override val links: StateFlow<Map<String, String>> = _links.asStateFlow()
+    override suspend fun parse(): State = _state.value
+}
+
+@Composable
+private fun rememberSyncMarkdownState(content: String, isUser: Boolean): MarkdownState =
+    remember(content, isUser) {
+        SyncMarkdownState(
+            parseMarkdown(normalizeForRender(content, isUser)),
+        )
+    }
+
 @Composable
 private fun rememberAsyncMarkdownState(content: String, isUser: Boolean): MarkdownState {
+    // #428 同族加固:缓存命中→同步终态,跨组合首测即终高(registry 逐出/
+    // 未注册场景闭合帧零占位)。
+    MarkdownParsedStateCache.get(content)?.let { cached ->
+        return remember(content) { SyncMarkdownState(cached) }
+    }
     val impl = remember { AsyncMarkdownStateImpl() }
     LaunchedEffect(impl, content, isUser) {
         impl.parseAsync(content, isUser)
+        // 终态入缓存:同内容下一次跨组合(收起闭合帧重入等)命中即零占位。
+        MarkdownParsedStateCache.put(content, impl.currentState())
     }
     return impl
 }
@@ -748,4 +902,48 @@ private fun chunkSuccessSlot(
             }
         }
     }
+}
+
+/**
+ * #437 崩溃修复：流式 snapshot 失配帧（AST 与 content 不同源的一瞬，真机
+ * 13:59 定罪 AST[3,29] vs content len0）中标题文本的安全提取——越界预检 +
+ * runCatching 双保险，失配帧降级空串一帧，状态收敛后 remember 键变化恢复。
+ */
+private fun safeHeadingText(content: String, node: ASTNode): String = runCatching {
+    val atx = node.children.firstOrNull { it.type == MarkdownTokenTypes.ATX_CONTENT } ?: node
+    if (atx.startOffset > content.length || atx.endOffset > content.length) return ""
+    atx.getUnescapedTextInNode(content).toString().trim().trimStart('#').trim()
+}.getOrDefault("")
+
+/** #437：heading2-6 兜底组件（#432 语义推广——buildClickableMarkdown 内越界降级 + ATX 安全提取）。 */
+@Composable
+private fun SafeHeading(
+    model: com.mikepenz.markdown.compose.components.MarkdownComponentModel,
+    style: TextStyle,
+    linkListener: LinkInteractionListener,
+    linkColor: Color,
+    uriHandler: UriHandler,
+) {
+    val settings = annotatorSettings(linkInteractionListener = linkListener)
+    val result = remember(model.content, model.node, style.color, linkColor) {
+        buildClickableMarkdown(
+            content = model.content,
+            node = model.node,
+            style = style,
+            annotatorSettings = settings,
+            linkColor = linkColor,
+        )
+    }
+    val fallbackText = remember(model.content, model.node) { safeHeadingText(model.content, model.node) }
+    var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    MarkdownBasicText(
+        text = if (result.annotatedString.isNotBlank()) result.annotatedString else AnnotatedString(fallbackText),
+        style = style,
+        onTextLayout = { layoutResult = it },
+        modifier = Modifier.clickableMarkdown(
+            result = result,
+            layoutResultProvider = { layoutResult },
+            uriHandler = uriHandler,
+        ),
+    )
 }

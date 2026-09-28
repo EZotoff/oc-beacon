@@ -27,7 +27,10 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import dev.leonardo.ocbeacon.ui.theme.LocalChatDensity
+import dev.leonardo.ocbeacon.ui.theme.typography
 import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.domain.model.Part
 import dev.leonardo.ocbeacon.domain.model.ToolState
@@ -41,6 +44,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 @Composable
 internal fun ToolCallCard(
@@ -90,6 +94,14 @@ internal fun ToolCallCard(
     }
     val resolvedIconTint = if (isError) stateColor else toolDisplay.iconTint ?: stateColor
 
+    // #432(用户裁决):卡标题=正文字号+Medium 字重(层级靠字重不靠字号;
+    // 原 labelMedium 12sp 比正文小无层级,+1sp 方案已按用户反馈回退)。
+    // 跟随 ChatDensity(Compact 密度自动收缩)。
+    val titleStyle = MaterialTheme.typography.labelMedium.copy(
+        fontSize = LocalChatDensity.current.typography.bodyFontSize,
+        fontWeight = FontWeight.Medium,
+    )
+
     ToolCardScaffold(
         icon = resolvedIcon,
         iconTint = resolvedIconTint,
@@ -100,6 +112,9 @@ internal fun ToolCallCard(
         hasContent = true, // 通用渲染器始终显示复制 + 展开
         isAmoled = isAmoled,
         onToggleExpand = onToggleExpand,
+        // #453：累积计时（运行中走动/终态冻结；无锚不显示）
+        runningStartMs = tool.state.timingStartMs(),
+        completedDurationMs = tool.state.frozenDurationMs(),
         titleContent = if (isTask) {
             {
                 Row(
@@ -116,7 +131,7 @@ internal fun ToolCallCard(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = toolDisplay.title,
-                            style = MaterialTheme.typography.labelMedium,
+                            style = titleStyle,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -152,7 +167,7 @@ internal fun ToolCallCard(
                     }
                     Text(
                         text = displayText,
-                        style = MaterialTheme.typography.labelMedium,
+                        style = titleStyle,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
@@ -193,7 +208,7 @@ internal fun ToolCallCard(
                                 Text(
                                     text = inputText.take(2000),
                                     style = CodeTypography.copy(fontSize = 11.sp, color = if (isAmoled) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AlphaTokens.AMOLED) else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = AlphaTokens.HIGH)),
-                                    modifier = Modifier.padding(4.dp).codeHorizontalScroll()
+                                    modifier = Modifier.padding(SpacingTokens.XS.dp).codeHorizontalScroll()
                                 )
                             }
                         }
@@ -214,7 +229,7 @@ internal fun ToolCallCard(
                             Text(
                                 text = output.take(3000),
                                 style = CodeTypography.copy(fontSize = 11.sp, color = if (isAmoled) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AlphaTokens.AMOLED) else MaterialTheme.colorScheme.onSecondaryContainer),
-                                modifier = Modifier.padding(4.dp).codeHorizontalScroll()
+                                modifier = Modifier.padding(SpacingTokens.XS.dp).codeHorizontalScroll()
                             )
                         }
                     }

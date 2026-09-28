@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -37,19 +38,30 @@ import java.util.Date
 /**
  * 统一消息气泡容器（2026-08-12 用户要求：标签栏/正文栏/统计栏样式强一致）。
  *
- * 三种角色（用户 / 智能体 / 合成通知）共用同一外层结构，仅通过参数区分：
+ * **2026-09-12 旧裁决回写（消息层扁平化 spec / GitHub #11）**：「三气泡统一容器」
+ * 于 2026-09-12 被本设计**部分反转**——**仅智能体正文**去容器（flat=true 委派
+ * [MessageSectionScaffold]，无背景 / 无边框 / 无圆角）；**用户消息保留本气泡**
+ * （flat=false：primaryContainer 底色 + AMOLED 描边 + 非对称圆角，2026-09-17 用户裁决）；
+ * **通知层（EventCard / 合成通知卡）继续使用本容器**。判据：助手正文 = 内容，
+ * 平面；事件 = 通知，成卡；用户消息 = 带气泡的角色消息。
+ *
+ * 三种角色共用同一外层结构，仅通过参数区分：
  * - [alignEnd]：user 右对齐（true）；assistant/synthetic 左对齐（false）
  * - [containerColor] / [border]：底色与边框（synthetic = 透明 + 边框类型）
  * - [shape]：圆角（user 用聊天气泡非对称圆角；其他用 medium）
- * - 标签栏统一：`[时间] [labelLeading?] [类型标签] [Spacer] [labelTrailing?]`
- * - 统计栏可选（assistant 的 agent/模型/时长/复制；user 的 QUEUED 徽章）
+ * - 标签栏（非 flat 路径，[showLabelRow]=true）：`[左区 labelLeading?+标签+suffix] [中区 时间] [右区 labelTrailing?]`；
+ *   v2 起用户气泡传 showLabelRow=false（角色文字已删），助手正文走 flat。
+ * - 统计栏可选（synthetic / 通知卡用；角色消息 v2 走 [MessageSectionScaffold] 尾部）
+ * - 外置尾栏([externalTail],#419):非 flat 路径渲染于卡片之外的附加行(user 气泡统计栏外置用)。
  */
 @Composable
 internal fun MessageBubble(
     alignEnd: Boolean,
     containerColor: Color,
-    label: String,
-    timeMs: Long,
+    /** 标签栏文案（非 flat 路径用）；flat 路径无标签栏 → 可省略。 */
+    label: String = "",
+    /** 标签栏时间戳；flat 路径无标签栏 → 可省略。 */
+    timeMs: Long = 0L,
     modifier: Modifier = Modifier,
     shape: Shape = ShapeTokens.medium,
     border: BorderStroke? = null,
@@ -63,14 +75,50 @@ internal fun MessageBubble(
     /** 标签行水平内边距（#234 V6 反馈：事件卡标题行右贴边）；null=沿用内容内边距
      *  （用户/智能体气泡默认路径，渲染几何不变）。 */
     labelRowHorizontalPadding: androidx.compose.ui.unit.Dp? = null,
-    /** 标签行右端贴齐模式（#234 二轮 V6 实证）：true 时 label 以 weight(fill)
-     *  吃满全部行内弹性（超长省略），trailing 图标组恒贴行右缘。false=历史几何
-     *  （label fill=false 与 Spacer 均分弹性——trailing 随标签长度浮动）。
-     *  仅事件卡启用；suffix 槽位在 flush 模式下紧邻 trailing 排布。 */
-    labelFillRemaining: Boolean = false,
+    /** #389 三轮c：内容栏展开态。null＝恒渲染（用户/智能体气泡——内容常驻，
+     *  缺省零变化）；非 null＝内容栏整体包 AnimatedVisibility（统一 CardExpand*
+     *  动画）——空内容动画收起为 0 高度，不再占 spacedBy 间距（收起态上下边距
+     *  对称），展开/收起恒有动画（取代三轮b 的 contentVisible 条件卸载——它把
+     *  收起动画截胡成了瞬间消失）。 */
+    contentExpanded: Boolean? = null,
+    // ---- 2026-09-12 扁平化 / 2026-09-17 v2 两段式 ----
+    /** true = 角色消息两段式（无背景 / 无边框 / 无圆角、无头部标签栏）——委派 [MessageSectionScaffold]。
+     *  false（默认）= 通知层卡片容器（EventCard / 合成通知卡 / 用户气泡沿用）。 */
+    flat: Boolean = false,
+    /** 非 flat 路径是否渲染统一标签栏；用户气泡 v2 起传 false（「用户 / 智能体」文字已删）。 */
+    showLabelRow: Boolean = true,
+    /** 非 flat 路径最大宽度比例（用户消息 0.9）；null = 占满（通知卡）。 */
+    maxWidthFraction: Float? = null,
+    /** flat 模式：统计栏之下的附加尾部内容（产出文件行等）。 */
+    tailExtra: (@Composable ColumnScope.() -> Unit)? = null,
+    /** #419:非 flat 路径外置尾栏——渲染在卡片之外的外层 Column 尾部
+     *  (user 气泡统计栏外置:插话徽标+撤销+复制+详情)。共享外层 modifier
+     *  (如 jumpAlpha 门控)与 alignEnd 对齐;flat 路径不消费本参数。 */
+    externalTail: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val compact = LocalChatDensity.current == ChatDensity.Compact
+
+    if (flat) {
+        MessageSectionScaffold(
+            modifier = modifier,
+            alignEnd = alignEnd,
+            tail = {
+                if (statsBar != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(SpacingTokens.SM.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        statsBar(this)
+                    }
+                }
+                tailExtra?.invoke(this)
+            },
+            content = content,
+        )
+        return
+    }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -83,7 +131,17 @@ internal fun MessageBubble(
             colors = CardDefaults.cardColors(containerColor = containerColor),
             border = border,
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            modifier = Modifier.fillMaxWidth()
+            // 2026-09-20 用户裁决:非 null = wrap 自适应宽度(按内容收缩),
+            // 上限 maxWidthFraction × 父宽——fillMaxWidth(f) 会强制恒占 f 比例,
+            // 短消息也撑满,观感失衡。wrapContentSize 把约束放宽(loose),
+            // Card 按内容测量,贴 alignEnd 方向放置;null(通知卡)保持占满。
+            modifier = if (maxWidthFraction != null) {
+                Modifier
+                    .fillMaxWidth(maxWidthFraction)
+                    .wrapContentSize(if (alignEnd) Alignment.TopEnd else Alignment.TopStart)
+            } else {
+                Modifier.fillMaxWidth()
+            }
         ) {
             Column(
                 modifier = Modifier
@@ -94,58 +152,74 @@ internal fun MessageBubble(
                 // 水平缩进下沉到节级（原为 Column 级整段 padding）——渲染几何等价；
                 // 拆开的目的是让标签行可独立收窄内边距（标题行贴边，#234 V6 反馈）。
                 val contentHPad = if (compact) 10.dp else SpacingTokens.LG.dp
-                // ① 标签栏（统一）：[时间] [前导图标?] [类型标签] [Spacer] [右侧操作]
-                // 2026-08-16（标题栏规范）：条件时间戳——当天 HH:mm:ss，
-                // 非当天 yyyy-MM-dd HH:mm:ss（DateFormatters.messageTimestamp）
-                val timeText = remember(timeMs) {
-                    DateFormatters.messageTimestamp(timeMs)
-                }
-                Row(
-                    modifier = Modifier
-                        .padding(horizontal = labelRowHorizontalPadding ?: contentHPad),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = timeText,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT)
-                    )
-                    labelLeading?.invoke()
-                    if (labelFillRemaining) {
-                        // flush 模式：label 独占弹性（fill 吃满，长文本省略）——
-                        // 其后所有元素被推到行右缘（V4/F1 修复：消除双权重均分浮动）
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.MUTED),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                    } else {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.MUTED),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
+                // ① 标签栏（统一）三段式：[左区: 前导图标+标签+suffix] [中区: 时间] [右区: trailing 组]
+                // #312③（2026-09-10 用户裁决「时间放在中央」）：左右两区等权（weight 1f），
+                // 时间恒在整行水平中央（titlebar 模式）；labelFillRemaining 机制随之退役。
+                // 时间格式＝绝对（messageTimestamp：当天 HH:mm:ss、跨天 yyyy-MM-dd HH:mm:ss）。
+                // v2：用户气泡传 showLabelRow=false —— 标签栏整体不渲染。
+                if (showLabelRow) {
+                    val timeText = remember(timeMs) {
+                        DateFormatters.messageTimestamp(timeMs)
                     }
-                    labelSuffix?.invoke()
-                    if (!labelFillRemaining) {
-                        Spacer(modifier = Modifier.weight(1f))
+                    Row(
+                        modifier = Modifier
+                            .padding(horizontal = labelRowHorizontalPadding ?: contentHPad),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp)
+                    ) {
+                        // 左区（weight 1f）：图标 + 标签（区内省略） + suffix
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            labelLeading?.invoke()
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.MUTED),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            labelSuffix?.invoke()
+                        }
+                        // 中区：绝对时间（整行中央）
+                        Text(
+                            text = timeText,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT)
+                        )
+                        // 右区（weight 1f，尾对齐）：trailing 图标组
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp, Alignment.End),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            labelTrailing?.invoke(this)
+                        }
                     }
-                    labelTrailing?.invoke(this)
                 }
 
                 // ② 正文栏（水平缩进在节级；内层 spacedBy 复刻原 Column 级间距）
-                Column(
-                    modifier = Modifier.padding(horizontal = contentHPad),
-                    verticalArrangement = Arrangement.spacedBy(if (compact) SpacingTokens.XS.dp else 10.dp)
-                ) {
-                    content()
+                // #389 三轮c：contentExpanded 非 null 时整体 AnimatedVisibility
+                //（统一 CardExpand* 动画；空内容动画归零 → 不占 spacedBy 间距）。
+                val contentBody: @Composable () -> Unit = {
+                    Column(
+                        modifier = Modifier.padding(horizontal = contentHPad),
+                        verticalArrangement = Arrangement.spacedBy(if (compact) SpacingTokens.XS.dp else 10.dp)
+                    ) {
+                        content()
+                    }
+                }
+                if (contentExpanded == null) {
+                    contentBody()
+                } else {
+                    CardExpandReveal(
+                        visible = contentExpanded,
+                    ) {
+                        contentBody()
+                    }
                 }
 
                 // ③ 统计栏（可选）
@@ -163,6 +237,10 @@ internal fun MessageBubble(
                 }
             }
         }
+
+        // #419:外置尾栏——卡片之外的附加行(user 气泡统计栏外置),
+        // 共享外层 Column 的 modifier(jumpAlpha 门控)与 alignEnd 对齐。
+        externalTail?.invoke()
     }
 }
 

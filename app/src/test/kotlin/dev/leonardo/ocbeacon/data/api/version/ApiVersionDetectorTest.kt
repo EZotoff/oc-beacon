@@ -32,20 +32,6 @@ class ApiVersionDetectorTest {
         return ApiVersionDetector(ApiClient(httpClient, json))
     }
 
-    // #276 步骤⑥：DSH 条目跳过 health 双探（apiVersion 保持 V1 缺省，不参与路由）
-    @Test
-    fun `dsh serverType skips health probes entirely`() = runTest {
-        val engine = MockEngine { _ -> throw AssertionError("DSH 探测必须零 HTTP 请求") }
-        val result = buildDetector(engine).detect(
-            "http://127.0.0.1:3080",
-            knownVersion = ApiVersion.UNKNOWN,
-            serverType = dev.leonardo.ocbeacon.domain.model.ServerType.Dsh,
-        )
-        assertEquals(ApiVersion.V1, result.version)
-        assertNull(result.serverVersionString)
-        assertEquals(0, engine.requestHistory.size)
-    }
-
     @Test
     fun `detects V2 when api health responds`() = runTest {
         val engine = MockEngine { request ->
@@ -95,6 +81,89 @@ class ApiVersionDetectorTest {
         // V1 路径请求打到 V2 SPA fallback → HTML 解析错误 + SSE 假死。
         // UNKNOWN 语义：healthy=false + checkHealth 保留原 apiVersion。
         assertEquals(ApiVersion.UNKNOWN, result.version)
+    }
+
+    // ============ #447（2026-09-27）：2.0.16+ 无 /api/health 的 V2 探测 ============
+    // 真机取证（v2.0.18 实测）：/api/health auth 后 404；SPA fallback 对未知路径
+    // 返 200 text/html。旧双探在此形态下双失败 → UNKNOWN → V1 线面 → HTML 假死
+    // 循环（用户「重连条幅常驻+无限倒计时」根因）。新探针：/api/event 的
+    // text/event-stream = V2 SSE 线面存在的直接证据。
+
+    @Test
+    fun `detects V2 when api health is 404 but api event is event-stream`() = runTest {
+        val engine = MockEngine { request ->
+            when (request.url.encodedPath) {
+                "/api/health" -> respond("", HttpStatusCode.NotFound)
+                "/api/event" -> respond(
+                    "data: {}\n\n",
+                    HttpStatusCode.OK,
+                    headersOf(HttpHeaders.ContentType to listOf("text/event-stream"))
+                )
+                // 2.x SPA fallback：未知路径 200 text/html（不能被判成 V1 健康响应）
+                "/global/health" -> respond(
+                    "<!doctype html><html></html>",
+                    HttpStatusCode.OK,
+                    headersOf(HttpHeaders.ContentType to listOf("text/html"))
+                )
+                else -> respond("", HttpStatusCode.NotFound)
+            }
+        }
+        val detector = buildDetector(engine)
+        val result = detector.detect("http://localhost:4096")
+        assertEquals(ApiVersion.V2, result.version)
+    }
+
+    @Test
+    fun `falls to V1 when api event is not event-stream`() = runTest {
+        val engine = MockEngine { request ->
+            when (request.url.encodedPath) {
+                "/api/health" -> respond("", HttpStatusCode.NotFound)
+                "/api/event" -> respond(
+                    "<!doctype html><html></html>",
+                    HttpStatusCode.OK,
+                    headersOf(HttpHeaders.ContentType to listOf("text/html"))
+                )
+                "/global/health" -> respond(
+                    "{\"healthy\":true,\"version\":\"1.18.0\"}",
+                    HttpStatusCode.OK,
+                    headersOf(HttpHeaders.ContentType to listOf("application/json"))
+                )
+                else -> respond("", HttpStatusCode.NotFound)
+            }
+        }
+        val detector = buildDetector(engine)
+        val result = detector.detect("http://localhost:4096")
+        assertEquals(ApiVersion.V1, result.version)
+    }
+
+    @Test
+    fun `transitional 118 health shape stays V1 despite api event stream`() = runTest {
+        // 1.18.3x 过渡形态：/api/health 200 json {"healthy":true}（无 pid/version）
+        // 且 /api/event 也是 event-stream——探针只在 /api/health 404 路径触发，
+        // 过渡形态必须维持 V1 判定（防误升 V2 线面）。
+        val engine = MockEngine { request ->
+            when (request.url.encodedPath) {
+                "/api/health" -> respond(
+                    "{\"healthy\":true}",
+                    HttpStatusCode.OK,
+                    headersOf(HttpHeaders.ContentType to listOf("application/json"))
+                )
+                "/api/event" -> respond(
+                    "data: {}\n\n",
+                    HttpStatusCode.OK,
+                    headersOf(HttpHeaders.ContentType to listOf("text/event-stream"))
+                )
+                "/global/health" -> respond(
+                    "{\"healthy\":true,\"version\":\"1.18.32\"}",
+                    HttpStatusCode.OK,
+                    headersOf(HttpHeaders.ContentType to listOf("application/json"))
+                )
+                else -> respond("", HttpStatusCode.NotFound)
+            }
+        }
+        val detector = buildDetector(engine)
+        val result = detector.detect("http://localhost:4199")
+        assertEquals(ApiVersion.V1, result.version)
     }
 
     // ============ #150 方案 B（2026-08-21）：按已知版本排序探测 ============
@@ -170,9 +239,10 @@ class ApiVersionDetectorTest {
             respond("", HttpStatusCode.NotFound)
         }
         val result = buildDetector(engineUnknown).detect("http://localhost:4096", knownVersion = ApiVersion.UNKNOWN)
-        // 未知版本维持原 V2-first 顺序；全失败 → UNKNOWN（#132 语义）
+        // 未知版本维持原 V2-first 顺序；全失败 → UNKNOWN（#132 语义）。
+        // #447：/api/health 404 后会追探 /api/event（线面探针）再落 V1。
         assertEquals(ApiVersion.UNKNOWN, result.version)
-        assertEquals(listOf("/api/health", "/global/health"), orderUnknown)
+        assertEquals(listOf("/api/health", "/api/event", "/global/health"), orderUnknown)
     }
 
     @Test

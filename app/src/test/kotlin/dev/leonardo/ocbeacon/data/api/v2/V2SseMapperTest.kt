@@ -9,6 +9,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -35,6 +36,8 @@ class V2SseMapperTest {
         assertEquals("msg_user_1", user.id)
         assertEquals("ses_1", user.sessionId)
         assertEquals("hello", user.summary?.body)
+        // #395：wire delivery=steer → 插话标记
+        assertTrue(user.viaSteer)
     }
 
     @Test
@@ -51,6 +54,8 @@ class V2SseMapperTest {
         assertEquals("msg_user_new", user.id)
         assertEquals("ses_1", user.sessionId)
         assertEquals("新契约消息", user.summary?.body)
+        // #395：delivery={} 过渡契约 = 普通发送
+        assertFalse(user.viaSteer)
     }
 
     @Test
@@ -67,6 +72,19 @@ class V2SseMapperTest {
         assertEquals("msg_inbox_1", user.id)
         assertEquals("ses_1", user.sessionId)
         assertEquals("inbox消息", user.summary?.body)
+        // #395：wire delivery=steer → 插话标记
+        assertTrue(user.viaSteer)
+    }
+
+    @Test
+    fun `inbox enqueued with queue delivery skips transcript seed`() {
+        // 2026-09-10（用户裁决⑦）：排队项不上转录——delivery=queue 单点拦截；
+        // steer/缺席/空对象（过渡契约）照常播种。
+        val event = V2SseMapper.map(
+            "session.inbox.enqueued",
+            props("""{"sessionID":"ses_1","inboxID":"msg_q1","item":{"type":"user","payload":{"text":"排队消息"},"delivery":"queue"}}""")
+        )
+        assertNull(event)
     }
 
     @Test

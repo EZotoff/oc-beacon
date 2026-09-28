@@ -83,6 +83,9 @@ internal class SessionActionsDelegate(
     /** #276 终验 V6：导出载荷是 ZIP 归档（DSH session.export）——true 时写盘前把
      *  SAF 文档显示名规范成 .zip；OpenCode 导出是 JSON 文档，默认 false 维持 .json。 */
     private val exportIsArchiveProvider: () -> Boolean = { false },
+    /** #391：子智能体能力位——子会话停止（subagents/interruptByParent 父址中断）仅在
+     *  端口在场时分流；界面只读能力，不读服务器类型（默认 false 与未加载态兼容）。 */
+    private val subagentsSupportedProvider: () -> Boolean = { false },
 
 ) {
     private val sessionId: String get() = sessionIdProvider()
@@ -206,8 +209,14 @@ internal class SessionActionsDelegate(
      */
     private suspend fun removePermissionIfGoneOnServer(requestId: String, op: String) {
         val stillPending = try {
-            managePermissionUseCase.listPendingPermissions(serverId, sessionDirectoryProvider())
-                .any { it.id == requestId }
+            // #314：null=端点缺席（DSSH 无 REST 复核面）——按「未知」保守保留
+            val pending = managePermissionUseCase.listPendingPermissions(serverId, sessionDirectoryProvider())
+            if (pending == null) {
+                AppLogger.w(TAG, "[Permission] $op recheck unavailable (endpoint absent) for $requestId, keeping card")
+                true
+            } else {
+                pending.any { it.id == requestId }
+            }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             AppLogger.w(TAG, "[Permission] $op failed and re-check also failed for $requestId, keeping card: ${e.message}")
@@ -233,7 +242,9 @@ internal class SessionActionsDelegate(
             }
             val rule = AutoApproveRule(
                 toolName = event.permission,
-                sessionId = null,
+                // #308 回修 Layer1：恒锚定本会话——目录解析与会话生命周期竞态解耦
+                // （运行期新建会话 handler 目录可空；matches() 会话命中即免目录）
+                sessionId = event.sessionId,
                 directoryPattern = directory
             )
             chatRepository.addPermissionAutoApproveRule(rule)
@@ -286,8 +297,14 @@ internal class SessionActionsDelegate(
      */
     private suspend fun removeQuestionIfGoneOnServer(requestId: String, op: String) {
         val stillPending = try {
-            managePermissionUseCase.listPendingQuestions(serverId, sessionDirectoryProvider())
-                .any { it.id == requestId }
+            // #314：null=端点缺席（DSH 无 REST 复核面）——按「未知」保守保留
+            val pending = managePermissionUseCase.listPendingQuestions(serverId, sessionDirectoryProvider())
+            if (pending == null) {
+                AppLogger.w(TAG, "[Question] $op recheck unavailable (endpoint absent) for $requestId, keeping card")
+                true
+            } else {
+                pending.any { it.id == requestId }
+            }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             AppLogger.w(TAG, "[Question] $op failed and re-check also failed for $requestId, keeping card: ${e.message}")
@@ -339,9 +356,13 @@ internal class SessionActionsDelegate(
     fun shareSession(onResult: (String?) -> Unit) {
         scope.launch {
             try {
-                val session = shareExportUseCase.shareSession(serverId, sessionId)
+                // #373：面板 client 命令直达路径对齐 executeCommand/runShellCommand——
+                // 先 ensureSession（空 scratch 懒建）再派发，不发空 sid 请求
+                //（原「tap 清空 composer+零执行」根因）。
+                val currentSessionId = ensureSession()
+                val session = shareExportUseCase.shareSession(serverId, currentSessionId)
                 val url = session.share?.url
-                if (BuildConfig.DEBUG) AppLogger.d(TAG, "Shared session $sessionId: $url")
+                if (BuildConfig.DEBUG) AppLogger.d(TAG, "Shared session $currentSessionId: $url")
                 onResult(url)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -354,8 +375,9 @@ internal class SessionActionsDelegate(
     fun unshareSession(onResult: (Boolean) -> Unit) {
         scope.launch {
             try {
-                shareExportUseCase.unshareSession(serverId, sessionId)
-                if (BuildConfig.DEBUG) AppLogger.d(TAG, "Unshared session $sessionId")
+                val currentSessionId = ensureSession()
+                shareExportUseCase.unshareSession(serverId, currentSessionId)
+                if (BuildConfig.DEBUG) AppLogger.d(TAG, "Unshared session $currentSessionId")
                 onResult(true)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -387,19 +409,20 @@ internal class SessionActionsDelegate(
                     onResult(false)
                     return@launch
                 }
+                val currentSessionId = ensureSession()
                 val isAsync = compactionAsyncProvider()
                 if (!isAsync) {
-                    compactionLocalState(sessionId, true)
+                    compactionLocalState(currentSessionId, true)
                 }
                 try {
                     // DSH 旁路时无模型选择——空串占位（DshApiClient 对 /compact 忽略两参）。
-                    shareExportUseCase.compactSession(serverId, sessionId, providerId.orEmpty(), modelId.orEmpty())
-                    if (BuildConfig.DEBUG) AppLogger.d(TAG, "Compacted session $sessionId")
+                    shareExportUseCase.compactSession(serverId, currentSessionId, providerId.orEmpty(), modelId.orEmpty())
+                    if (BuildConfig.DEBUG) AppLogger.d(TAG, "Compacted session $currentSessionId")
                     onResult(true)
                 } finally {
                     // V1：HTTP 返回即终态。V2 正常路径由 SSE ended 终结，不本地杀。
                     if (!isAsync) {
-                        compactionLocalState(sessionId, false)
+                        compactionLocalState(currentSessionId, false)
                     }
                 }
             } catch (e: Exception) {
@@ -526,8 +549,9 @@ internal class SessionActionsDelegate(
                     onResult(false)
                     return@launch
                 }
-                undoRedoUseCase.revertSession(serverId, sessionId, lastUser.message.id)
-                if (BuildConfig.DEBUG) AppLogger.d(TAG, "Reverted session $sessionId to message ${lastUser.message.id}")
+                val currentSessionId = ensureSession()
+                undoRedoUseCase.revertSession(serverId, currentSessionId, lastUser.message.id)
+                if (BuildConfig.DEBUG) AppLogger.d(TAG, "Reverted session $currentSessionId to message ${lastUser.message.id}")
                 restoreRevertedDraft(extractRevertedDraft(lastUser))
                 onResult(true)
             } catch (e: Exception) {
@@ -542,8 +566,9 @@ internal class SessionActionsDelegate(
     fun redoMessage(onResult: (Boolean) -> Unit) {
         scope.launch {
             try {
-                undoRedoUseCase.unrevertSession(serverId, sessionId)
-                if (BuildConfig.DEBUG) AppLogger.d(TAG, "Unreverted session $sessionId")
+                val currentSessionId = ensureSession()
+                undoRedoUseCase.unrevertSession(serverId, currentSessionId)
+                if (BuildConfig.DEBUG) AppLogger.d(TAG, "Unreverted session $currentSessionId")
                 onResult(true)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -627,12 +652,23 @@ internal class SessionActionsDelegate(
         }
     }
 
-    /** Fork 当前会话。返回新会话或 null。 */
-    fun forkSession(onResult: (Session?) -> Unit) {
+    /**
+     * Fork 当前会话。返回新会话或 null。
+     * [anchorMessageId] = 轮尾锚点消息 id（#312⑤「从此轮分支」；null = 末尾
+     * fork 既有行为——锚点语义由各 ApiClient 解释：DSH 反解 "seq-{seq}" 上
+     * atSeq wire，V1/V2 messageID 字段）。
+     */
+    fun forkSession(anchorMessageId: String? = null, onResult: (Session?) -> Unit) {
         scope.launch {
             try {
-                val session = manageSessionUseCase.forkSession(serverId, sessionId)
-                if (BuildConfig.DEBUG) AppLogger.d(TAG, "Forked session $sessionId -> ${session.id}")
+                val currentSessionId = ensureSession()
+                val session = manageSessionUseCase.forkSession(serverId, currentSessionId, anchorMessageId)
+                if (BuildConfig.DEBUG) AppLogger.d(TAG, "Forked session $currentSessionId@${anchorMessageId ?: "tail"} -> ${session.id}")
+                // #331：回执即插行——fork 回显只有 {sessionId}（0.1.2 schema），
+                // added 帧腿（updatedAt 透传修复后）可补真值，但两条腿都不落地的话
+                // 列表只能等下一次 session.list 基线（观测 ~3min）才见新行。目录/
+                // 标题继承父行；updated 已由 echoClock 补排序位（DshApiClient）。
+                insertForkReceiptRow(session)
                 onResult(session)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -642,12 +678,28 @@ internal class SessionActionsDelegate(
         }
     }
 
+    /** #331：回执行注入仓库（setSessions 合并语义——幂等，与 added 帧/基线共存）。 */
+    private suspend fun insertForkReceiptRow(receipt: Session) {
+        try {
+            val parent = chatRepository.getSessionsSnapshot().firstOrNull { it.id == sessionId }
+            val row = receipt.copy(
+                directory = receipt.directory.ifBlank { parent?.directory ?: "" },
+                title = receipt.title ?: parent?.title,
+            )
+            sessionRepository.setSessions(serverId, listOf(row))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            AppLogger.w(TAG, "Fork receipt row insert failed (list will catch up on baseline): ${e.message}")
+        }
+    }
+
     /** 重命名当前会话。 */
     fun renameSession(title: String, onResult: (Boolean) -> Unit) {
         scope.launch {
             try {
-                manageSessionUseCase.renameSession(serverId, sessionId, title)
-                if (BuildConfig.DEBUG) AppLogger.d(TAG, "Renamed session $sessionId to $title")
+                val currentSessionId = ensureSession()
+                manageSessionUseCase.renameSession(serverId, currentSessionId, title)
+                if (BuildConfig.DEBUG) AppLogger.d(TAG, "Renamed session $currentSessionId to $title")
                 onResult(true)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -661,10 +713,23 @@ internal class SessionActionsDelegate(
      * Abort REST 调用 —— 在服务器上取消会话并通过
      * FSM（ClientAbort → Idle + forceComplete 消息）标记为 idle。
      * SSE job 的取消/重启由 [ChatViewModel.interruptSession] 协调器处理。
+     *
+     * #310① 停止分流：DSH 子会话（parentSessionId 非空）走
+     * subagents/interruptByParent——durable 父址中断（父 Agent 不在线也能中断，
+     * 与 session.cancel 会话自址的差异）；主会话路径零改动。
      */
     suspend fun interruptSession() {
-        sessionRepository.interrupt(serverId, sessionId, sessionDirectoryProvider())
-        if (BuildConfig.DEBUG) AppLogger.d(TAG, "Aborted session $sessionId")
+        val parentSessionId = chatRepository.getSessionsSnapshot()
+            .firstOrNull { it.id == sessionId }?.parentId
+        if (parentSessionId != null && subagentsSupportedProvider()) {
+            chatRepository.subagentInterrupt(serverId, parentSessionId, sessionId).getOrThrow()
+            if (BuildConfig.DEBUG) {
+                AppLogger.d(TAG, "Interrupted subagent session $sessionId via parent $parentSessionId")
+            }
+        } else {
+            sessionRepository.interrupt(serverId, sessionId, sessionDirectoryProvider())
+            if (BuildConfig.DEBUG) AppLogger.d(TAG, "Aborted session $sessionId")
+        }
         sessionStateRepository.onClientAbort(sessionId)
     }
 
@@ -693,6 +758,14 @@ internal class SessionActionsDelegate(
                     arguments
                 }
 
+                // #365 受理即知（2026-09-09 验收勘误：原实现 ok 后插入——DSH 19ms 无感，
+                // 但 V1/V2 /command 同步挂起可达数十秒，「回执后才知」 defeats 受理即知；
+                // 改派发时插入，失败/异常翻 error 终态）。
+                chatRepository.recordCommandAcceptance(
+                    sessionId = currentSessionId,
+                    command = normalizedCommand,
+                    arguments = effectiveArguments.takeIf { it.isNotBlank() },
+                )
                 val ok = manageTerminalUseCase.executeCommand(
                     serverId = serverId,
                     sessionId = currentSessionId,
@@ -706,10 +779,19 @@ internal class SessionActionsDelegate(
                         "Executed command /$normalizedCommand in session $currentSessionId: $ok (directory=$effectiveDirectory, arguments=$effectiveArguments)"
                     )
                 }
+                if (!ok) {
+                    chatRepository.recordCommandFailure(currentSessionId, normalizedCommand)
+                }
                 onResult(ok)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 AppLogger.e(TAG, "Failed to execute command /$command", e)
+                // currentSessionId 在 try 域内不可达——provider 直读（会话未建时为空串，
+                // 失败占位落空键不可见，无碍；受理占位同样未插入过的场景本就无需翻态）
+                val sid = sessionIdProvider()
+                if (sid.isNotBlank()) {
+                    chatRepository.recordCommandFailure(sid, command.removePrefix("/").trim())
+                }
                 onResult(false)
             }
         }

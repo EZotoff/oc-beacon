@@ -20,8 +20,18 @@
     <string name="sessions_new">新建会话</string>
     <string name="session_status_idle">空闲</string>
     <string name="session_status_busy">处理中…</string>
+    <string name="session_status_retry_countdown">%1$d 秒后重试</string>
     <string name="session_status_retry">重试中（%1$d）</string>
+    <string name="turn_max_tokens_title">输出达到上限</string>
+    <string name="turn_max_tokens_continue">继续</string>
+    <string name="command_feedback_running">执行中…</string>
+    <string name="command_feedback_accepted">已受理</string>
+    <string name="command_feedback_completed">已完成</string>
+    <string name="command_feedback_failed">失败</string>
+    <string name="command_feedback_a11y_running">命令执行中</string>
     <!-- Chat Screen -->
+    <string name="chat_mention_session_a11y">会话 %1$s</string>
+    <string name="chat_mention_same_workspace">同工作区</string>
     <string name="chat_send">发送</string>
     <string name="chat_send_queued">发送（排队）</string>
     <string name="chat_empty">开始会话</string>
@@ -121,6 +131,9 @@
     <string name="session_rename_button">重命名</string>
     <string name="session_delete">删除会话</string>
     <string name="session_delete_confirm">确定要删除“%1$s”？此操作无法撤销。</string>
+    <string name="session_menu_archive">归档</string>
+    <string name="session_archived_section_title">已归档（%1$d）</string>
+    <string name="session_archive_failed">归档会话失败</string>
     <string name="chat_stop">停止</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->
@@ -139,6 +152,8 @@
     <string name="pending_item_sending">发送中…</string>
     <string name="todo_empty">暂无 TODO 项</string>
     <string name="chat_copy">复制</string>
+    <string name="table_copy_cell">复制单元格</string>
+    <string name="table_copy_table">复制表格（TSV）</string>
     <string name="terminal_copy">复制</string>
     <string name="terminal_paste">粘贴</string>
     <string name="terminal_more">更多…</string>
@@ -165,6 +180,11 @@
     <string name="chat_share_url_copied">分享链接已复制</string>
     <string name="chat_share_failed">会话分享失败</string>
     <string name="chat_copied_clipboard">已复制到剪贴板</string>
+    <string name="chat_feedback_positive">评价为有帮助</string>
+    <string name="chat_feedback_negative">评价为没帮助</string>
+    <string name="chat_feedback_removed">已撤销评价</string>
+    <string name="chat_feedback_conflict">评价已在别处更新，请重试</string>
+    <string name="chat_feedback_failed">评价保存失败</string>
     <string name="image_count_single">1 张图片</string>
     <string name="image_count_multiple">%1$d 张图片</string>
     <string name="sessions_new_dialog_title">新会话</string>
@@ -176,6 +196,7 @@
     <string name="sessions_working">处理中</string>
     <string name="sessions_retrying">重试中</string>
     <string name="session_pending_question">待回答</string>
+    <string name="session_pending_approval">待批准</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
     <string name="chat_response">回复</string>
@@ -203,7 +224,16 @@
     <string name="chat_event_task_failed">子智能体失败</string>
     <string name="chat_event_shell_completed">后台命令完成</string>
     <string name="chat_event_shell_failed">后台命令失败</string>
-    <string name="chat_event_generic">事件</string>
+    <string name="chat_turn_ledger_expand">展开轮次详情</string>
+    <string name="chat_turn_ledger_collapse">收起轮次详情</string>
+    <string name="chat_turn_fork_from_here">从此轮分支</string>
+    <!-- #311 Task4 deliverables 产出文件行 + Task5 skill 工具卡 -->
+    <string name="chat_produced_files_label">产物</string>
+    <string name="chat_produced_files_more">还有 %1$d 个</string>
+    <string name="chat_produced_files_open">打开 %1$s</string>
+    <string name="chat_skill_title">Skill</string>
+    <string name="chat_skill_instructions">说明</string>
+    <string name="chat_event_generic">通知</string>
     <string name="chat_event_locate_task">定位发起任务</string>
     <string name="task_sheet_subagent_completed">已完成</string>
     <string name="agent_tree_diagnostic_corrupt">子智能体条目已损坏</string>
@@ -211,11 +241,48 @@
     <string name="agent_tree_diagnostic_unavailable">子智能体条目不可用</string>
     <string name="chat_label_user">用户</string>
     <string name="chat_label_agent">智能体</string>
+    <string name="chat_steer">插话</string>
+
+    <string name="chat_msg_status_streaming">正在流式输出</string>
+    <string name="chat_msg_status_interrupted">已中断</string>
+    <string name="chat_msg_status_error">错误</string>
+    <string name="chat_msg_detail_title">消息详情</string>
+    <string name="chat_detail_time">时间</string>
+    <string name="chat_detail_duration">时长</string>
+    <string name="chat_detail_tokens">令牌</string>
+    <string name="chat_copy_markdown_source">复制 Markdown 源文</string>
+    <string name="chat_delete_message">删除消息</string>
+    <string name="chat_delete_message_title">删除消息？</string>
+    <string name="chat_delete_message_message">此操作将从服务器会话中删除该消息，且无法撤销。</string>
+    <string name="chat_message_deleted">消息已删除</string>
+    <string name="chat_message_delete_failed">删除消息失败</string>
+    <string name="chat_stats_ttft">TTFT</string>
+    <string name="chat_stats_tokens_per_second">令牌/秒</string>
+    <string name="chat_msg_tail_summary">%1$d 步 · %2$d 个工具</string>
+    <string name="a11y_message_detail">消息详情</string>
+    <string name="chat_stats_session_title">会话统计</string>
+    <string name="chat_stats_summary">轮次 %1$d · %2$d 步 · %3$s LLM · %4$s 个工具</string>
+    <string name="chat_stats_ttft_avg">平均 TTFT：%1$s</string>
+    <string name="chat_stats_decode">%1$s 令牌/秒</string>
+    <string name="chat_stats_per_turn_title">各轮次详情</string>
+    <string name="chat_stats_turn_row">轮次 %1$d · %2$s · %3$s</string>
+    <string name="chat_stats_input">输入</string>
+    <string name="chat_stats_output">输出</string>
+    <string name="chat_stats_reasoning">推理</string>
+    <string name="chat_stats_cache_read">缓存读取</string>
+    <string name="chat_stats_cache_write">缓存写入</string>
+    <string name="chat_stats_cost">成本</string>
+    <string name="chat_stats_model">模型</string>
+    <string name="chat_stats_steps">步数</string>
+    <string name="chat_stats_tools">工具</string>
+    <string name="chat_stats_expand">展开轮次详情</string>
+    <string name="chat_stats_collapse">收起轮次详情</string>
     <string name="chat_subagent_completed_notification">子智能体已完成通知</string>
     <string name="chat_subagent_failed_notification">子智能体已失败通知</string>
     <string name="chat_status_updating_tasks">正在更新任务</string>
     <string name="chat_status_thinking">思考中</string>
     <string name="chat_thinking_complete">思考完毕 · %1$s</string>
+    <string name="chat_thinking_complete_unknown">思考完毕</string>
     <string name="chat_tool_running_command">正在运行命令…</string>
     <string name="chat_hint_ask">提问…</string>
     <string name="chat_hint_fix">修复…中的 bug</string>
@@ -402,7 +469,9 @@
     <string name="chat_shell_placeholder">输入 shell 命令…</string>
     <string name="chat_shell_failed">Shell 命令运行失败</string>
     <string name="chat_shell_empty">请先输入 Shell 命令</string>
+    <string name="chat_subagent_one_shot_read_only">一次性子智能体会话：不支持续发消息</string>
     <string name="chat_shell_attachments_unsupported">Shell 模式不支持附件</string>
+    <string name="chat_command_images_unsupported">斜杠命令不支持图片附件</string>
     <string name="chat_terminal_connect_failed">终端打开失败</string>
     <string name="server_settings_providers">提供方</string>
     <string name="server_settings_providers_desc">为此服务器启用或禁用提供方</string>
@@ -496,13 +565,11 @@
     <string name="settings_auto_allow_permissions_desc">对每个权限请求自动应答「始终允许」。规则会持久保存——仅对可信服务器开启。</string>
     <string name="settings_no_auto_approve_rules">没有已保存的自动批准规则</string>
     <string name="settings_delete_rule">删除规则</string>
-    <string name="chat_meta_tokens">%d 个令牌</string>
     <string name="chat_glob_match_count">%d 个匹配</string>
     <string name="tool_web_fetch">WebFetch</string>
     <string name="chat_webfetch_prompt">提示词：%s</string>
     <string name="tool_web_search">WebSearch</string>
     <string name="chat_context_usage">上下文：%1$d%%</string>
-    <string name="chat_queued">排队中</string>
     <string name="chat_retry_send">重试</string>
     <string name="chat_title_placeholder">Chat</string>
     <string name="chat_context_detail_title">上下文使用详情</string>
@@ -537,6 +604,7 @@
     <string name="a11y_icon_navigate_forward">向前导航</string>
     <string name="a11y_locate_task">定位发起任务</string>
     <string name="chat_locate_task_not_found">此会话中未找到发起任务</string>
+    <string name="chat_locate_message_not_found">未找到该消息</string>
     <string name="a11y_icon_add">添加</string>
     <string name="a11y_icon_share">分享</string>
     <string name="a11y_icon_unlink">取消链接</string>
@@ -750,9 +818,15 @@
     <string name="settings_storage_clear_confirm">清理</string>
     <string name="settings_storage_cleared">归档已清理</string>
     <string name="search_content_hits">消息匹配</string>
+    <!-- #322：DSH 服务器历史命中（session/search） -->
+    <string name="search_server_hits">会话命中</string>
+    <string name="search_server_more">仅显示前 20 条匹配</string>
     <string name="search_content_coverage_hint">此会话未同步完整历史</string>
     <string name="search_content_hit_count">%1$d 条消息</string>
     <string name="search_filter_role_all">全部角色</string>
+    <string name="search_filter_menu">筛选</string>
+    <string name="search_filter_role_section">角色</string>
+    <string name="search_filter_time_section">时间</string>
     <string name="search_filter_role_user">用户</string>
     <string name="search_filter_role_assistant">AI</string>
     <string name="search_filter_time_all">全部时间</string>
@@ -765,10 +839,19 @@
     <string name="permission_custom">自定义</string>
     <string name="permission_custom_hint">自定义权限预设</string>
     <string name="permission_switch_failed">切换权限预设失败</string>
+    <string name="permission_full_access_confirm_title">切换到完全访问？</string>
+    <string name="permission_full_access_confirm_message">完全访问将允许智能体在不受沙箱限制的情况下运行命令和修改文件。仅对可信任务开启。</string>
+    <string name="permission_full_access_confirm_button">切换到完全访问</string>
     <string name="a11y_icon_permission_preset">权限预设</string>
+    <string name="plan_chip_label">Plan</string>
+    <string name="plan_chip_active_a11y">Plan 模式已开启——点按关闭（/plan off）</string>
+    <string name="plan_chip_pending_a11y">正在切换到 Plan 模式——点按取消（/plan off）</string>
+    <string name="plan_exit_failed">退出 Plan 模式失败</string>
     <string name="server_settings_default_permission">新会话默认权限</string>
     <string name="agent_preset_locked">预设已锁定，无法切换</string>
     <string name="agent_preset_switch_failed">切换 Agent 预设失败</string>
+    <string name="sessions_new_dialog_preset_label">智能体预设</string>
+    <string name="sessions_new_dialog_preset_default">默认</string>
     <string name="agent_preset_cards_title">选择 Agent 预设</string>
     <string name="server_settings_default_agent_preset">新会话默认 Agent 预设</string>
     <string name="session_details_agent_preset">Agent 预设</string>
@@ -784,6 +867,7 @@
     <string name="goal_blocked_reason">原因：%1$s</string>
     <string name="goal_action_pause">暂停</string>
     <string name="goal_action_resume">恢复</string>
+    <string name="goal_action_complete">标记完成</string>
     <string name="goal_action_edit">编辑</string>
     <string name="goal_action_clear">清除</string>
     <string name="goal_create_heading">创建目标</string>
@@ -803,10 +887,13 @@
     <string name="queue_remove">移除排队消息</string>
     <string name="queue_steer">引导至下一轮</string>
     <string name="queue_edit_hint">编辑排队消息</string>
+    <string name="queue_title">排队队列</string>
+    <string name="queue_empty">暂无排队消息</string>
     <string name="queue_steer_unavailable">仅当会话运行中才可引导</string>
     <string name="queue_action_failed">队列操作失败</string>
     <!-- #267 Server disconnect awareness (banner + fast-fail message) -->
     <string name="server_link_disconnected_banner">服务器已断开，正在重连…</string>
+    <string name="server_link_disconnected_banner_countdown">服务器已断开，正在重连…（%1$d 秒后重试）</string>
     <string name="server_link_disconnected_message">服务器已断开，操作未发送</string>
 
     <!-- #154a 崩溃启动提示 -->
@@ -853,4 +940,77 @@
     <string name="supervisor_notification_root_failing_title">监督器：%1$d 个根失败</string>
     <string name="supervisor_notification_error_peak_title">监督器：错误峰值上升</string>
     <string name="supervisor_notification_error_peak">错误峰值：%1$d</string>
+    <string name="dsh_token_banner_text">此服务器需要访问令牌</string>
+    <string name="dsh_token_banner_action">输入令牌</string>
+    <string name="dsh_token_dialog_title">需要访问令牌</string>
+    <string name="dsh_token_dialog_message">粘贴服务器启动行中的令牌或完整 URL（含 token=...）。</string>
+    <string name="dsh_token_dialog_hint">令牌或 URL</string>
+    <string name="dsh_token_dialog_connect">连接</string>
+    <string name="dsh_token_dialog_rejected">服务器拒绝了令牌。请检查后重试。</string>
+    <string name="server_pair_help_title">首次配对</string>
+    <string name="server_pair_help_manual">手动：先保存并连接此服务器，再点顶部横幅的「输入令牌」，粘贴服务器启动行中的令牌</string>
+    <string name="server_pair_help_adb">USB（dev 构建）：在宿主机运行 ./scripts/dsh-pair.sh，令牌自动注入</string>
+    <string name="server_pair_help_deeplink">或在宿主机运行 ./scripts/dsh-pair.sh --lan，扫描/点击 ocbeacon:// 链接自动填表</string>
+
+    <!-- #324① DSH provider 目录/自定义增删 -->
+    <string name="dsh_settings_loopback_required">此操作需要环回连接（adb reverse 到 127.0.0.1）。</string>
+    <string name="dsh_providers_section_title">DSH provider 目录</string>
+    <string name="dsh_providers_empty">服务器未报告任何 provider。</string>
+    <string name="dsh_provider_add_custom">新增自定义 provider</string>
+    <string name="dsh_provider_route">路由 ID</string>
+    <string name="dsh_provider_route_hint">小写字母、数字与连字符；须以字母开头。</string>
+    <string name="dsh_provider_route_invalid">路由只能包含小写字母、数字与连字符，且以字母开头。</string>
+    <string name="dsh_provider_route_taken">该路由已被占用。</string>
+    <string name="dsh_provider_display_name">显示名称（可选）</string>
+    <string name="dsh_provider_base_url">Base URL</string>
+    <string name="dsh_provider_api_key">API 密钥（可选）</string>
+    <string name="dsh_provider_api_key_hint">存入服务器凭据；该值不会再回显。</string>
+    <string name="dsh_provider_discover">发现模型</string>
+    <string name="dsh_provider_discover_failed">发现失败：%1$s</string>
+    <string name="dsh_provider_models_none">尚未发现模型。填写 Base URL 后点击「发现模型」。</string>
+    <string name="dsh_provider_model_select">选择要纳入的模型</string>
+    <string name="dsh_provider_create">创建</string>
+    <string name="dsh_provider_delete">删除</string>
+    <string name="dsh_provider_delete_confirm_title">删除自定义 provider</string>
+    <string name="dsh_provider_delete_confirm_text">删除自定义 provider %1$s？其存储的凭据（如有）也会一并移除。</string>
+    <string name="dsh_provider_credential_configured">凭据已配置</string>
+    <string name="dsh_provider_credential_missing">凭据未设置</string>
+    <string name="dsh_provider_active">运行时已启用</string>
+    <string name="dsh_provider_inactive">运行时未启用</string>
+
+    <!-- #324② preset 管理 -->
+    <string name="dsh_preset_view">查看组成</string>
+    <string name="dsh_preset_copy_title">复制预设 %1$s</string>
+    <string name="dsh_preset_copy_id">新预设 ID</string>
+    <string name="dsh_preset_copy_name">新名称（可选）</string>
+    <string name="dsh_preset_copy">复制</string>
+    <string name="dsh_preset_delete_confirm_title">删除预设</string>
+    <string name="dsh_preset_delete_confirm_text">删除用户预设 %1$s？进行中的会话不受影响；新会话回退到默认档。</string>
+    <string name="dsh_preset_broken_badge">已损坏：%1$s</string>
+
+    <!-- #324③ 插件配置与清单 -->
+    <string name="dsh_plugins_inventory_title">服务器插件</string>
+    <string name="dsh_plugins_inventory_empty">未报告插件清单。</string>
+    <string name="dsh_plugin_enabled">已启用</string>
+    <string name="dsh_plugin_disabled">已停用</string>
+    <string name="dsh_plugin_conditional">条件启用</string>
+    <string name="dsh_plugin_preset_group">预设：%1$s</string>
+    <string name="dsh_server_config_title">服务器配置</string>
+    <string name="dsh_config_applies_live">立即生效</string>
+    <string name="dsh_config_applies_restart">需重启</string>
+    <string name="dsh_secret_no_ref">在本应用之外管理（未声明凭据引用）。</string>
+
+    <!-- #324④ skills 触发组 -->
+    <string name="slash_skills_group">技能</string>
+    <string name="slash_skill_model_invocable">模型可自主调用的技能</string>
+    <string name="chat_busy_menu_send_now">立即发送</string>
+    <string name="chat_busy_menu_send_now_desc">注入当前轮次，立即上屏</string>
+    <string name="chat_busy_menu_queue">消息排队</string>
+    <string name="chat_busy_menu_queue_desc">本轮结束后自动发送</string>
+    <string name="chat_busy_menu_queue_no_attachments">带附件的消息请立即发送</string>
+    <!-- #385: DSH context injection compact card labels (source.kind) -->
+    <string name="chat_injection_agent_instructions">工作区指令</string>
+    <string name="chat_injection_skill_catalog">技能目录</string>
+    <string name="chat_injection_plugin">插件配置</string>
+    <string name="chat_injection_context">上下文注入</string>
 </resources>

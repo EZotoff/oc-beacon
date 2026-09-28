@@ -32,6 +32,7 @@ import dev.leonardo.ocbeacon.ui.screens.chat.ChatMessage
 import dev.leonardo.ocbeacon.ui.screens.chat.RevertedDraftPayload
 import dev.leonardo.ocbeacon.ui.screens.chat.util.ImageAttachment
 import dev.leonardo.ocbeacon.ui.screens.chat.util.SlashCommand
+import dev.leonardo.ocbeacon.ui.screens.chat.input.SlashCommandGate
 import dev.leonardo.ocbeacon.ui.screens.chat.util.SlashCommandRegistry
 import dev.leonardo.ocbeacon.ui.screens.chat.util.insertSlashCommandAt
 import dev.leonardo.ocbeacon.ui.screens.chat.util.slashQueryAt
@@ -64,6 +65,8 @@ internal fun ChatInputBar(
     textFieldValue: TextFieldValue,
     onTextFieldValueChange: (TextFieldValue) -> Unit,
     onSend: () -> Unit,
+    /** #309 批1④：忙碌长按发送键——直发插话（DSH mode=steer）；空闲长按维持 shell 切换。 */
+    onSendSteer: () -> Unit = {},
     isSending: Boolean,
     isBusy: Boolean = false,
     /** 2026-08-14：等待提问/权限响应时禁用输入（用户要求"提问时输入框不可以输入"）。 */
@@ -82,14 +85,20 @@ internal fun ChatInputBar(
     variantNames: List<String> = emptyList(),
     selectedVariant: String? = null,
     commands: List<CommandInfo> = emptyList(),
+    // #324⑤：会话技能（DSH skills/list 触发组；非 DSH 恒空）
+    skills: List<dev.leonardo.ocbeacon.domain.model.DshSkillInfo> = emptyList(),
     /** #276 能力位门控：false（DSH）时斜杠命令建议面板不出现。 */
     slashCommandsSupported: Boolean = true,
     fileSearchResults: List<String> = emptyList(),
+    /** #310⑤ 会话源候选（DSH;与文件候选同弹窗,会话行在前）。 */
+    sessionSearchResults: List<dev.leonardo.ocbeacon.domain.model.MentionCandidate.SessionMention> = emptyList(),
     confirmedFilePaths: Set<String> = emptySet(),
     onFileSelected: (String) -> Unit = {},
     // 2026-09-16（用户需求）：不再由建议点选触发——选择一律插入输入框；
     // 参数保留以兼容现有调用方（ChatScreenBottomBar），当前无调用点。
     @Suppress("UNUSED_PARAMETER")
+    /** #310⑤ 点选会话源——以 mention 规范串替换 trigger 词。 */
+    onSessionSelected: (dev.leonardo.ocbeacon.domain.model.MentionCandidate.SessionMention) -> Unit = {},
     onSlashCommand: (SlashCommand) -> Unit = {},
     inputMode: ChatInputMode = ChatInputMode.NORMAL,
     onInputModeChange: (ChatInputMode) -> Unit = {},
@@ -105,6 +114,10 @@ internal fun ChatInputBar(
     permissions: SessionPermissions? = null,
     onPermissionSelect: (String) -> Unit = {},
     onPermissionCustomClick: () -> Unit = {},
+    // #310③ Plan 模式状态 chip（DSH-only；显隐/形态由调用方经 PlanChipGate 判定）
+    planChipVisible: Boolean = false,
+    planPending: Boolean = false,
+    onPlanExit: () -> Unit = {},
 ) {
     // 发送失败时恢复草稿文本
     androidx.compose.runtime.LaunchedEffect(restoredDraft) {
@@ -141,11 +154,22 @@ internal fun ChatInputBar(
     // 面为准，静态表仅作未加载前的兜底。此前静态表恒并入导致 DSH 显示
     // fork/new/redo 等 DSH 不存在的命令、淹没 /goal /permission /plan。
     val clientCmds = SlashCommandRegistry.clientCommands()
-    val allCommands = remember(commands, clientCmds) {
+    // #324⑤：skills 触发组（whenToUse 优先作描述行；modelInvocable 标识到建议行渲染）
+    val skillCmds = remember(skills) {
+        skills.map { skill ->
+            SlashCommand(
+                name = skill.name,
+                description = skill.whenToUse ?: skill.description.ifBlank { null },
+                type = "skill",
+                modelInvocable = skill.modelInvocable,
+            )
+        }
+    }
+    val allCommands = remember(commands, clientCmds, skillCmds) {
         if (commands.isNotEmpty()) {
-            commands.map { SlashCommand(it.name, it.description, it.source ?: "server", requiresInput = it.hints.isNotEmpty()) }
+            commands.map { SlashCommand(it.name, it.description, it.source ?: "server", requiresInput = it.hints.isNotEmpty()) } + skillCmds
         } else {
-            clientCmds
+            clientCmds + skillCmds
         }
     }
 
@@ -155,8 +179,10 @@ internal fun ChatInputBar(
     val slashQuery = if (slashCommandsSupported && !isShellMode) {
         slashQueryAt(text, textFieldValue.selection.start)
     } else null
-    val showSlashSuggestions = slashQuery != null
-    val filteredCommands = slashQuery?.let { q ->
+    val panelQuery = if (slashQuery == null) SlashCommandGate.panelQueryOf(text) else null
+    val activeQuery = slashQuery ?: panelQuery?.lowercase()
+    val showSlashSuggestions = activeQuery != null
+    val filteredCommands = activeQuery?.let { q ->
         allCommands.filter { cmd -> q.isEmpty() || cmd.name.lowercase().contains(q) }
     } ?: emptyList()
 
@@ -164,7 +190,8 @@ internal fun ChatInputBar(
     fun insertSlashToken(cmdText: String) {
         val insertion = insertSlashCommandAt(
             text = text,
-            cursor = textFieldValue.selection.start.coerceIn(0, text.length),
+            cursor = (if (slashQuery == null && panelQuery != null) 1 else textFieldValue.selection.start)
+                .coerceIn(0, text.length),
             commandText = cmdText,
         )
         onTextFieldValueChange(TextFieldValue(insertion.text, TextRange(insertion.cursor)))
@@ -199,11 +226,13 @@ internal fun ChatInputBar(
             )
         }
 
-        // @ 文件提及建议弹窗
+        // @ 文件/会话提及建议弹窗（#310⑤ 会话源候选同弹窗）
         if (!isShellMode) {
             FileMentionSuggestions(
                 results = fileSearchResults,
-                onFileSelected = onFileSelected
+                sessions = sessionSearchResults,
+                onFileSelected = onFileSelected,
+                onSessionSelected = onSessionSelected
             )
         }
 
@@ -242,6 +271,9 @@ internal fun ChatInputBar(
                 permissions = permissions,
                 onPermissionSelect = onPermissionSelect,
                 onPermissionCustomClick = onPermissionCustomClick,
+                planChipVisible = planChipVisible,
+                planPending = planPending,
+                onPlanExit = onPlanExit,
             )
 
             // 图片附件缩略图
@@ -272,20 +304,20 @@ internal fun ChatInputBar(
                     onFocusChange = { textFieldFocused = it }
                 )
 
-                // 发送/停止按钮区——忙碌双键并存（2026-09-01 走查 #8 用户裁决）：
-                // isBusy 且无文本时仅停止键；isBusy 且有输入时停止键+发送键并排
-                //（发送点击=服务端排队，DSH prompt mode=queue → QueueDock）；
-                // 忙碌转圈由停止键承载（2026-08-17 用户需求）
-                val showStop = isBusy && text.isBlank()
+                // 发送/停止按钮区——单键统一（#326，2026-09-04 用户裁决，对齐 web 主按钮）：
+                // idle=发送 / busy+空=停止 / busy+文本=发送(服务端排队,长按=steer #309④) /
+                // 被阻塞(等待提问/权限,inputEnabled=false)=停止
                 SendStopButton(
-                    showStop = showStop,
+                    hasText = text.isNotBlank(),
                     isBusy = isBusy,
+                    inputBlocked = !inputEnabled,
                     canSend = canSend,
                     isSending = isSending,
                     isShellMode = isShellMode,
                     isAmoled = isAmoled,
                     onStop = onStop,
                     onSend = onSend,
+                    onSendSteer = onSendSteer,
                     onInputModeChange = onInputModeChange
                 )
             }

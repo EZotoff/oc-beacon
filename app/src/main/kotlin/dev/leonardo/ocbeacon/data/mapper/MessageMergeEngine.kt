@@ -103,6 +103,10 @@ internal object MessageMergeEngine {
                 if (incomingMetadata.isNullOrEmpty() && !existingMetadata.isNullOrEmpty()) {
                     merged = merged.withStateMetadata(existingMetadata)
                 }
+                // #453 time 继承：incoming state 无 time（中间事件/REST 快照）→ 整体
+                // 保留 existing（否则锚丢失，重进后计时归零）；有 time 但 start=0
+                // 哨兵（终态事件只带 end）→ 从 existing 锚补 start，跨度才真实。
+                merged = merged.withInheritedStateTime(existing)
                 merged
             }
             // #295 残项（2026-09-02 真机实证）：File 的 url 是**客户端补丁字段**
@@ -158,6 +162,49 @@ internal object MessageMergeEngine {
             is ToolState.Error -> s.copy(metadata = metadata)
         }
     )
+
+    /**
+     * #453：incoming state 的 time 继承 existing 锚。
+     *
+     * - incoming 无 time（V2 中间事件 tool.input.ended、REST 快照）→ 整体保留
+     *   existing 的 time（锚丢失会让工具卡重进后计时归零）；
+     * - incoming 有 time 但 start<=0（终态事件只带 end 的 0 哨兵）→ 从 existing
+     *   补真实 start（否则 end-start 为负/0，冻结时长显示不出）；
+     * - existing 也无锚 → 保持 incoming 原样（无可继承）。
+     */
+    private fun Part.Tool.withInheritedStateTime(existing: Part.Tool): Part.Tool {
+        val existingStart = when (val s = existing.state) {
+            is ToolState.Pending -> s.time?.start
+            is ToolState.Running -> s.time?.start
+            is ToolState.Completed -> s.time?.start
+            is ToolState.Error -> s.time?.start
+        }?.takeIf { it > 0 }
+        val state = when (val s = state) {
+            is ToolState.Pending -> when {
+                s.time == null && existingStart != null -> s.copy(time = ToolState.Pending.Time(existingStart))
+                else -> s
+            }
+            is ToolState.Running -> when {
+                s.time == null && existingStart != null -> s.copy(time = ToolState.Running.Time(existingStart))
+                else -> s
+            }
+            is ToolState.Completed -> when {
+                s.time == null && existingStart != null ->
+                    s.copy(time = ToolState.Completed.Time(existingStart, existingStart))
+                s.time != null && s.time.start <= 0 && existingStart != null ->
+                    s.copy(time = s.time.copy(start = existingStart))
+                else -> s
+            }
+            is ToolState.Error -> when {
+                s.time == null && existingStart != null ->
+                    s.copy(time = ToolState.Error.Time(existingStart, existingStart))
+                s.time != null && s.time.start <= 0 && existingStart != null ->
+                    s.copy(time = s.time.copy(start = existingStart))
+                else -> s
+            }
+        }
+        return if (state === this.state) this else copy(state = state)
+    }
 
     fun mergePartsList(existingParts: List<Part>, incomingParts: List<Part>): List<Part> {
         // 2026-08-12 根因修复（流式内容消失）：
@@ -491,8 +538,12 @@ internal object MessageMergeEngine {
      * 丢失时防止消息永不完成）；SSE 已完成则完全信任 SSE。
      */
     fun mergeMessageMeta(sse: Message, rest: Message): Message {
-        // 对于用户消息：REST 是权威的（无流式传输）
-        if (sse is Message.User) return rest
+        // 对于用户消息：REST 是权威的（无流式传输）。但 #395 的 viaSteer 是客户端
+        // 发送路径标记（V2 REST 持久化载荷无 delivery 字段）——保留既有标记，
+        // 避免 L3 兜底刷新/分页回补/重进会话后插话徽标丢失。
+        if (sse is Message.User) {
+            return if (sse.viaSteer && rest is Message.User) rest.copy(viaSteer = true) else rest
+        }
         if (sse !is Message.Assistant) return rest
 
         // 2026-08-15：REST 元数据兜底——SSE 侧 modelId/providerId/agent 为空时
@@ -503,7 +554,8 @@ internal object MessageMergeEngine {
         fun withMeta(m: Message.Assistant): Message.Assistant = if (restA == null) m else m.copy(
             modelId = m.modelId ?: restA.modelId,
             providerId = m.providerId ?: restA.providerId,
-            agent = m.agent ?: restA.agent
+            agent = m.agent ?: restA.agent,
+            turnNumber = m.turnNumber ?: restA.turnNumber
         )
 
         // 对于 Assistant 消息：
@@ -544,6 +596,11 @@ internal object MessageMergeEngine {
             cost = incoming.cost ?: existing.cost,
             tokens = incoming.tokens ?: existing.tokens,
             finish = incoming.finish ?: existing.finish,
+            turnNumber = incoming.turnNumber ?: existing.turnNumber,
+            // #411：逐轮 timing 同 turnNumber 保真（incoming 缺席时保留既有派生值）
+            ttftMs = incoming.ttftMs ?: existing.ttftMs,
+            decodeMs = incoming.decodeMs ?: existing.decodeMs,
+            decodeTokens = incoming.decodeTokens ?: existing.decodeTokens,
             time = incoming.time.copy(
                 created = minOf(existing.time.created, incoming.time.created),
                 completed = incoming.time.completed ?: existing.time.completed

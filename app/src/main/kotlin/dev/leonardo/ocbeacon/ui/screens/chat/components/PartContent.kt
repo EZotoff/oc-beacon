@@ -28,11 +28,14 @@ import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
 import androidx.compose.foundation.text.selection.SelectionContainer
 import dev.leonardo.ocbeacon.ui.screens.chat.isReasoningStreaming
 import dev.leonardo.ocbeacon.ui.screens.chat.markdown.MarkdownContent
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpecialToolCardKind
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.ToolCallCard
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.ViewToolRequest
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.cards.PatchCard
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.cards.ShellCard
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.cards.SkillToolCard
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.cards.TodoListCard
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.specialToolCardKind
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.cards.ToolCardScaffold
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalAutoExpandTools
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalExpandReasoning
@@ -41,6 +44,7 @@ import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalOnViewTool
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalSessionStreaming
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalToolCardResolver
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalToolExpandedStates
+import dev.leonardo.ocbeacon.ui.screens.chat.util.toolExpandedOrDefault
 import dev.leonardo.ocbeacon.ui.screens.chat.util.QuestionParser
 import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
 import dev.leonardo.ocbeacon.ui.screens.viewer.FileViewerSource
@@ -48,6 +52,7 @@ import com.mikepenz.markdown.model.MarkdownState
 import com.mikepenz.markdown.model.State
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 /**
  * #263：思考完结时长合成。start=0 哨兵（V2 reasoning.started 无服务器时间戳，
@@ -185,15 +190,15 @@ private fun PartContentInner(
                 val reasoningDuration = part.time?.let { t ->
                     t.end?.let { end -> reasoningDurationMs(t.start, end) }
                 }
-                val toolExpandedStates = LocalToolExpandedStates.current
+                val toolStatesFlow = LocalToolExpandedStates.current
                 val onToggleToolExpanded = LocalOnToggleToolExpanded.current
                 val expandReasoningDefault = LocalExpandReasoning.current
-                val rbExpanded = toolExpandedStates[part.id] ?: expandReasoningDefault
+                val rbExpanded = toolExpandedOrDefault(part.id, expandReasoningDefault)
                 androidx.compose.runtime.LaunchedEffect(part.id, rbExpanded) {
                     dev.leonardo.ocbeacon.logging.AppLogger.w(
                         "RB-EXP",
                         "[DEBUG-rbexp] RB id=" + part.id.takeLast(8) + " expanded=" + rbExpanded +
-                            " mapHit=" + (toolExpandedStates[part.id] != null) +
+                            " mapHit=" + (toolStatesFlow.value[part.id] != null) +
                             " default=" + expandReasoningDefault
                     )
                 }
@@ -203,24 +208,27 @@ private fun PartContentInner(
                     onToggleExpand = { onToggleToolExpanded(part.id, expandReasoningDefault) },
                     durationMs = reasoningDuration,
                     isStreaming = isStreaming,
-                    startTimeMs = startTimeMs
+                    startTimeMs = startTimeMs,
+                    pinKey = part.id,
                 )
             }
         }
         is Part.Tool -> {            // todoread parts 完全过滤掉（WebUI 约定）
-            val toolExpandedStates = LocalToolExpandedStates.current
             val onToggleToolExpanded = LocalOnToggleToolExpanded.current
             if (part.tool == "todoread") {
                 // 跳过
             } else if (part.tool == "todowrite") {
                 TodoListCard(
                     tool = part,
-                    isExpanded = toolExpandedStates[part.id] ?: true,
+                    isExpanded = toolExpandedOrDefault(part.id, true),
                     onToggleExpand = { onToggleToolExpanded(part.id, true) }
                 )
-            } else if (part.tool == "question") {
+            } else if (specialToolCardKind(part.tool) == SpecialToolCardKind.Question) {
                 // 2026-08-14 根因修复：question 工具是内部提问机制（与 todoread
                 // 同模式按工具名分流），**不渲染通用工具卡片**——
+                // #311 Task5：DSH 同语义工具恒名 'ask_user_question'（契约 ③，
+                // dsh-tool-ask-user index.js:15-16）——双名同走本分支，
+                // 呈现复用既有 Asked 形态（下方 Completed/Error 两态）。
                 // 活跃（未完成）：不渲染任何内容（提问由嵌入的 QuestionCard 展示，
                 //   避免出现"Question loading 卡片"与提问卡片重复）；
                 // 完成（历史）：渲染答案视图（ToolCardScaffold "Asked" + 已选选项）。
@@ -238,7 +246,7 @@ private fun PartContentInner(
                             iconTint = MaterialTheme.colorScheme.primary,
                             title = completedState.title ?: "Asked",
                             copyText = toolOutput,
-                            isExpanded = toolExpandedStates[part.id] ?: autoExpand,
+                            isExpanded = toolExpandedOrDefault(part.id, autoExpand),
                             isRunning = false,
                             hasContent = true,
                             isAmoled = isAmoledTheme(),
@@ -270,7 +278,7 @@ private fun PartContentInner(
                                 iconTint = MaterialTheme.colorScheme.primary,
                                 title = "Asked",
                                 copyText = "",
-                                isExpanded = toolExpandedStates[part.id] ?: autoExpand,
+                                isExpanded = toolExpandedOrDefault(part.id, autoExpand),
                                 isRunning = false,
                                 hasContent = true,
                                 isAmoled = isAmoledTheme(),
@@ -282,6 +290,16 @@ private fun PartContentInner(
                     }
                     // 未完成（活跃）：不渲染——提问由 QuestionCard 展示
                 }
+            } else if (specialToolCardKind(part.tool) == SpecialToolCardKind.Skill) {
+                // #311 Task5 skill 行（契约 ③；web mod32:107 折叠卡语义）：
+                // args={name}、result=指令全文——名称 + 状态摘要 + 指令折叠卡
+                // （默认收起）；未结算（RUNNING）卡内不渲染（SSE 铁律同台账，
+                // question 分支「活跃不渲染」同哲学）。
+                SkillToolCard(
+                    part = part,
+                    isExpanded = toolExpandedOrDefault(part.id, false),
+                    onToggleExpand = { onToggleToolExpanded(part.id, false) },
+                )
             } else {
                 // 历史兼容：工具名非 "question" 但输出含问题数据的（旧服务器/旧数据）
                 val completedState = part.state as? ToolState.Completed
@@ -299,7 +317,7 @@ private fun PartContentInner(
                         iconTint = MaterialTheme.colorScheme.primary,
                         title = completedState?.title ?: "Asked",
                         copyText = toolOutput,
-                        isExpanded = toolExpandedStates[part.id] ?: autoExpand,
+                        isExpanded = toolExpandedOrDefault(part.id, autoExpand),
                         isRunning = false,
                         hasContent = parsed.any { it.options.isNotEmpty() },
                         isAmoled = isAmoledTheme(),
@@ -310,7 +328,7 @@ private fun PartContentInner(
                 } else {
                 // 使用解析器注册表
                 val autoExpand = LocalAutoExpandTools.current
-                val expanded = toolExpandedStates[part.id] ?: autoExpand
+                val expanded = toolExpandedOrDefault(part.id, autoExpand)
                 val toggleExpand = { onToggleToolExpanded(part.id, autoExpand) }
 
                 // 阶段 2：为 Read/Write/Edit 拦截 onOpenFile → TOOL_SNAPSHOT
@@ -350,13 +368,12 @@ private fun PartContentInner(
         }
         is Part.Shell -> {
             // 后台 shell 命令卡片（V2）——2 行布局，与 TaskToolCard 对称
-            val toolExpandedStates = LocalToolExpandedStates.current
             val onToggleToolExpanded = LocalOnToggleToolExpanded.current
             ShellCard(
                 shell = part,
                 // #215 批2 修复首击陷阱：初值 ?: false 与 toggle 默认参必须一致
                 //（原默认参 true：首击 null→!true=false 视觉无变化，需双击才展开）
-                isExpanded = toolExpandedStates[part.id] ?: false,
+                isExpanded = toolExpandedOrDefault(part.id, false),
                 onToggleExpand = { onToggleToolExpanded(part.id, false) }
             )
         }
@@ -368,11 +385,10 @@ private fun PartContentInner(
         }
         is Part.Patch -> {
             val autoExpand = LocalAutoExpandTools.current
-            val toolExpandedStates = LocalToolExpandedStates.current
             val onToggleToolExpanded = LocalOnToggleToolExpanded.current
             PatchCard(
                 patch = part,
-                isExpanded = toolExpandedStates[part.id] ?: autoExpand,
+                isExpanded = toolExpandedOrDefault(part.id, autoExpand),
                 onToggleExpand = { onToggleToolExpanded(part.id, autoExpand) },
                 onOpenFile = onOpenFile
             )
@@ -404,16 +420,17 @@ private fun PartContentInner(
                 color = MaterialTheme.colorScheme.error
             )
         }
-        // 忽略不太相关的 parts
+        // 忽略不太相关的 parts（Deliverables = turn 尾产出文件行的元数据源，
+        // 由 TurnDeliverables fold 消费，不在气泡内渲染——#398）
         is Part.Snapshot, is Part.Subtask, is Part.Compaction,
-        is Part.SessionTurn, is Part.Unknown -> { /* skip */ }
+        is Part.SessionTurn, is Part.Deliverables, is Part.Unknown -> { /* skip */ }
         is Part.Agent -> {
             val displayName = part.name.ifBlank { "Agent" }
             val displaySource = part.source?.jsonPrimitive?.contentOrNull ?: ""
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                    .padding(vertical = SpacingTokens.XS.dp),
                 horizontalArrangement = Arrangement.Start,
                 verticalAlignment = Alignment.CenterVertically
             ) {

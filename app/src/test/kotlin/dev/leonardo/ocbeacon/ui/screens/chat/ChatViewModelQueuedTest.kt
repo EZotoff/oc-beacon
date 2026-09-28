@@ -1,5 +1,6 @@
 package dev.leonardo.ocbeacon.ui.screens.chat
 
+import dev.leonardo.ocbeacon.testing.FakeServerAdapterResolver
 import dev.leonardo.ocbeacon.data.repository.SettingsDataStore
 import dev.leonardo.ocbeacon.data.repository.ShellJobsStore
 import dev.leonardo.ocbeacon.data.repository.UnreadBadgeService
@@ -124,9 +125,13 @@ class ChatViewModelQueuedTest {
             ownershipRegistry = StreamingOwnershipRegistry(),
             // #122 接线新增：自动批准（relaxed mock——既有用例不受影响）
             permissionAutoApprover = io.mockk.mockk<dev.leonardo.ocbeacon.data.repository.PermissionAutoApprover>(relaxed = true),
+            pendingInteractionStore = io.mockk.mockk<dev.leonardo.ocbeacon.data.repository.PendingInteractionStore>(relaxed = true),
             historySyncManagerProvider = javax.inject.Provider { io.mockk.mockk<dev.leonardo.ocbeacon.data.repository.HistorySyncManager>(relaxed = true) },
             dshJobsHandler = io.mockk.mockk<dev.leonardo.ocbeacon.data.repository.handler.DshJobsHandler>(relaxed = true),
             dshQueueHandler = dev.leonardo.ocbeacon.data.repository.handler.DshQueueHandler(mockk(relaxed = true)),
+            dshWorkspaceHandler = dev.leonardo.ocbeacon.data.repository.handler.DshWorkspaceHandler(
+                dev.leonardo.ocbeacon.data.repository.DshWorkspaceStore(),
+            ),
 
         )
         every { sessionStateRepository.statusFlow } returns testStatusFlow
@@ -287,6 +292,7 @@ class ChatViewModelQueuedTest {
             "sessionId"  to sessionId
         ))
         return ChatViewModel(
+            serverAdapters = FakeServerAdapterResolver(),
             sseConnectionManager = sseConnectionManager,
             savedStateHandle = savedState,
             sendMessageUseCase = sendMessageUseCase,
@@ -384,137 +390,6 @@ class ChatViewModelQueuedTest {
         }
     }
 
-    // ==========================================
-    // A. QUEUED 徽章 —— queuedMessageIds 计算
-    // ==========================================
-
-    @Test
-    fun queuedMessageIds_empty_whenNoMessages() = runTest {
-        val vm = createViewModel()
-        val collectJob = subscribeToState(vm)
-        advanceUntilIdle()
-
-        assertTrue(vm.conversation.messageListState.value.queuedMessageIds.isEmpty())
-        collectJob.cancel()
-    }
-
-    @Test
-    fun queuedMessageIds_empty_whenNoPendingAssistant() = runTest {
-        // 所有 assistant 消息均已完成
-        stubMessages(
-            createUserMessage("u1", created = 1000L) to emptyList(),
-            createAssistantMessage("a1", completed = 2000L, created = 1500L) to emptyList(),
-            createUserMessage("u2", created = 3000L) to emptyList(),
-        )
-
-        val vm = createViewModel()
-        val collectJob = subscribeToState(vm)
-        advanceUntilIdle()
-
-        assertTrue(vm.conversation.messageListState.value.queuedMessageIds.isEmpty())
-        collectJob.cancel()
-    }
-
-    @Test
-    fun queuedMessageIds_containsUserMessages_afterPendingAssistant() = runTest {
-        // assistant 未完成 —— 其后的用户消息应被标记
-        stubMessages(
-            createUserMessageWithText("u1", created = 1000L),
-            createAssistantMessageWithText("a1", completed = null, created = 1500L),
-            createUserMessageWithText("u2", created = 2000L),
-            createUserMessageWithText("u3", created = 2500L),
-        )
-
-        val vm = createViewModel()
-        val collectJob = subscribeToState(vm)
-        advanceUntilIdle()
-
-        assertEquals(setOf("u2", "u3"), vm.conversation.messageListState.value.queuedMessageIds)
-        collectJob.cancel()
-    }
-
-    @Test
-    fun queuedMessageIds_excludesMessages_beforePendingAssistant() = runTest {
-        // u1 在待处理 assistant 之前，不应被标记
-        stubMessages(
-            createUserMessageWithText("u1", created = 1000L),
-            createUserMessageWithText("u2", created = 1200L),
-            createAssistantMessageWithText("a1", completed = null, created = 1500L),
-            createUserMessageWithText("u3", created = 2000L),
-        )
-
-        val vm = createViewModel()
-        val collectJob = subscribeToState(vm)
-        advanceUntilIdle()
-
-        assertEquals(setOf("u3"), vm.conversation.messageListState.value.queuedMessageIds)
-        collectJob.cancel()
-    }
-
-    @Test
-    fun queuedMessageIds_empty_whenNoUserAfterPendingAssistant() = runTest {
-        // 有待处理 assistant，但其后没有用户消息
-        stubMessages(
-            createUserMessage("u1", created = 1000L) to emptyList(),
-            createAssistantMessage("a1", completed = null, created = 1500L) to emptyList(),
-        )
-
-        val vm = createViewModel()
-        val collectJob = subscribeToState(vm)
-        advanceUntilIdle()
-
-        assertTrue(vm.conversation.messageListState.value.queuedMessageIds.isEmpty())
-        collectJob.cancel()
-    }
-
-    @Test
-    fun queuedMessageIds_usesLastPendingAssistant() = runTest {
-        // V1 在排序（旧→新）列表上使用 indexOfLast：找到 a2（最新的待处理 assistant）。
-        // 排序后：[a1(1500), u1(2000), a2(2500), u2(3000)]
-        // indexOfLast → a2 在索引 2；drop(3) → [u2]；queued = {"u2"}
-        stubMessages(
-            createAssistantMessageWithText("a1", completed = null, created = 1500L),
-            createUserMessageWithText("u1", created = 2000L),
-            createAssistantMessageWithText("a2", completed = null, created = 2500L),
-            createUserMessageWithText("u2", created = 3000L),
-        )
-
-        val vm = createViewModel()
-        val collectJob = subscribeToState(vm)
-        advanceUntilIdle()
-
-        assertEquals(setOf("u2"), vm.conversation.messageListState.value.queuedMessageIds)
-        collectJob.cancel()
-    }
-
-    @Test
-    fun queuedMessageIds_cleared_whenAssistantCompletes() = runTest {
-        // 初始加载：assistant 待处理
-        stubMessages(
-            createAssistantMessageWithText("a1", completed = null, created = 1500L),
-            createUserMessageWithText("u1", created = 2000L),
-        )
-
-        val vm = createViewModel()
-        val collectJob = subscribeToState(vm)
-        advanceUntilIdle()
-
-        // 验证初始 queued 状态
-        assertEquals(setOf("u1"), vm.conversation.messageListState.value.queuedMessageIds)
-
-        // 模拟状态更新：通过重新 stub 并刷新使 assistant 完成
-        // （pushMessages 只更新 V1 EventDispatcher，不更新 V2 _sessionState）
-        stubMessages(
-            createAssistantMessageWithText("a1", completed = 3000L, created = 1500L),
-            createUserMessageWithText("u1", created = 2000L),
-        )
-        vm.sessionOps.refreshSession()
-        advanceUntilIdle()
-
-        // queued 应被清空
-        assertTrue(vm.conversation.messageListState.value.queuedMessageIds.isEmpty())
-        collectJob.cancel()
-    }
 
     // ==========================================
     // B. 子智能体会话标识 —— sessionParentId
@@ -683,29 +558,8 @@ class ChatViewModelQueuedTest {
         // sessionParentId 正确（来自 sessionMetaState，#173 uiState 退役后拆流断言）
         assertEquals("parent-1", vm.sessionMetaState.value.sessionParentId)
 
-        // queuedMessageIds 正确（u2 在待处理 assistant 之后）
-        assertEquals(setOf("u2"), state.queuedMessageIds)
-
         // 消息不为空
         assertTrue(state.messages.isNotEmpty())
-        collectJob.cancel()
-    }
-
-    @Test
-    fun queuedMessageIds_withMultipleRapidUserMessages() = runTest {
-        // 模拟用户快速发送 3 条消息
-        stubMessages(
-            createAssistantMessageWithText("a1", completed = null, created = 1500L),
-            createUserMessageWithText("u1", created = 2000L),
-            createUserMessageWithText("u2", created = 2100L),
-            createUserMessageWithText("u3", created = 2200L),
-        )
-
-        val vm = createViewModel()
-        val collectJob = subscribeToState(vm)
-        advanceUntilIdle()
-
-        assertEquals(setOf("u1", "u2", "u3"), vm.conversation.messageListState.value.queuedMessageIds)
         collectJob.cancel()
     }
 }

@@ -3,6 +3,10 @@ package dev.leonardo.ocbeacon.data.repository.handler
 import dev.leonardo.ocbeacon.logging.AppLogger
 
 import dev.leonardo.ocbeacon.BuildConfig
+import dev.leonardo.ocbeacon.domain.model.CommandFeedback
+import dev.leonardo.ocbeacon.domain.model.CommandFeedbackFolder
+import dev.leonardo.ocbeacon.domain.model.CompactionEntry
+import dev.leonardo.ocbeacon.domain.model.CompactionFolder
 import dev.leonardo.ocbeacon.domain.model.SseEvent
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,15 +37,116 @@ class MiscEventHandler @Inject constructor() : SseEventHandler {
     private val _commandsChanged = MutableSharedFlow<Unit>(replay = 1)
     val commandsChanged: SharedFlow<Unit> = _commandsChanged.asSharedFlow()
 
+    /**
+     * #323：斜杠命令执行反馈行（sessionId → 有序卡态列表；seq 升序＝消息列表
+     * 插入序）。commandId 配对原位更新由 [CommandFeedbackFolder] 纯函数承担
+     * （run 建卡、done 同卡终态化）；durable——历史重放同路径折叠，SessionDeleted
+     * 级联清（退出会话不清，#252 shell 卡同款裁决：转录可见性跨进入退出保持）。
+     */
+    private val _commandFeedback = MutableStateFlow<Map<String, List<CommandFeedback>>>(emptyMap())
+    val commandFeedback: StateFlow<Map<String, List<CommandFeedback>>> = _commandFeedback.asStateFlow()
+
+    /**
+     * #378/#375：压缩转录实体（sessionId → seq 升序卡列表；compactionId 配对
+     * 原位更新由 [CompactionFolder] 纯函数承担）。durable——历史重放
+     * （MessagePage.transcriptEvents dispatch）与实况 SSE 同路径重建；
+     * SessionDeleted 级联清（同 commandFeedback 纪律）。
+     */
+    private val _compactionEntries = MutableStateFlow<Map<String, List<CompactionEntry>>>(emptyMap())
+    val compactionEntries: StateFlow<Map<String, List<CompactionEntry>>> = _compactionEntries.asStateFlow()
+
     /** REST hydrate（进会话补首屏 todo，2026-08-20）；与 SSE 路径同型幂等覆盖。 */
     fun setTodos(sessionId: String, todos: List<SseEvent.TodoUpdated.Todo>) {
         _todos.update { it + (sessionId to todos) }
+    }
+
+    /**
+     * #365：本地受理占位（受理即知）——派发时即追加，不等 RPC 返回
+     * （V1 /command 同步挂起可达数十秒，回执后插入等于「完成才知」）；
+     * command/run 到达后由 Folder.onRun 同名占位原位升级；派发失败由
+     * [recordLocalFailure] 翻 error 终态。
+     */
+    fun recordLocalAcceptance(sessionId: String, name: String, args: String?) {
+        _commandFeedback.update { all ->
+            all + (sessionId to CommandFeedbackFolder.onLocalAcceptance(
+                all[sessionId].orEmpty(), name, args, System.currentTimeMillis(),
+            ))
+        }
+    }
+
+    /** #365：派发失败——同名最近未终态占位翻 error（不留悬空已受理）。 */
+    fun recordLocalFailure(sessionId: String, name: String) {
+        _commandFeedback.update { all ->
+            all + (sessionId to CommandFeedbackFolder.onLocalFailure(all[sessionId].orEmpty(), name))
+        }
     }
 
     override fun handle(event: SseEvent, serverId: String): Boolean {
         return when (event) {
             is SseEvent.TodoUpdated -> { _todos.update { it + (event.sessionId to event.todos) }; true }
             is SseEvent.CommandsChanged -> { _commandsChanged.tryEmit(Unit); true } // #285：全局注册表通知
+            // #323：command/run|done → 反馈行卡态（配对纯函数折叠，本类只做容器写）
+            is SseEvent.CommandRunStarted -> {
+                // #384 防御：已被压缩实体吸收的命令不建卡（wire seq 序 run 恒先于
+                // compaction/start，正常不可达；乱序/局部重放窗口防御）。
+                val absorbed = _compactionEntries.value[event.sessionId].orEmpty()
+                    .any { it.sourceCommandId == event.commandId }
+                if (!absorbed) {
+                    _commandFeedback.update { all ->
+                        all + (event.sessionId to CommandFeedbackFolder.onRun(all[event.sessionId].orEmpty(), event))
+                    }
+                }
+                true
+            }
+            is SseEvent.CommandDone -> {
+                // #384 吸收路由：sourceCommandId 配对的压缩实体在场 → 结算路由入 box
+                // （commandDone 随卡呈现），不建独立命令卡；否则普通命令卡路径。
+                val absorbed = _compactionEntries.value[event.sessionId].orEmpty()
+                    .any { it.sourceCommandId == event.commandId }
+                if (absorbed) {
+                    _compactionEntries.update { all ->
+                        all + (event.sessionId to CompactionFolder.onCommandDone(all[event.sessionId].orEmpty(), event))
+                    }
+                } else {
+                    _commandFeedback.update { all ->
+                        all + (event.sessionId to CommandFeedbackFolder.onDone(all[event.sessionId].orEmpty(), event))
+                    }
+                }
+                true
+            }
+            // #378：压缩转录实体族（compactionId 幂等折叠，本类只做容器写）
+            is SseEvent.CompactionStarted -> {
+                _compactionEntries.update { all ->
+                    all + (event.sessionId to CompactionFolder.onStarted(all[event.sessionId].orEmpty(), event))
+                }
+                // #384 吸收（用户裁决「从根源上杜绝两张卡片」）：手动压缩的源命令卡在
+                // 折叠层即被 box 吸收——start 到达即移除该命令卡；command/done 结算经
+                // onCommandDone 路由入 entry（单卡承载 title+状态+结算+摘要全文）。
+                event.sourceCommandId?.let { cmdId ->
+                    _commandFeedback.update { all ->
+                        all + (event.sessionId to all[event.sessionId].orEmpty().filterNot { it.commandId == cmdId })
+                    }
+                }
+                true
+            }
+            is SseEvent.CompactionSummary -> {
+                _compactionEntries.update { all ->
+                    all + (event.sessionId to CompactionFolder.onSummary(all[event.sessionId].orEmpty(), event))
+                }
+                true
+            }
+            is SseEvent.CompactionFinished -> {
+                _compactionEntries.update { all ->
+                    all + (event.sessionId to CompactionFolder.onFinished(all[event.sessionId].orEmpty(), event))
+                }
+                true
+            }
+            is SseEvent.CompactionSurfaceBound -> {
+                _compactionEntries.update { all ->
+                    all + (event.sessionId to CompactionFolder.onSurfaceBound(all[event.sessionId].orEmpty(), event))
+                }
+                true
+            }
             is SseEvent.PtyCreated -> { if (BuildConfig.DEBUG) AppLogger.d(TAG, "PTY created: ${event.id}"); true }
             is SseEvent.PtyUpdated -> { if (BuildConfig.DEBUG) AppLogger.d(TAG, "PTY updated: ${event.id}"); true }
             is SseEvent.PtyDeleted -> { if (BuildConfig.DEBUG) AppLogger.d(TAG, "PTY deleted: ${event.id}"); true }
@@ -66,13 +171,19 @@ class MiscEventHandler @Inject constructor() : SseEventHandler {
 
     fun clearForSession(sessionId: String) {
         _todos.update { it - sessionId }
+        _commandFeedback.update { it - sessionId }
+        _compactionEntries.update { it - sessionId }
     }
 
     fun clearForServer(sessionIds: Set<String>) {
         _todos.update { it - sessionIds }
+        _commandFeedback.update { it - sessionIds }
+        _compactionEntries.update { it - sessionIds }
     }
 
     fun clearAll() {
         _todos.value = emptyMap()
+        _commandFeedback.value = emptyMap()
+        _compactionEntries.value = emptyMap()
     }
 }

@@ -13,7 +13,10 @@ domain/          Pure Kotlin, 无 Android 依赖
   usecase/       25 个 UseCase — ViewModel 调用它们，而非直接调 API
 
 data/            Android 相关实现
-  api/           ApiClient.kt + 按域拆分的 SessionApi/MessageApi/FileApi/TerminalApi/ProviderApi/SystemApi (Ktor HTTP), SseClient.kt
+  api/           ApiClient.kt + 按域拆分的域端口 SessionApi/MessageApi/FileApi/TerminalApi/ProviderApi/SystemApi
+                  + 扩展域端口 attachment/workspace/reference/goal/feedback/subagent/queue (Ktor HTTP), SseClient.kt
+  adapter/       服务器适配层（#391）：ServerAdapter/ServerPorts/ConnectionStrategy/注册表
+                  + dsh/、opencode/（各类型端口薄委托实现）
   dto/           API 数据传输对象（request/ response/ common/）
   mapper/        DTO ↔ 领域模型转换器
   repository/    Impl 类 + EventDispatcher + EventHandler 策略模式
@@ -40,6 +43,7 @@ work/            WorkManager 后台任务
   SupervisorPollScheduler.kt 唯一周期任务调度（KEEP 策略）
 
 ui/
+  extension/          界面插槽注册表（#391）：ServerUiExtension/ServerUiSlotRegistry/LocalServerUiSlots
   theme/              设计令牌系统（详见 docs/ui-conventions.md）
   screens/chat/      ChatScreen（核心聊天 UI）+ 7 个子包
     components/      聊天 UI 组件 + RenderSupplyCoordinator（渲染供给：视口预解析/
@@ -71,6 +75,38 @@ di/                Hilt 模块（NetworkModule, DomainModule）
 - Repository 实现桥接 EventDispatcher（状态）+ API（网络）。
 - DI 使用 **KSP**（非 kapt）处理 Hilt 注解。
 - 终端用 WebSocket 传输 PTY 流；事件走 SSE。
+
+## 服务器适配层（ServerAdapter，#391）
+
+服务器类型是**可插拔的适配单元**：每种类型一个 `ServerAdapter`（数据层 `data/adapter/`），
+经 `@IntoSet` 多绑定自注册到 `ServerAdapterRegistry`（构造期校验重复键 + 全类型覆盖；
+Application 启动期强制解析一次）。上层只依赖**领域接口 `ServerAdapterResolver`**
+（能力位 / 线面世代 id / 界面插槽声明）。
+
+- **唯一路由 seam**：不存在按域手写的类型路由门面；调用方经注册表取端口
+  （`adapters.ports(conn).session` / 可选端口 `requireX(conn)` 缺席显式失败）。
+- **能力唯一真相 = 端口可选性**：能力集合 = `CoreFlags`（不可推导行为位）
+  + `ServerPorts.derivedFeatures()`（端口在场派生）+ `adapter.privateFeatures()`
+  （适配器声明的非端口派生能力，含 `core.*` 与类型自带命名空间）。UI 只读能力位
+  （`ServerFeatures.X in caps`），绝不读服务器类型。
+- **连接策略**：`ConnectionStrategy`（`WireKind` + 一次握手 `probe`）由适配器持有；
+  监督层按 `wireKind` 选传输，不读服务器类型；平台服务生命周期不进入策略。
+- **世代差异只在适配器内部**：wire 世代 id 是跨层契约，世代画像（端点/载荷规格）与
+  事件词汇表是适配器内部细节。**事件映射容错优先**：未知 SessionEvent 词汇具名降级
+  + 日志遥测；结构性违约才拒绝重建，当前实发射点 = user/message 的 `surfaceOp.replace`
+  区间越界（`end < start`），乱序 / 种子缺失保留判据位待信封取证。
+- **界面插槽**：适配器只**声明** `uiSlots`；界面层扩展在自己包内 `@IntoSet` 注册。
+  通用屏幕渲染为**两级门禁**：先按适配器声明（`uiSlots` 含该槽位）决定是否进入渲染，
+  再由贡献方 `isEnabled(caps)` 做细粒度能力过滤，最后排序 + 统一壳。
+
+**承重规则**：服务器类型判断只允许出现在白名单——类型定义与持久化身份（`ServerType` /
+`ServerConfig` / `ServerConnection` / `ServerDataStore` / 重复后端同一性比较）、用户选择
+（服务器对话框与类型集合）、调试入口（`MainActivity` / `DebugProfile`）；适配器实现与
+注册表（`data/adapter/`）是类型的唯一解析落点。其余位置（通用界面 / 通用壳 / 仓库）
+一律经能力位（`ServerCapabilities`）或端口（`ServerPorts`）。白名单的机械真相源是
+`lint-checks/` 的 `ServerTypeWhitelist` 规则（`abortOnError` 拦截新增引用）。
+新增服务器类型 = 新增一个适配器单元 + 同目录注册，不改既有共享代码。DDL 细节见
+`docs/specs/2026-09-10-server-adapter-architecture-design.md`。
 
 ## 承重架构规则（违反会引入回归，勿破坏）
 

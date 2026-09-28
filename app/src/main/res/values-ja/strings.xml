@@ -20,8 +20,18 @@
     <string name="sessions_new">新規セッション</string>
     <string name="session_status_idle">アイドル</string>
     <string name="session_status_busy">作業中…</string>
+    <string name="session_status_retry_countdown">%1$d 秒後に再試行</string>
     <string name="session_status_retry">再試行中（%1$d）</string>
+    <string name="turn_max_tokens_title">出力の上限に達しました</string>
+    <string name="turn_max_tokens_continue">続ける</string>
+    <string name="command_feedback_running">実行中…</string>
+    <string name="command_feedback_accepted">受理済み</string>
+    <string name="command_feedback_completed">完了</string>
+    <string name="command_feedback_failed">失敗</string>
+    <string name="command_feedback_a11y_running">コマンドを実行中</string>
     <!-- Chat Screen -->
+    <string name="chat_mention_session_a11y">セッション %1$s</string>
+    <string name="chat_mention_same_workspace">同じワークスペース</string>
     <string name="chat_send">送信</string>
     <string name="chat_send_queued">送信（キュー中）</string>
     <string name="chat_empty">セッションを開始</string>
@@ -119,6 +129,9 @@
     <string name="session_rename_button">名前変更</string>
     <string name="session_delete">セッション削除</string>
     <string name="session_delete_confirm">「%1$s」を削除しますか？この操作は元に戻せません。</string>
+    <string name="session_menu_archive">アーカイブ</string>
+    <string name="session_archived_section_title">アーカイブ済み (%1$d)</string>
+    <string name="session_archive_failed">セッションをアーカイブできませんでした</string>
     <string name="chat_stop">停止</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->
@@ -137,6 +150,8 @@
     <string name="pending_item_sending">送信中…</string>
     <string name="todo_empty">TODOアイテムはありません</string>
     <string name="chat_copy">コピー</string>
+    <string name="table_copy_cell">セルをコピー</string>
+    <string name="table_copy_table">表をコピー（TSV）</string>
     <string name="terminal_copy">コピー</string>
     <string name="terminal_paste">貼り付け</string>
     <string name="terminal_more">その他…</string>
@@ -163,6 +178,11 @@
     <string name="chat_share_url_copied">共有URLをコピーしました</string>
     <string name="chat_share_failed">セッションの共有に失敗しました</string>
     <string name="chat_copied_clipboard">クリップボードにコピーしました</string>
+    <string name="chat_feedback_positive">役に立つと評価</string>
+    <string name="chat_feedback_negative">役に立たないと評価</string>
+    <string name="chat_feedback_removed">評価を取り消しました</string>
+    <string name="chat_feedback_conflict">評価が他の場所で変更されました。もう一度お試しください</string>
+    <string name="chat_feedback_failed">評価を保存できませんでした</string>
     <string name="image_count_single">画像1枚</string>
     <string name="image_count_multiple">%1$d枚の画像</string>
     <string name="sessions_new_dialog_title">新規セッション</string>
@@ -174,6 +194,7 @@
     <string name="sessions_working">作業中</string>
     <string name="sessions_retrying">再試行中</string>
     <string name="session_pending_question">回答待ち</string>
+    <string name="session_pending_approval">承認待ち</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
     <string name="chat_response">応答</string>
@@ -201,7 +222,16 @@
     <string name="chat_event_task_failed">サブエージェント失敗</string>
     <string name="chat_event_shell_completed">バックグラウンドコマンド完了</string>
     <string name="chat_event_shell_failed">バックグラウンドコマンド失敗</string>
-    <string name="chat_event_generic">イベント</string>
+    <string name="chat_turn_ledger_expand">ターンの詳細を表示</string>
+    <string name="chat_turn_ledger_collapse">ターンの詳細を隠す</string>
+    <string name="chat_turn_fork_from_here">このターンから分岐</string>
+    <!-- #311 Task4 deliverables 产出文件行 + Task5 skill 工具卡 -->
+    <string name="chat_produced_files_label">成果物</string>
+    <string name="chat_produced_files_more">他 %1$d 件</string>
+    <string name="chat_produced_files_open">%1$s を開く</string>
+    <string name="chat_skill_title">Skill</string>
+    <string name="chat_skill_instructions">説明</string>
+    <string name="chat_event_generic">通知</string>
     <string name="chat_event_locate_task">タスクを特定</string>
     <string name="task_sheet_subagent_completed">完了</string>
     <string name="agent_tree_diagnostic_corrupt">破損したサブエージェントエントリ</string>
@@ -209,6 +239,42 @@
     <string name="agent_tree_diagnostic_unavailable">利用できないサブエージェントエントリ</string>
     <string name="chat_label_user">ユーザー</string>
     <string name="chat_label_agent">エージェント</string>
+    <string name="chat_steer">割り込み</string>
+
+    <string name="chat_msg_status_streaming">ストリーミング中</string>
+    <string name="chat_msg_status_interrupted">中止</string>
+    <string name="chat_msg_status_error">エラー</string>
+    <string name="chat_msg_detail_title">メッセージの詳細</string>
+    <string name="chat_detail_time">時刻</string>
+    <string name="chat_detail_duration">所要時間</string>
+    <string name="chat_detail_tokens">トークン</string>
+    <string name="chat_copy_markdown_source">Markdown ソースをコピー</string>
+    <string name="chat_delete_message">メッセージを削除</string>
+    <string name="chat_delete_message_title">メッセージを削除しますか？</string>
+    <string name="chat_delete_message_message">この操作で、このメッセージがサーバーのセッションから削除されます。この操作は元に戻せません。</string>
+    <string name="chat_message_deleted">メッセージを削除しました</string>
+    <string name="chat_message_delete_failed">メッセージの削除に失敗しました</string>
+    <string name="chat_stats_ttft">TTFT</string>
+    <string name="chat_stats_tokens_per_second">トークン/秒</string>
+    <string name="chat_msg_tail_summary">%1$d ステップ · %2$d ツール</string>
+    <string name="a11y_message_detail">メッセージの詳細</string>
+    <string name="chat_stats_session_title">セッション統計</string>
+    <string name="chat_stats_summary">ターン %1$d · %2$d ステップ · %3$s LLM · %4$s ツール</string>
+    <string name="chat_stats_ttft_avg">平均 TTFT: %1$s</string>
+    <string name="chat_stats_decode">%1$sトークン/秒</string>
+    <string name="chat_stats_per_turn_title">ターンごとの詳細</string>
+    <string name="chat_stats_turn_row">ターン %1$d · %2$s · %3$s</string>
+    <string name="chat_stats_input">入力</string>
+    <string name="chat_stats_output">出力</string>
+    <string name="chat_stats_reasoning">推論</string>
+    <string name="chat_stats_cache_read">キャッシュ読取り</string>
+    <string name="chat_stats_cache_write">キャッシュ書き込み</string>
+    <string name="chat_stats_cost">コスト</string>
+    <string name="chat_stats_model">モデル</string>
+    <string name="chat_stats_steps">ステップ数</string>
+    <string name="chat_stats_tools">ツール</string>
+    <string name="chat_stats_expand">ターンの詳細を表示</string>
+    <string name="chat_stats_collapse">ターンの詳細を隠す</string>
     <string name="chat_subagent_completed_notification">サブエージェント完了</string>
     <string name="chat_subagent_failed_notification">サブエージェント失敗</string>
     <string name="chat_status_updating_tasks">タスク更新中</string>
@@ -385,7 +451,9 @@
     <string name="chat_shell_placeholder">シェルコマンドを入力…</string>
     <string name="chat_shell_failed">シェルコマンドの実行に失敗しました</string>
     <string name="chat_shell_empty">先にシェルコマンドを入力してください</string>
+    <string name="chat_subagent_one_shot_read_only">単発サブエージェントセッション：追加メッセージには対応していません</string>
     <string name="chat_shell_attachments_unsupported">シェルモードでは添付ファイルは利用できません</string>
+    <string name="chat_command_images_unsupported">スラッシュコマンドは画像添付に対応していません</string>
     <string name="chat_terminal_connect_failed">ターミナルの起動に失敗しました</string>
     <string name="server_settings_providers">プロバイダー</string>
     <string name="server_settings_providers_desc">このサーバーのプロバイダーを有効／無効にする</string>
@@ -459,6 +527,7 @@
     <string name="session_details_diff">Diff</string>
     <string name="session_details_diff_summary">+%1$d −%2$d (%3$d ファイル)</string>
     <string name="chat_thinking_complete">%1$s考察済み</string>
+    <string name="chat_thinking_complete_unknown">思考完了</string>
     <string name="chat_token_usage_total">%,dトークン</string>
     <string name="chat_token_input">入力</string>
     <string name="chat_token_output">出力</string>
@@ -482,13 +551,11 @@
     <string name="settings_delete_rule">ルールを削除</string>
     <string name="settings_expand_reasoning">推論を自動展開</string>
     <string name="settings_expand_reasoning_desc">デフォルトで思考過程を表示。ヘッダーをタップで切替</string>
-    <string name="chat_meta_tokens">%dトークン</string>
     <string name="chat_glob_match_count">%d件一致</string>
     <string name="tool_web_fetch">WebFetch</string>
     <string name="chat_webfetch_prompt">プロンプト: %s</string>
     <string name="tool_web_search">WebSearch</string>
     <string name="chat_context_usage">コンテキスト: %1$d%%</string>
-    <string name="chat_queued">キュー中</string>
     <string name="chat_retry_send">再試行</string>
     <string name="chat_title_placeholder">Chat</string>
     <string name="chat_context_detail_title">コンテキスト使用詳細</string>
@@ -523,6 +590,7 @@
     <string name="a11y_icon_navigate_forward">進む</string>
     <string name="a11y_locate_task">元のタスクを特定</string>
     <string name="chat_locate_task_not_found">このセッションで元のタスクが見つかりません</string>
+    <string name="chat_locate_message_not_found">このセッションでメッセージが見つかりません</string>
     <string name="a11y_icon_add">追加</string>
     <string name="a11y_icon_share">共有</string>
     <string name="a11y_icon_unlink">リンク解除</string>
@@ -747,9 +815,15 @@
     <string name="settings_storage_clear_confirm">削除</string>
     <string name="settings_storage_cleared">アーカイブを削除しました</string>
     <string name="search_content_hits">メッセージの一致</string>
+    <!-- #322：DSH 服务器历史命中（session/search） -->
+    <string name="search_server_hits">セッションの一致</string>
+    <string name="search_server_more">先頭の20件のみ表示</string>
     <string name="search_content_coverage_hint">このセッションの全履歴は未同期です</string>
     <string name="search_content_hit_count">%1$d 件のメッセージ</string>
     <string name="search_filter_role_all">すべてのロール</string>
+    <string name="search_filter_menu">絞り込み</string>
+    <string name="search_filter_role_section">ロール</string>
+    <string name="search_filter_time_section">期間</string>
     <string name="search_filter_role_user">ユーザー</string>
     <string name="search_filter_role_assistant">AI</string>
     <string name="search_filter_time_all">全期間</string>
@@ -762,10 +836,19 @@
     <string name="permission_custom">カスタム</string>
     <string name="permission_custom_hint">カスタム権限プリセット</string>
     <string name="permission_switch_failed">権限モードの切り替えに失敗しました</string>
+    <string name="permission_full_access_confirm_title">フルアクセスに切り替えますか？</string>
+    <string name="permission_full_access_confirm_message">フルアクセスでは、エージェントがサンドボックス制限なしでコマンド実行やファイル編集を行えます。信頼できるタスクにのみ有効化してください。</string>
+    <string name="permission_full_access_confirm_button">フルアクセスに切り替える</string>
     <string name="a11y_icon_permission_preset">権限プリセット</string>
+    <string name="plan_chip_label">Plan</string>
+    <string name="plan_chip_active_a11y">Plan モードはオンです。タップでオフにします（/plan off）</string>
+    <string name="plan_chip_pending_a11y">Plan モードに切り替え中です。タップでキャンセルします（/plan off）</string>
+    <string name="plan_exit_failed">Plan モードの終了に失敗しました</string>
     <string name="server_settings_default_permission">新規セッションのデフォルト権限</string>
     <string name="agent_preset_locked">このセッションのエージェントプリセットはロックされています</string>
     <string name="agent_preset_switch_failed">エージェントプリセットの切り替えに失敗しました</string>
+    <string name="sessions_new_dialog_preset_label">エージェントプリセット</string>
+    <string name="sessions_new_dialog_preset_default">デフォルト</string>
     <string name="agent_preset_cards_title">エージェントプリセットを選択</string>
     <string name="server_settings_default_agent_preset">新規セッションのデフォルトエージェントプリセット</string>
     <string name="session_details_agent_preset">エージェントプリセット</string>
@@ -781,6 +864,7 @@
     <string name="goal_blocked_reason">理由: %1$s</string>
     <string name="goal_action_pause">一時停止</string>
     <string name="goal_action_resume">再開</string>
+    <string name="goal_action_complete">完了にする</string>
     <string name="goal_action_edit">編集</string>
     <string name="goal_action_clear">クリア</string>
     <string name="goal_create_heading">目標を作成</string>
@@ -800,10 +884,13 @@
     <string name="queue_remove">待機メッセージを削除</string>
     <string name="queue_steer">次のターンへ誘導</string>
     <string name="queue_edit_hint">待機メッセージを編集</string>
+    <string name="queue_title">キュー</string>
+    <string name="queue_empty">キュー内のメッセージはありません</string>
     <string name="queue_steer_unavailable">誘導はセッション実行中のみ利用できます</string>
     <string name="queue_action_failed">キュー操作に失敗しました</string>
     <!-- #267 Server disconnect awareness (banner + fast-fail message) -->
     <string name="server_link_disconnected_banner">サーバーが切断されました。再接続中…</string>
+    <string name="server_link_disconnected_banner_countdown">サーバーが切断されました。再接続中…（%1$d 秒後に再試行）</string>
     <string name="server_link_disconnected_message">サーバーが切断されているため、操作は送信されませんでした</string>
 
     <!-- #154a 崩溃启动提示 -->
@@ -850,4 +937,77 @@
     <string name="supervisor_notification_root_failing_title">スーパーバイザー: %1$d 件のルートが失敗</string>
     <string name="supervisor_notification_error_peak_title">スーパーバイザー: エラー最大値が上昇</string>
     <string name="supervisor_notification_error_peak">エラー最大値: %1$d</string>
+    <string name="dsh_token_banner_text">このサーバーにはアクセストークンが必要です</string>
+    <string name="dsh_token_banner_action">トークンを入力</string>
+    <string name="dsh_token_dialog_title">アクセストークンが必要です</string>
+    <string name="dsh_token_dialog_message">サーバーの起動行からトークンまたは完全な URL を貼り付けてください（token=... を含みます）。</string>
+    <string name="dsh_token_dialog_hint">トークンまたは URL</string>
+    <string name="dsh_token_dialog_connect">接続</string>
+    <string name="dsh_token_dialog_rejected">トークンがサーバーに拒否されました。確認してもう一度お試しください。</string>
+    <string name="server_pair_help_title">初回ペアリング</string>
+    <string name="server_pair_help_manual">手動：このサーバーを保存して接続し、上部バナーの「トークンを入力」をタップしてサーバー起動行のトークンを貼り付けてください</string>
+    <string name="server_pair_help_adb">USB（dev ビルド）：ホストで ./scripts/dsh-pair.sh を実行するとトークンが自動注入されます</string>
+    <string name="server_pair_help_deeplink">またはホストで ./scripts/dsh-pair.sh --lan を実行し、ocbeacon:// リンクをスキャンまたはタップしてこのフォームを自動入力できます</string>
+
+    <!-- #324① DSH provider 目录/自定义增删 -->
+    <string name="dsh_settings_loopback_required">この操作にはループバック接続（adb reverse で 127.0.0.1）が必要です。</string>
+    <string name="dsh_providers_section_title">DSH プロバイダーディレクトリ</string>
+    <string name="dsh_providers_empty">サーバーが報告したプロバイダーはありません。</string>
+    <string name="dsh_provider_add_custom">カスタムプロバイダーを追加</string>
+    <string name="dsh_provider_route">ルート ID</string>
+    <string name="dsh_provider_route_hint">小文字・数字・ハイフン。先頭は英小文字である必要があります。</string>
+    <string name="dsh_provider_route_invalid">ルートは小文字・数字・ハイフンのみで、先頭は英小文字にしてください。</string>
+    <string name="dsh_provider_route_taken">このルートは既に使用されています。</string>
+    <string name="dsh_provider_display_name">表示名（任意）</string>
+    <string name="dsh_provider_base_url">ベース URL</string>
+    <string name="dsh_provider_api_key">API キー（任意）</string>
+    <string name="dsh_provider_api_key_hint">サーバーの認証情報に保存され、値が再度表示されることはありません。</string>
+    <string name="dsh_provider_discover">モデルを検出</string>
+    <string name="dsh_provider_discover_failed">検出に失敗しました: %1$s</string>
+    <string name="dsh_provider_models_none">まだモデルが検出されていません。ベース URL を入力して検出をタップしてください。</string>
+    <string name="dsh_provider_model_select">含めるモデルを選択</string>
+    <string name="dsh_provider_create">作成</string>
+    <string name="dsh_provider_delete">削除</string>
+    <string name="dsh_provider_delete_confirm_title">カスタムプロバイダーを削除</string>
+    <string name="dsh_provider_delete_confirm_text">カスタムプロバイダー %1$s を削除しますか？保存された認証情報（あれば）も削除されます。</string>
+    <string name="dsh_provider_credential_configured">認証情報は設定済み</string>
+    <string name="dsh_provider_credential_missing">認証情報は未設定</string>
+    <string name="dsh_provider_active">ランタイムで有効</string>
+    <string name="dsh_provider_inactive">ランタイムで無効</string>
+
+    <!-- #324② preset 管理 -->
+    <string name="dsh_preset_view">構成を表示</string>
+    <string name="dsh_preset_copy_title">プリセット %1$s を複製</string>
+    <string name="dsh_preset_copy_id">新しいプリセット ID</string>
+    <string name="dsh_preset_copy_name">新しい名前（任意）</string>
+    <string name="dsh_preset_copy">複製</string>
+    <string name="dsh_preset_delete_confirm_title">プリセットを削除</string>
+    <string name="dsh_preset_delete_confirm_text">ユーザープリセット %1$s を削除しますか？実行中のセッションには影響せず、新しいセッションは既定に戻ります。</string>
+    <string name="dsh_preset_broken_badge">破損: %1$s</string>
+
+    <!-- #324③ 插件配置与清单 -->
+    <string name="dsh_plugins_inventory_title">サーバープラグイン</string>
+    <string name="dsh_plugins_inventory_empty">プラグイン一覧は報告されていません。</string>
+    <string name="dsh_plugin_enabled">有効</string>
+    <string name="dsh_plugin_disabled">無効</string>
+    <string name="dsh_plugin_conditional">条件付き</string>
+    <string name="dsh_plugin_preset_group">プリセット: %1$s</string>
+    <string name="dsh_server_config_title">サーバー構成</string>
+    <string name="dsh_config_applies_live">即時反映</string>
+    <string name="dsh_config_applies_restart">再起動が必要</string>
+    <string name="dsh_secret_no_ref">このアプリの外で管理されています（資格情報参照の宣言なし）。</string>
+
+    <!-- #324④ skills 触发组 -->
+    <string name="slash_skills_group">スキル</string>
+    <string name="slash_skill_model_invocable">モデルが自律呼び出し可能なスキル</string>
+    <string name="chat_busy_menu_send_now">今すぐ送信</string>
+    <string name="chat_busy_menu_send_now_desc">実行中のターンに挿入され、すぐに表示されます</string>
+    <string name="chat_busy_menu_queue">メッセージをキュー</string>
+    <string name="chat_busy_menu_queue_desc">このターン終了後に自動送信されます</string>
+    <string name="chat_busy_menu_queue_no_attachments">添付ファイル付きメッセージは今すぐ送信してください</string>
+    <!-- #385: DSH context injection compact card labels (source.kind) -->
+    <string name="chat_injection_agent_instructions">ワークスペース指示</string>
+    <string name="chat_injection_skill_catalog">スキルカタログ</string>
+    <string name="chat_injection_plugin">プラグイン設定</string>
+    <string name="chat_injection_context">コンテキスト注入</string>
 </resources>

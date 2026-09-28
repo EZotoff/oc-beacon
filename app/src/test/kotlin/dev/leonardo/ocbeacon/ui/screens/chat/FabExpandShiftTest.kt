@@ -64,4 +64,20 @@ class FabExpandShiftTest {
         val bigger = computeFabExpandShiftPx(collapsed, span, h, -1500f, pad + 10f, margin)
         assertEquals(10f, bigger - base, 0.01f)
     }
+
+    // ============ #451 默认悬浮位（容器高 1/8）============
+
+    /** 默认位抬升量 = 容器高 1/8（负 = 上移），列底边落在 1/8·H 处。 */
+    @Test
+    fun `default rest offset is one eighth of container`() {
+        assertEquals(-1954f / 8f, defaultRestOffsetYPx(1954f), 0.01f)
+        assertEquals(-2400f / 8f, defaultRestOffsetYPx(2400f), 0.01f)
+    }
+
+    /** 非法容器高（0/负）→ 0（不抬升，退化到贴底原位）。 */
+    @Test
+    fun `default rest offset guards non positive container`() {
+        assertEquals(0f, defaultRestOffsetYPx(0f), 0f)
+        assertEquals(0f, defaultRestOffsetYPx(-100f), 0f)
+    }
 }

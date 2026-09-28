@@ -2,7 +2,6 @@ package dev.leonardo.ocbeacon.service
 
 import java.util.concurrent.ConcurrentHashMap
 import dev.leonardo.ocbeacon.BuildConfig
-import dev.leonardo.ocbeacon.data.api.NetworkMonitor
 import dev.leonardo.ocbeacon.data.api.SseClient
 import dev.leonardo.ocbeacon.data.api.SseReadTimeoutTracker
 import dev.leonardo.ocbeacon.data.api.dsh.DshConnectionOrchestrator
@@ -10,11 +9,8 @@ import dev.leonardo.ocbeacon.data.api.dsh.DshFrameSourceFactory
 import dev.leonardo.ocbeacon.data.api.dsh.DshRpcClient
 import dev.leonardo.ocbeacon.data.api.dsh.DshRpcHistorySource
 import dev.leonardo.ocbeacon.data.api.dsh.DshSessionSeqTracker
-import dev.leonardo.ocbeacon.data.api.file.FileApi
-import dev.leonardo.ocbeacon.data.api.message.MessageApi
-import dev.leonardo.ocbeacon.data.api.session.SessionApi
+import dev.leonardo.ocbeacon.data.adapter.ServerAdapterRegistry
 import dev.leonardo.ocbeacon.domain.model.ServerConnection
-import dev.leonardo.ocbeacon.domain.model.ServerType
 import dev.leonardo.ocbeacon.data.repository.EventDispatcher
 import dev.leonardo.ocbeacon.data.repository.SessionStateService
 import dev.leonardo.ocbeacon.domain.model.Project
@@ -31,6 +27,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.update
@@ -52,6 +50,14 @@ private const val PRELOAD_PROJECT_CONCURRENCY = 4
 /** #278：播种（syncFromRest）NonCancellable 保护区的时间上限——服务器失联时防悬挂。 */
 private const val PRELOAD_SEED_TIMEOUT_MS = 30_000L
 
+/** #307：传输失败 kick 冷却窗——reconnectServer 守卫在 finally 即释放，「连接启动→毫秒级
+ *  失败→tap→kick」正反馈实测 8ms/轮 ≈375 请求/s → OkHttp 线程爆炸 OOM 崩溃
+ *  （真机 3/3 确定性复现：867 OkHttp Dispatch、315 线程/s 恒速至 7000+ 后 pthread_create 失败）。 */
+private const val TRANSPORT_KICK_COOLDOWN_MS = 5_000L
+
+/** #436：HTTP 已达但被拒（403/非预期状态码）时的重试下限——配置类问题不 1-2s 空转。 */
+private const val REJECTED_PROBE_RETRY_MS = 30_000L
+
 /**
  * 每服务器的连接状态。
  */
@@ -72,19 +78,18 @@ data class ServerConnectionState(
  */
 @Singleton
 class SseConnectionManager @Inject constructor(
-    private val sessionApi: SessionApi,
-    private val messageApi: MessageApi,
-    private val fileApi: FileApi,
+    private val adapters: ServerAdapterRegistry,
     private val sseClient: SseClient,
     private val sseClientV2: dev.leonardo.ocbeacon.data.api.v2.SseClientV2,
     private val eventDispatcher: EventDispatcher,
     private val settingsRepository: SettingsRepository,
-    private val networkMonitor: NetworkMonitor,
     private val sessionStateRepository: SessionStateService,
     // #276 步骤⑤：DSH 分支——双 WS 纯下行 + 对账编排（设计 §1.6/§2.3）
     private val dshConnectionOrchestrator: DshConnectionOrchestrator,
     private val dshFrameSourceFactory: DshFrameSourceFactory,
     private val dshRpcClient: DshRpcClient,
+    // #317：0.1.2 双形态探测 + cookie/token 运行时
+    private val dshConnectionRegistry: dev.leonardo.ocbeacon.data.api.dsh.DshConnectionRegistry,
     // #267：REST 传输层失败上拍（origin → serverId → 踢重连）
     private val transportFailureTap: dev.leonardo.ocbeacon.data.api.TransportFailureTap,
 ) {
@@ -113,7 +118,33 @@ class SseConnectionManager @Inject constructor(
      */
     private val dshSeqTrackers = ConcurrentHashMap<String, DshSessionSeqTracker>()
 
+    /**
+     * #441-B 死亡现场探针(一期,2026-09-29 用户裁决):每服务器最后事件到达
+     * 时间戳——退避重连时计算「最后帧距今」,定罪「静默型死亡 vs 事件型断连」。
+     */
+    private val lastEventAtMs = ConcurrentHashMap<String, Long>()
+
+    /**
+     * #333：每服务器 DSH 帧源登记——聚焦 follow 请求（窗口外会话进 ChatRoute 的
+     * 开流兜底）路由用。runDshEventLoop 创建即登记（重连整体替换，旧源随
+     * orchestrator.run 的 finally 自 stop）；stopConnection/stopAllConnections 清理。
+     */
+    private val dshFrameSources = ConcurrentHashMap<String, dev.leonardo.ocbeacon.data.api.dsh.DshFrameSource>()
+
     init {
+        // #441-A2（2026-09-28）：streaming 期望 → DSH 静默哨兵。单一真相源
+        // （SessionStateService.activityFlow——任一会话 activity 非空=Busy 派生
+        // =期望帧流）经 orchestrator 转发到当前 mux 引擎，激活 A1 待命态的
+        // 判死门。distinctUntilChanged 防抖；collect 在连接管理器生命周期。
+        scope.launch {
+            sessionStateRepository.activityFlow
+                .map { m -> m.values.any { it != null } }
+                .distinctUntilChanged()
+                .collect { active ->
+                    // 对全部登记的 DSH 帧源转发（协议路由源→mux 哨兵；legacy no-op）
+                    dshFrameSources.values.forEach { it.onStreamingChanged(active) }
+                }
+        }
         // 2026-08-15（research/06 P0）：接线 durable.seq gap 检测——服务器每事件
         // seq 严格递增（core/event.ts:294）；连接代内 gap = 事件丢失（非断连，
         // 如订阅队列溢出丢弃）→ 记录 gapDetected（L3/观测层消费；后续可接
@@ -136,6 +167,10 @@ class SseConnectionManager @Inject constructor(
     fun observeLinkState(serverId: String): Flow<ServerLinkState> =
         deriveLinkStateFlow(_connectedServerIds, _connectingServerIds, serverId)
 
+    /** #409：单服务器下次重连尝试时间流（null = 当前无排程）。 */
+    fun observeReconnectAt(serverId: String): Flow<Long?> =
+        _reconnectAt.map { it[serverId] }.distinctUntilChanged()
+
     /**
      * #267（spec §3.3 检测滞后补刀）：REST 传输层失败回灌——不等 SSE 读循环
      * 超时。**踢一次重连自检**：服务器健康则秒级恢复 Connected（条幅闪现即
@@ -145,8 +180,22 @@ class SseConnectionManager @Inject constructor(
      */
     fun reportTransportFailure(serverId: String) {
         if (!connections.containsKey(serverId)) return
+        // #307：冷却节流——冷却窗内的重复 kick 丢弃（打破正反馈；退避由 streamLoop
+        // 既有 backoff 接管。冷却前真机形态：8ms/轮 kick 风暴直至线程 OOM 崩溃）。
+        if (!shouldKick(serverId)) {
+            if (BuildConfig.DEBUG) AppLogger.d(TAG, "Transport failure kick for $serverId throttled (cooldown)")
+            return
+        }
         AppLogger.w(TAG, "Transport failure reported for server $serverId, kicking reconnect")
         scope.launch { reconnectServer(serverId) }
+    }
+
+    /** #307：kick 冷却判定（含时间戳更新）——时间参数供单测注入。 */
+    internal fun shouldKick(serverId: String, nowMs: Long = System.currentTimeMillis()): Boolean {
+        val last = lastKickMs[serverId] ?: 0L
+        if (nowMs - last < TRANSPORT_KICK_COOLDOWN_MS) return false
+        lastKickMs[serverId] = nowMs
+        return true
     }
 
     /** origin（scheme://host:port）→ serverId 反查（不匹配则忽略——非受管主机）。 */
@@ -162,6 +211,9 @@ class SseConnectionManager @Inject constructor(
      */
     private val reconnectingServers = ConcurrentHashMap.newKeySet<String>()
 
+    /** #307：per-server 上次 kick 时间（冷却节流状态）。 */
+    private val lastKickMs = ConcurrentHashMap<String, Long>()
+
     /** 已实际连接（SSE 流活跃）的服务器 ID 的可观察集合。 */
     val connectedServerIds: StateFlow<Set<String>>
         get() = _connectedServerIds.asStateFlow()
@@ -171,6 +223,28 @@ class SseConnectionManager @Inject constructor(
     val connectingServerIds: StateFlow<Set<String>>
         get() = _connectingServerIds.asStateFlow()
     private val _connectingServerIds = MutableStateFlow<Set<String>>(emptySet())
+
+    /**
+     * #409：serverId → 下一次重连尝试的墙钟时间（epochMs）。空/缺键 = 当前无待重连
+     * 排程（已连接，或尚未进入退避）。UI 据此每秒计算「N 秒后重试」倒计时。
+     */
+    val reconnectAt: StateFlow<Map<String, Long>>
+        get() = _reconnectAt.asStateFlow()
+    private val _reconnectAt = MutableStateFlow<Map<String, Long>>(emptyMap())
+
+    /**
+     * #317：DSH 0.1.2+ token 待输入的服务器 ID 集合（探测双形态 401）。
+     * UI 据此呈现 token 输入入口；token 交换成功后连接循环自动续行。
+     */
+    val dshTokenNeededServers: StateFlow<Set<String>>
+        get() = _dshTokenNeededServers.asStateFlow()
+    private val _dshTokenNeededServers = MutableStateFlow<Set<String>>(emptySet())
+
+    private fun markTokenNeeded(serverId: String, needed: Boolean) {
+        _dshTokenNeededServers.update { current ->
+            if (needed) current + serverId else current - serverId
+        }
+    }
 
     /**
      * 启动到 [server] 的 SSE 连接。
@@ -183,7 +257,7 @@ class SseConnectionManager @Inject constructor(
         server: ServerConfig,
         onEvent: (ServerConfig, SseEvent) -> Unit
     ): Job {
-        // #276：from(config) 单点（serverType 沿传——DSH 三分路由 + 传输分支依据）
+        // #276/#391：from(config) 单点（类型与世代沿传；传输分支由连接策略的 wireKind 决定）
         val conn = ServerConnection.from(server)
         val previous = connections[server.id]
         val job: Job = if (previous != null && previous.sseJob.isActive) {
@@ -217,8 +291,13 @@ class SseConnectionManager @Inject constructor(
         state.sseJob.cancel()
         timeoutTrackers.remove(serverId)
         dshSeqTrackers.remove(serverId) // #276：水位表随连接销毁（重连=全量 InitialFetch）
+        dshFrameSources.remove(serverId) // #333：帧源登记随连接销毁
         _connectedServerIds.update { it - serverId }
         _connectingServerIds.update { it - serverId }
+        _reconnectAt.update { it - serverId } // #409：连接销毁，清倒计时排程
+        // 双轴审查：TokenNeeded 挂起中取消连接时 markTokenNeeded(false) 不可达
+        // （CancellationException 先行）——不在此清理则已删服务器永久残留集合。
+        markTokenNeeded(serverId, needed = false)
         eventDispatcher.clearForServer(serverId)
     }
 
@@ -234,11 +313,14 @@ class SseConnectionManager @Inject constructor(
         connections.clear()
         timeoutTrackers.clear()
         dshSeqTrackers.clear()
+        dshFrameSources.clear()
         // RS-002 修复：使用 .update{} 而非直接赋值以参与 CAS，
         // 防止已取消但仍运行的 SSE 协程的 updateServerConnected
         // 调用复活已被清除的 server ID。
         _connectedServerIds.update { emptySet() }
         _connectingServerIds.update { emptySet() }
+        _reconnectAt.update { emptyMap() } // #409：全停，清倒计时排程
+        _dshTokenNeededServers.update { emptySet() } // 同 stopConnection：防幽灵 token 提示
         for (serverId in serverIds) {
             eventDispatcher.clearForServer(serverId)
         }
@@ -330,6 +412,17 @@ class SseConnectionManager @Inject constructor(
      * [onConnected] 接收聚合连接状态（双流 Connected 才 Connected，取最差）。
      * 挂起直到取消——engine 自重连，重连后服务端重推 subscribed 基线触发增量对账。
      */
+    /**
+     * #333：请求对 DSH 服务器的某会话开 follow 流（窗口外/未开流会话进 ChatRoute
+     * 的开流兜底——follow snapshot 即转录基线，兼暖服务器投影缓存恢复 REST 分页）。
+     * 返回 false = 该服务器无登记帧源（非 DSH / 未连接）——调用方静默降级。
+     */
+    fun requestDshSessionFollow(serverId: String, sessionId: String): Boolean {
+        val source = dshFrameSources[serverId] ?: return false
+        source.requestFollow(sessionId)
+        return true
+    }
+
     private suspend fun runDshEventLoop(
         server: ServerConfig,
         conn: ServerConnection,
@@ -337,10 +430,15 @@ class SseConnectionManager @Inject constructor(
         onConnected: (Boolean) -> Unit,
     ) {
         val tracker = dshSeqTrackers.getOrPut(server.id) { DshSessionSeqTracker() }
+        val frameSource = dshFrameSourceFactory.create()
+            .also { dshFrameSources[server.id] = it }
         dshConnectionOrchestrator.run(
             baseUrl = conn.baseUrl,
-            frameSource = dshFrameSourceFactory.create(),
-            historySource = DshRpcHistorySource(dshRpcClient, conn),
+            frameSource = frameSource,
+            historySource = DshRpcHistorySource(
+                dshRpcClient,
+                conn,
+            ) { dshConnectionRegistry.protocolOf(conn.baseUrl) ?: dev.leonardo.ocbeacon.data.api.dsh.DshWireProtocol.V011 },
             tracker = tracker,
             dispatch = { event -> eventDispatcher.processEvent(event, server.id) },
             onEvent = { event -> onEvent(server, event) },
@@ -376,13 +474,16 @@ class SseConnectionManager @Inject constructor(
             // 修复：独立 hasConnectedOnce 标志——本次循环内曾成功连接过，
             // 后续每次重连都执行 recoverMessages（REST 快照补漏）。
             var hasConnectedOnce = false
+            // #448：本轮尝试是否遭遇协议不匹配（长退避标志）
+            var protocolMismatch = false
 
             while (isActive) {
                 attempt++
+                protocolMismatch = false
 
                 // 若处于冷却中，等待并跳过重连尝试
                 if (tracker.isInCooldown()) {
-                    if (BuildConfig.DEBUG) AppLogger.d(TAG, "[${server.displayName}] SSE in cooldown, waiting ${COOLDOWN_CHECK_INTERVAL_MS}ms")
+                    if (BuildConfig.DEBUG) AppLogger.d(TAG, "[${server.displayName}] SSE in cooldown, remaining ${tracker.cooldownRemainingMs()}ms")
                     delay(COOLDOWN_CHECK_INTERVAL_MS)
                     continue
                 }
@@ -402,7 +503,54 @@ class SseConnectionManager @Inject constructor(
                 // 预加载（session.list 基线）与 SSE 路径共用；断连补漏不走
                 // recoverMessages（REST 全量重拉）而走 DSH reconciler（subscribed
                 // 基线 → seq 缺口 → session.history 精确回填，§1.6-5）。
-                if (conn.serverType == ServerType.Dsh) {
+                val strategy = adapters.connectionStrategy(conn)
+                // #391 切片6：两种线面统一先做一次握手——OpenCode 为投影型（ApiVersionDetector
+                // 双探结果已在健康检查持久化，此处恒 ONLINE，仅 degraded 态可观测），
+                // DSH 为 0.1.2 双形态探测（版本×鉴权），其 AUTH_REQUIRED/UNREACHABLE 在下方分派。
+                val handshake = strategy.probe(conn)
+                if (strategy.wireKind == dev.leonardo.ocbeacon.data.adapter.WireKind.MUX) {
+                    // #317（2026-09-04）：0.1.2 双形态探测（版本×鉴权）先于一切
+                    // DSH 流量——TokenNeeded 挂起等 token（避免 RPC/WS 401 空转风暴），
+                    // Unreachable 走既有退避；Online 才进预加载+事件循环。
+                    when (handshake.status) {
+                        dev.leonardo.ocbeacon.data.adapter.ConnectionStatus.AUTH_REQUIRED -> {
+                            updateServerConnected(server.id, false)
+                            // #436：持久化 token 自动重交换——服务器重启/cookie 失效零人工恢复
+                            if (dshConnectionRegistry.recoverAuth(conn.baseUrl)) {
+                                AppLogger.i(TAG, "DSH auth required — persisted token re-exchanged: " + server.displayName)
+                                if (!connections.containsKey(server.id)) break
+                                continue
+                            }
+                            markTokenNeeded(server.id, needed = true)
+                            AppLogger.w(TAG, "DSH 0.1.2 token required — waiting for token input: " + server.displayName)
+                            dshConnectionRegistry.awaitCookie(conn.baseUrl)
+                            markTokenNeeded(server.id, needed = false)
+                            // cookie 就位 → 回环重探确认（无效 token 不进事件流）
+                            if (!connections.containsKey(server.id)) break
+                            continue
+                        }
+                        dev.leonardo.ocbeacon.data.adapter.ConnectionStatus.UNREACHABLE -> {
+                            updateServerConnected(server.id, false)
+                            // #436：HTTP 已达但被拒（403/非预期状态码）≠ 传输断——重试不能
+                            // 自愈（信任域/网关/token 配置类），长退避下限 + 明确日志，
+                            // 杜绝 1-2s 空转把配置问题伪装成「网络正在恢复」。
+                            val detailText = handshake.detail ?: ""
+                            val httpRejected = detailText.contains("statuses") && !detailText.contains("transport")
+                            if (httpRejected) {
+                                AppLogger.w(TAG, "DSH probe HTTP-rejected (config/auth, not transport): " + detailText)
+                            } else if (BuildConfig.DEBUG) {
+                                AppLogger.d(TAG, "DSH probe unreachable: " + detailText)
+                            }
+                            if (!connections.containsKey(server.id)) break
+                            val scheduled = backoffWithSchedule(server.id, attempt)
+                            delay(if (httpRejected) maxOf(REJECTED_PROBE_RETRY_MS, scheduled) else scheduled)
+                            continue
+                        }
+                        dev.leonardo.ocbeacon.data.adapter.ConnectionStatus.ONLINE -> {
+                            markTokenNeeded(server.id, needed = false)
+                            if (BuildConfig.DEBUG) AppLogger.d(TAG, "DSH wire generation=" + handshake.wireGeneration + " authed=" + handshake.authenticated)
+                        }
+                    }
                     val preloadJob = scope.launch { preLoadSessions(server, conn) }
                     try {
                         runDshEventLoop(server, conn, onEvent) { connected ->
@@ -422,8 +570,12 @@ class SseConnectionManager @Inject constructor(
                         preloadJob.cancelAndJoin()
                     }
                     if (!connections.containsKey(server.id)) break
-                    delay(calculateBackoff(attempt))
+                    delay(backoffWithSchedule(server.id, attempt))
                     continue
+                }
+                // SSE 线面消费同一握手产物：UNKNOWN 回落 V1 基线仅记降级（不改变行为）
+                if (handshake.degraded && BuildConfig.DEBUG) {
+                    AppLogger.d(TAG, "[${server.displayName}] handshake degraded: " + handshake.detail)
                 }
                 val attemptNow = attempt
                 val preloadJob = scope.launch {
@@ -475,6 +627,8 @@ class SseConnectionManager @Inject constructor(
                                 eventDispatcher.backfillActiveForServer(server.id)
                             }
                             tracker.recordSuccess()
+                            // #441-B 探针:最后帧时间戳(死亡现场快照原料)
+                            lastEventAtMs[server.id] = System.currentTimeMillis()
                             // 分发到 EventDispatcher 以更新状态
                             eventDispatcher.processEvent(event, server.id)
                             // 路由给调用方进行通知处理
@@ -489,6 +643,12 @@ class SseConnectionManager @Inject constructor(
                         // 冷却代价付清后重新累积，防「5min 冷却→1 次超时→再冷却」永续）
                         val timeouts = tracker.consecutiveTimeouts
                         tracker.enterCooldown()
+                        // #448（2026-09-27）：冷却排程——倒计时数据源改为冷却结束
+                        // 时刻（原：冻结在旧退避排程 → UI「N 秒后重试」卡 0 五分钟，
+                        // 用户报告「一直倒计时」观感的一部分）。
+                        _reconnectAt.update {
+                            it + (server.id to System.currentTimeMillis() + tracker.cooldownRemainingMs())
+                        }
                         AppLogger.w(TAG, "[${server.displayName}] Entering SSE cooldown after $timeouts consecutive timeouts")
                     } else {
                         tracker.recordTimeout()
@@ -496,17 +656,26 @@ class SseConnectionManager @Inject constructor(
                 } catch (e: CancellationException) {
                     if (BuildConfig.DEBUG) AppLogger.d(TAG, "[${server.displayName}] SSE job cancelled, not reconnecting")
                     throw e
+                } catch (e: dev.leonardo.ocbeacon.data.api.SseProtocolMismatchException) {
+                    // #448：对面不在说 SSE（SPA fallback / 反代错误页）——配置/版本
+                    // 类错误，重试不能自愈。不计读超时（#402 的冷却是「读超时」代价
+                    // 语义，此形态不沾），长退避限频 + 明确日志（对齐 #436 httpRejected）。
+                    AppLogger.w(TAG, "[${server.displayName}] SSE protocol mismatch: ${e.message} — retrying with long backoff (not a network error)")
+                    updateServerConnected(server.id, false)
+                    protocolMismatch = true
                 } catch (e: Exception) {
                     // #152：连接失败带 throwable（原缺——审计 7 处之一）；e→d 避免与 :337 双记（同一异常两连发）
                     if (BuildConfig.DEBUG) AppLogger.d(TAG, "[${server.displayName}] SSE connection failed: ${e.message}", e)
                     updateServerConnected(server.id, false)
-                    if (tracker.shouldEnterCooldown()) {
-                        val timeouts = tracker.consecutiveTimeouts
-                        tracker.enterCooldown()
-                        AppLogger.w(TAG, "[${server.displayName}] Entering SSE cooldown after $timeouts consecutive timeouts")
-                    } else {
-                        tracker.recordTimeout()
-                    }
+                    // #402（2026-09-12 根因修复）：冷却语义专指「SSE 读取超时」退避（半开 TCP
+                    // 静默挂死，见 SseReadTimeoutTracker KDoc）——读超时经
+                    // readRawLineBytesWithTimeout 返回 null → break → 上方「流正常结束」
+                    // 路径计数，是唯一应累计冷却的失败形态。
+                    // 连接级快速失败（connection refused / DNS / HTTP 非 2xx 抛
+                    // SseConnectionException）本由 calculateBackoff 指数退避处理；原实现在此
+                    // 也累计 → 连续 5 次后进入 5min 冷却，而隧道/服务端瞬断恢复不触发 Android
+                    // 网络事件、只能等满（模拟器实测 reverse 恢复后 ~4m38s 才重连，期间 HTTP 已 200）。
+                    // 此处不再计入冷却。
                 } finally {
                     // 串行化护栏（见上方 #150 方向②注释）：流结束/异常/取消路径统一
                     // 收束本轮 preload job，再进入退避/重连/退出循环。
@@ -516,15 +685,16 @@ class SseConnectionManager @Inject constructor(
                 // 若此服务器已从 connections 中移除，则停止循环
                 if (!connections.containsKey(server.id)) break
 
-                val delayMs = calculateBackoff(attempt)
-                if (BuildConfig.DEBUG) AppLogger.d(TAG, "[${server.displayName}] Reconnecting in ${delayMs}ms (attempt #$attempt)")
-                delay(delayMs)
+                val delayMs = backoffWithSchedule(server.id, attempt)
+                val waitMs = if (protocolMismatch) maxOf(REJECTED_PROBE_RETRY_MS, delayMs) else delayMs
+                if (BuildConfig.DEBUG) AppLogger.d(TAG, "[${server.displayName}] Reconnecting in ${waitMs}ms (attempt #$attempt${if (protocolMismatch) ", protocol-mismatch" else ""})")
+                delay(waitMs)
             }
     }
 
     private suspend fun preLoadSessions(server: ServerConfig, conn: ServerConnection) {
         try {
-            val projects = fileApi.listProjects(conn)
+            val projects = adapters.ports(conn).requireFile(conn).listProjects(conn)
             // 状态先行（#278）：播种（syncFromRest）先于会话正文预载——僵尸 Busy
             // 收敛依赖 running 语义尽早落地；正文预载（百级会话列表）在启动期
             // 占大头，若播种排其后会拉宽「强杀重启→Busy 恢复显示」窗口
@@ -542,7 +712,11 @@ class SseConnectionManager @Inject constructor(
             }
             if (projects.isEmpty()) {
                 // 降级：加载不带 directory 头的会话（仅服务器 CWD）
-                val sessions = sessionApi.listSessions(conn)
+                // #304：NonCancellable+超时（对齐 #278 播种保护）——重连风暴下
+                // finally cancelAndJoin 掐向在途 listSessions，基线丢失=列表短暂空白。
+                val sessions = withContext(NonCancellable) {
+                    withTimeout(PRELOAD_SEED_TIMEOUT_MS) { adapters.ports(conn).session.listSessions(conn) }
+                }
                 eventDispatcher.setSessions(server.id, sessions)
                 AppLogger.i(TAG, "[${server.displayName}] Pre-loaded ${sessions.size} sessions (no projects)")
             } else {
@@ -550,13 +724,17 @@ class SseConnectionManager @Inject constructor(
                 // ——多项目用户首连时 N 次串行 /session 往返改并发。setSessions 为 CAS 合并语义
                 // 并发调用安全；单项目失败不拖垮其余（保留原逐项目 catch）。
                 val totalSessions = java.util.concurrent.atomic.AtomicInteger(0)
+                // #304：正文并发拉取整体纳入 NonCancellable+超时（同上——风暴免疫，
+                // 30s 上限防失联悬挂；单项目失败不拖垮其余的既有语义不变）。
+                withContext(NonCancellable) {
+                withTimeout(PRELOAD_SEED_TIMEOUT_MS) {
                 kotlinx.coroutines.coroutineScope {
                     val permits = Semaphore(PRELOAD_PROJECT_CONCURRENCY)
                     for (project in projects) {
                         launch {
                             permits.withPermit {
                                 try {
-                                    val sessions = sessionApi.listSessions(conn, directory = project.worktree)
+                                    val sessions = adapters.ports(conn).session.listSessions(conn, directory = project.worktree)
                                     eventDispatcher.setSessions(server.id, sessions)
                                     totalSessions.addAndGet(sessions.size)
                                 } catch (e: Exception) {
@@ -569,6 +747,8 @@ class SseConnectionManager @Inject constructor(
                             }
                         }
                     }
+                }
+                }
                 }
                 AppLogger.i(TAG, "[${server.displayName}] Pre-loaded ${totalSessions.get()} sessions across ${projects.size} projects")
             }
@@ -612,7 +792,7 @@ class SseConnectionManager @Inject constructor(
         var recoveredCount = 0
         for (sessionId in sessionIds) {
             try {
-                val messages = messageApi.listMessages(conn, sessionId).messages
+                val messages = adapters.ports(conn).message.listMessages(conn, sessionId).messages
                 eventDispatcher.upsertMessages(sessionId, messages, MergeStrategy.REST_AUTHORITY)
                 recoveredCount++
             } catch (e: Exception) {
@@ -627,12 +807,22 @@ class SseConnectionManager @Inject constructor(
         // NoTransformationFoundException。阶段 1 的消息恢复此时已完成，
         // 因此阶段 2 的失败不应传播并中断重连循环。
         try {
-            val projects = fileApi.listProjects(conn)
+            val projects = adapters.ports(conn).requireFile(conn).listProjects(conn)
             sessionStateRepository.setServerId(server.id)
             sessionStateRepository.syncFromRest(projects)
         } catch (e: Exception) {
             AppLogger.w(TAG, "[${server.displayName}] Failed to sync session statuses during recovery: ${e.message}")
         }
+    }
+
+    /**
+     * #417：插桩测试 seam —— 无真连接环境下把服务器标记为 Connected
+     *（[linkState] 三态哨兵的 fastFailIfLinkBlocked 测试前置）。生产代码零调用。
+     */
+    @androidx.annotation.VisibleForTesting
+    fun markLinkConnectedForTest(serverId: String) {
+        _connectingServerIds.update { it - serverId }
+        _connectedServerIds.update { it + serverId }
     }
 
     private fun updateServerConnected(serverId: String, connected: Boolean) {
@@ -649,6 +839,7 @@ class SseConnectionManager @Inject constructor(
         if (connected) {
             _connectingServerIds.update { it - serverId }
             _connectedServerIds.update { it + serverId }
+            _reconnectAt.update { it - serverId } // #409：已连上，清倒计时排程
             AppLogger.i(TAG, "Connected to server $serverId")
         } else {
             _connectedServerIds.update { it - serverId }
@@ -663,6 +854,25 @@ class SseConnectionManager @Inject constructor(
     // retryWithPolicy 仅对瞬时错误（isTransientException：IOException/超时/
     // ApiError.isTransient）重试。语义部分重合、策略不同，不强改统一；
     // 未来若统一，此处应改为组合 RetryPolicy 配置 + ApiError.isTransient 分类。
+    /** #409：登记退避排程（UI 倒计时数据源）并返回本次延迟。 */
+    private suspend fun backoffWithSchedule(serverId: String, attempt: Int): Long {
+        // #441-B 死亡现场快照(一期):退避重连必经点——最后帧距今(静默型死亡的
+        // 直接证据:巨大值=连接活着但无事件=哨兵域;小值=事件流活跃中断=传输断)
+        // + 退避序号。完整版(电池优化状态/网络 identity/断连异常栈)二期接入。
+        runCatching {
+            val last = lastEventAtMs[serverId]
+            val ago = last?.let { System.currentTimeMillis() - it } ?: -1L
+            AppLogger.i(
+                TAG,
+                "death-snapshot server=" + serverId.takeLast(8) + " attempt=" + attempt +
+                    " lastEventAgoMs=" + ago,
+            )
+        }
+        val delayMs = calculateBackoff(attempt)
+        _reconnectAt.update { it + (serverId to System.currentTimeMillis() + delayMs) }
+        return delayMs
+    }
+
     private suspend fun calculateBackoff(attempt: Int): Long {
         val maxDelay = when (settingsRepository.reconnectMode().first()) {
             "aggressive" -> 5_000L

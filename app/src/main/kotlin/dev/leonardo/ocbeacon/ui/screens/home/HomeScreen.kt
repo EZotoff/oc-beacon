@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.ui.components.indicators.PulsingDotsIndicator
 import dev.leonardo.ocbeacon.ui.screens.home.components.*
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 /**
  * 首页 — 服务器列表与管理
@@ -52,12 +53,24 @@ fun HomeScreen(
     onNavigateToAbout: () -> Unit = {},
     onNavigateToDiagnostics: () -> Unit = {},
     onNavigateToSupervisor: (serverId: String) -> Unit = {},
+    // #325②：DSH 配对深链预填载荷（NavGraph 传入；消费后回调置空防重放）
+    pendingPairRequest: dev.leonardo.ocbeacon.data.api.dsh.DshPairPayload? = null,
+    onPairRequestConsumed: () -> Unit = {},
     viewModel: HomeViewModel
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     // #154a：崩溃启动提示（未确认 FATAL → Home 顶部横幅）
     val crashNotice by viewModel.crashNotice.collectAsStateWithLifecycle()
+
+    // #325②：配对深链到达——打开添加服务器对话框并预填 URL/DSH 类型
+    //（token 已在 MainActivity 深链处理时后台交换；此处只填表）
+    androidx.compose.runtime.LaunchedEffect(pendingPairRequest) {
+        pendingPairRequest?.let { payload ->
+            viewModel.prefillAddServerDialog(payload.baseUrl)
+            onPairRequestConsumed()
+        }
+    }
 
     // 跟踪电池优化状态，应用恢复时重新检查
     var isBatteryOptimized by remember { mutableStateOf(false) }
@@ -137,9 +150,9 @@ fun HomeScreen(
                         LazyVerticalGrid(
                             columns = GridCells.Adaptive(280.dp),
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            contentPadding = PaddingValues(SpacingTokens.LG.dp),
+                            verticalArrangement = Arrangement.spacedBy(SpacingTokens.MD.dp),
+                            horizontalArrangement = Arrangement.spacedBy(SpacingTokens.MD.dp)
                         ) {
                             // #154a：崩溃启动提示横幅（优先于电池横幅）
                             if (crashNotice != null) {
@@ -209,8 +222,8 @@ fun HomeScreen(
                     } else {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            contentPadding = PaddingValues(SpacingTokens.LG.dp),
+                            verticalArrangement = Arrangement.spacedBy(SpacingTokens.MD.dp)
                         ) {
                             // 电池优化警告横幅
                             if (isBatteryOptimized) {
@@ -287,7 +300,10 @@ fun HomeScreen(
         // 添加/编辑服务器对话框
         if (uiState.showAddServerDialog) {
             ServerDialog(
+                serverTypes = viewModel.supportedServerTypes,
                 server = uiState.editingServer,
+                // #325②：配对深链预填（仅新建对话框生效；编辑沿用条目现值）
+                prefillUrl = uiState.editingServer?.let { null } ?: uiState.pairPrefillUrl,
                 onDismiss = { viewModel.hideServerDialog() },
                 onSave = { name, url, username, password, autoConnect, serverType ->
                     viewModel.saveServer(name, url, username, password, autoConnect, serverType)

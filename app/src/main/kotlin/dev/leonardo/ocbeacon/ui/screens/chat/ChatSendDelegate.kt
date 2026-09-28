@@ -52,15 +52,21 @@ internal class ChatSendDelegate(
     /** 发送成功信号（驱动输入框清空——失败时输入框消息保留，用户要求）。 */
     private val onSendSuccess: (String) -> Unit,
     private val draftDelegate: DraftInputDelegate,
+    /** #391：子智能体能力位——子会话续聊（subagents/prompt）仅在端口在场时分流；
+     *  界面只读能力，不读服务器类型（默认 false 与未加载态兼容）。 */
+    private val subagentsSupportedProvider: () -> Boolean = { false },
+    /** #362：busy+queue 提交成功后回调——V2 面（无推送帧）触发 inbox 拉取刷新
+     * 队列角标/面板；DSH 面 queue 帧自推送，回调内部门控无害。 */
+    private val onQueueSubmitted: () -> Unit = {},
 ) {
-    fun sendMessage(text: String, attachments: List<PromptPart> = emptyList()) {
+    fun sendMessage(text: String, attachments: List<PromptPart> = emptyList(), steer: Boolean = false) {
         if (text.isBlank() && attachments.isEmpty()) return
         val parts = mutableListOf<PromptPart>()
         if (text.isNotBlank()) {
             parts.add(PromptPart(type = "text", text = text))
         }
         parts.addAll(attachments)
-        sendParts(parts, text)
+        sendParts(parts, text, steer)
     }
 
     /** 发送预构建的 prompt parts（当 @ 文件提及需要结构化 parts 时使用）。
@@ -68,10 +74,10 @@ internal class ChatSendDelegate(
      *  PromptBuilder.buildPromptParts 会 trim() 并拆分 @file 提及，重组结果
      *  与输入框原始文本（含尾随空格/换行/@mention）不一致 → E8-1 比对失败 →
      *  发送成功后输入框偶发不清空（2026-08-15 修复）。 */
-    fun sendMessage(promptParts: List<PromptPart>, attachments: List<PromptPart>, rawText: String) {
+    fun sendMessage(promptParts: List<PromptPart>, attachments: List<PromptPart>, rawText: String, steer: Boolean = false) {
         val parts = promptParts + attachments
         if (parts.isEmpty()) return
-        sendParts(parts, rawText)
+        sendParts(parts, rawText, steer)
     }
 
     /**
@@ -98,7 +104,7 @@ internal class ChatSendDelegate(
         }
     }
 
-    private fun sendParts(parts: List<PromptPart>, snapshotText: String) {
+    private fun sendParts(parts: List<PromptPart>, snapshotText: String, steer: Boolean) {
         // RS-007 修复：防止快速双击。_isSending 由 setSending 同步设置，
         // 但 Compose 重组（禁用按钮）有 1 帧延迟。此检查消除了竞态窗口。
         if (sendStateStore.isSendingValue) {
@@ -131,20 +137,43 @@ internal class ChatSendDelegate(
                 // 清理旧消息，因此不会闪烁。
                 chatRepository.clearRevert(currentSessionId)
 
-                // 悲观消息：POST 受理后不显示任何占位，等待服务器 SSE
-                // 回显 MessageUpdated 时消息出现在列表（opencode 官方行为）。
-                // 发送期间 UI 由 isSending 驱动发送按钮转圈（SendStopButton）；
-                // 失败 → 草稿退回输入框 + AlertDialog（sendFailureSink）。
-                sendMessageUseCase.sendPrompt(
-                    serverId = serverId,
-                    sessionId = currentSessionId,
-                    parts = parts,
-                    model = model,
-                    agent = modelCfg.selectedAgent,
-                    variant = selectedVariantProvider(),
-                    directory = sessionDirectoryProvider()
-                )
-                if (BuildConfig.DEBUG) AppLogger.d(TAG, "Sent prompt to session $currentSessionId (${parts.size} parts)")
+                // #310① 发送分流：DSH 子会话（parentSessionId 非空）走
+                // subagents/prompt（mode=continuable 续聊）——无 queue/steer 档位、
+                // 无模型参数（steer 长按语义仅主会话）；主会话路径零改动。
+                val parentSessionId = chatRepository.getSessionsSnapshot()
+                    .firstOrNull { it.id == currentSessionId }?.parentId
+                if (parentSessionId != null && subagentsSupportedProvider()) {
+                    chatRepository.subagentPrompt(serverId, parentSessionId, currentSessionId, parts)
+                        .getOrThrow()
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.d(TAG, "Sent continuable prompt to subagent $currentSessionId (parent $parentSessionId, ${parts.size} parts)")
+                    }
+                } else {
+                    // 悲观消息：POST 受理后不显示任何占位，等待服务器 SSE
+                    // 回显 MessageUpdated 时消息出现在列表（opencode 官方行为）。
+                    // 发送期间 UI 由 isSending 驱动发送按钮转圈（SendStopButton）；
+                    // 失败 → 草稿退回输入框 + AlertDialog（sendFailureSink）。
+                    // #362：busy+queue（「消息排队」）为转录外瞬态队列行——不播种
+                    // echo（DSH inbox.nextTurn / V2 inbox，轮末恰消费 1 条后进转录）。
+                    // busy 判定取发送时刻 FSM 状态（Busy/Retry）。
+                    val statusNow = sessionStateRepository.statusFlow.value[currentSessionId]
+                    val busyNow = statusNow is dev.leonardo.ocbeacon.domain.model.SessionStatus.Busy ||
+                        statusNow is dev.leonardo.ocbeacon.domain.model.SessionStatus.Retry
+                    val queueRow = busyNow && !steer
+                    sendMessageUseCase.sendPrompt(
+                        serverId = serverId,
+                        sessionId = currentSessionId,
+                        parts = parts,
+                        model = model,
+                        agent = modelCfg.selectedAgent,
+                        variant = selectedVariantProvider(),
+                        directory = sessionDirectoryProvider(),
+                        steer = steer,
+                        seedTranscript = !queueRow
+                    )
+                    if (BuildConfig.DEBUG) AppLogger.d(TAG, "Sent prompt to session $currentSessionId (${parts.size} parts, queueRow=$queueRow)")
+                    if (queueRow) onQueueSubmitted()
+                }
                 // 2026-08-16 修复（进行中图标过早）：置 Busy 从"POST 发出前"移到
                 // "POST 成功后"——用户期望：发送按钮转圈（本地 isSending）表示
                 // 上传中；消息实际到达服务器（POST 2xx）后才显示输入栏"会话

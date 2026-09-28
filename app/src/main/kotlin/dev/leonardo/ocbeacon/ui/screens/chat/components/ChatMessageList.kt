@@ -25,10 +25,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.AccountTree
+import dev.leonardo.ocbeacon.domain.model.ServerUiSlot
+import dev.leonardo.ocbeacon.ui.extension.ChatMessageListSlotHost
+import dev.leonardo.ocbeacon.ui.extension.LocalServerUiSlots
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -39,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -53,6 +56,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
@@ -65,6 +70,9 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.Clipboard
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
@@ -73,6 +81,7 @@ import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.domain.model.CompactionStateInfo
 import dev.leonardo.ocbeacon.domain.model.Message
 import dev.leonardo.ocbeacon.domain.model.Part
+import dev.leonardo.ocbeacon.domain.model.ServerFeatures
 import dev.leonardo.ocbeacon.domain.model.SessionStatus
 import dev.leonardo.ocbeacon.domain.model.StepProgressInfo
 import dev.leonardo.ocbeacon.domain.model.ToolProgressInfo
@@ -87,10 +96,24 @@ import dev.leonardo.ocbeacon.ui.screens.chat.SessionMetaState
 import dev.leonardo.ocbeacon.ui.screens.chat.dialog.PermissionCard
 import dev.leonardo.ocbeacon.ui.screens.chat.dialog.QuestionCard
 import dev.leonardo.ocbeacon.ui.screens.chat.components.AlwaysConfirmDialog
+import dev.leonardo.ocbeacon.ui.screens.chat.scroll.PreRenderCoordinator
 import dev.leonardo.ocbeacon.ui.screens.chat.util.rememberSafeFlingBehavior
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.InjectionLabelKind
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.RowCapabilities
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.SystemNoticeKind
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.injectionLabelKindFor
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.systemNoticeKindFor
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.rowCapabilitiesFor
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.turnNumberFor
+import dev.leonardo.ocbeacon.ui.theme.ChatDensity
+import dev.leonardo.ocbeacon.ui.theme.LocalChatDensity
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderableTurn
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.computeRenderableTurn
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.turnOrdinalByAnchorId
 import dev.leonardo.ocbeacon.ui.screens.chat.util.JumpTarget
+import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalToolExpandedStates
+import dev.leonardo.ocbeacon.ui.screens.chat.util.computeTurnAnchors
 import dev.leonardo.ocbeacon.ui.screens.chat.util.computeTurnGroups
 import dev.leonardo.ocbeacon.ui.screens.chat.util.extractJumpTargets
 import dev.leonardo.ocbeacon.ui.screens.chat.util.findCurrentAnchorTimestamp
@@ -127,6 +150,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 // #227：压缩尾部兜底分割线的展开表键随认领策略外移
 // CompactionDividerPolicy.TAIL_EXPANSION_KEY（C4）。
 
+/** #422 历史懒加载:大组分片淡入时长(ms)——直出+淡入档(介于 AppMotion SHORT/MEDIUM)。 */
+private const val SG_BODY_FADE_MS = 220
+
 private val BACKGROUND_SYNTHETIC_MARKERS = listOf(
     "User requested that active blocking work be moved to the background",
     "active blocking work be moved to the background",
@@ -135,6 +161,9 @@ private val BACKGROUND_SYNTHETIC_MARKERS = listOf(
 
 /** 判断 synthetic 消息文本是否为服务器「转后台」合成通知（供分割线渲染分支与单测使用）。
  * 大小写不敏感——服务器模板可能调整大小写/时态，任一变体命中即视为转后台合成通知。 */
+/** #420 B 类:itemsIndexed 之前恒驻声明的 banner item 数(见 bannerCount 注释)。 */
+private const val BANNER_ALWAYS_COUNT = 7
+
 internal fun isBackgroundMoveSynthetic(text: String): Boolean =
     BACKGROUND_SYNTHETIC_MARKERS.any { text.contains(it, ignoreCase = true) }
 
@@ -159,6 +188,33 @@ internal fun sessionErrorRowItems(errors: List<String>): List<Pair<String, Strin
  * （流式判定沿 isStreamingMsg 旧名）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
+/**
+ * #420 B 类补齐：列表底缘条件 item 的「原地揭示」包装。
+ *
+ * reverseLayout 中先声明的 item 视觉在最底=锚定区——banner 的增删会
+ * 全额转译为视口位移（贴底尤甚）。本包装让 banner item **恒驻声明**，
+ * 出现/消失条件下沉到内容层经 [CardExpandReveal] 同帧位移配对（贴底
+ * 视口钉死）；流式 turn 活跃时降级裸 AV（item 级 COMP 补偿独占，
+ * 杜绝双重注入）。注意 [streamingActive] 应反映「当前是否有流式
+ * turn」，与消息 item 的逐 item 判定同源。
+ */
+@Composable
+private fun BannerReveal(
+    listState: LazyListState,
+    onExpandDeparture: () -> Unit,
+    streamingActive: Boolean,
+    visible: Boolean,
+    content: @Composable () -> Unit,
+) {
+    CompositionLocalProvider(
+        LocalCardExpandListState provides listState,
+        LocalCardExpandDeparture provides onExpandDeparture,
+        LocalInStreamingTurn provides streamingActive,
+    ) {
+        CardExpandReveal(visible = visible) { content() }
+    }
+}
+
 @Composable
 fun ChatMessageList(
     listState: LazyListState,
@@ -168,7 +224,6 @@ fun ChatMessageList(
     rawMessages: List<ChatMessage>,
     displayItems: List<Pair<Int, ChatMessage>>,
     /** #243 连续同内容 shell 卡去重：保留消息 id → 被抑制重复数（首张显示 ×N+1）。 */
-    syntheticDupCounts: Map<String, Int> = emptyMap(),
     isAtBottomState: androidx.compose.runtime.State<Boolean>,
     /** #222：在底意图（autoScroll）快照——尾部横幅 reveal 门控。 */
     autoScrollState: androidx.compose.runtime.State<Boolean>,
@@ -184,6 +239,8 @@ fun ChatMessageList(
     navigateToChildSession: (String) -> Unit,
     onOpenFile: (filePath: String) -> Unit,
     onForceScrollToBottom: () -> Unit,
+    /** #420:卡片原地展开补偿的「离开跟随」回调(实现:关 autoScroll)。 */
+    onExpandDeparture: () -> Unit = {},
     showQuickNavigate: Boolean,
     onQuickNavigateDismiss: () -> Unit,
     agents: List<dev.leonardo.ocbeacon.domain.model.AgentInfo> = emptyList(),
@@ -208,6 +265,8 @@ fun ChatMessageList(
      * 消息流内渲染、随历史滚动，非悬浮/常驻浮层）。数据源 viewModel.sessionErrors。
      */
     sessionErrorRows: List<String> = emptyList(),
+    /** #378：压缩转录实体（流内 box 数据源；命令反馈行在本组件自采）。 */
+    compactionEntries: List<dev.leonardo.ocbeacon.domain.model.CompactionEntry> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
     // #137（D2-L50）：工具卡片复制反馈统一 Snackbar 通道（ToolCardScaffold 原用 Toast）
@@ -221,18 +280,31 @@ fun ChatMessageList(
     // 安全前提：renderableTurns 的 miss 分支（流式/新消息）用最新 msg 引用替换
     // turn 内同 id 的旧引用 —— 流式 turn 永不冻结（历史回归 37d9a6ac 的教训）。
     // 此处仅按结构（id 序列）缓存；内容（parts）变化不重建 Map —— 同 id 的
-    // 旧引用由 miss 分支修正；另一读取点（isStreamingMsg 判断）只比较 id，
-    // 不受旧引用影响。
+    // 旧引用由 miss 分支修正；isStreamingMsg 判定（#437 起读组内消息 completed
+    // 字段）经 #450 生命周期签名失效缓存自愈——completed 变化必重建拿新引用。
     val turnGroupsSigRef = remember { intArrayOf(Int.MIN_VALUE) }
     val turnGroupsRef = remember { arrayOfNulls<Map<Int, List<ChatMessage>>>(1) }
     val turnGroups: Map<Int, List<ChatMessage>> = remember(rawMessages) {
-        val sig = MessageFingerprints.messagesSignature(rawMessages)
+        val sig = MessageFingerprints.messagesLifecycleSignature(rawMessages)
         val cached = turnGroupsRef[0]
         if (cached != null && sig == turnGroupsSigRef[0]) {
             cached
         } else {
             turnGroupsSigRef[0] = sig
             computeTurnGroups(rawMessages).also { turnGroupsRef[0] = it }
+        }
+    }
+    // #440 槽位锚缓存（与 turnGroups 同签名同走查——同一 rawMessages 快照派生）。
+    val turnAnchorsSigRef = remember { intArrayOf(Int.MIN_VALUE) }
+    val turnAnchorsRef = remember { arrayOfNulls<Map<Int, String>>(1) }
+    val turnAnchors: Map<Int, String> = remember(rawMessages) {
+        val sig = MessageFingerprints.messagesLifecycleSignature(rawMessages)
+        val cached = turnAnchorsRef[0]
+        if (cached != null && sig == turnAnchorsSigRef[0]) {
+            cached
+        } else {
+            turnAnchorsSigRef[0] = sig
+            computeTurnAnchors(rawMessages).also { turnAnchorsRef[0] = it }
         }
     }
 
@@ -242,10 +314,88 @@ fun ChatMessageList(
     // #276 后端接口补全：DSH 无 revert/unrevert——撤销/重做 UI 入口（消息长按
     // 撤销、压缩分割线撤销、RevertBanner 重做）按能力位整体隐藏。
     val serverCapabilities by viewModel.serverCapabilities.collectAsStateWithLifecycle()
-    val revertSupported = serverCapabilities.revertSupported
+    // #399：适配器声明的界面插槽（两级门禁第一级）+ 注册表经组合局部提供。
+    val chatUiSlots by viewModel.uiSlots.collectAsStateWithLifecycle()
+    // 注册表须在 composable 作用域读取（LazyColumn 的 LazyListScope 非 @Composable）。
+    val pinnedJobsSlotRegistry = LocalServerUiSlots.current
+    val revertSupported = ServerFeatures.SESSION_REVERT in serverCapabilities
+    // US#35：删除消息入口按能力位整项隐藏（DSH 客户端 deleteMessage 恒 false →
+    // 不出现「更多」，避免"点了没反应/失败"）
+    val messageDeleteSupported = ServerFeatures.MESSAGE_DELETE in serverCapabilities
+    // 2026-09-12 扁平化：行模型能力位（单源——尾部字段/动作可用性断言落在 seam）
+    val rowCaps: RowCapabilities = rowCapabilitiesFor(serverCapabilities)
+    // ============ #310② 消息反馈 👍/👎 ============
+    // #366：能力位门控（原裸 serverType 特判收敛——「UI 入口按能力位隐藏」约定）
+    val messageFeedbackMap by viewModel.messageFeedbackItems.collectAsStateWithLifecycle()
+    val feedbackEnabled = ServerFeatures.FEEDBACK in serverCapabilities
+
+    /**
+     * 点击动作：toggle（裁决+冲突重试在委托内建）→ outcome 映射
+     * snackbar（撤销/冲突/失败三态有提示，评价成功静默）。
+     */
+    fun rateMessage(messageId: String, rating: dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating) {
+        coroutineScope.launch {
+            when (viewModel.toggleMessageFeedback(messageId, rating)) {
+                dev.leonardo.ocbeacon.ui.screens.chat.MessageFeedbackOutcome.Done -> Unit
+                dev.leonardo.ocbeacon.ui.screens.chat.MessageFeedbackOutcome.Removed ->
+                    snackbarHostState.showSnackbar(context.getString(R.string.chat_feedback_removed))
+                dev.leonardo.ocbeacon.ui.screens.chat.MessageFeedbackOutcome.Conflict ->
+                    snackbarHostState.showSnackbar(context.getString(R.string.chat_feedback_conflict))
+                dev.leonardo.ocbeacon.ui.screens.chat.MessageFeedbackOutcome.Failed ->
+                    snackbarHostState.showSnackbar(context.getString(R.string.chat_feedback_failed))
+            }
+        }
+    }
+
+    /** 本消息的反馈动作位数据（wireId 桥接转录 id → 服务器规范 id）。 */
+    fun feedbackFor(message: dev.leonardo.ocbeacon.domain.model.Message):
+        Pair<dev.leonardo.ocbeacon.domain.model.MessageFeedbackItem?, ((dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating) -> Unit)?> {
+        val wireId = (message as? dev.leonardo.ocbeacon.domain.model.Message.Assistant)?.wireId
+        if (!feedbackEnabled || wireId == null) return null to null
+        return messageFeedbackMap[wireId] to { rating -> rateMessage(wireId, rating) }
+    }
+
+    /**
+     * #312⑤ 轮尾锚点：「从此轮分支」（台账行动作）→ forkSession(锚点消息 id)。
+     * 成功导航到 fork 会话（navigateToChildSession 对合法会话 id 形态放行——
+     * 与 ChatScreen onForkSession 成功路径同语义）；失败 snackbar（静默失败
+     * 不可接受，chat_fork_failed 既有文案）。
+     */
+    val forkFromTurn: (String) -> Unit = { anchorMsgId ->
+        viewModel.forkSession(anchorMsgId) { session ->
+            if (session != null) {
+                navigateToChildSession(session.id)
+            } else {
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar(context.getString(R.string.chat_fork_failed))
+                }
+            }
+        }
+    }
+    /** 2026-09-12 扁平化 US#35：删除消息（能力位就绪时由尾部「更多」调起）。 */
+    val deleteMessageAction: (String) -> Unit = { msgId ->
+        viewModel.deleteMessage(msgId) { ok ->
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar(
+                    if (ok) context.getString(R.string.chat_message_deleted)
+                    else context.getString(R.string.chat_message_delete_failed)
+                )
+            }
+        }
+    }
     val toolProgress by viewModel.chatRepositoryExposed.getActiveToolProgressForSession(currentSessionId).collectAsStateWithLifecycle(initialValue = null)
     val stepProgress by viewModel.chatRepositoryExposed.getStepProgressForSession(currentSessionId).collectAsStateWithLifecycle(initialValue = null)
     val compactionState by viewModel.chatRepositoryExposed.getCompactionStateForSession(currentSessionId).collectAsStateWithLifecycle(initialValue = null)
+    // 2026-09-26 回合级活动信号（3s 宽限防抖）——横幅揭示门控用：步间 force-Idle
+    // 空窗不再触发 episode（dispatchRawDelta 配对）=步间闪烁根除。
+    val turnActive by viewModel.turnActiveState.collectAsStateWithLifecycle()
+    // #309 批1⑤：max-tokens 通知（turn 非空即显示；新一轮 Busy 自动清）
+    val turnMaxTokens by viewModel.chatRepositoryExposed.getTurnMaxTokensForSession(currentSessionId).collectAsStateWithLifecycle(initialValue = null)
+    // #323：斜杠命令执行反馈行（command/run|done 折叠，commandId 配对原位更新）——
+    // 直接订阅仓库流（TurnMaxTokens 同款），V1/V2 后端恒空。
+    val commandFeedbackRows by viewModel.chatRepositoryExposed
+        .getCommandFeedbackForSession(currentSessionId)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
     val activeTools = toolProgress.orEmpty().map { 
         ToolProgressInfo(callId = it.callId, partId = it.partId, tool = it.tool, status = it.status, progress = it.progress, title = it.title)
     }
@@ -320,20 +470,28 @@ fun ChatMessageList(
         result
     }
 
-    // 以 streamingMsgId 作为 key，流式 turn 变化（新消息
-    // 或完成）时状态重置。这比 heightMap + 会话级清除更简单、更正确。
-    val compensateState = remember(streamingMsgId) { CompensateState() }
-    // #222 修二强化：延迟揭示补偿器（真·渲染前）——消息流/工具/压缩三路共用
-    // shouldCompensate 门控（在底意图），各自独立基准。
-    val msgReveal = remember(streamingMsgId) { DeferredRevealCompensator() }
-    val toolReveal = remember(streamingMsgId) { DeferredRevealCompensator() }
-    // #221：压缩展开区流式补偿——进行中压缩展开后 delta 增长与普通流式消息同
-    // 待遇（tool_progress 同款：独立 lastHeight + 共享 shouldCompensate 在底意图
-    // + layout{} 注入）。key=进行中压缩 messageId：压缩结束置 null 时重置，下一
-    // 轮首测不注入（lastHeight>0 守卫防冷启动跳变）。
-    val compactionReveal = remember(
-        currentCompaction?.takeIf { it.isActive }?.messageId
-    ) { DeferredRevealCompensator() }
+    // ===== #423 批次十三:结构裂变全量退役(用户裁决「大数据量加速而非拆分」) =====
+    // 全部步组走 CardExpandReveal 统一引擎(渲染前计算+反射位移——钉位铁律
+    // 全局一致,大小组无别);大内容加速=引擎空闲预热(CardExpandReveal
+    // PREWARM_IDLE_MS),而非 #422 条目拆分懒加载。映射恒空 →
+    // buildChatEntries 裂变分支休眠(发射机保留,死代码清理另行批次);
+    // REPIN 重锚修正器同批退役(引擎自证钉位,不留补偿族)。
+    val expandedStepGroups: Map<String, dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem.StepGroup> = emptyMap()
+
+
+    // ===== #423 SGB 埋点:结构裂变观测(仅 DEBUG;窗口门控,常态零行) =====
+    // 批次十三:裂变退役 → SPLIT/SNAP 效应移除;两探针保留供休眠的 Head 渲染
+    // 分支引用(sgSwapAtMs 恒 0 = 窗口永闭,零日志)。
+    val sgSwapAtMs = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    val sgHeadTopY = remember { androidx.compose.runtime.mutableIntStateOf(Int.MIN_VALUE) }
+    // #435 流式增长账本：流式家族(消息/工具横幅/压缩卡)高度增长统一并入高度
+    // 引擎配对体系——measure 相记账 Δ → pre-draw flush 单点按统一规则派发(锚即
+    // 意图:贴底跟随族/读历史免派发,尾段阅读 +Δ 同帧配对)。取代 COMP 家族三补偿器
+    // (#222 延迟揭示)与 PreRenderShiftChannel 帧界运输;挂载点经 streamingGrowPairing
+    // 记账,流式结束/回收时账目随节点卸载自动清(onDetach→forget)。
+    val streamingLedger = remember { StreamingGrowLedger() }
+    // [#437 引擎①] 一帧缓冲帽状态（单活流式项；换流式项自动重置）。
+    val heightReserve = remember { HeightReserveState() }
 
     // #215 验收反馈·一（终版裁决 2026-08-25 用户定规）：toggle 锚定修正逻辑
     // 全部撤销——修正窗/toggleAnchorCorrection/注入通道一并不用；卡片动画
@@ -342,24 +500,6 @@ fun ChatMessageList(
     // 为存量机制，定因与矩阵数据存档 journal §验收反馈·一）。
     // 流式分支（isStreamingMsg 铁律补偿）不受影响。
 
-    // 跟踪用户是否已滚离底部。
-    // 重要（铁律等价改写 2026-08-20 B-F5）：原双 key LaunchedEffect 语义 =
-    // isScrollInProgress / isAtBottom 任一变化都要重估（用户通过非拖拽方式
-    // 回到底部时 shouldCompensate 重置 false——fling 惯性、SSE 推送；
-    // 否则每个 SSE token 都触发 requestScrollToItemNoCancel → 视口抖动）。
-    // snapshotFlow 双值流保持相同反应性（任一变化即发射、顺序执行同一
-    // 逻辑体），并把 State 读取移出组合作用域——原先参数是 Boolean，
-    // ChatScreen 在主体读值导致每次阈值跨越整个 ChatScreen 重组。
-    LaunchedEffect(listState, isAtBottomState, compensateState) {
-        snapshotFlow { listState.isScrollInProgress to isAtBottomState.value }
-            .collect { (scrolling, atBottom) ->
-                if (scrolling) {
-                    compensateState.shouldCompensate = true
-                } else if (atBottom) {
-                    compensateState.shouldCompensate = false
-                }
-            }
-    }
 
     // 快速导航：Room 全量 user 消息列表（抽屉打开时异步查询一次）。
     // 数据源为 Room 热表（≤1000 条全量 user），覆盖内存窗口（rawMessages ~30 条）外的更早历史。
@@ -369,7 +509,15 @@ fun ChatMessageList(
     LaunchedEffect(showQuickNavigate, currentSessionId) {
         if (showQuickNavigate) {
             jumpTargetsLoading = true
-            jumpTargets = extractJumpTargets(viewModel.conversation.loadJumpTargets(), noTextPlaceholder)
+            // 2026-09-09 #378 折叠一致性：导航列表与 displayItems 共用抑制视图——
+            // 两路对齐 ChatScreen 读侧（遮蔽区间+压缩绑定载体），否则异步跳转
+            // 永不命中 → 「未找到」误报
+            jumpTargets = extractJumpTargets(
+                viewModel.conversation.loadJumpTargets(),
+                noTextPlaceholder,
+                viewModel.conversation.loadShadowedRanges(),
+                viewModel.conversation.loadCompactionBoundMessageIds(),
+            )
             jumpTargetsLoading = false
         }
     }
@@ -378,12 +526,28 @@ fun ChatMessageList(
     val embeddedQuestionByMsgId: Map<String, SseEvent.QuestionAsked> = remember(
         interaction.pendingQuestions, displayItems
     ) {
-        val visibleMsgIds = displayItems.mapNotNull { (_, msg) ->
+        val visibleAssistantIds = displayItems.mapNotNull { (_, msg) ->
             if (msg.isAssistant) msg.message.id else null
-        }.toSet()
-        interaction.pendingQuestions
+        }
+        val visibleMsgIds = visibleAssistantIds.toSet()
+        val toolAnchored = interaction.pendingQuestions
             .filter { q -> q.tool?.messageId != null && q.tool.messageId in visibleMsgIds }
             .associateBy { it.tool!!.messageId }
+        // #319（用户裁决：提问卡进主对话流、样式与 OpenCode 统一）：DSH 0.1.2
+        // waterfall 提问无 tool/part 锚（全局帧，QuestionAsked.tool=null）——原走
+        // unembedded 保底 dock（钉在消息流下方固定区，流外+无气泡容器）。锚到
+        // **最新可见 assistant 消息**（displayItems 新→旧序取 first），卡进该
+        // 气泡尾部（MessageCardAssistant fallback 槽位），与 OpenCode 嵌入路径
+        // 同容器同样式；tool 锚路径不受影响。
+        val unanchored = interaction.pendingQuestions.filter { q ->
+            q.tool?.messageId == null || q.tool.messageId !in visibleMsgIds
+        }
+        val latestAssistantId = visibleAssistantIds.firstOrNull()
+        if (unanchored.isNotEmpty() && latestAssistantId != null && latestAssistantId !in toolAnchored) {
+            toolAnchored + (latestAssistantId to unanchored.first())
+        } else {
+            toolAnchored
+        }
     }
     // 未嵌入任何可见 assistant 消息的提问（保底独立显示）
     val unembeddedQuestions = remember(interaction.pendingQuestions, embeddedQuestionByMsgId) {
@@ -409,12 +573,39 @@ fun ChatMessageList(
         m
     }
 
+    // #387 US#34（A3 验收修复，2026-09-18）：「从此轮分支」仅会话末轮可用。
+    // isTurnLast 是 turn 组尾语义（每组 assistant 序列末条都命中）——历史轮
+    // 组尾也拿到分支动作会使非末轮可分叉（spec (d)：非末轮整项隐藏）。
+    // 末轮判据：其后不存在任何真实 assistant 消息（倒序一趟预计算，O(1) 查表）。
+    val hasLaterAssistantByMsgId = remember(rawMessages) {
+        val m = HashMap<String, Boolean>(rawMessages.size)
+        var seenLaterAssistant = false
+        for (i in rawMessages.indices.reversed()) {
+            val cm = rawMessages[i]
+            if (cm.isSynthetic) continue
+            m[cm.message.id] = seenLaterAssistant
+            if (cm.isAssistant) seenLaterAssistant = true
+        }
+        m
+    }
+
+    // #310④ 轨迹台账：轮次序号（当前已加载窗口内按视觉顺序编号，最旧 = 1；
+    // 分页窗口变化号码随之平移——绝对轮次号无数据源，纯函数可测）+ 台账
+    // 展开记忆表（#227 屏幕级模式：滚出视口不丢、离会话即清）。
+    // #457(2026-09-28,#452 深审同款洞):displayItems 是 SnapshotStateList 同实例,
+    // 自反 equals 恒真 → remember(displayItems) 从不失效——分页加载后序号表永不
+    // 更新(违背上方"分页窗口变化号码随之平移"设计注释)。改 size 键:快照读建立
+    // 失效依赖+值比较,增删即失效;同 size 逐槽替换的盲区由 item 级 get(i) 依赖自愈。
+    val turnOrdinalByMsgId = remember(displayItems.size) { turnOrdinalByAnchorId(displayItems) }
+
     // #217/#226：尾部兜底去重判据（消息 id 集 + V1 摘要消息入列判定）——
     // 纯逻辑在 CompactionDividerPolicy（C4），此处只做 remember 缓存。
-    val displayItemMessageIds = remember(displayItems) {
+    // #457:同上——displayItems 实例键自反恒真,改 size 键(低危去重判据/摘要判定,
+    // 迟失效最坏多渲染/少渲染一条分割线一帧,仍值得与主洞同修)。
+    val displayItemMessageIds = remember(displayItems.size) {
         CompactionDividerPolicy.displayItemMessageIds(displayItems)
     }
-    val v1CompactionSummaryInList = remember(displayItems) {
+    val v1CompactionSummaryInList = remember(displayItems.size) {
         CompactionDividerPolicy.v1SummaryMessageId(displayItems) != null
     }
 
@@ -460,29 +651,39 @@ fun ChatMessageList(
 
     // LazyColumn 中 itemsIndexed 之前渲染的非消息项数量。
     // C4-C：压缩项由 CompactionDividerPolicy.bannerTerms 派生（与尾部兜底 item
-    // 认领同源，消除独立手算双写）；其余 6 项（revert/retry/tool/step/question/
-    // perm）仍必须与下面的条件 `item { ... }` 块保持一致（见横幅渲染）。
+    // 认领同源，消除独立手算双写）。
+    // #420 B 类改造（2026-09-20）：revert/retry/turn_max_tokens/tool_progress/
+    // step_progress/question_pending/perm_pending 七项**恒驻声明**（出现/消失
+    // 条件下沉内容层经 CardExpandReveal 原地揭示）——本计数恒为 7，不再随
+    // 条件增减。注意旧实现 turn_max_tokens 从未计入（显示时跳转 index 偏 1
+    // 的潜伏 bug）与 revert 的 revertSupported 不判定（同源隐患），恒驻化
+    // 一并根治。dsh_job/错误行仍条件声明（动态 key 无法恒驻）——保持原
+    // 「不计」行为不变。compaction_banner 仍条件声明（自有 COMP-CMP 补偿）。
     val compactionBanners = remember(
-        currentCompaction, displayItemMessageIds, v1CompactionSummaryInList,
+        currentCompaction, displayItemMessageIds, v1CompactionSummaryInList, compactionEntries,
     ) {
-        CompactionDividerPolicy.bannerTerms(currentCompaction, displayItemMessageIds, v1CompactionSummaryInList)
+        CompactionDividerPolicy.bannerTerms(
+            currentCompaction, displayItemMessageIds, v1CompactionSummaryInList,
+            suppressByTranscriptCompaction = compactionEntries.isNotEmpty(),
+        )
     }
-    val bannerCount = remember(
-        sessionMeta.revert,
-        compactionBanners,
-        sessionMeta.sessionStatus,
-        activeTools,
-        currentStep,
-        unembeddedQuestions,
-        interaction.pendingPermissions,
-    ) {
-        (if (sessionMeta.revert != null) 1 else 0) +
-        (if (compactionBanners.streamClaimed) 1 else 0) +
-        (if (sessionMeta.sessionStatus is SessionStatus.Retry) 1 else 0) +
-        (if (activeTools.isNotEmpty()) 1 else 0) +
-        (if (currentStep != null) 1 else 0) +
-        (if (unembeddedQuestions.isNotEmpty()) 1 else 0) +
-        (if (interaction.pendingPermissions.isNotEmpty()) 1 else 0)
+
+    // #423 批次二:FLUSH 相宿主挂接——整个组合窗绘制前的单点 OnPreDraw,
+    // 卡片引擎经 PreRenderCoordinator 注册排干任务(spec §2 帧管线 FLUSH 相,
+    // K1)。列表根即聊天视口配对的仲裁单点;组合销毁严格摘除。
+    val flushHostView = LocalView.current
+    DisposableEffect(flushHostView) {
+        PreRenderCoordinator.attachFlushHost(flushHostView)
+        onDispose { PreRenderCoordinator.detachFlushHost(flushHostView) }
+    }
+
+    // #435 流式家族 flush 任务：常驻挂接(空账本零成本早退)。流式增长的配对位移
+    // 与卡片 episode/steady 同走 PreRenderCoordinator 单点(单一视口权威);无宿主
+    // (预览/JVM 单测)不派发=降级,与旧通道无泵降级一致。
+    // #435 流式 flush 任务的装配在 chatEntries 声明之后（dataKeyAt 投影需要它，见下）。
+    val bannerCount = remember(compactionBanners) {
+        BANNER_ALWAYS_COUNT +
+        (if (compactionBanners.streamClaimed) 1 else 0)
     }
 
     // #222（贴底尾部横幅 reveal）：调研定音（docs/research/2026-08-25-card-height-
@@ -495,16 +696,11 @@ fun ChatMessageList(
     // 修复 = reveal 而非补偿：bannerCount 驱动显式锚底（msgCount effect 同款
     // requestScrollToItem(0) 语义——显式滚动决策，零反射零测量注入）。门控用
     // autoScroll（在底意图）而非 isAtBottom——后者被插入本身翻假会自我闭锁。
-    val revealBannerCount = remember(
-        sessionMeta.sessionStatus,
-        activeTools,
-        currentStep,
-        compactionBanners,
-    ) {
-        (if (sessionMeta.sessionStatus is SessionStatus.Retry) 1 else 0) +
-            (if (activeTools.isNotEmpty()) 1 else 0) +
-            (if (currentStep != null) 1 else 0) +
-            (if (compactionBanners.tailFallback) 1 else 0)
+    // #420 B 类改造后:retry/tool/step 三项恒驻声明+CardExpandReveal 原地
+    // 揭示(出现/消失经同帧补偿,不再抬锚),本 effect 的钉底锚定退役三项,
+    // 仅保留未恒驻的压缩尾部兜底(compaction_banner 仍条件插入)。
+    val revealBannerCount = remember(compactionBanners) {
+        (if (compactionBanners.tailFallback) 1 else 0)
     }
     LaunchedEffect(revealBannerCount) {
         if (dev.leonardo.ocbeacon.BuildConfig.DEBUG && revealBannerCount > 0) {
@@ -514,7 +710,13 @@ fun ChatMessageList(
                     " idx=" + listState.firstVisibleItemIndex
             )
         }
-        if (revealBannerCount > 0 && autoScrollState.value) {
+        // #423 I3(视口租约):在途渲染前事务期间让位,防锚底与 episode 配对位移互搏。
+        // 2026-09-26 根修：补回合级流式静默（与 MSGEFFECT/GUARD 同款）——步间
+        // force-Idle 空窗或流式中兜底横幅出现/消失时，此锚底曾把视口拽到底
+        // =「来回跳动」通路之一（漏门控审计发现）。
+        if (revealBannerCount > 0 && autoScrollState.value && !turnActive &&
+            !PreRenderCoordinator.hasActiveTransactions
+        ) {
             // fling 等待 + 重校验（msgCount effect 同款防「快照后用户开始拖动」竞态）
             if (listState.isScrollInProgress) {
                 kotlinx.coroutines.withTimeoutOrNull(2_000) {
@@ -522,8 +724,8 @@ fun ChatMessageList(
                         .first { !it }
                 }
             }
-            if (autoScrollState.value) {
-                listState.requestScrollToItem(0)
+            if (autoScrollState.value && !PreRenderCoordinator.hasActiveTransactions) {
+                ViewportDispatchGateway.bottomFollow(listState, "BANNER", "reveal")
             }
         }
     }
@@ -548,10 +750,25 @@ fun ChatMessageList(
     val segmentPlans by renderSupply.segmentPlans.collectAsState()
 
     val lastStreamingMsgId = remember { mutableStateOf<String?>(null) }
+    // [DEBUG-hflick] #437 十三轮仪器：计划锚键序列上一次快照（PLAN diff 探针用）
+    val hflickPrevPlanKeys = remember { mutableStateOf<List<String>?>(null) }
     // ===== 2026-08-20 fling 巨帧根治：分片发射表（消息区 entries）=====
     // entries = displayItems 经 chunkPlans 展开（巨型 turn → N 个 chunk item）。
     // 双向索引是 LazyColumn index ↔ displayItems index 的单一真相源。
-    val chatEntries = remember(displayItems, turnGroups, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans) {
+    //
+    // #452（2026-09-27 真机插桩定罪）：displayItems 是 SnapshotStateList ——
+    // 同一实例作 remember key 自反恒等（equals 自身恒 true），key 形同虚设；
+    // turnGroups/turnAnchors 是 Map 值比较，而 **user 消息不入 turn 组**
+    // （computeTurnGroups 只收 assistant）——「纯 user 消息增量」（新会话
+    // 首条消息播种）不改变任何 key → chatEntries 冻结在旧条目集 → 列表
+    // 空白直到首个 assistant 事件（免费/远程服务首事件 3-90s = 主诉窗口）。
+    // 修复：displayItems.size 是快照读（建立失效依赖）且值比较——条目数
+    // 变化必重建；同 size 的内容替换（pending-* 换装）由 item 级 get(i)
+    // 快照依赖自愈，turnGroups（id 序列变 → Map 值变）兜底。
+    val chatEntries = remember(displayItems.size, turnGroups, turnAnchors, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans) {
+        // [DEBUG-jk] #437 卡顿诊断：chatEntries 全量重建计时——确证「48ms 快照重组
+        // 风暴」归因（每行含耗时/规模/滚动状态）；确证并固化冻结修复后整块移除。
+        val jkT0 = android.os.SystemClock.elapsedRealtime()
         dev.leonardo.ocbeacon.debug.RaceProbe.probe {
             "ENTRIES rebuild n=" + displayItems.size +
                 " chunkPlans=" + chunkPlans.size +
@@ -559,8 +776,91 @@ fun ChatMessageList(
                 " streaming=" + (streamingMsgId != null) +
                 " recentN=" + recentStreamedTurnKeys.size
         }
-        buildChatEntries(displayItems, turnGroups, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans)
+        buildChatEntries(displayItems, turnGroups, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans, turnAnchors = turnAnchors)
+            .also { ents ->
+                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                    dev.leonardo.ocbeacon.logging.AppLogger.d(
+                        "SGB",
+                        "ENTRIES n=" + ents.entries.size,
+                    )
+                    // [DEBUG-jk] 全链重建耗时（含 buildChatEntries 主体）+ 滚动状态
+                    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                        dev.leonardo.ocbeacon.logging.AppLogger.d(
+                            "DEBUG-jk",
+                            "entries ms=" + (android.os.SystemClock.elapsedRealtime() - jkT0) +
+                                " n=" + displayItems.size +
+                                " holding=" + dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingScrollHold.holding,
+                        )
+                    }
+                    // [DEBUG-hflick] #437 十三轮仪器：锚键序列 diff——重建时的插拔/
+                    // 位移定位（键即 LazyColumn item key，键集换血=锚漂移源头）。
+                    val keys = ents.entries.map { it.key }
+                    val prev = hflickPrevPlanKeys.value
+                    if (prev != null && prev != keys) {
+                        var firstDiff = -1
+                        val m = minOf(prev.size, keys.size)
+                        for (i in 0 until m) {
+                            if (prev[i] != keys[i]) {
+                                firstDiff = i
+                                break
+                            }
+                        }
+                        if (firstDiff < 0) firstDiff = m
+                        val prevSet = prev.toHashSet()
+                        val nowSet = keys.toHashSet()
+                        val added = keys.filterNot { it in prevSet }
+                        val removed = prev.filterNot { it in nowSet }
+                        dev.leonardo.ocbeacon.logging.AppLogger.w(
+                            "HFLICK",
+                            "[DEBUG-hflick] PLAN n " + prev.size + "->" + keys.size +
+                                " firstDiff@" + firstDiff +
+                                " add=[" + added.take(3).joinToString(",") { it.takeLast(18) } + "]" +
+                                " rem=[" + removed.take(3).joinToString(",") { it.takeLast(18) } + "]",
+                        )
+                        // [CONTENT-BLINK 新bug探针] 「上方内容闪烁消失」定罪观测：
+                        // removed ≥2 且新增为 0/裂变族（key 1→N 换血或列表骤缩形态）时
+                        // 显式打点——用户复现时刻与此行对齐即定罪。
+                        if (removed.size >= 2 && added.size < removed.size) {
+                            dev.leonardo.ocbeacon.logging.AppLogger.w(
+                                "CONTENT-BLINK",
+                                "suspect t=" + android.os.SystemClock.elapsedRealtime() +
+                                    " removed=" + removed.size + " added=" + added.size +
+                                    " n " + prev.size + "->" + keys.size +
+                                    " rem=[" + removed.take(5).joinToString(",") { it.takeLast(24) } + "]" +
+                                    " displayItems=" + displayItems.size,
+                            )
+                        }
+                    }
+                    hflickPrevPlanKeys.value = keys
+                }
+            }
     }
+
+    // #435 流式家族 flush 任务：常驻挂接(空账本零成本早退)。流式增长的配对位移
+    // 与卡片 episode/steady 同走 PreRenderCoordinator 单点(单一视口权威);无宿主
+    // (预览/JVM 单测)不派发=降级,与旧通道无泵降级一致。
+    // #438 R-1：dataKeyAt 数据侧 key 投影——chatEntries.entries[i].key 与
+    // LazyColumn item key 同源（itemsIndexed key = entry.key，含 chunk #c<i> 后缀）；
+    // 越窗落点也能 key 锚定（插入/重排后正确重锚，堵 R9 LEAP 残余通道，R9 -7562 实证）。
+    // remember key 含 chatEntries：投影捕获当前实例，列表重建时 task 同步重建
+    //（lastSet 记忆清零=列表重排后放弃旧记忆，语义正确）。
+    val sgrFlushTask = remember(listState, streamingLedger, heightReserve, chatEntries) {
+        streamingGrowFlushTask(
+            listState, streamingLedger, heightReserve,
+            dataKeyAt = { i -> chatEntries.entries.getOrNull(i)?.key },
+        )
+    }
+    DisposableEffect(sgrFlushTask) {
+        PreRenderCoordinator.registerFlushTask(sgrFlushTask)
+        onDispose { PreRenderCoordinator.unregisterFlushTask(sgrFlushTask) }
+    }
+
+    // ===== #430 大组硬切换锚定(已撤,待重做) =====
+    // 尝试把展开后的 StepGroupHead 钉回视口上部;五轮真机迭代均在反向布局
+    // scrollToItem/dispatchRawDelta 语义上落错位(实测视口被甩到无关区域,
+    // 比不锚更糟——展开内容反而不见)。撤除;大组无锚定(折叠行随展开飞出)
+    // 维持 #422 已知缺口,随 L3 AST 切片批次以 layoutInfo 键匹配方案重做。
+    // 教训:反向布局滚动语义必须先写校准单测再上真机。
     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
         androidx.compose.runtime.LaunchedEffect(displayItems) {
             val tail = displayItems.lastOrNull()?.second?.message
@@ -580,7 +880,7 @@ fun ChatMessageList(
             val found = displayItems.indexOfFirst { (_, m) -> m.message.id == lastStreamingMsgId.value }
             if (found >= 0) {
                 val (ri, m) = displayItems[found]
-                val tk = "t_" + (turnGroups[ri]?.firstOrNull()?.message?.id ?: m.message.id)
+                val tk = chatEntryKey(turnGroups, ri, m, turnAnchors)
                 renderSupply.noteStreamTurnEnded(tk)
             }
         }
@@ -604,12 +904,24 @@ fun ChatMessageList(
         derivedStateOf { findCurrentAnchorTimestamp(listState, displayItems, bannerCount, chatEntries.entryDisplayIndex) }
     }
 
-    // 高亮 key（3 秒后自动清除）—— scrollToDisplayItem / onLocateTask 共用。
-    var highlightedTurnKey by remember { mutableStateOf<String?>(null) }
+    // 跳转高亮目标（5 秒后自动清除）—— 2026-09-10 用户裁决：跳转终点统一 5s 高亮。
+    // #394（2026-09-12）：相位只记目标 msgId；key 推导下沉渲染期（与 Lazy item key
+    // 同源 entryKeyFor），修「assistant 目标 t_ 键公式漂移」与「异步路径 displayItems
+    // 尚未含目标 → 查空静默不设键」两处失效。
+    var highlightedMsgId by remember { mutableStateOf<String?>(null) }
+    val highlightedTurnKey = remember(highlightedMsgId, displayItems, turnGroups, turnAnchors) {
+        highlightedMsgId?.let { tid ->
+            displayItems.firstOrNull { it.second.message.id == tid }?.let { (ri, m) -> chatEntryKey(turnGroups, ri, m, turnAnchors) }
+        }
+    }
     LaunchedEffect(highlightedTurnKey) {
         if (highlightedTurnKey != null) {
-            delay(3000)
-            highlightedTurnKey = null
+            // #394 观测点（DEBUG-only，行为零变化）：高亮设键/清键经 logcat 断言，
+            // 免视觉判读（无多模态模型环境下的验收仪器）。
+            if (BuildConfig.DEBUG) AppLogger.d("Highlight", "set key=" + highlightedTurnKey)
+            delay(5000)
+            if (BuildConfig.DEBUG) AppLogger.d("Highlight", "clear key=" + highlightedTurnKey)
+            highlightedMsgId = null
         }
     }
 
@@ -646,8 +958,39 @@ fun ChatMessageList(
                     "gesture=" + p + " idx=" + listState.firstVisibleItemIndex +
                         " off=" + listState.firstVisibleItemScrollOffset +
                         " streamingMsgId=" + (streamingMsgId ?: "null") +
-                        " shouldComp=" + compensateState.shouldCompensate
+                        " sgrPending=" + streamingLedger.hasPending
                 )
+            }
+        }
+        // [VPT 2026-09-26] 帧级视口轨迹（无阈值、逐变化全量）——LEAP 的 350px 阈值
+        // 吞掉小幅「上推→回弹」（行粒度、幅度≈行高），本探针不设阈值；含锚 item
+        // 身份（reverseLayout 首可见项=视口底边项，判定锚=流式消息 or 更旧消息）；
+        // 与 RESIZE/ChunkDiag/SGR-435/VTRACE 同用 elapsedRealtime 对齐帧序。
+        LaunchedEffect(listState) {
+            var vptFii = -1
+            var vptFiso = -1
+            var vptIp: Boolean? = null
+            snapshotFlow {
+                Triple(
+                    listState.firstVisibleItemIndex,
+                    listState.firstVisibleItemScrollOffset,
+                    listState.isScrollInProgress
+                )
+            }.collect { (fii, fiso, ip) ->
+                if (fii != vptFii || fiso != vptFiso || ip != vptIp) {
+                    val anchorKey = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.key
+                    AppLogger.d(
+                        "VPT",
+                        "t=" + android.os.SystemClock.elapsedRealtime() +
+                            " fii=" + fii + " fiso=" + fiso +
+                            " d=" + (if (vptFiso >= 0) fiso - vptFiso else 0) +
+                            " ip=" + ip + " anchor=" + (anchorKey?.toString()?.take(14) ?: "null") +
+                            " pend=" + streamingLedger.hasPending
+                    )
+                    vptFii = fii
+                    vptFiso = fiso
+                    vptIp = ip
+                }
             }
         }
     }
@@ -678,6 +1021,19 @@ fun ChatMessageList(
     // 走查 #1：跳转视口锁上提（守卫重锚/锚底让位依据）——只上传变化，不在本组件消费
     androidx.compose.runtime.LaunchedEffect(jumpController) {
         jumpController.jumpLockActive.collect { onJumpLockChanged(it) }
+    }
+    // 2026-09-10（用户裁决⑤优化2）：跳转终点（Displayed）统一 5s 高亮——内容检索
+    // 命中行进入会话定位后目标消息高亮 5 秒；快速定位/onLocateTask 同链（原
+    // onLocateTask 手工设键撤除，相位单点派生）。
+    androidx.compose.runtime.LaunchedEffect(jumpController) {
+        sharedJumpPhase.collect { phase ->
+            if (phase is JumpPhase.Displayed) {
+                // #394：只记目标 msgId（不在此处查 displayItems——异步加载窗口内可能
+                // 查空）；高亮键由渲染期从最新 displayItems 同源推导。
+                if (BuildConfig.DEBUG) AppLogger.d("Highlight", "target msgId=" + phase.msgId)
+                highlightedMsgId = phase.msgId
+            }
+        }
     }
     // 2026-08-21 卫生（D-11-2）：jumpPhase 大作用域订阅下沉——原主体直读使
     // 每次跳转 ≥4 次相位变化都重组整个 ~1500 行 ChatMessageList 主体。现在
@@ -765,6 +1121,28 @@ fun ChatMessageList(
     // 定位决策全部在 JumpNavigationController 状态机（Preparing→Measuring→Settling→
     // Displayed/Failed）；蒙版/门控从状态派生（单一真相源）；目标一次定位到最终位置
     //（不移动→不回收→不重测→无"重复乱跳"根因）。
+    // #394（2026-09-12 复验根因）：跳转前缀按角色选择。jumpTo 固定 u_ 前缀，
+    // assistant 目标的 Lazy key 是 t_<turn 首条 assistant id>——此前 initial-jump
+    // 对所有命中统一调 jumpTo，assistant 命中 u_<assistantId> 永不匹配 → 重定位
+    // 空转 → 超时 Failed，永不 Displayed（高亮因此完全不可达）。此处按角色分流，
+    // 并以 turn 锚点（首条 assistant）为 t_ 键，兼容多 assistant 的长轮次。
+    fun jumpToResolved(displayItemIndex: Int, targetMsgId: String) {
+        val lazyIndex = bannerCount + chatEntries.displayEntryStart[displayItemIndex]
+        val (rawIndex, targetMsg) = displayItems[displayItemIndex]
+        if (targetMsg.isUser) {
+            jumpController.jumpTo(targetMsgId, lazyIndex)
+        } else {
+            val anchor = turnGroups[rawIndex]?.firstOrNull()?.message?.id ?: targetMsg.message.id
+            if (BuildConfig.DEBUG) {
+                AppLogger.d(
+                    "ChatPaging",
+                    "jumpToResolved assistant anchor=" + anchor.take(12) + " hit=" + targetMsgId.take(12),
+                )
+            }
+            jumpController.jumpToTask(lazyIndex, anchor)
+        }
+    }
+
     fun jumpToMessage(msgId: String) {
         dev.leonardo.ocbeacon.debug.RaceProbe.probe {
             "JUMP start msg=" + msgId.take(14) + " entries=" + chatEntries.entries.size +
@@ -781,10 +1159,8 @@ fun ChatMessageList(
         if (targetHasRenderableContent) {
             // 状态机跳转：一次定位 + 蒙版/门控从状态派生
             // 2026-08-20 分片适配：lazyIndex = turn 首 chunk（含标签栏）
-            jumpController.jumpTo(
-                msgId,
-                bannerCount + chatEntries.displayEntryStart[displayItemIndex],
-            )
+            // #394：按角色分流（user→jumpTo / assistant→jumpToTask+turn 锚点）
+            jumpToResolved(displayItemIndex, msgId)
             onQuickNavigateDismiss()
         } else {
             // 未加载或 parts 为空：触发异步跳转加载，等待消息进入 displayItems 后滚动
@@ -813,17 +1189,13 @@ fun ChatMessageList(
         if (targetIndex >= 0) {
             // 2026-08-20 分片适配：turn 首 chunk
             val lazyIndex = bannerCount + chatEntries.displayEntryStart[targetIndex]
-            val (rawIndex, targetMsg) = displayItems[targetIndex]
+            val (_, targetMsg) = displayItems[targetIndex]
             val targetMsgId = targetMsg.message.id
             // 2026-08-13 架构根治：onLocateTask 复用状态机（同一定位流程——一次
             // 定位 + 蒙版/门控 + 收敛；assistant 目标无预解析，直接测量）。
             // #159：autoLoad 锁由控制器从 Preparing 派生（入口同步置相位）
             jumpController.jumpToTask(lazyIndex, targetMsgId)
-            highlightedTurnKey = if (targetMsg.isUser) {
-                "u_${targetMsg.message.id}"
-            } else {
-                "t_${rawMessages.getOrNull(rawIndex + 1)?.message?.id ?: "head"}"
-            }
+            // 高亮设键已收编 Displayed 相位派生（2026-09-10）——此手工块撤除
         } else {
             coroutineScope.launch {
                 snackbarHostState.showSnackbar(context.getString(R.string.chat_locate_task_not_found))
@@ -947,10 +1319,8 @@ fun ChatMessageList(
                     // 窗口内存在分片 turn（1→N item）时指向错误位置，viewport 落在
                     // 某个 chunk 中间（用户截图的"不完整气泡/非从头开始的回复"）。
                     // 与 jumpToMessage 主路径/onLocateTask 对齐：displayEntryStart 映射。
-                    jumpController.jumpTo(
-                        target,
-                        bannerCount + chatEntries.displayEntryStart[idx],
-                    )
+                    // #394：按角色分流（assistant 命中此前误走 u_ 前缀 → 超时 Failed）
+                    jumpToResolved(idx, target)
                 }
             }
 
@@ -976,7 +1346,9 @@ fun ChatMessageList(
                         // 复位，目标真不存在时 autoLoad 被锁死到下次成功跳转
                         jumpController.clearPendingJumpLock()
                         coroutineScope.launch {
-                            snackbarHostState.showSnackbar(context.getString(R.string.chat_locate_task_not_found))
+                            // 2026-09-09 文案域修正：本路径是消息跳转未命中（非任务定位）——
+                            // 复用任务文案会误报「未找到发起任务」（R1 实测）
+                            snackbarHostState.showSnackbar(context.getString(R.string.chat_locate_message_not_found))
                         }
                     } else {
                         pendingJumpRetried = false
@@ -984,16 +1356,6 @@ fun ChatMessageList(
                 }
             }
 
-            // #258 换道手术：渲染前补偿统一通道的帧界排空泵。MonotonicFrameClock
-            // 回调相（Choreographer 动画相）早于当帧 measure 遍历——排空注入的
-            // 待定位置在本帧 measure 遍首应用：注入与应用严格隔帧配对，与旧
-            // scrollToBeConsumed 通道视觉时序逐帧一致（机制见 PreRenderShiftChannel）。
-            LaunchedEffect(listState) {
-                while (true) {
-                    withFrameNanos { }
-                    PreRenderShiftChannel.drain(listState)
-                }
-            }
 
             // 2026-08-13 状态机注入（门控读 LocalJumpController）。
             // 2026-08-21 卫生清理：LocalMarkdownStateRegistry 注入已删除（D-10）。
@@ -1001,228 +1363,67 @@ fun ChatMessageList(
                 LocalRenderReadiness provides renderReadiness,
                 LocalJumpController provides jumpController,
             ) {
-                LazyColumn(
-                    state = listState,
-                    // 2026-08-20 滚动稳定性：限速 fling——每帧 ≤ 视口高/8，
-                    // 高速段不再冲入未组合区（与渲染供给协调器配合，见上方）
-                    flingBehavior = rememberSafeFlingBehavior(listState),
-                    modifier = Modifier.fillMaxSize()
-                        // #149：唯一 testTag——ChatScreen 树中有 2 个 scrollable 节点
-                        //（消息列表 + 底部输入栏），androidTest 的 hasScrollAction()
-                        // 匹配多节点导致 touch 注入失败
-                        .testTag("chat-message-list")
-                        // #245 巨帧分块守卫（v2 Initial 隧道趟）：平台输入合并产生的
-                        // 巨型单帧增量切片直派滚动（探针实证：冷启动进场后 2.5s 拖动
-                        // 被合并成 2 帧 ~1700px，列表 scrollable 认领却零消耗——
-                        // 机制勘误与实现见 ScrollIsland.kt §巨帧分块）
-                        .megaDeltaScrollGuard(listState)
-                        .pointerInput(Unit) { detectTapGestures(onTap = { keyboardController?.hide() }) },
-                    contentPadding = PaddingValues(
-                        start = SpacingTokens.MD.dp,
-                        top = SpacingTokens.SM.dp,
-                        end = SpacingTokens.MD.dp,
-                        bottom = SpacingTokens.SM.dp
-                    ),
-                    reverseLayout = true,
-                    // 2026-08-20 分片：移除 spacedBy（chunk item 间不能有间隙——
-                    // 同一气泡的分段视觉连续），改为 item 级 bottom padding
-                    //（横幅/Turn/Chunk 末段加 messageSpacing，chunk 非末段为 0）。
-                ) {
-                    // reverseLayout=true：先声明的项渲染在底部。
-                    // 视觉顺序（上→下）：最旧消息 → 最新消息 → revert → pending。
-                    // 声明顺序自下而上：pending（底部）→ 消息（顶部）。
-
-                    // #252 时间线化（2026-08-28）：钉底 shell 横幅退役——shell 通知卡
-                    // 改由消息流按时间线渲染（ChatEntry.Turn 的 role='shell' 特判，
-                    // 数据源 Part.Shell 载荷），新消息自动顶上去（主对话流语义）。
-
-                    // 2026-09-01（Task 3d）：DSH 后台任务降级 Shell 卡——session/jobs
-                    // 整快照（last-wins）按当前运行状态钉底渲染（kind/label/status/
-                    // detail；DSH 无命令/输出源 → command/output 留空）。先声明 = 视觉
-                    // 底部（reverseLayout）。终态任务随快照自然移除（官方 jobs 语义）。
-                    if (dshJobs.isNotEmpty()) {
-                        dshJobs.forEach { job ->
-                            item(key = "dsh_job_" + job.id) {
-                                Box(modifier = Modifier.padding(bottom = messageSpacing)) {
-                                    DshJobTimelineCard(job = job, expandedStates = eventCardExpandedStates)
-                                }
+                    // #378 转录卡流内归并（Phase B）：卡内嵌承载——卡渲染在锚消息条目的
+                    // Column 内，消息条目的 lazy index/key/双向索引（entryDisplayIndex·
+                    // displayEntryStart·bannerCount 数学）全部保持不变（跳转/锚点/可见项
+                    // 反查零波及——承重索引体系的保守性决策）。归并语义见 [TranscriptPlan]。
+                    val transcriptCardPlan = remember(chatEntries, displayItems, commandFeedbackRows, compactionEntries) {
+                        val entries = chatEntries.entries
+                        val bottomKeys = arrayOfNulls<String>(displayItems.size)
+                        val topKeys = arrayOfNulls<String>(displayItems.size)
+                        for (e in entries.indices) {
+                            val di = chatEntries.entryDisplayIndex[e]
+                            if (di in bottomKeys.indices) {
+                                if (bottomKeys[di] == null) bottomKeys[di] = entries[e].key
+                                topKeys[di] = entries[e].key
                             }
                         }
-                    }
-
-                    // Revert 横幅（#276：DSH 无 revert 域——revert 态永不为真，
-                    // 能力位兜底门控）
-                    if (revertSupported && sessionMeta.revert != null) {
-                        item(key = "revert_banner") {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
-                            RevertBanner(onRedo = {
-                                viewModel.redoMessage { ok ->
-                                    coroutineScope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            if (ok) context.getString(R.string.chat_messages_restored) else context.getString(R.string.chat_message_redo_failed)
-                                        )
-                                    }
-                                }
-                                onForceScrollToBottom()
-                            })
-                            }
-                        }
-                    }
-
-                    // #217 分割线包揽（2026-08-24）：压缩进行中 = 进行中分割线，插在
-                    // 消息流尾部；完成态由消息流内 compaction 消息的 CompactionCard 承担。
-                    // 尾部兜底认领（去重/让位判定）在 CompactionDividerPolicy.tailSpec（C4）。
-                    val tailCompaction = CompactionDividerPolicy.tailSpec(
-                        currentCompaction, displayItemMessageIds, v1CompactionSummaryInList,
-                    )
-                    if (tailCompaction != null) {
-                        item(key = "compaction_banner") {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
-                                // #221/#222：展开区流式增长——延迟揭示真·渲染前补偿
-                                // （尾部兜底路径，挂载点原位）；#227 展开键语义在 spec。
-                                CompactionDividerSlot(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clipToBounds()
-                                        .deferredRevealCompensation(
-                                            listState = listState,
-                                            compensator = compactionReveal,
-                                            shouldCompensate = { compensateState.shouldCompensate },
-                                            logTag = "COMP-CMP(tail)",
-                                        ),
-                                    expansionKey = tailCompaction.expansionKey,
-                                    state = tailCompaction.state,
-                                    summary = null,
-                                    failed = false,
-                                    expandedStates = compactionExpandedStates,
-                                )
-                            }
-                        }
-                    }
-
-                    // Retry 横幅 —— 会话处于 Retry 状态时显示
-                    val retryStatus = sessionMeta.sessionStatus
-                    if (retryStatus is SessionStatus.Retry) {
-                        item(key = "retry_banner") {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
-                            RetryBanner(retryStatus)
-                            }
-                        }
-                    }
-
-                    // D1③：会话运行错误转录内行（走查 #2 对齐 DSH turn-error 语义）——
-                    // 渲染为消息流 LazyColumn item（随历史滚动，非悬浮浮层），
-                    // 无 dismiss（DSH TurnErrorItem 同），sendMessage 成功清卡。
-                    // reverseLayout=true：先声明 = 视觉底部 -> 错误行钉在消息流尾部。
-                    sessionErrorRowItems(sessionErrorRows).forEach { (key, error) ->
-                        item(key = key) {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
-                                SessionErrorCard(error = error)
-                            }
-                        }
-                    }
-
-                    // 工具进度卡片（带漂移补偿）
-                    if (activeTools.isNotEmpty()) {
-                        item(key = "tool_progress") {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clipToBounds()
-                                    .deferredRevealCompensation(
-                                        listState = listState,
-                                        compensator = toolReveal,
-                                        shouldCompensate = { compensateState.shouldCompensate },
-                                        logTag = "COMP-TOOL",
-                                    )
-                            ) {
-                                activeTools.forEach { toolInfo ->
-                                    ToolProgressCard(toolInfo = toolInfo)
-                                }
-                            }
-                            }
-                        }
-                    } else {
-                        // 无活跃工具时重置
-                        toolReveal.reset()
-                    }
-
-                    // 步骤进度指示器
-                    if (currentStep != null) {
-                        item(key = "step_progress") {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
-                            StepProgressIndicator(stepInfo = currentStep)
-                            }
-                        }
-                    }
-
-                    // 待处理问题（未嵌入消息气泡的保底显示）——一次显示一个（最旧优先）
-                    unembeddedQuestions.firstOrNull()?.let { question ->
-                        item(key = "question_${question.id}") {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
-                            QuestionCard(
-                                question = question,
-                                positionLabel = if (unembeddedQuestions.size > 1) "1/${unembeddedQuestions.size}" else null,
-                                // 2026-08-30 同嵌入路径：提交/忽略不强制拉底
-                                onSubmit = { answers ->
-                                    viewModel.replyToQuestion(question.id, answers)
-                                },
-                                onReject = {
-                                    viewModel.rejectQuestion(question.id)
-                                },
-                                answersStore = viewModel.questionAnswerStore,
+                        TranscriptPlan.build(
+                            displaySeqs = displayItems.map { dev.leonardo.ocbeacon.domain.model.DshMessageId.seqOf(it.second.message.id) },
+                            visualBottomEntryKeys = bottomKeys.toList(),
+                            visualTopEntryKeys = topKeys.toList(),
+                            cards = TranscriptPlan.cards(commandFeedbackRows, compactionEntries),
+                        )
+                    }.also {
+                        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG && (commandFeedbackRows.isNotEmpty() || compactionEntries.isNotEmpty())) {
+                            android.util.Log.d(
+                                "Transcript378",
+                                "plan cmds=" + commandFeedbackRows.size + " compactions=" + compactionEntries.size +
+                                    " extras=" + it.first.size + " trailing=" + it.second.size +
+                                    " displaySeqs=" + displayItems.map { d -> dev.leonardo.ocbeacon.domain.model.DshMessageId.seqOf(d.second.message.id) }.take(6) +
+                                " lastSeqs=" + displayItems.takeLast(4).map { d -> dev.leonardo.ocbeacon.domain.model.DshMessageId.seqOf(d.second.message.id) } +
+                                " cardSeqs=" + (commandFeedbackRows.map { "cmd:" + it.seq } + compactionEntries.map { "cmp:" + it.seq + "/" + (it.shadowStartSeq ?: -1L) }),
                             )
+                        }
+                    }
+                    val transcriptCardExtras = transcriptCardPlan.first
+                    val transcriptTrailingCards = transcriptCardPlan.second
+                    
+                    @Composable
+                    fun renderTranscriptCardItem(card: TranscriptCardItem, spacingBelow: Boolean) {
+                        Box(modifier = Modifier.padding(bottom = if (spacingBelow) messageSpacing else 0.dp)) {
+                            when (card) {
+                                is TranscriptCardItem.Command -> CommandFeedbackCard(state = card.feedback, expandedStates = eventCardExpandedStates)
+                                is TranscriptCardItem.Compaction -> CompactionTranscriptCard(entry = card.entry)
                             }
                         }
                     }
-
-                    // 待处理权限 —— 一次显示一个（最旧优先）
-                    interaction.pendingPermissions.firstOrNull()?.let { permission ->
-                        item(key = "perm_${permission.id}") {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
-                            PermissionCard(
-                                permission = permission,
-                                positionLabel = if (interaction.pendingPermissions.size > 1) "1/${interaction.pendingPermissions.size}" else null,
-                                onOnce = {
-                                    viewModel.replyToPermission(permission.id, "once", permission.sessionId)
-                                    onForceScrollToBottom()
-                                },
-                                onAlways = { showAlwaysDialog = permission },
-                                onReject = {
-                                    viewModel.replyToPermission(permission.id, "reject", permission.sessionId)
-                                    onForceScrollToBottom()
-                                }
-                            )
-                            }
-                        }
-                    }
-
-                    // 聊天消息：displayItems 已经是新的在前（降序）。
-                    // reverseLayout=true 将索引 0（最新）渲染在底部。
-                    // 视觉结果：最旧在顶部，最新在底部。
-                    // 2026-08-20 分片：items = chatEntries（巨型 turn 已展开为
-                    // N 个 chunk item；key 语义不变——buildChatEntries 与原逻辑
-                    // 一致，chunk 追加 #c<i> 后缀且保持 t_/u_ 前缀）。
-                    itemsIndexed(
-                        chatEntries.entries,
-                        key = { _, entry -> entry.key },
-                        contentType = { _, entry ->
-                            when (entry) {
-                                is ChatEntry.Chunk -> "assistant_chunk"
-                                is ChatEntry.TurnChunk -> "assistant_segment"
-                                is ChatEntry.UserChunk -> "user_chunk"
-                                is ChatEntry.Turn ->
-                                    if (displayItems[entry.displayIndex].second.isUser) "user" else "assistant"
-                            }
-                        },
-                    ) { _, entry ->
+                    
+                    // #378：原 itemsIndexed 内容抽出的消息条目渲染体（逻辑零变更——仅承载
+                    // 点迁移；卡内嵌分派见 itemsIndexed lambda）。
+                    @Composable
+                    fun renderTranscriptEntry(entry: ChatEntry) {
                         when (entry) {
                             is ChatEntry.Chunk -> {
                                 val displayItemIndex = entry.displayIndex
                                 val (rawIndex, msg) = displayItems[entry.displayIndex]
                                 val nextRealIsAssistant = nextRealIsAssistantByMsgId[msg.message.id]
                                 val isTurnLast = nextRealIsAssistant != true
+                                // [VDRAW] 绘制相位去重状态（见 drawBehind 探针注释）
+                                // [R4 探针注入化] 去重态用普通数组（原 mutableStateOf
+                                // 在 draw 阶段写快照 → 每次变化后一帧整 item display
+                                // list 重放 = 滚动/贴底每帧 draw 成本放大器）
+                                val vdrawDedup = remember { intArrayOf(-1, -1) }
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1234,22 +1435,49 @@ fun ChatMessageList(
                                         }
                                         .onSizeChanged { size ->
                                             if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
-                                                entry.key.startsWith("t_msg_0383e79ba")
+                                                (entry.key.startsWith("t_msg_0383e79ba") ||
+                                                    entry.key.startsWith("t_dsh-") ||
+                                                    msg.message.id.startsWith("dsh-"))
                                             ) {
                                                 android.util.Log.w(
                                                     "ChunkDiag",
-                                                    "PLACE key=" + entry.key + " h=" + size.height + " w=" + size.width
+                                                    "PLACE t=" + android.os.SystemClock.elapsedRealtime() +
+                                                        " key=" + entry.key + " h=" + size.height + " w=" + size.width
                                                 )
+                                            }
+                                        }
+                                        // [VDRAW 2026-09-26] 绘制相位取证：状态原子≠渲染原子——
+                                        // reject-draw 挡帧失败时屏幕会先画「新高度+旧偏移」再画
+                                        // 「新高度+新偏移」（用户主诉的上推→回弹中间帧，VPT 状态
+                                        // 探针对此全盲）。本探针在 draw 相位记录 (高度, fiso)。
+                                        .drawBehind {
+                                            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
+                                                entry.key.startsWith("t_dsh-")
+                                            ) {
+                                                val h = size.height.toInt()
+                                                val fiso = listState.firstVisibleItemScrollOffset
+                                                if (h != vdrawDedup[0] || fiso != vdrawDedup[1]) {
+                                                    android.util.Log.d(
+                                                        "VDRAW",
+                                                        "t=" + android.os.SystemClock.elapsedRealtime() +
+                                                            " h=" + h + " fiso=" + fiso +
+                                                            " key=" + entry.key.take(20)
+                                                    )
+                                                    vdrawDedup[0] = h
+                                                    vdrawDedup[1] = fiso
+                                                }
                                             }
                                         }
                                 ) {
                                     // [perf-flng] #258 组合成本取证（DEBUG-only）。
-                                    // return@Box 先行提出——保证 begin/end 段闭合。
+                                    // return@Column 先行提出——保证 begin/end 段闭合。
                                     val chunkT0 = android.os.SystemClock.elapsedRealtimeNanos()
-                                    val chunkTurn = renderableTurns[displayItemIndex] ?: return@Box
+                                    Column {
+                                    val chunkTurn = renderableTurns[displayItemIndex] ?: return@Column
                                     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                                         android.os.Trace.beginSection("flng:it:chunk")
                                     }
+                                    val (chunkFeedback, chunkOnRate) = feedbackFor(msg.message)
                                     ChunkedAssistantMessage(
                                         renderableTurn = chunkTurn,
                                         currentMessage = msg,
@@ -1258,6 +1486,8 @@ fun ChatMessageList(
                                         isTurnLast = isTurnLast,
                                         agents = agents,
                                         onAgentClick = onAgentClick,
+                                        messageFeedback = chunkFeedback,
+                                        onRateMessage = chunkOnRate,
                                         onCopy = {
                                             coroutineScope.launch {
                                                 snackbarHostState.showSnackbar(context.getString(R.string.chat_copied_clipboard))
@@ -1267,6 +1497,13 @@ fun ChatMessageList(
                                         onOpenFile = onOpenFile,
                                         onLocateTask = onLocateTask,
                                         eventExpandedStates = eventCardExpandedStates,
+                                                                            turnNumber = turnNumberFor(
+                                            chunkTurn.serverTurn,
+                                            turnOrdinalByMsgId[msg.message.id],
+                                        ),
+                                        onForkFromTurn = if (isTurnLast && hasLaterAssistantByMsgId[msg.message.id] != true) ({ forkFromTurn(turnGroups[rawIndex]?.firstOrNull()?.message?.id ?: msg.message.id) }) else null,
+                                        onDeleteMessage = if (messageDeleteSupported) ({ deleteMessageAction(msg.message.id) }) else null,
+                                        caps = rowCaps,
                                     )
                                     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                                         android.os.Trace.endSection()
@@ -1278,6 +1515,7 @@ fun ChatMessageList(
                                                 "ms key=" + entry.key.takeLast(12)
                                         )
                                     }
+                                    } // Column（#310④：气泡 + 台账行）
                                 }
                             }
                             is ChatEntry.TurnChunk -> {
@@ -1293,12 +1531,14 @@ fun ChatMessageList(
                                         }
                                 ) {
                                     // [perf-flng] #258 Stage B 分段组合成本取证（DEBUG-only）。
-                                    // return@Box 先行提出——保证 begin/end 段闭合。
+                                    // return@Column 先行提出——保证 begin/end 段闭合。
                                     val segT0 = android.os.SystemClock.elapsedRealtimeNanos()
-                                    val segTurn = renderableTurns[entry.displayIndex] ?: return@Box
+                                    Column {
+                                    val segTurn = renderableTurns[entry.displayIndex] ?: return@Column
                                     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                                         android.os.Trace.beginSection("flng:it:seg")
                                     }
+                                    val (segFeedback, segOnRate) = feedbackFor(msg.message)
                                     SegmentedAssistantMessage(
                                         renderableTurn = segTurn,
                                         currentMessage = msg,
@@ -1307,6 +1547,8 @@ fun ChatMessageList(
                                         isTurnLast = isTurnLast,
                                         agents = agents,
                                         onAgentClick = onAgentClick,
+                                        messageFeedback = segFeedback,
+                                        onRateMessage = segOnRate,
                                         onCopy = {
                                             coroutineScope.launch {
                                                 snackbarHostState.showSnackbar(context.getString(R.string.chat_copied_clipboard))
@@ -1316,6 +1558,13 @@ fun ChatMessageList(
                                         onOpenFile = onOpenFile,
                                         onLocateTask = onLocateTask,
                                         eventExpandedStates = eventCardExpandedStates,
+                                                                            turnNumber = turnNumberFor(
+                                            segTurn.serverTurn,
+                                            turnOrdinalByMsgId[msg.message.id],
+                                        ),
+                                        onForkFromTurn = if (isTurnLast && hasLaterAssistantByMsgId[msg.message.id] != true) ({ forkFromTurn(turnGroups[rawIndex]?.firstOrNull()?.message?.id ?: msg.message.id) }) else null,
+                                        onDeleteMessage = if (messageDeleteSupported) ({ deleteMessageAction(msg.message.id) }) else null,
+                                        caps = rowCaps,
                                     )
                                     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                                         android.os.Trace.endSection()
@@ -1325,6 +1574,7 @@ fun ChatMessageList(
                                                 "ms key=" + entry.key.takeLast(12),
                                         )
                                     }
+                                    } // Column（#310④：气泡 + 台账行）
                                 }
                             }
                             is ChatEntry.UserChunk -> {
@@ -1342,7 +1592,6 @@ fun ChatMessageList(
                                     ChunkedUserMessage(
                                         currentMessage = chatMessage,
                                         chunk = entry,
-                                        isQueued = chatMessage.message.id in messageState.queuedMessageIds,
                                         onRevert = if (isMainSession && revertSupported) {
                                             {
                                                 val revertText = chatMessage.parts
@@ -1376,13 +1625,116 @@ fun ChatMessageList(
                                     }
                                 }
                             }
+                            // ===== #422 历史懒加载:大组展开态的拆分条目 =====
+                            is ChatEntry.StepGroupHead -> {
+                                // 折叠行头(气泡顶部):共享 StepGroupFoldRow(点击收起)
+                                // #sgt 尾行 pinEligible=false:与 #sgh 同 stateKey,
+                                // 双写会让重锚测到 60px 外的尾行(批次七)
+                                val isHeadRow = entry.key.endsWith("#sgh")
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clipToBounds()
+                                        .onGloballyPositioned {
+                                            sgHeadTopY.intValue = it.positionInRoot().y.toInt()
+                                            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
+                                                System.currentTimeMillis() - sgSwapAtMs.longValue < 1200
+                                            ) {
+                                                dev.leonardo.ocbeacon.logging.AppLogger.d(
+                                                    "SGB",
+                                                    "HEAD topY=" + sgHeadTopY.intValue,
+                                                )
+                                            }
+                                        }
+                                        .padding(bottom = SpacingTokens.XS.dp)
+                                ) {
+                                    StepGroupFoldRow(step = entry.step, pinEligible = isHeadRow)
+                                }
+                            }
+                            is ChatEntry.StepGroupBody -> {
+                                // 内容分片(独立 LazyItem):视口外零组合。注意:切片按
+                                // part 边界——单个巨型 text part(如 60 行表格)仍会整条
+                                // 测量(#422 三层根因,见 backlog note),待 AST 级切片。
+                                val bodyTurn = renderableTurns.getOrNull(entry.displayIndex)
+                                if (bodyTurn != null) {
+                                    // #430 loading 首帧占位:巨型单体 part(实测 60 行表格
+                                    // h=20226px)首组合冻结主线程 598ms,期间 alpha=0 内容
+                                    // 在组合、屏幕无任何反馈=用户主诉「加载/延迟高」。
+                                    // 重组合延后一帧:首帧先画轻量占位(冻结期间可见),
+                                    // 下一帧再组合重内容——加载态即时可见,内容照常淡入。
+                                    var heavyComposed by androidx.compose.runtime.saveable.rememberSaveable(entry.key) {
+                                        androidx.compose.runtime.mutableStateOf(false)
+                                    }
+                                    LaunchedEffect(entry.key) {
+                                        androidx.compose.runtime.withFrameNanos { }
+                                        heavyComposed = true
+                                    }
+                                    if (!heavyComposed) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = SpacingTokens.XL.dp),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(20.dp),
+                                                strokeWidth = 2.dp,
+                                            )
+                                        }
+                                    } else {
+                                    var bodyShown by androidx.compose.runtime.saveable.rememberSaveable(entry.key) {
+                                        androidx.compose.runtime.mutableStateOf(false)
+                                    }
+                                    LaunchedEffect(entry.key) { bodyShown = true }
+                                    val bodyAlpha by androidx.compose.animation.core.animateFloatAsState(
+                                        targetValue = if (bodyShown) 1f else 0f,
+                                        // 淡入时长:介于 AppMotion.SHORT(150) 与 MEDIUM(300) 之间,
+                                        // 大组分片直出的视觉过渡档(用户裁决「直出+淡入」)
+                                        animationSpec = androidx.compose.animation.core.tween(SG_BODY_FADE_MS),
+                                        label = "sgBodyFade",
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clipToBounds()
+                                            .padding(bottom = SpacingTokens.XS.dp)
+                                            .graphicsLayer { alpha = bodyAlpha }
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
+                                        ) {
+                                            ChunkAssistantItems(
+                                                items = entry.groups.map { RenderItem.GroupedParts(it) },
+                                                textColor = MaterialTheme.colorScheme.onSurface,
+                                                isAmoled = isAmoled,
+                                                onViewSubSession = navigateToChildSession,
+                                                onOpenFile = onOpenFile,
+                                                onLocateTask = onLocateTask,
+                                                eventExpandedStates = eventCardExpandedStates,
+                                                renderableTurn = bodyTurn,
+                                                compact = LocalChatDensity.current == ChatDensity.Compact,
+                                                readinessRegistry = LocalRenderReadiness.current,
+                                            )
+                                        }
+                                    }
+                                    }
+                                }
+                            }
                             is ChatEntry.Turn -> {
                         val displayItemIndex = entry.displayIndex
                         val (rawIndex, msg) = displayItems[entry.displayIndex]
                         // #103（M-8）：与 LazyColumn key 同锚点（turn 组首条消息 id）
-                        val itemKey = if (msg.isUser) "u_${msg.message.id}"
-                            else "t_${turnGroups[rawIndex]?.firstOrNull()?.message?.id ?: msg.message.id}"
-                        val isStreamingMsg = (turnGroups[rawIndex] ?: listOf(msg)).any { it.message.id == streamingMsgId }
+                        val itemKey = chatEntryKey(turnGroups, rawIndex, msg, turnAnchors)
+                        // #437 验收八轮：流式家族判定放宽——组内任一消息 completed==null
+                        // 即视为流式（原「== streamingMsgId 单 id 匹配」在 DSH 多 part 回合中
+                        // 会随 sid 漂移到在飞 call id 而漏配：承载文本增长的 item 修饰符脱落
+                        // → 裸增长拖走视窗，真机 round2 复现）。多挂修饰符无害：无增长=零派发。
+                        // vd 终轮诊断修正：user 消息 time.completed 恒 null——原判据把每个
+                        // user 项也当流式挂帽，与流式项共享 state 互踩 reset（measure 48/344
+                        // 交替、reserved 反复清零＝「附而不释」真因）。排除 user。
+                        val isStreamingMsg = (turnGroups[rawIndex] ?: listOf(msg))
+                            .any { !it.isUser && it.message.time.completed == null }
                         // #231（2026-08-26 用户再报「还是叠在一起」）：非流式 item 此前
                         // 无 clip——异步内容增长（reasoning 展开/Markdown 迟到解析/
                         // 分片裂变）重排窗口内，越界绘制会压到相邻 item 上（用户
@@ -1390,16 +1742,48 @@ fun ChatMessageList(
                         // 任何越界绘制转为「暂时裁掉」（内容在界内时零视觉差异），
                         // 跨 item 叠加从构造上不可能再发生。流式 item 原本就有
                         // clip（COMP-MSG 链），此处补齐非流式分支。
-                        val itemModifier = if (isStreamingMsg) {
-                            Modifier
+                        // [SGR-435 验收七轮·仪表化] 装配判定取证：key/流式标记变化时打点一次
+                        LaunchedEffect(itemKey, isStreamingMsg) {
+                            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                AppLogger.d(
+                                    "SGR-435",
+                                    "attach key=" + itemKey + " streaming=" + isStreamingMsg +
+                                        " sid=" + streamingMsgId,
+                                )
+                            }
+                        }
+                        // [#437 引擎①] 帽协议（一帧缓冲+同 pass 原子释放）；旧 pairing 路径
+                        // 在此退役（reject-draw 对 item 层重绘无效）。
+                        // 宽限（#440 完成跳变）：流结束后帽在物主 item 上保持——终态渲染
+                        // 高度差经帽原子补放/单调保持，卸帽零位移；新流式项出现自动重置。
+                        val reserveOwner = heightReserve.itemKey == itemKey
+                        // [VDRAW 壳层] 移至链首（最外层）——读帽后真实上屏高度；内层探针
+                        // 只见内容全高（含被 clip 的不可见增长），会把裁剪内绘制误计为推帧
+                        // （vd4th 深读位 70/70 泄漏实为幻影，PAIR 解剖实证）。
+                        // [R4 探针注入化] 同上：非快照去重（draw 写零失效）
+                        val vdrawShellDedup = remember { intArrayOf(-1, -1) }
+                        val vdrawProbe = Modifier.drawBehind {
+                            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
+                                (itemKey.startsWith("t_dsh-") || msg.message.id.startsWith("dsh-") || reserveOwner)
+                            ) {
+                                val h = size.height.toInt()
+                                val fiso = listState.firstVisibleItemScrollOffset
+                                if (h != vdrawShellDedup[0] || fiso != vdrawShellDedup[1]) {
+                                    dev.leonardo.ocbeacon.logging.AppLogger.d(
+                                        "VDRAW",
+                                        "t=" + android.os.SystemClock.elapsedRealtime() +
+                                            " h=" + h + " fiso=" + fiso + " key=" + itemKey.take(20)
+                                    )
+                                    vdrawShellDedup[0] = h
+                                    vdrawShellDedup[1] = fiso
+                                }
+                            }
+                        }
+                        val itemModifier = if (isStreamingMsg || reserveOwner) {
+                            vdrawProbe
                                 .fillMaxWidth()
                                 .clipToBounds()
-                                .deferredRevealCompensation(
-                                    listState = listState,
-                                    compensator = msgReveal,
-                                    shouldCompensate = { compensateState.shouldCompensate },
-                                    logTag = "COMP-MSG",
-                                )
+                                .streamingHeightReserve(heightReserve, itemKey)
                         } else Modifier.fillMaxWidth().clipToBounds()
                         // #215 验收反馈·一（终版裁决）：方案一（offset±delta 补偿）与方案三
                         //（修正窗+注入通道）均已撤销——用户定规不用任何补偿逻辑，动画回
@@ -1409,6 +1793,9 @@ fun ChatMessageList(
                         // 临时诊断（ScrollDiag，DEBUG-only）：item 初次测量后的高度变化
                         //（渐进测量/异步重排检测——跳变根因取证）
                         val diagLastSize = remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+                        // [VDRAW] Turn 臂绘制相位探针（DSH 流式尾 t_dsh-* 走此分支）
+                        // [R4 探针注入化] 同上
+                        val vdrawTurnDedup = remember { intArrayOf(-1, -1) }
                         Box(
                             modifier = itemModifier.then(
                                 if (isHighlighted) {
@@ -1429,13 +1816,31 @@ fun ChatMessageList(
                                     if (prev != androidx.compose.ui.unit.IntSize.Zero && s.height != prev.height) {
                                         AppLogger.w(
                                             "ScrollDiag",
-                                            "RESIZE key=" + itemKey.take(18) + " h " + prev.height + "->" + s.height +
+                                            "RESIZE t=" + android.os.SystemClock.elapsedRealtime() +
+                                                " key=" + itemKey.take(18) + " h " + prev.height + "->" + s.height +
                                                 " (d=" + (s.height - prev.height) + ") dispIdx=" + displayItemIndex +
                                                 " inProgress=" + listState.isScrollInProgress
                                         )
                                     }
                                 }
                                 diagLastSize.value = s
+                            }
+                            .drawBehind {
+                                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
+                                    (itemKey.startsWith("t_dsh-") || msg.message.id.startsWith("dsh-"))
+                                ) {
+                                    val h = size.height.toInt()
+                                    val fiso = listState.firstVisibleItemScrollOffset
+                                    if (h != vdrawTurnDedup[0] || fiso != vdrawTurnDedup[1]) {
+                                        AppLogger.d(
+                                            "VDRAW",
+                                            "t=" + android.os.SystemClock.elapsedRealtime() +
+                                                " h=" + h + " fiso=" + fiso + " key=" + itemKey.take(20)
+                                        )
+                                        vdrawTurnDedup[0] = h
+                                        vdrawTurnDedup[1] = fiso
+                                    }
+                                }
                             }
                         ) {
                         when {
@@ -1459,11 +1864,10 @@ fun ChatMessageList(
                                         Modifier
                                             .fillMaxWidth()
                                             .clipToBounds()
-                                            .deferredRevealCompensation(
-                                                listState = listState,
-                                                compensator = compactionReveal,
-                                                shouldCompensate = { compensateState.shouldCompensate },
-                                                logTag = "COMP-CMP(v1)",
+                                            .streamingGrowPairing(
+                                                ledger = streamingLedger,
+                                                entryKey = "cmp_v1:" + itemKey,
+                                                itemKey = itemKey,
                                             )
                                     } else Modifier
                                     CompactionDividerSlot(
@@ -1473,6 +1877,7 @@ fun ChatMessageList(
                                         summary = v1Spec.summary,
                                         failed = v1Spec.failed,
                                         expandedStates = compactionExpandedStates,
+                                        timeMs = msg.message.time.created,
                                         // 撤销边界（V1 语义：撤到压缩点之前）判定在 policy；
                                         // #276：DSH 无 revert 域——按能力位置 null（槽位
                                         // 撤销手势/无障碍动作整体消失）
@@ -1501,8 +1906,13 @@ fun ChatMessageList(
                                 if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                                     android.os.Trace.beginSection("flng:it:turn-a")
                                 }
+                                val (msgFeedback, msgOnRate) = feedbackFor(msg.message)
+                                Column {
                                 MessageCard(
                                     role = MessageCardRole.ASSISTANT,
+                                    // #422 历史懒加载:大组展开态下本 Turn 是拆分尾片,
+                                    // StepGroup 条目由 Head/Body 独立 LazyItem 承担
+                                    skipStepGroupItem = entry.skipStepGroupItem,
                                     renderableTurn = renderableTurns[displayItemIndex],
                                     currentMessage = msg,
                                     onViewSubSession = navigateToChildSession,
@@ -1512,6 +1922,8 @@ fun ChatMessageList(
                                     isStreamingTurn = isStreamingMsg,
                                     agents = agents,
                                     onAgentClick = onAgentClick,
+                                    messageFeedback = msgFeedback,
+                                    onRateMessage = msgOnRate,
                                     onCopy = {
                                         coroutineScope.launch {
                                             snackbarHostState.showSnackbar(context.getString(R.string.chat_copied_clipboard))
@@ -1531,10 +1943,18 @@ fun ChatMessageList(
                                     },
                                     questionAnswersCache = viewModel.questionAnswerStore,
                                     eventExpandedStates = eventCardExpandedStates,
+                                    turnNumber = turnNumberFor(
+                                        renderableTurns[displayItemIndex]?.serverTurn,
+                                        turnOrdinalByMsgId[msg.message.id],
+                                    ),
+                                    onForkFromTurn = if (isTurnLast && hasLaterAssistantByMsgId[msg.message.id] != true) ({ forkFromTurn(turnGroups[rawIndex]?.firstOrNull()?.message?.id ?: msg.message.id) }) else null,
+                                    onDeleteMessage = if (messageDeleteSupported) ({ deleteMessageAction(msg.message.id) }) else null,
+                                    caps = rowCaps,
                                 )
                                 if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                                     android.os.Trace.endSection()
                                 }
+                                } // Column（#310④：气泡 + 台账行）
                             }
                             msg.isUser -> {
                                 val chatMessage = msg
@@ -1651,23 +2071,107 @@ fun ChatMessageList(
                                     // （L1216 padding(bottom=messageSpacing)）之内，return@Box
                                     // 只退内容 lambda 不影响包装器；早前零间隙修复在此重复加了
                                     // 显式底距 → 叠加双倍。撤销显式底距，通用间距已覆盖。
-                                    EventCard(
-                                        eventKey = chatMessage.message.id,
-                                        timeMs = chatMessage.message.time.created,
-                                        label = stringResource(R.string.chat_event_tool_catalog_changed),
-                                        leadingIcon = Icons.Outlined.Info,
-                                        expandedStates = eventCardExpandedStates,
-                                        bodyContent = {
-                                            Text(
-                                                text = sysText,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AlphaTokens.MUTED)
-                                            )
-                                        },
-                                    )
+                                    // #403：system/message 带显式 source.kind（plugin/skill-catalog/…）
+                                    // 时用 kind 派生标签；v2 追加：injectionKind="system"（DSH 对无
+                                    // source.kind 的上下文注入写的哨兵）也走注入档「上下文注入」——
+                                    // 不再被 OpenCode 专属的「工具目录已变更」遮蔽；仅 null
+                                    // （OpenCode V2 role=system）保留「工具目录已变更」。
+                                    val sysInjectionKind = (chatMessage.message as? Message.User)?.injectionKind
+                                    // v2 追加：无 kind 的 V2 系统消息按文本细分——工具目录变更 vs 通知
+                                    val sysNoticeKind = if (sysInjectionKind == null) systemNoticeKindFor(sysText) else null
+                                    val sysIsToolCatalog = sysNoticeKind == SystemNoticeKind.TOOL_CATALOG_CHANGED
+                                    // #415/#416（2026-09-18 验收清偿）：注入（含 DSH "system" 哨兵）
+                                    // 走 InjectionCard 淡形态（左色条+弱底，无描边，DataObject 图标）——
+                                    // 注入是宿主喂给模型的上下文，不是对用户的通知；纯 V2 通知/工具目录
+                                    // 保持 EventCard 完整卡（1dp 描边）+ 铃铛图标（Notifications）。
+                                    if (sysInjectionKind != null) {
+                                        InjectionCard(
+                                            eventKey = chatMessage.message.id,
+                                            timeMs = chatMessage.message.time.created,
+                                            label = injectionKindLabel(sysInjectionKind),
+                                            bodyText = sysText,
+                                            expandedStates = eventCardExpandedStates,
+                                        )
+                                    } else {
+                                        EventCard(
+                                            eventKey = chatMessage.message.id,
+                                            timeMs = chatMessage.message.time.created,
+                                            label = if (sysIsToolCatalog) {
+                                                stringResource(R.string.chat_event_tool_catalog_changed)
+                                            } else {
+                                                stringResource(R.string.chat_event_generic)
+                                            },
+                                            // 通知档补一行自解释摘要（折叠态不丢信息；工具目录档正文是 schema，不补）
+                                            description = if (!sysIsToolCatalog) {
+                                                sysText.lineSequence().firstOrNull()?.take(200)?.takeIf { it.isNotBlank() }
+                                            } else null,
+                                            leadingIcon = Icons.Outlined.Notifications,
+                                            expandedStates = eventCardExpandedStates,
+                                            bodyContent = {
+                                                Text(
+                                                    text = sysText,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AlphaTokens.MUTED)
+                                                )
+                                            },
+                                        )
+                                    }
                                     return@Box
                                 }
 
+                                // #385（2026-09-10 用户裁决）：DSH 上下文注入消息
+                                // （source.kind=agent-instructions/skill-catalog/plugin…）
+                                // 此前按普通用户气泡渲染——技能目录/工作区指令全文铺开成
+                                // 文本墙（演示①实测约一屏半）。对齐 DSH Web 精简卡片：
+                                // 折叠行（标签+展开箭头）+ 展开可读全文（#232/#234 system
+                                // 墙→EventCard 同款处置）。空文本注入（无 text part）整条跳过。
+                                // #387（2026-09-12）：V2 skill-catalog / 上下文刷新注入
+                                // 不带 source.kind 标记——按 <system-reminder> 闭合块嗅探，
+                                // 与 #385 的 DSH source.kind 路径合流为同一 EventCard 面。
+                                // 仅整条闭合块折叠；「闭合块+真问句」混合消息保持普通气泡，
+                                // 避免把用户正文一并吞掉。嗅探只对首段以标记开头的消息做，
+                                // 不引入普通消息的全文扫描开销。
+                                val injectionKind = (chatMessage.message as? Message.User)?.injectionKind
+                                    ?: run {
+                                        val firstText = chatMessage.parts
+                                            .firstOrNull { it is Part.Text } as? Part.Text
+                                        if (firstText != null &&
+                                            firstText.text.trimStart().startsWith("<system-reminder>")
+                                        ) {
+                                            val allText = chatMessage.parts
+                                                .filterIsInstance<Part.Text>()
+                                                .joinToString("\n") { it.text }
+                                            if (dev.leonardo.ocbeacon.domain.model.SystemInjection
+                                                    .isPureReminder(allText)
+                                            ) "context" else null
+                                        } else null
+                                    }
+                                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                    dev.leonardo.ocbeacon.logging.AppLogger.d(
+                                        "InjCard",
+                                        "render id=" + chatMessage.message.id.takeLast(30) +
+                                            " kind=" + injectionKind + " role=" + (chatMessage.message as? Message.User)?.role +
+                                            " nParts=" + chatMessage.parts.size,
+                                    )
+                                }
+                                if (injectionKind != null) {
+                                    val injectionText = chatMessage.parts
+                                        .filterIsInstance<Part.Text>()
+                                        .joinToString("\n") { it.text }.trim()
+                                    if (injectionText.isNotEmpty()) {
+                                        // #415/#416（2026-09-18 验收清偿）：DSH source.kind 注入与
+                                        // V2 <system-reminder> 嗅探注入统一走 InjectionCard 淡形态
+                                        //（DataObject 图标 + 左色条 + 弱底无描边）。
+                                        InjectionCard(
+                                            eventKey = chatMessage.message.id,
+                                            timeMs = chatMessage.message.time.created,
+                                            label = injectionKindLabel(injectionKind),
+                                            bodyText = injectionText,
+                                            expandedStates = eventCardExpandedStates,
+                                        )
+                                    }
+                                    return@Box
+                                }
 
                                 // #217/#219/#221/#226：压缩触发认领（对位/锁存/隐藏/
                                 // 分割线判定）——纯逻辑在 CompactionDividerPolicy（C4，
@@ -1699,11 +2203,10 @@ fun ChatMessageList(
                                             Modifier
                                                 .fillMaxWidth()
                                                 .clipToBounds()
-                                                .deferredRevealCompensation(
-                                                    listState = listState,
-                                                    compensator = compactionReveal,
-                                                    shouldCompensate = { compensateState.shouldCompensate },
-                                                    logTag = "COMP-CMP(msg)",
+                                                .streamingGrowPairing(
+                                                    ledger = streamingLedger,
+                                                    entryKey = "cmp_msg:" + itemKey,
+                                                    itemKey = itemKey,
                                                 )
                                         } else Modifier
                                         CompactionDividerSlot(
@@ -1713,6 +2216,7 @@ fun ChatMessageList(
                                             summary = compactionClaim.summary,
                                             failed = compactionClaim.failed,
                                             expandedStates = compactionExpandedStates,
+                                            timeMs = chatMessage.message.time.created,
                                             revertTargetId = if (revertSupported) chatMessage.message.id else null,
                                             onRevert = revertCompaction,
                                         )
@@ -1776,7 +2280,6 @@ fun ChatMessageList(
                                         MessageCardRole.USER
                                     },
                                     currentMessage = chatMessage,
-                                    isQueued = chatMessage.message.id in messageState.queuedMessageIds,
                                     onViewSubSession = navigateToChildSession,
                                     onRevert = if (isMainSession && revertSupported) {
                                         {
@@ -1806,8 +2309,7 @@ fun ChatMessageList(
                                     },
                                     isAmoled = isAmoled,
                                     eventExpandedStates = eventCardExpandedStates,
-                                    // #243 连续同内容去重：本卡为保留首张时显示 ×N
-                                    eventDupCount = syntheticDupCounts[chatMessage.message.id] ?: 0
+                                    onDeleteMessage = if (messageDeleteSupported) ({ deleteMessageAction(chatMessage.message.id) }) else null,
                                 )
                                 if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                                     android.os.Trace.endSection()
@@ -1816,6 +2318,359 @@ fun ChatMessageList(
                         }
                         } // Box freeze
                             }
+                        }
+                    }
+                    
+                LazyColumn(
+                    state = listState,
+                    // 2026-08-20 滚动稳定性：限速 fling——每帧 ≤ 视口高/8，
+                    // 高速段不再冲入未组合区（与渲染供给协调器配合，见上方）
+                    flingBehavior = rememberSafeFlingBehavior(listState),
+                    modifier = Modifier.fillMaxSize()
+                        // #149：唯一 testTag——ChatScreen 树中有 2 个 scrollable 节点
+                        //（消息列表 + 底部输入栏），androidTest 的 hasScrollAction()
+                        // 匹配多节点导致 touch 注入失败
+                        .testTag("chat-message-list")
+                        // #245 巨帧分块守卫（v2 Initial 隧道趟）：平台输入合并产生的
+                        // 巨型单帧增量切片直派滚动（探针实证：冷启动进场后 2.5s 拖动
+                        // 被合并成 2 帧 ~1700px，列表 scrollable 认领却零消耗——
+                        // 机制勘误与实现见 ScrollIsland.kt §巨帧分块）
+                        .megaDeltaScrollGuard(listState)
+                        .pointerInput(Unit) { detectTapGestures(onTap = { keyboardController?.hide() }) },
+                    contentPadding = PaddingValues(
+                        start = SpacingTokens.MD.dp,
+                        top = SpacingTokens.SM.dp,
+                        end = SpacingTokens.MD.dp,
+                        // 2026-09-19 用户终裁（覆盖 #413 取舍）：「最后一条消息必须停在
+                        // 列表能拉到的最底部」——bottom 预留整段撤除，只留与 top 对称的呼吸
+                        //（SM 8dp）。代价：贴底时右下 FAB 组（48dp+底距 16dp 悬浮层）会
+                        // 压住末条尾部动作行右端（ⓘ 与 FAB 的重叠区触摸归 FAB）；ⓘ 上半
+                        // 与左侧复制钮仍可点。让位交互（贴底时 FAB 滑出等）已登记 backlog
+                        // 另行裁决，不在本次强加。
+                        bottom = SpacingTokens.SM.dp
+                    ),
+                    reverseLayout = true,
+                    // 2026-08-20 分片：移除 spacedBy（chunk item 间不能有间隙——
+                    // 同一气泡的分段视觉连续），改为 item 级 bottom padding
+                    //（横幅/Turn/Chunk 末段加 messageSpacing，chunk 非末段为 0）。
+                ) {
+                    // reverseLayout=true：先声明的项渲染在底部。
+                    // 视觉顺序（上→下）：最旧消息 → 最新消息 → revert → pending。
+                    // 声明顺序自下而上：pending（底部）→ 消息（顶部）。
+
+                    // #252 时间线化（2026-08-28）：钉底 shell 横幅退役——shell 通知卡
+                    // 改由消息流按时间线渲染（ChatEntry.Turn 的 role='shell' 特判，
+                    // 数据源 Part.Shell 载荷），新消息自动顶上去（主对话流语义）。
+
+                    // #399（2026-09-12）：钉底后台任务时间线经 CHAT_MESSAGE_LIST 插槽渲染——
+                    // 通用壳零 DSH 卡片知识（原私有 DshJobTimelineCard 已迁类型私有包）。
+                    // 两级门禁：适配器声明（viewModel.uiSlots）+ 贡献方能力位（JOBS_PUSH）。
+                    // 逐任务保持独立 lazy item 与 key（视觉与惰性语义不变）；先声明=视觉底部
+                    //（reverseLayout），终态任务随快照自然移除（官方 jobs 语义）。
+                    if (dshJobs.isNotEmpty() &&
+                        ServerUiSlot.CHAT_MESSAGE_LIST in chatUiSlots &&
+                        pinnedJobsSlotRegistry
+                            .contributions(ServerUiSlot.CHAT_MESSAGE_LIST, serverCapabilities)
+                            .isNotEmpty()
+                    ) {
+                        dshJobs.forEach { job ->
+                            item(key = "dsh_job_" + job.id) {
+                                Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                                    pinnedJobsSlotRegistry.Render(
+                                        slot = ServerUiSlot.CHAT_MESSAGE_LIST,
+                                        caps = serverCapabilities,
+                                        host = ChatMessageListSlotHost(
+                                            job = job,
+                                            expandedStates = eventCardExpandedStates,
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Revert 横幅（#276：DSH 无 revert 域——revert 态永不为真，
+                    // 能力位兜底门控）——#420 B 类:恒驻声明+原地揭示(撤销发生在
+                    // turn 间隙=非流式,CardExpandReveal 激活;流式时降级裸 AV)
+                    item(key = "revert_banner") {
+                        BannerReveal(
+                            listState = listState,
+                            onExpandDeparture = onExpandDeparture,
+                            streamingActive = turnActive,
+                            visible = revertSupported && sessionMeta.revert != null,
+                        ) {
+                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            RevertBanner(onRedo = {
+                                viewModel.redoMessage { ok ->
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            if (ok) context.getString(R.string.chat_messages_restored) else context.getString(R.string.chat_message_redo_failed)
+                                        )
+                                    }
+                                }
+                                onForceScrollToBottom()
+                            })
+                            }
+                        }
+                    }
+
+                    // #217 分割线包揽（2026-08-24）：压缩进行中 = 进行中分割线，插在
+                    // 消息流尾部；完成态由消息流内 compaction 消息的 CompactionCard 承担。
+                    // 尾部兜底认领（去重/让位判定）在 CompactionDividerPolicy.tailSpec（C4）。
+                    // #378（2026-09-10，取代 #374 让位规则）：DSH 压缩由流内 box
+                    // （CompactionTranscriptCard）全程承载——转录实体在场时分割线
+                    // 整体让位（bannerTerms 同参同让位，记帐不失真）；V1/V2 照旧。
+                    val tailCompaction = CompactionDividerPolicy.tailSpec(
+                        currentCompaction, displayItemMessageIds, v1CompactionSummaryInList,
+                        suppressByTranscriptCompaction = compactionEntries.isNotEmpty(),
+                    )
+                    if (tailCompaction != null) {
+                        item(key = "compaction_banner") {
+                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                                // #221/#222：展开区流式增长——延迟揭示真·渲染前补偿
+                                // （尾部兜底路径，挂载点原位）；#227 展开键语义在 spec。
+                                CompactionDividerSlot(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clipToBounds()
+                                        .streamingGrowPairing(
+                                            ledger = streamingLedger,
+                                            entryKey = "cmp_tail",
+                                            itemKey = "compaction_banner",
+                                        ),
+                                    expansionKey = tailCompaction.expansionKey,
+                                    state = tailCompaction.state,
+                                    summary = null,
+                                    failed = false,
+                                    expandedStates = compactionExpandedStates,
+                                )
+                            }
+                        }
+                    }
+
+                    // Retry 横幅 —— 会话处于 Retry 状态时显示（#420 B 类恒驻+原地揭示）
+                    val retryStatus = sessionMeta.sessionStatus
+                    item(key = "retry_banner") {
+                        BannerReveal(
+                            listState = listState,
+                            onExpandDeparture = onExpandDeparture,
+                            streamingActive = turnActive,
+                            visible = retryStatus is SessionStatus.Retry,
+                        ) {
+                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            if (retryStatus is SessionStatus.Retry) {
+                                RetryBanner(retryStatus)
+                            }
+                            }
+                        }
+                    }
+
+                    // #309 批1⑤：max-tokens 通知卡（Web turn-max-tokens 对位）——
+                    // 本轮输出达上限被截断；继续=再发一条 "continue" prompt（无专用
+                    // 端点，Web 同款语义）；新一轮 turn/start（Busy）自动清卡。
+                    item(key = "turn_max_tokens") {
+                        // #420 B 类恒驻+原地揭示:turn 截断通知出现于 turn 终态(非流式)
+                        BannerReveal(
+                            listState = listState,
+                            onExpandDeparture = onExpandDeparture,
+                            streamingActive = turnActive,
+                            visible = turnMaxTokens != null,
+                        ) {
+                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                                TurnMaxTokensCard(
+                                    onContinue = { viewModel.sendMessage("continue") },
+                                )
+                            }
+                        }
+                    }
+
+                    // D1③：会话运行错误转录内行（走查 #2 对齐 DSH turn-error 语义）——
+                    // 渲染为消息流 LazyColumn item（随历史滚动，非悬浮浮层），
+                    // 无 dismiss（DSH TurnErrorItem 同），sendMessage 成功清卡。
+                    // reverseLayout=true：先声明 = 视觉底部 -> 错误行钉在消息流尾部。
+                    sessionErrorRowItems(sessionErrorRows).forEach { (key, error) ->
+                        item(key = key) {
+                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                                SessionErrorCard(error = error)
+                            }
+                        }
+                    }
+
+                    // 工具进度卡片（带漂移补偿）——#420 B 类恒驻+原地揭示:
+                    // 出现于流式 turn 内→BannerReveal 降级裸 AV(冷组合直显,
+                    // COMP-TOOL 管流式增长,互不打架);turn 结束消失→非流式
+                    // CardExpandReveal 激活→原地收起+同帧补偿(旧实现裸移除跳变)
+                    item(key = "tool_progress") {
+                        BannerReveal(
+                            listState = listState,
+                            onExpandDeparture = onExpandDeparture,
+                            streamingActive = turnActive,
+                            visible = activeTools.isNotEmpty(),
+                        ) {
+                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clipToBounds()
+                                    .streamingGrowPairing(
+                                    ledger = streamingLedger,
+                                    entryKey = "tool",
+                                    itemKey = "tool_progress",
+                                )
+                            ) {
+                                activeTools.forEach { toolInfo ->
+                                    ToolProgressCard(toolInfo = toolInfo)
+                                }
+                            }
+                            }
+                        }
+                    }
+
+                    // 步骤进度指示器（#420 B 类恒驻+原地揭示,消失路径同上）
+                    item(key = "step_progress") {
+                        BannerReveal(
+                            listState = listState,
+                            onExpandDeparture = onExpandDeparture,
+                            streamingActive = turnActive,
+                            visible = currentStep != null,
+                        ) {
+                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            if (currentStep != null) {
+                                StepProgressIndicator(stepInfo = currentStep)
+                            }
+                            }
+                        }
+                    }
+
+                    // 待处理问题（未嵌入消息气泡的保底显示）——一次显示一个（最旧优先）
+                    // #420 B 类恒驻+原地揭示:key 固定(question id 不再作 key——恒驻
+                    // 复用同一 item),到达/离开经 CardExpandReveal;turn 后下发的
+                    // 问题(非流式)由此激活补偿,流式内到达降级裸 AV
+                    item(key = "question_pending") {
+                        val question = unembeddedQuestions.firstOrNull()
+                        BannerReveal(
+                            listState = listState,
+                            onExpandDeparture = onExpandDeparture,
+                            streamingActive = turnActive,
+                            visible = question != null,
+                        ) {
+                            if (question != null) {
+                                Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                                QuestionCard(
+                                    question = question,
+                                    positionLabel = if (unembeddedQuestions.size > 1) "1/${unembeddedQuestions.size}" else null,
+                                    // 2026-08-30 同嵌入路径：提交/忽略不强制拉底
+                                    onSubmit = { answers ->
+                                        viewModel.replyToQuestion(question.id, answers)
+                                    },
+                                    onReject = {
+                                        viewModel.rejectQuestion(question.id)
+                                    },
+                                    answersStore = viewModel.questionAnswerStore,
+                                )
+                                }
+                            }
+                        }
+                    }
+
+                    // 待处理权限 —— 一次显示一个（最旧优先）——#420 B 类同上
+                    item(key = "perm_pending") {
+                        val permission = interaction.pendingPermissions.firstOrNull()
+                        BannerReveal(
+                            listState = listState,
+                            onExpandDeparture = onExpandDeparture,
+                            streamingActive = turnActive,
+                            visible = permission != null,
+                        ) {
+                            if (permission != null) {
+                                Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                                PermissionCard(
+                                    permission = permission,
+                                    positionLabel = if (interaction.pendingPermissions.size > 1) "1/${interaction.pendingPermissions.size}" else null,
+                                    onOnce = {
+                                        viewModel.replyToPermission(permission.id, "once", permission.sessionId)
+                                        onForceScrollToBottom()
+                                    },
+                                    onAlways = { showAlwaysDialog = permission },
+                                    onReject = {
+                                        viewModel.replyToPermission(permission.id, "reject", permission.sessionId)
+                                        onForceScrollToBottom()
+                                    }
+                                )
+                                }
+                            }
+                        }
+                    }
+
+
+                    // 聊天消息：displayItems 已经是新的在前（降序）。
+                    // reverseLayout=true 将索引 0（最新）渲染在底部。
+                    // 视觉结果：最旧在顶部，最新在底部。
+                    // 2026-08-20 分片：items = chatEntries（巨型 turn 已展开为
+                    // N 个 chunk item；key 语义不变——buildChatEntries 与原逻辑
+                    // 一致，chunk 追加 #c<i> 后缀且保持 t_/u_ 前缀）。
+                    itemsIndexed(
+                        chatEntries.entries,
+                        key = { _, entry -> entry.key },
+                        contentType = { _, entry ->
+                            when (entry) {
+                                is ChatEntry.Chunk -> "assistant_chunk"
+                                is ChatEntry.TurnChunk -> "assistant_segment"
+                                is ChatEntry.UserChunk -> "user_chunk"
+                                is ChatEntry.StepGroupHead -> "assistant_sg_head"
+                                is ChatEntry.StepGroupBody -> "assistant_sg_body"
+                                is ChatEntry.Turn -> if (entry.isUser) "user" else "assistant"
+                            }
+                        },
+                    ) { _, entry ->
+                        // #423 批次六:全条目接入 animateItem(仅位移,无淡入淡出——
+                        // 滚动不触发,结构变化(条目插拔)平滑滑动)。调研定案:结构
+                        // 裂变的成熟收尾;视口内让位条目滑开而非跳变。
+                        // #423 批次十二(2026-09-22 录屏逐帧+多模态取证定案):
+                        // placement 弹簧=「点击卡片其他元素移动」真凶——引擎原子跳变
+                        // (item 布局偏移一帧 -H、滚动位移同帧配平)被 animateItem
+                        // 当成条目移动,播放 ~600px 归位动画(f40-f44 实测:上方内容
+                        // 73%→16% 上滑+整屏空白);收起走逐帧小位移路径实测干净,
+                        // 反证即此。placementSpec=null 全局退役位移弹簧——用户铁律
+                        // (其他元素纹丝不动)优先于裂变滑动观感;大组裂变滑动缺口
+                        // 并入 #422 Phase 2 重做。
+                        // #420:卡片原地揭示补偿的逐 item 上下文(挂 itemsIndexed 层——
+                        // renderTranscriptEntry 内部的早退 return 不受 Provider 包裹影响;
+                        // 流式 turn 降级裸 AV,由 item 级 COMP-MSG 补偿独占,杜绝双重注入)
+                        // [R4-B3] 身份读 entry 字段（构建时编码）——不再捕获
+                        // displayItems/turnGroups/streamingMsgId（每 flush 新实例捕获替换
+                        // = 全部可见 item 每 flush 重组的根因之一）。
+                        val entryStreaming = entry is ChatEntry.Turn && entry.isStreaming
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = null),
+                        ) {
+                            CompositionLocalProvider(
+                                LocalCardExpandListState provides listState,
+                                LocalCardExpandDeparture provides onExpandDeparture,
+                                LocalInStreamingTurn provides entryStreaming,
+                            ) {
+                                val extras = transcriptCardExtras[entry.key]
+                                if (extras == null || extras.isEmpty) {
+                                    renderTranscriptEntry(entry)
+                                } else {
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        extras.before.forEach { renderTranscriptCardItem(it, spacingBelow = true) }
+                                        renderTranscriptEntry(entry)
+                                        extras.after.forEach { renderTranscriptCardItem(it, spacingBelow = false) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // #378：比当前窗口最旧消息还老的卡（older page 载入前的过渡态）——视觉
+                    // 顶部独立 item；发射序降序（reverseLayout 代码后声明 = 视觉更高，时间
+                    // 自新向旧向上排列，与消息流时序方向一致）。
+                    transcriptTrailingCards.asReversed().forEach { card ->
+                        item(key = card.planKey) {
+                            renderTranscriptCardItem(card, spacingBelow = true)
                         }
                     }
 
@@ -1945,47 +2800,41 @@ internal fun extractToolSubagentSessionId(tool: Part.Tool): String? {
 
 // 预解析/分片调参常量已随渲染供给协调器外移 RenderSupplyCoordinator.companion（候选 1）。
 
-/** 任务状态 → 既有 dsh_job_status_* 文案（Task 3d 降级 Shell 卡；零新增 i18n；
- *  #284：statusKind 枚举分支，UNKNOWN 沿用 completed 兜底保持原渲染）。 */
+/**
+ * #385/#403：注入 kind → 注入折叠卡标签（唯一映射源）。
+ *
+ * 档位判定在纯函数 [injectionLabelKindFor]（rowmodel seam，JVM 可测）：显式
+ * source.kind（agent-instructions/skill-catalog/plugin）取专属文案；未知 kind 与
+ * DSH 哨兵 "system" / V2 嗅探值 "context" 一律回落「上下文注入」。
+ */
 @Composable
-private fun dshJobStatusLabel(status: dev.leonardo.ocbeacon.domain.model.JobStatus): String = stringResource(
-    when (status) {
-        dev.leonardo.ocbeacon.domain.model.JobStatus.RUNNING -> R.string.dsh_job_status_running
-        dev.leonardo.ocbeacon.domain.model.JobStatus.STOPPING -> R.string.dsh_job_status_stopping
-        dev.leonardo.ocbeacon.domain.model.JobStatus.KILLED -> R.string.dsh_job_status_killed
-        dev.leonardo.ocbeacon.domain.model.JobStatus.FAILED -> R.string.dsh_job_status_failed
-        dev.leonardo.ocbeacon.domain.model.JobStatus.COMPLETED,
-        dev.leonardo.ocbeacon.domain.model.JobStatus.UNKNOWN -> R.string.dsh_job_status_completed
+private fun injectionKindLabel(kind: String): String = stringResource(
+    when (injectionLabelKindFor(kind)) {
+        InjectionLabelKind.AGENT_INSTRUCTIONS -> R.string.chat_injection_agent_instructions
+        InjectionLabelKind.SKILL_CATALOG -> R.string.chat_injection_skill_catalog
+        InjectionLabelKind.PLUGIN -> R.string.chat_injection_plugin
+        InjectionLabelKind.CONTEXT_INJECTION -> R.string.chat_injection_context
     }
 )
 
 /**
- * DSH 后台任务降级 Shell 卡（2026-09-01 Task 3d）：session/jobs 整快照 JobView →
- * 既有统一事件卡（EventCard）视觉。kind/label/status/detail 先行，command/output
- * 留空（DSH 无命令输出源，如实降级）；失败/被杀破色（failed 语义同既有 shell/task 卡）。
+ * #394：聊天条目 key 统一公式——Lazy item key 与跳转高亮 key 必须同源。
+ *
+ * 此前跳转高亮用 rawMessages[displayIndex+1] 推导 assistant 的 t_ 键，与渲染用的
+ * turnGroups[rawIndex].first() 漂移 → assistant 目标的 t_ 键永不命中（高亮失效）。
+ * user 目标 → u_<消息 id>；assistant 目标 → t_<该轮首条消息 id>（turn 组锚点）。
  */
-@Composable
-private fun DshJobTimelineCard(
-    job: dev.leonardo.ocbeacon.domain.model.JobView,
-    expandedStates: MutableMap<String, Boolean>,
-) {
-    val failed = job.statusKind == dev.leonardo.ocbeacon.domain.model.JobStatus.FAILED ||
-        job.statusKind == dev.leonardo.ocbeacon.domain.model.JobStatus.KILLED
-    EventCard(
-        eventKey = "dsh_job_" + job.id,
-        timeMs = job.startedAt,
-        label = dshJobStatusLabel(job.statusKind),
-        leadingIcon = if (job.kind == "subagent") Icons.Filled.AccountTree else Icons.Filled.Terminal,
-        failed = failed,
-        // 描述行：kind · label · detail（Q15 槽位——数据在才显示；无命令/输出）
-        description = listOfNotNull(
-            job.kind.takeIf { it.isNotBlank() },
-            job.label.takeIf { it.isNotBlank() },
-            job.detail?.takeIf { it.isNotBlank() },
-        ).joinToString(" · ").takeIf { it.isNotBlank() },
-        expandedStates = expandedStates,
-    )
-}
+internal fun chatEntryKey(
+    turnGroups: Map<Int, List<ChatMessage>>,
+    rawIndex: Int,
+    message: ChatMessage,
+    /** #440 槽位锚（computeTurnAnchors）——命中时键锚到该轮 user 消息 id（跨流式/终态换装稳定）。 */
+    turnAnchors: Map<Int, String> = emptyMap(),
+): String =
+    if (message.isUser) "u_" + message.message.id
+    else "t_" + (turnAnchors[rawIndex]
+        ?: turnGroups[rawIndex]?.firstOrNull()?.message?.id
+        ?: message.message.id)
 
 /**
  * 跳转定位 loading 蒙版（2026-08-21 D-11-2 从主体下沉为小组件）：

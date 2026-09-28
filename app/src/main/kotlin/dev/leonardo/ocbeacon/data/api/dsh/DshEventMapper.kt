@@ -1,11 +1,14 @@
 package dev.leonardo.ocbeacon.data.api.dsh
 
+import dev.leonardo.ocbeacon.domain.model.DshMessageId
 import dev.leonardo.ocbeacon.domain.model.Message
 import dev.leonardo.ocbeacon.domain.model.Part
 import dev.leonardo.ocbeacon.domain.model.PartIdContract
 import dev.leonardo.ocbeacon.domain.model.Session
 import dev.leonardo.ocbeacon.domain.model.SessionStatus
 import dev.leonardo.ocbeacon.domain.model.SseEvent
+import dev.leonardo.ocbeacon.domain.model.SystemInjection
+import dev.leonardo.ocbeacon.domain.model.SessionNextEvent
 import dev.leonardo.ocbeacon.domain.model.TimeInfo
 import dev.leonardo.ocbeacon.domain.model.ToolState
 import dev.leonardo.ocbeacon.logging.AppLogger
@@ -25,9 +28,14 @@ private const val TAG = "DshEventMapper"
  *
  * 纯函数 / 无状态 / 不抛异常：DSH SessionEvent 是 49 型开放联合（§1.6-7），未知
  * type 按 data 宽透传——本映射器对一切畸形/未知输入降级为 [DshMappedEvent.Ignored]
- * （AppLogger.w 记日志不崩），未知 **SessionEvent 类型** 落
- * [DshIgnoreReason.UNKNOWN_UNIGNORABLE]——DshHistoryFolder 据此拒绝重建（§5 信封
- * 细节规则：仅 llm/failover 带 ignorable:true，未知类型无 ignorable 必须拒绝重建）。
+ * （AppLogger.w 记日志不崩）。
+ *
+ * #391 切片7（DSH 0.1.5 / 会话格式 V3 容错优先）：未知 **SessionEvent 类型** 落
+ * [DshIgnoreReason.UNKNOWN_DEGRADED] **具名降级**，不再拒绝重建——词汇演进
+ * （V3 的 system/message、assistant/attempt、tool/ptc-dispatch* 等）零成本吸收；
+ * 仅结构性违约落 [DshIgnoreReason.STRUCTURAL_VIOLATION] 时才由 DshHistoryFolder
+ * 拒绝重建；当前实发射点唯一：user/message 的 surfaceOp.replace 区间越界（end < start）。
+ * 乱序 / 种子缺失 两项保留判据位，尚无运行时判据（待信封粒度取证）。
  *
  * ## ID 契约（写死，跨重放/实况稳定）
  * - 整装消息 id："seq-{event.seq}"（历史重放与实况同键——已定决策）；
@@ -53,14 +61,65 @@ private const val TAG = "DshEventMapper"
  */
 object DshEventMapper {
 
-    /** 整装消息 id（user/message、assistant/message）。 */
-    fun messageId(seq: Long): String = "seq-" + seq
+    /** 整装消息 id（user/message、assistant/message）。契约唯一权威 = [DshMessageId]
+     *（#378 上提 domain——UI 流内归并需反解 seq，依赖方向禁止 UI→data）。
+     * #385b：携带 sessionId（DSH seq 仅会话内唯一，裸 id 跨会话碰撞——见契约注释）。 */
+    fun messageId(sessionId: String, seq: Long): String = DshMessageId.id(sessionId, seq)
+
+    /**
+     * #312⑤ 反解：整装消息 id "seq-{seq}" → seq（fork 轮尾锚点上
+     * wire ——session.fork atSeq 契约）；其余形态 → null（安全降级为无锚点）。
+     * 委派 [DshMessageId.seqOf]（契约共源）。
+     */
+    fun seqOf(messageId: String?): Long? = DshMessageId.seqOf(messageId)
 
     /** 实况流式宿主消息 id（assistant/chunk 族）。 */
     fun streamingMessageId(turn: Long, step: Long): String = "dsh-t" + turn + "s" + step
 
+    /**
+     * #411：在途 step 起始时刻（key = "sid:turn:step"）。step/start 落位、
+     * assistant/message 结算（读后删）；turn/end 清该会话条目（取消步不残留）。
+     * 上界保护：>128 条整体清空（防御性，正常在途步个位数）。
+     */
+    private val stepStartTimes = HashMap<String, Long>()
+
+    private fun stepKey(sessionId: String, turn: Long, step: Long) = "$sessionId:$turn:$step"
+
+    /**
+     * 首 token 时刻（dsh-llm `isTokenDelta` 规则的 app 侧复刻，权威 =
+     * dsh-llm/lib/types/assistant-stream.js:185-195）：text-delta / reasoning-delta
+     * 非空文本、tool-call-delta 非空 argumentsDelta 或带 name 算 token；
+     * block / usage / finish 不算。流记录形如 {type:"chunk", time, chunk{type,…}}；
+     * 无合格成员 → null。
+     */
+    private fun firstTokenTime(stream: JsonArray?): Long? {
+        for (element in stream ?: return null) {
+            val entry = element as? JsonObject ?: continue
+            val chunk = entry.obj("chunk") ?: continue
+            val isToken = when (chunk.str("type")) {
+                "text-delta", "reasoning-delta" -> !chunk.str("text").isNullOrEmpty()
+                "tool-call-delta" ->
+                    !chunk.str("argumentsDelta").isNullOrEmpty() || chunk.containsKey("name")
+                else -> false
+            }
+            if (isToken) return entry.long("time")
+        }
+        return null
+    }
+
     /** 工具卡宿主消息 id（tool/call 创建、tool/result 汇合）。 */
     fun toolHostMessageId(callId: String): String = "dsh-call-" + callId
+
+    /**
+     * PTC 子调用 id → 根工具卡 callId。`tool/ptc-dispatch-start` 的 subCallId 形如
+     * `call_x:ptc:1`（实况 seq204），而其 rootCallId/parentCallId = `call_x`——根
+     * `tool/call` 宿主按根 id 建（`dsh-call-call_x`）。deliverables/presented 只带
+     * subCallId，故须剥 `:ptc:<n>` 才能命中既有宿主；非 PTC 调用原样返回。
+     */
+    fun rootCallId(callId: String): String {
+        val marker = callId.indexOf(":ptc:")
+        return if (marker > 0) callId.substring(0, marker) else callId
+    }
 
     private val json = Json
 
@@ -78,19 +137,20 @@ object DshEventMapper {
 
     private fun mapFrameInner(method: String, payload: JsonObject, rpcId: String?): List<DshMappedEvent> = when (method) {
         "session/subscribed" -> {
-            // 连接层信号：开流基线（对账起点，组件 C 输入）+ jobs/队列清空重推。
-            // 官方 client.js:8314：subscribed 帧对 jobsBySession 删键——重连基线
-            // 先行清空，服务器随后重推 session/jobs 整快照（对齐 A 状态机）；
-            // queueMirror.reset()（官方 client.js:7472）同帧判脏——QueueDock 同理
-            // 清空待服务器重推 session/queue 整快照。
+            // 连接层信号：开流基线（对账起点，组件 C 输入）。
+            //
+            // #404（2026-09-12 根因修复）：原实现在本帧附带空 JobsSnapshot/QueueSnapshot
+            // 清空本地镜像，依据官方 client.js:8314 的「subscribed 删键 + 服务器随后重推整
+            // 快照」。但本版本 DSH（0.1.5-rc.1）会话控制流**只在任务/队列变更时增量推送**：
+            // WS onOpen 先请求 session/control（jobs/queue 整快照基线），随后 follow 触发的
+            // subscribed 把刚落的基线清空，无变更则永不重推——模拟器实测冷进入会话 ≤30s
+            // 钉底任务卡缺失（等一次任务状态变化才出现，DshJobsStore 空）。
+            // 权威快照 = session/control baseline（每次 WS onOpen 重发、整快照 last-wins
+            // 替换；空 jobs 由基线缺省/变更增量收敛），故 subscribed 不再清空镜像。
             val sid = payload.str("sessionId")
             val lastSeq = payload.long("lastSeq")
             if (sid == null || lastSeq == null) listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
-            else listOf(
-                DshMappedEvent.Subscribed(DshSubscribed(sid, lastSeq)),
-                DshMappedEvent.Sse(SseEvent.JobsSnapshot(sessionId = sid, jobs = emptyList())),
-                DshMappedEvent.Sse(SseEvent.QueueSnapshot(sessionId = sid, items = emptyList())),
-            )
+            else listOf(DshMappedEvent.Subscribed(DshSubscribed(sid, lastSeq)))
         }
 
         "session/event" -> {
@@ -218,6 +278,19 @@ object DshEventMapper {
                         else -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
                     }
                 }
+                // #354 持久修复（2026-09-08 R3 复验发现「重启后回落—」）：create 携带的
+                // 预设不进会话事件日志（仅 select RPC append），但 **session/control
+                // 基线 projections 每会话携带 agentPreset**（投影面）且变更实时推
+                // projection 帧——此前此 key 落 Ignored → 重启后无来源。映射到既有
+                // SessionAgentPresetChanged（下游 handler/store/详情页同链复用）。
+                "agentPreset" -> when (val value = payload["value"]) {
+                    is JsonPrimitive -> listOf(
+                        DshMappedEvent.Sse(
+                            SseEvent.SessionAgentPresetChanged(sessionId = sid, agentPreset = value.content)
+                        )
+                    )
+                    else -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+                }
                 "contextPressure" -> {
                     val value = payload.obj("value")
                     if (value == null) listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
@@ -290,6 +363,29 @@ object DshEventMapper {
                         else -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
                     }
                 }
+                "plan" -> {
+                    // #310③：客户端裁剪视图 {active, pending}（dsh-plan-mode
+                    // index.js:115-124 stateSchema crop——完整 state 还有 wanted/
+                    // running/activeAtLastHeader，carrier 只发裁剪视图）；JsonNull
+                    // 容错为 clear（同 goal/permissions 键语义）。
+                    when (val value = payload["value"]) {
+                        is JsonNull -> listOf(
+                            DshMappedEvent.Sse(SseEvent.SessionPlanChanged(sessionId = sid, plan = null))
+                        )
+                        is JsonObject -> listOf(
+                            DshMappedEvent.Sse(
+                                SseEvent.SessionPlanChanged(
+                                    sessionId = sid,
+                                    plan = dev.leonardo.ocbeacon.domain.model.DshPlanProjection(
+                                        active = value.bool("active") ?: false,
+                                        pending = value.bool("pending") ?: false,
+                                    ),
+                                )
+                            )
+                        )
+                        else -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+                    }
+                }
                 // 其余投影键（title…）：本任务不消费
                 else -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.PROJECTION))
             }
@@ -311,6 +407,67 @@ object DshEventMapper {
                 )
             )
         }
+        // workspace/follow 基线（0.1.2 mux 合成帧；#311 Task1）——items 逐行映射
+        // Workspace（畸形行丢弃），archivedSessionIds 透传（集合替换式）。
+        "workspace/baseline" -> {
+            val items = payload["items"]
+            val archivedIds = payload["archivedSessionIds"]
+            if (items !is JsonArray || archivedIds !is JsonArray) {
+                listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+            } else {
+                listOf(
+                    DshMappedEvent.Sse(
+                        SseEvent.WorkspaceSnapshotChanged(
+                            workspaces = items.mapNotNull { el ->
+                                (el as? JsonObject)?.let(::mapWorkspaceView)
+                            },
+                            archivedSessionIds = archivedIds.mapNotNull { it.text() },
+                        )
+                    )
+                )
+            }
+        }
+
+        // workspace/follow 归档增量（{type:'archived'} 合成帧；#311 Task1）——
+        // archivedSessionIds 是完整新集合（集合替换式，契约 ①-a）。
+        "workspace/archived" -> {
+            val ids = payload["archivedSessionIds"]
+            if (ids !is JsonArray) listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+            else listOf(
+                DshMappedEvent.Sse(SseEvent.WorkspaceArchivedChanged(archivedSessionIds = ids.mapNotNull { it.text() }))
+            )
+        }
+
+        // workspace/follow 注册表行增量（{type:'upsert'} 合成帧；#311 Task3）——
+        // workspace 携带整行 WorkspaceView（title/sessionIds 实时消费面）。
+        "workspace/upsert" -> {
+            val ws = payload["workspace"]
+            if (ws !is JsonObject) listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+            else listOfNotNull(
+                mapWorkspaceView(ws)?.let { mapped ->
+                    DshMappedEvent.Sse(SseEvent.WorkspaceUpserted(workspace = mapped))
+                } ?: DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED),
+            )
+        }
+
+        // workspace/follow 注册表行删除（{type:'remove'} 合成帧；#330）——
+        // workspaceId 删行（store applyRemove；其余行与 archived 集合保持）。
+        "workspace/remove" -> {
+            val id = payload.str("workspaceId")
+            if (id == null) listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+            else listOf(DshMappedEvent.Sse(SseEvent.WorkspaceRemoved(workspaceId = id)))
+        }
+
+        // workspace/follow 注册表序变更（{type:'order'} 合成帧；#330）——
+        // workspaceIds 是完整新序（服务器 publish 全量数组；store applyOrder 重排）。
+        "workspace/order" -> {
+            val ids = payload.arr("workspaceIds")
+            if (ids == null) listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+            else listOf(
+                DshMappedEvent.Sse(SseEvent.WorkspaceOrderChanged(workspaceIds = ids.mapNotNull { it.text() }))
+            )
+        }
+
         "stream/error" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.STREAM_ERROR))
 
         "host/session-added" -> {
@@ -320,12 +477,18 @@ object DshEventMapper {
                 DshMappedEvent.Sse(
                     SseEvent.SessionCreated(
                         // 最小构造（任务裁决）：cwd→directory、parentSessionId→parentId；
-                        // 帧无时间字段 → time 必填以 epoch0 占位，#276 由 session.list 再基线
+                        // #331：added 摘要带 updatedAt（mux 合成帧透传）→ time.updated
+                        // 采真值（缺席保持 epoch0 占位，#276 由 session.list 再基线）。
+                        // #333：parentId 仅 origin=subagent 时置（app 侧 parentId=
+                        // 「durable subagent 父」语义；fork 子会话 parentSessionId 在
+                        // 但 origin 缺席，是普通会话——置 parentId 会被列表过滤 +
+                        // 发送误路由 subagents/prompt）。
                         Session(
                             id = sid,
                             directory = payload.str("cwd") ?: "",
-                            parentId = payload.str("parentSessionId"),
-                            time = Session.Time(created = 0L, updated = 0L),
+                            parentId = payload.str("parentSessionId")
+                                ?.takeIf { payload.str("origin") == "subagent" },
+                            time = Session.Time(created = 0L, updated = payload.long("updatedAt") ?: 0L),
                         )
                     )
                 )
@@ -344,6 +507,24 @@ object DshEventMapper {
             if (sid == null || running == null) listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
             else listOf(
                 DshMappedEvent.Sse(SseEvent.SessionStatus(sid, if (running) SessionStatus.Busy else SessionStatus.Idle))
+            )
+        }
+
+        // A2(2026-09-06 全量 E2E):api-session/activity 合成帧(服务器仅在
+        // user/message·source=user 时发射,时间=消息时刻,与列表 updatedAt=
+        // max(createdAt,lastPromptAt) 语义一致)——web 以 updatedAt 单调合并即时
+        // 重排列表;映射最小 SessionUpdated(title 缺席由 defendSessionReplacement
+        // 回填缓存,updated 经 max 合并防历史重放回拉排序位)。
+        "host/session-activity" -> {
+            val sid = payload.str("sessionId")
+            val activityAt = payload.long("updatedAt")
+            if (sid == null || activityAt == null || activityAt <= 0L) listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+            else listOf(
+                DshMappedEvent.Sse(
+                    SseEvent.SessionUpdated(
+                        Session(id = sid, time = Session.Time(created = 0L, updated = activityAt)),
+                    ),
+                ),
             )
         }
 
@@ -429,6 +610,15 @@ object DshEventMapper {
             },
             // item.id 即 answer map 键（稳定 id 回显于答案）——对位 V2 form key
             key = q.str("id"),
+            // #310③：detail（问题描述正文，plan-review=计划全文）与 intent（呈现
+            // 意图，只改呈现不改协议）透传；均为单字键，无 camel/snake 歧义。
+            detail = q.str("detail"),
+            intent = q.obj("intent")?.let {
+                SseEvent.QuestionAsked.Intent(
+                    kind = it.str("kind"),
+                    approve = it.str("approve"),
+                )
+            },
         )
 
     // ============ SessionEvent 内层分派（历史重放与实况同路径） ============
@@ -436,14 +626,26 @@ object DshEventMapper {
     /**
      * 单 SessionEvent 映射。[envelope] 形如 "{type, seq, time, data, ...}"（历史行
      * 与 session/event 帧 event 字段同构）。DshHistoryFolder 与 mapFrame 共用本入口。
+     *
+     * [vocabulary] = 按代事件词汇表（#391 切片7）：已知但无需映射的类型按代具名
+     * 忽略；缺省 [DshEventVocabulary.CURRENT]（历史折叠按 session 头 version 择取，
+     * 见 DshHistoryFolder）。
      */
-    fun mapSessionEvent(sessionId: String, envelope: JsonObject): List<DshMappedEvent> =
-        runCatching { mapSessionEventInner(sessionId, envelope) }.getOrElse { t ->
+    fun mapSessionEvent(
+        sessionId: String,
+        envelope: JsonObject,
+        vocabulary: DshEventVocabulary = DshEventVocabulary.CURRENT,
+    ): List<DshMappedEvent> =
+        runCatching { mapSessionEventInner(sessionId, envelope, vocabulary) }.getOrElse { t ->
             AppLogger.w(TAG, "SessionEvent 映射容错降级: " + envelope.str("type") + " – " + t.message)
             listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
         }
 
-    private fun mapSessionEventInner(sessionId: String, envelope: JsonObject): List<DshMappedEvent> {
+    private fun mapSessionEventInner(
+        sessionId: String,
+        envelope: JsonObject,
+        vocabulary: DshEventVocabulary,
+    ): List<DshMappedEvent> {
         val type = envelope.str("type")
             ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
         val seq = envelope.long("seq") ?: 0L
@@ -454,26 +656,183 @@ object DshEventMapper {
             "user/message" -> mapUserMessage(sessionId, seq, time, data)
             "assistant/message" -> mapAssistantMessage(sessionId, seq, time, data)
             "tool/call" -> mapToolCall(sessionId, time, data)
-            "tool/result" -> mapToolResult(sessionId, data)
+            "tool/result" -> mapToolResult(sessionId, time, data)
             "assistant/chunk" -> mapChunk(sessionId, time, data)
-            // turn/step start → busy（重复 busy 的节流/FSM 去重留给 #276 编排层）
-            "turn/start", "step/start" ->
+            // turn/step start → busy（重复 busy 的节流/FSM 去重留给 #276 编排层）。
+            // #411：step/start 另记起始时刻（逐轮 TTFT 派生；权威语义 =
+            // dsh-session-stats openStep 折叠——step/start 开步、assistant/message 结算）。
+            "turn/start", "step/start" -> {
+                val turnNo = data.long("turn")
+                val stepNo = data.long("step")
+                if (turnNo != null && stepNo != null) {
+                    if (stepStartTimes.size > 128) stepStartTimes.clear()
+                    stepStartTimes[stepKey(sessionId, turnNo, stepNo)] = time
+                }
                 listOf(DshMappedEvent.Sse(SseEvent.SessionStatus(sessionId, SessionStatus.Busy)))
-            // time 透传（#294）：重放的历史 turn/end 携带原始时刻供通知层陈旧过滤
-            "turn/end" -> listOf(DshMappedEvent.Sse(SseEvent.SessionIdle(sessionId, time.takeIf { it > 0 })))
+            }
+            // #309 批1⑤：llm/retry（dsh-llm-retry :100-122 载荷 {retryId,turn,step,
+            // retry(次数),maxRetries?,delayMs,failure{message,code?}}）→
+            // SessionStatus.Retry（next=事件时刻+delayMs；RetryBanner 全链现成）；
+            // llm/retry-started（延迟到期实际重试）→ Busy（横幅退场、工作恢复）。
+            // 历史重放同路径：其后必有 turn/end（SessionIdle）→ 终态不残留。
+            "llm/retry" -> {
+                val attempt = data.long("retry")
+                if (attempt == null) listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+                else listOf(
+                    DshMappedEvent.Sse(
+                        SseEvent.SessionStatus(
+                            sessionId,
+                            SessionStatus.Retry(
+                                attempt = attempt.toInt(),
+                                message = data.obj("failure")?.str("message") ?: "",
+                                next = time + (data.long("delayMs") ?: 0L),
+                            ),
+                        )
+                    )
+                )
+            }
+            "llm/retry-started" ->
+                listOf(DshMappedEvent.Sse(SseEvent.SessionStatus(sessionId, SessionStatus.Busy)))
+            // time 透传（#294）：重放的历史 turn/end 携带原始时刻供通知层陈旧过滤。
+            // #309 批1⑤：TurnEndReason（dsh-session types.d.ts:145-165）——error →
+            // SessionError（D1③ 转录内错误行+sendMessage 清卡链现成）；max-tokens →
+            // TurnMaxTokens（通知卡带继续钮）；此前 reason 整体丢弃。
+            "turn/end" -> {
+                // #411：轮结束清该会话在途步起始时刻（取消步不结算、不残留）
+                stepStartTimes.keys.removeAll { it.startsWith("$sessionId:") }
+                val idle = DshMappedEvent.Sse(SseEvent.SessionIdle(sessionId, time.takeIf { it > 0 }))
+                val reason = data.obj("reason")
+                when (reason?.str("kind")) {
+                    "error" -> listOf(
+                        idle,
+                        DshMappedEvent.Sse(
+                            // #339：携带原始时刻（同 #294 turn/end 透传）——回放的
+                            // 历史错误轮据此被通知层陈旧过滤（「错误·hi」×7-8 重发实证）。
+                            SseEvent.SessionError(
+                                sessionId = sessionId,
+                                error = reason.obj("error")?.str("message") ?: "turn error",
+                                time = time.takeIf { it > 0 },
+                            )
+                        ),
+                    )
+                    "max-tokens" -> listOf(
+                        idle,
+                        DshMappedEvent.Sse(SseEvent.TurnMaxTokens(sessionId = sessionId, turn = data.long("turn") ?: 0L)),
+                    )
+                    else -> listOf(idle)
+                }
+            }
             "todo/write" -> mapTodoWrite(sessionId, data)
             "session/title" -> mapSessionTitle(sessionId, time, data)
 
-            // ---- Tier 2：会话元数据（具名忽略，#276/后续承接） ----
+            // ---- Tier 2：会话元数据 ----
             // compaction/end → SessionCompacted（#276 后端接口补全）：压缩完成
-            // 信号——DSH compact 走 /compact 命令通道受理即回，完成只由本事件
-            // 通告；SessionEventHandler.compactedSessions 计数驱动 UI 刷新 +
-            // 完成 snackbar（对位 V2 session.compaction.ended 映射先例，刻意不
-            // 映射 SessionNext(CompactionEnded)——那类是本地幂等结束信号）。
-            "compaction/end" ->
-                listOf(DshMappedEvent.Sse(SseEvent.SessionCompacted(sessionId = sessionId)))
-            "compaction/start", "compaction/summary", "compaction/prune" ->
-                listOf(DshMappedEvent.Ignored(DshIgnoreReason.COMPACTION))
+            // 信号——SessionEventHandler.compactedSessions 计数驱动 UI 刷新 +
+            // 完成 snackbar；banner 终结走 dispatcher 跨 handler endCompaction。
+            // #309 批1：失败压缩（error 非空，dsh-compaction-basic :463）加发
+            // CompactionEnded(error)——对位 #219 失败 snackbar 通道。
+            // #378：加发转录实体 CompactionFinished（compactionId 配对——流内
+            // 压缩 box 终态化；实况/历史同事件，幂等重建）。
+            "compaction/end" -> {
+                val events = mutableListOf(
+                    DshMappedEvent.Sse(SseEvent.SessionCompacted(sessionId = sessionId))
+                )
+                val err = data.str("error")?.takeIf { it.isNotBlank() }
+                err?.let {
+                    events += DshMappedEvent.Sse(
+                        SseEvent.SessionNext(
+                            SessionNextEvent.CompactionEnded(sessionId = sessionId, messageId = "", error = err)
+                        )
+                    )
+                }
+                compactionIdOf(data)?.let { cid ->
+                    events += DshMappedEvent.Sse(
+                        SseEvent.CompactionFinished(
+                            sessionId = sessionId, compactionId = cid, error = err, seq = seq, time = time,
+                        )
+                    )
+                }
+                events
+            }
+            // #309 批1：压缩呈现接线——CompactionCard 进行中双态 UI 现成，此前
+            // Ignored 未接。#378：加发转录实体 CompactionStarted（流内 box 建卡；
+            // banner 事件保留——现状零回归，Phase C 随 box 全验后再回收）。
+            "compaction/start" -> {
+                val events = mutableListOf(
+                    DshMappedEvent.Sse(
+                        SseEvent.SessionNext(
+                            SessionNextEvent.CompactionStarted(sessionId = sessionId, messageId = "", reason = "")
+                        )
+                    )
+                )
+                compactionIdOf(data)?.let { cid ->
+                    events += DshMappedEvent.Sse(
+                        SseEvent.CompactionStarted(
+                            sessionId = sessionId,
+                            compactionId = cid,
+                            sourceCommandId = data.str("sourceCommandId")?.takeIf { it.isNotBlank() },
+                            seq = seq,
+                            time = time,
+                        )
+                    )
+                }
+                events
+            }
+            // #378 勘误（活体取证 journal 378-380-wire §五.2）：wire 的 summary 是
+            // ContentBlock[]（[{type:"text",text:…}…]），原 data.str("summary") 恒
+            // null → 静默 Ignored——摘要从未到达任何消费面（banner delta 同病已死）。
+            // 文本块拼接为全文（单帧到达，非流式增量）；banner delta 与转录实体
+            // CompactionSummary 双发。
+            "compaction/summary" -> {
+                val text = contentBlocksText(data["summary"])
+                if (text == null) {
+                    listOf(DshMappedEvent.Ignored(DshIgnoreReason.COMPACTION))
+                } else {
+                    val events = mutableListOf(
+                        DshMappedEvent.Sse(
+                            SseEvent.SessionNext(
+                                SessionNextEvent.CompactionDelta(sessionId = sessionId, messageId = "", delta = text)
+                            )
+                        )
+                    )
+                    compactionIdOf(data)?.let { cid ->
+                        events += DshMappedEvent.Sse(
+                            SseEvent.CompactionSummary(
+                                sessionId = sessionId,
+                                compactionId = cid,
+                                sourceCommandId = data.str("sourceCommandId")?.takeIf { it.isNotBlank() },
+                                summaryText = text,
+                                // 2026-09-25 绑定点根修：卡的流内时序位取被遮蔽区间
+                                // 起点（min 防 wire 先压缩后 start>end 形态）；残缺
+                                // 降级 null → 卡回退信封 seq。
+                                shadowStartSeq = data.obj("shadowedRange")?.let { rg ->
+                                    val a = rg.long("start")
+                                    val b = rg.long("end")
+                                    if (a != null && b != null) minOf(a, b) else null
+                                },
+                                seq = seq,
+                                time = time,
+                            )
+                        )
+                    }
+                    // 2026-09-09 三层根修（复验 A 二轮插桩+原始 journal 实证）：
+                    // wire 的折叠权威区间在 **summary 事件的 data.shadowedRange**
+                    // （{"start":7,"end":204973}，实录 seq-205955）——user/message
+                    // 行的 surfaceOp 是信封级字符串（"append"），原 mapUserMessage 的
+                    // data.obj("surfaceOp").op=="replace" 判定从未命中 →
+                    // SurfaceRangeReplaced 全程休眠（台账恒空、Room 幽灵行只靠
+                    // prefetch 对账兜底）。此处按 shadowedRange 派生发射——实况/
+                    // 历史同路径（summary 在转录卡族内，页回放同发）。
+                    shadowedRangeOf(data, sessionId, seq, time)?.let { events += it }
+                    events
+                }
+            }
+            // prune = 无摘要的纯裁剪（shadowedRange 计价事件）：同样按自身
+            // data.shadowedRange 派生 SurfaceRangeReplaced（三层根修同源）；
+            // 无有效区间的 prune 维持 Ignored（计价事件无转录语义）。
+            "compaction/prune" ->
+                shadowedRangeOf(data, sessionId, seq, time)?.let { listOf(it) }
+                    ?: listOf(DshMappedEvent.Ignored(DshIgnoreReason.COMPACTION))
             // goal/change → SessionGoalChanged（whole-value last-wins；clear tombstone → null）。
             // 历史折叠与实况共用本入口（DshHistoryFolder 可折叠）。
             "goal/change" -> {
@@ -485,7 +844,7 @@ object DshEventMapper {
                 }
                 listOf(DshMappedEvent.Sse(SseEvent.SessionGoalChanged(sessionId = sessionId, goal = projection)))
             }
-            "subagent/descriptor" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.SUBAGENT_DESCRIPTOR))
+            // subagent/descriptor 等已知忽略词汇见 DshEventVocabulary（按代声明）。
             // agent-preset/selected {agentPreset} → SessionAgentPresetChanged：select 成功
             // 回显（非 scoped 重发），折叠进 Session.agentPreset 驱动卡片高亮。
             "agent-preset/selected" -> listOf(
@@ -507,56 +866,69 @@ object DshEventMapper {
                 listOf(DshMappedEvent.Sse(SseEvent.SessionPermissionChanged(sessionId = sessionId, sandboxMode = data.str("mode"))))
             "approval/policy" ->
                 listOf(DshMappedEvent.Sse(SseEvent.SessionPermissionChanged(sessionId = sessionId, approvalPolicy = data.str("policy"))))
-            "plan/mode" ->
-                listOf(DshMappedEvent.Ignored(DshIgnoreReason.POLICY_STATE))
-            "agent/inbox/spliced" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.INBOX))
-            "step/end" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.LIFECYCLE_NOISE))
-            // llm/retry（实测 3,566 次）——Part.Retry 对位留给后续；不进目录会误伤真实会话
-            "llm/retry", "llm/retry-started" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.LLM_RETRY))
-            "command/run", "command/done" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.COMMAND))
-            // log-only（设计 Tier3 明列）
-            "request/header", "request/context", "session/end-seed",
-            "web/deepseek-search-llm-request", "schedule/change", "feedback/record",
-                -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.LOG_ONLY))
-            // 工具卡由 tool/call|result 承载；code-dispatch 是渲染伴生事件（实测 ~66,690 次）
-            "tool/code-dispatch", "tool/code-dispatch-start" ->
-                listOf(DshMappedEvent.Ignored(DshIgnoreReason.CODE_DISPATCH))
-            // durable 审批面：实况弹窗由 mux approval/requested|resolved 承载（本组件），
-            // 历史重放 asked 会造成重复弹窗——#276 裁决是否补充重放语义
-            "approval/asked", "approval/decided" ->
-                listOf(DshMappedEvent.Ignored(DshIgnoreReason.APPROVAL_DURABLE))
-
-            // ---- 插件域扩展（known-49 收尾；E2E 实证 llm/failover 曾致整会话拒绝重建） ----
-            "llm/failover" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.LLM_FAILOVER))
-            "session/title-llm-request" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.LOG_ONLY))
-            "hook/invoked", "hook/result",
-            "team/task", "team/member", "team/message/delivered", "team/message/queued" ->
-                listOf(DshMappedEvent.Ignored(DshIgnoreReason.PLUGIN_DOMAIN))
+            // plan/mode、agent/inbox/spliced、step/end 等已知忽略词汇见
+            // DshEventVocabulary；llm/retry|retry-started 已在上方映射为
+            // SessionStatus（Retry/Busy），不属忽略目录（原内联分支为不可达死码，删）。
+            // #323：斜杠命令执行反馈行——转录 log-only 事件（dsh-commands 契约：run
+            // {commandId,name,args?,source} 先于 handler、done {commandId,kind,text?,
+            // sourceEventSeq?} 结算后；commandId 配对、直追加无轮包裹）。真实转录
+            // 事件（非历史行忽略词汇）——历史重放同路径渲染（DshHistoryFolder 共用
+            // 本入口）；畸形（缺 commandId）具名 MALFORMED，绝不落 STRUCTURAL_VIOLATION
+            //（#327 历史行防御纪律：不得触发整会话拒绝重建）。
+            "command/run" -> mapCommandRun(sessionId, seq, time, data)
+            "command/done" -> mapCommandDone(sessionId, seq, time, data)
+            // log-only / 模型选择 / 插件域 / 审批面等已知忽略词汇统一见
+            // DshEventVocabulary（V2/V3 按代声明；原内联分支的逐条依据——含
+            // #310① A8轮3 的 fold 拒绝重建事故——已随语义迁入该文件注释）。
+            // #349（2026-09-07 真机实证）：subagent 族 code-dispatch 升格为子代理卡
+            // 真源——DSH wire 上子代理派发被 run_code 包裹（tool/call 名恒=run_code，
+            // 子会话 id 不在 tool/call|result 的结构化字段），childSessionId 仅存于
+            // 两处：code-dispatch 回执（bg："started subagent <uuid>"）与根
+            // tool/result 信封（fg：{kind:"foreground",runId,output}）。其余内层工具
+            // （bash/read/ask_user_question…，实测 ~66,690 次）维持忽略——run_code
+            // 根卡已承载，平铺会双份。
+            "tool/code-dispatch-start" -> mapCodeDispatchStart(sessionId, time, data)
+            "tool/code-dispatch" -> mapCodeDispatch(sessionId, time, data)
+            // #391 切片7：DSH 0.1.5 / 会话格式 V3 —— 子代理派发改名 code-dispatch → ptc-dispatch
+            //（#349 子代理卡真源不变，复用同一映射）
+            "tool/ptc-dispatch-start" -> mapCodeDispatchStart(sessionId, time, data)
+            "tool/ptc-dispatch" -> mapCodeDispatch(sessionId, time, data)
+            // V3 系统/插件上下文消息：渲染为注入类精简卡（#398 步骤3；载荷见
+            // docs/research/2026-09-11-dsh-v3-event-payloads.md）。
+            "system/message" -> mapSystemMessage(sessionId, seq, time, data)
+            // #398：present 工具的服务器权威交付载荷 → 工具卡宿主上的 Part.Deliverables
+            //（TurnDeliverables fold 汇入 turn 尾产出文件行；web 同源事件语义见
+            // dsh-client-ui-deliverables/lib/client.js selectDeliverables）。
+            "deliverables/presented" -> mapDeliverablesPresented(sessionId, time, data)
+            // V3 新增忽略词汇（assistant/attempt、feedback/message-*、subagent/catalog）、
+            // durable 审批面、插件域、llm/failover 等统一见 DshEventVocabulary（V3 表；
+            // subagent/catalog 双源裁定与 feedback 取证状态见该文件注释）。
             // 2026-09-01（Task 3b 卡片缺口）：workflow-run 降级卡——run-start/run-end
             // 映射为 synthetic 任务信封（同 runId 同宿主消息 id → 原位更新：running →
-            // completed/error 单卡）；agent-start/end 是阶段明细（workflow 阶段卡
-            // 后续增强），维持 Ignored 防逐成员刷卡。
+            // completed/error 单卡）；agent-start/end 是阶段明细（防逐成员刷卡），
+            // 已在 DshEventVocabulary 按代声明为已知忽略。
             "tool-workflow/run-start" -> mapWorkflowRunStart(sessionId, time, data)
             "tool-workflow/run-end" -> mapWorkflowRunEnd(sessionId, time, data)
-            "tool-workflow/agent-start", "tool-workflow/agent-end" ->
-                listOf(DshMappedEvent.Ignored(DshIgnoreReason.WORKFLOW_AGENT))
 
-            // ---- Mux 帧类型混入历史行（B.4 防御）：session/projection|jobs|queue、
-            //      stream/error 是 WS 帧面而非 SessionEvent——历史重放/翻页若出现
-            //      这些 type 行，按已知可忽略折叠（不落 UNKNOWN_UNIGNORABLE 拒绝重建）。 ----
-            "session/projection" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.PROJECTION))
-            "session/jobs" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.JOBS))
-            "session/queue" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.QUEUE))
-            "stream/error" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.STREAM_ERROR))
-
-            // ---- 未知类型：ignorable 旗标兑现（spec：仅 llm/failover 带，但旗标是权威信号）；
-            //      无旗标才拒绝重建（folder 判据） ----
+            // ---- 已知忽略词汇（按代声明）+ 未知降级 ----
+            // Mux 帧类型混入历史行（B.4 防御：session/projection|jobs|queue、
+            // stream/error 是 WS 帧面而非 SessionEvent）亦在词汇表内按代声明。
             else -> {
-                if (envelope.bool("ignorable") == true) {
-                    listOf(DshMappedEvent.Ignored(DshIgnoreReason.IGNORABLE_FLAG))
-                } else {
-                    AppLogger.w(TAG, "未知 SessionEvent 类型（潜在转录语义，拒绝重建判据）: " + type)
-                    listOf(DshMappedEvent.Ignored(DshIgnoreReason.UNKNOWN_UNIGNORABLE))
+                val knownReason = vocabulary.ignoreReason(type)
+                when {
+                    // 该代已知但无需映射 → 具名忽略（spec「按代词汇表」）
+                    knownReason != null -> listOf(DshMappedEvent.Ignored(knownReason))
+                    // ignorable 旗标兑现（spec：仅 llm/failover 带，但旗标是权威信号）
+                    envelope.bool("ignorable") == true ->
+                        listOf(DshMappedEvent.Ignored(DshIgnoreReason.IGNORABLE_FLAG))
+                    else -> {
+                        // #391 切片7 容错优先：未知词汇**具名降级 + 日志遥测**，不拒绝重建
+                        AppLogger.w(
+                            TAG,
+                            "未知 SessionEvent 类型（" + vocabulary.version + "，已具名降级，不拒绝重建）: " + type,
+                        )
+                        listOf(DshMappedEvent.Ignored(DshIgnoreReason.UNKNOWN_DEGRADED))
+                    }
                 }
             }
         }
@@ -568,18 +940,79 @@ object DshEventMapper {
      * user/message → MessageUpdated + 显式 text part。
      *
      * 不走 V2 的 summary.body 播种路径（handler 会再 seed 一条 summary part，与显式
-     * part 双份风险）；source.kind（人类/注入/goal 轮）统一按 user 气泡渲染——注入
-     * 轮的差异化展示留给后续。
+     * part 双份风险）。#385（2026-09-10 用户裁决）：注入类消息（source.kind≠user——
+     * agent-instructions/skill-catalog/plugin 等宿主上下文注入）透传 injectionKind，
+     * UI 按精简折叠卡渲染（对齐 DSH Web；此前统一按 user 气泡渲染成文本墙——演示①实测）。
      */
     private fun mapUserMessage(sessionId: String, seq: Long, time: Long, data: JsonObject): List<DshMappedEvent> {
-        val id = messageId(seq)
-        val events = mutableListOf(
+        val id = messageId(sessionId, seq)
+        val injectionKind = data.obj("source")?.str("kind")
+            ?.takeIf { it.isNotBlank() && it != "user" }
+            // #387（2026-09-12 用户裁决：仿 dsh web / opencode web 判据）：V2 服务器对
+            // skill-catalog / 上下文刷新注入**不带 source.kind**；两端 web 分别靠
+            // source.kind 字段（dsh）与 text part 的 synthetic 字段（opencode）判定，
+            // 我们无字段可用 → 在**映射单点**用同一纯判定兜底（渲染层对历史 Room 行的
+            // 同判据兜底保留，历史行不经本路径）。仅「整条恰为一个闭合
+            // <system-reminder> 块」命中；混合消息不折叠（不吞用户正文）。
+            ?: (data.arr("content") ?: emptyList())
+                .filterIsInstance<JsonObject>()
+                .filter { it.str("type") == "text" }
+                .joinToString("") { it.str("text") ?: "" }
+                .takeIf { it.isNotBlank() && SystemInjection.isPureReminder(it) }
+                ?.let { "context" }
+        val events = mutableListOf<DshMappedEvent>(
             DshMappedEvent.Sse(
                 SseEvent.MessageUpdated(
-                    Message.User(id = id, sessionId = sessionId, time = TimeInfo(created = time))
+                    Message.User(
+                        id = id,
+                        sessionId = sessionId,
+                        time = TimeInfo(created = time),
+                        injectionKind = injectionKind,
+                    )
                 )
             )
         )
+        // #356 echo→持久原子换装：RPC 提交的持久回显（source=user-rpc.rpccdId，
+        // MessageSourceMap 契约）补发 pending-<rpcId> 拆除——本地 echo 气泡与
+        // 持久消息同批到达同批折叠（handleMessageRemoved 幂等：echo 不在为 no-op，
+        // 历史/重放路径天然安全）。
+        data.obj("source")?.str("rpcId")?.takeIf { it.isNotBlank() }?.let { rpcId ->
+            events += DshMappedEvent.Sse(SseEvent.MessageRemoved(sessionId, "pending-$rpcId"))
+        }
+        // #378 转录实体接线（压缩摘要表面载体，实录 seq-5392）：
+        // - source.compactionId → CompactionSurfaceBound——摘要的 user/message
+        //   载体与 CompactionEntry 绑定（UI 抑制原气泡、由压缩 box 承载）；
+        // - surfaceOp.op="replace" → SurfaceRangeReplaced——被遮蔽旧消息折叠的
+        //   权威指令（MessageEventHandler 台账消费，实况/历史同事件）。
+        data.obj("source")?.str("compactionId")?.takeIf { it.isNotBlank() }?.let { cid ->
+            events += DshMappedEvent.Sse(
+                SseEvent.CompactionSurfaceBound(
+                    sessionId = sessionId, compactionId = cid, messageId = id, seq = seq, time = time,
+                )
+            )
+        }
+        data.obj("surfaceOp")?.takeIf { it.str("op") == "replace" }?.let { op ->
+            // #391 切片7：V3 信封级替换改名 {startSeq,endSeq}——双读兼容（旧 start/end
+            // 优先回落）。注意 compaction shadowedRange 的 start/end 保持不变（另一处）。
+            val start = op.long("startSeq") ?: op.long("start")
+            val end = op.long("endSeq") ?: op.long("end")
+            when {
+                start == null || end == null ->
+                    AppLogger.w(TAG, "user/message surfaceOp.replace 残缺（start=$start end=$end），忽略折叠指令")
+                end < start -> {
+                    // surfaceOp 越界（end < start）是结构性违约：历史折叠遇此放弃本次重建，
+                    // 而非产出被截断的转录（#391 切片7 拒绝重建判据的实发射点）。
+                    AppLogger.w(TAG, "user/message surfaceOp.replace 越界（start=$start end=$end），标记结构性违约")
+                    events += DshMappedEvent.Ignored(DshIgnoreReason.STRUCTURAL_VIOLATION)
+                }
+                else -> events += DshMappedEvent.Sse(
+                    SseEvent.SurfaceRangeReplaced(
+                        sessionId = sessionId, startSeq = start, endSeq = end,
+                        byMessageId = id, seq = seq, time = time,
+                    )
+                )
+            }
+        }
         (data.arr("content") ?: emptyList()).forEachIndexed { i, el ->
             val block = el as? JsonObject ?: return@forEachIndexed
             when (block.str("type")) {
@@ -594,6 +1027,22 @@ object DshEventMapper {
                         )
                     )
                 )
+                // #398（DSH 0.1.5/V3 实况取证）：V3 user/message 可载 reasoning 块——
+                // 对齐 assistant/message 映射为 Part.Reasoning（此前落 else 整块丢弃）。
+                "reasoning" -> events += DshMappedEvent.Sse(
+                    SseEvent.MessagePartUpdated(
+                        Part.Reasoning(
+                            id = PartIdContract.derive(id, "reasoning", i.toLong()),
+                            sessionId = sessionId,
+                            messageId = id,
+                            text = block.str("text") ?: "",
+                            time = Part.Reasoning.Time(start = time, end = time),
+                        )
+                    )
+                )
+                // tool-call/tool-result 块是工具卡真源（tool/call|result 事件对）的冗余镜像，
+                // 静默确认防重复卡（同 assistant/message 先例）。
+                "tool-call", "tool-result" -> Unit
                 // 2026-09-01（Task 3c 卡片缺口）：file/image ContentBlock → Part.File
                 //（实况日志 829 例 user/message image 块此前被整块丢弃；图片渲染走既有
                 // Part.File 链——DSH attachment 字节拉取留待 session.attachment 接线）。
@@ -602,6 +1051,88 @@ object DshEventMapper {
             }
         }
         return events
+    }
+
+    /**
+     * system/message（V3）→ 注入类消息（EventCard 精简折叠卡，对齐 DSH Web）。
+     *
+     * 实况载荷（docs/research/2026-09-11-dsh-v3-event-payloads.md）：
+     * data.message{id,role=system,source{kind,plugin},content[]}。
+     * content 为空时整条不产事件（UI 对无文本注入消息本就跳过，避免噪声）；
+     * injectionKind 透传 source.kind（plugin → 既有 Plugin 标签），工具/推理块不渲染。
+     */
+    private fun mapSystemMessage(sessionId: String, seq: Long, time: Long, data: JsonObject): List<DshMappedEvent> {
+        val message = data.obj("message") ?: return emptyList()
+        val content = message.arr("content") ?: emptyList()
+        if (content.isEmpty()) return emptyList()
+        val wireId = message.str("id")
+        val id = if (wireId.isNullOrBlank()) messageId(sessionId, seq) else "dsh-sys-" + wireId
+        val sourceKind = message.obj("source")?.str("kind")
+        val injectionKind = sourceKind?.takeIf { it.isNotBlank() } ?: "system"
+        val events = mutableListOf<DshMappedEvent>()
+        events += DshMappedEvent.Sse(
+            SseEvent.MessageUpdated(
+                Message.User(
+                    id = id,
+                    sessionId = sessionId,
+                    role = "system",
+                    time = TimeInfo(created = time),
+                    injectionKind = injectionKind,
+                )
+            )
+        )
+        content.forEachIndexed { i, el ->
+            val block = el as? JsonObject ?: return@forEachIndexed
+            when (block.str("type")) {
+                "text" -> events += DshMappedEvent.Sse(
+                    SseEvent.MessagePartUpdated(
+                        Part.Text(
+                            id = PartIdContract.derive(id, "text", i.toLong()),
+                            sessionId = sessionId,
+                            messageId = id,
+                            text = block.str("text") ?: "",
+                            time = Part.Text.Time(start = time, end = time),
+                        )
+                    )
+                )
+                "file", "image" -> events += mapFileBlock(sessionId, id, i, block)
+                else -> Unit
+            }
+        }
+        return events
+    }
+
+    /**
+     * deliverables/presented（V3）→ present 工具卡宿主消息上挂 [Part.Deliverables]。
+     *
+     * 实况载荷（docs/research/2026-09-11-dsh-v3-event-payloads.md）：
+     * data{turn, callId, files[{path, description}]}。callId 是 present 的 **PTC 子调用**
+     * id（`root:ptc:N`，实况 seq205）——[rootCallId] 剥后缀后经 [toolHostMessageId] 落位
+     * 既有的根 run_code 工具卡宿主（tool/ptc-dispatch-start 的 rootCallId 同源；
+     * 服务器权威，不经 args 反推）。空 files / path 空白的行丢弃；整条无有效文件时
+     * 不产事件（零信息，不生成空 part，也不落 [DshIgnoreReason.STRUCTURAL_VIOLATION]）。
+     */
+    private fun mapDeliverablesPresented(sessionId: String, time: Long, data: JsonObject): List<DshMappedEvent> {
+        val callId = data.str("callId") ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+        val files = (data.arr("files") ?: emptyList()).mapNotNull { el ->
+            val file = el as? JsonObject ?: return@mapNotNull null
+            val path = file.str("path")?.takeIf { it.trim().isNotEmpty() } ?: return@mapNotNull null
+            Part.Deliverables.PresentedFile(path = path, description = file.str("description"))
+        }
+        if (files.isEmpty()) return emptyList()
+        return listOf(
+            DshMappedEvent.Sse(
+                SseEvent.MessagePartUpdated(
+                    Part.Deliverables(
+                        id = "dsh-deliverables-" + callId,
+                        sessionId = sessionId,
+                        messageId = toolHostMessageId(rootCallId(callId)),
+                        presented = files,
+                        time = Part.Deliverables.Time(start = time, end = time),
+                    )
+                )
+            )
+        )
     }
 
     /**
@@ -616,19 +1147,37 @@ object DshEventMapper {
      *   fold 场景为幂等 no-op）。
      */
     private fun mapAssistantMessage(sessionId: String, seq: Long, time: Long, data: JsonObject): List<DshMappedEvent> {
-        val id = messageId(seq)
+        val id = messageId(sessionId, seq)
         val events = mutableListOf<DshMappedEvent>()
         val turn = data.long("turn")
         val step = data.long("step")
         if (turn != null && step != null) {
             events += DshMappedEvent.Sse(SseEvent.MessageRemoved(sessionId, streamingMessageId(turn, step)))
         }
-        val usage = data.obj("usage")
-        val tokens = usage?.let { u ->
-            val input = u.long("inputTokens")?.toInt() ?: 0
-            val output = u.long("outputTokens")?.toInt() ?: 0
-            Message.Assistant.Tokens(input = input, output = output, total = input + output)
-        }
+        // (2026-09-12 消息层扁平化 (a)) 模型路由：DSH 把 provider/model 放在
+        // data.message.source（实况：{"kind":"model","provider":"...","model":"..."}，
+        // web 侧 messageRoute() = message.source —— chat.js:6921-6927）。此前 app
+        // 完全不读该字段 → Message.Assistant.modelId/providerId 在 DSH 面结构性恒空
+        // → 统计栏永远没有模型名。source.kind 非 model（理论上的其他来源）时不取值。
+        val message = data.obj("message")
+        val source = message?.obj("source")
+        val modelId = source?.str("model")?.takeIf { it.isNotBlank() }
+        val providerId = source?.str("provider")?.takeIf { it.isNotBlank() }
+        // (2026-09-12 消息层扁平化 (e)) usage 全桶：input/output/total/reasoning/
+        // cache(read/write) 一次读齐——此前只读 input/output，reasoning/cache 结构性丢失。
+        val tokens = usageTokens(data.obj("usage"))
+        // (#411) 逐轮 timing 派生：ttft = 首 token − step/start；decode = 整装到达 −
+        // 首 token；decodeTokens = usage 输出桶（provider 上报才有）。缺 step/start
+        // 或无合格首 token → 对应项 null（UI 整项隐藏，宁缺勿谎）。
+        val firstToken = firstTokenTime(data.arr("stream"))
+        val stepStart = if (turn != null && step != null) {
+            stepStartTimes.remove(stepKey(sessionId, turn, step))
+        } else null
+        val ttftMs = if (firstToken != null && stepStart != null) {
+            (firstToken - stepStart).takeIf { it > 0 }
+        } else null
+        val decodeMs = firstToken?.let { first -> (time - first).takeIf { it > 0 } }
+        val decodeTokens = tokens?.output?.toLong()?.takeIf { it > 0 }
         events += DshMappedEvent.Sse(
             SseEvent.MessageUpdated(
                 Message.Assistant(
@@ -636,13 +1185,22 @@ object DshEventMapper {
                     sessionId = sessionId,
                     time = TimeInfo(created = time, completed = time),
                     parentId = "",
+                    modelId = modelId,
+                    providerId = providerId,
+                    // US#28：服务器轮次号（会话内绝对；客户端锚点序号仅兜底）
+                    turnNumber = data.long("turn"),
+                    ttftMs = ttftMs,
+                    decodeMs = decodeMs,
+                    decodeTokens = decodeTokens,
                     tokens = tokens,
                     // DSH interrupted 前缀标记（§1.5）→ finish 语义对位；缺席为 null
                     finish = if (data.bool("interrupted") == true) "interrupted" else null,
+                    // #310②：服务器规范消息 id（消息反馈 CAS 地址——deriveEventMessage
+                    // 投影的 data.message.id；缺席容错为 null）
+                    wireId = message?.str("id"),
                 )
             )
         )
-        val message = data.obj("message")
         val content = message?.arr("content") ?: emptyList()
         content.forEachIndexed { i, el ->
             val block = el as? JsonObject ?: return@forEachIndexed
@@ -712,6 +1270,8 @@ object DshEventMapper {
                         state = ToolState.Pending(
                             input = parsedInput,
                             raw = rawArgs.takeIf { it.isNotEmpty() },
+                            // #453：调用信封时刻 = 工具卡累积计时锚（行尾走动计时）
+                            time = ToolState.Pending.Time(start = time),
                         ),
                     )
                 )
@@ -720,7 +1280,7 @@ object DshEventMapper {
     }
 
     /** tool/result → 同 callId 工具卡终态（Completed/Error；input 由 mergePart 保留）。 */
-    private fun mapToolResult(sessionId: String, data: JsonObject): List<DshMappedEvent> {
+    private fun mapToolResult(sessionId: String, time: Long, data: JsonObject): List<DshMappedEvent> {
         val message = data.obj("message")
         val callId = message?.obj("source")?.str("callId")
             ?: (message?.arr("content") ?: emptyList()).firstNotNullOfOrNull { el ->
@@ -729,10 +1289,19 @@ object DshEventMapper {
             ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
         val hostId = toolHostMessageId(callId)
         val errorElem = data["error"] ?: message?.get("error")
+        val rootOutput = flattenToolResultOutput(message)
         val state = if (errorElem != null && errorElem !is JsonNull) {
-            ToolState.Error(error = errorElem.errorText())
+            // #453：终态 time（start=0 哨兵——mergePart Tool 分支从 existing
+            // Pending/Running 继承真实 start；显示层 end-start>0 才显示）
+            ToolState.Error(
+                error = errorElem.errorText(),
+                time = ToolState.Error.Time(start = 0L, end = time),
+            )
         } else {
-            ToolState.Completed(output = flattenToolResultOutput(message))
+            ToolState.Completed(
+                output = rootOutput,
+                time = ToolState.Completed.Time(start = 0L, end = time),
+            )
         }
         return listOf(
             DshMappedEvent.Sse(
@@ -748,6 +1317,213 @@ object DshEventMapper {
                     )
                 )
             )
+        ) + subAgentEnvelopeLinkEvents(sessionId, time, callId, rootOutput)
+    }
+
+    // ---- #349（2026-09-07）：subagent 族 code-dispatch 子代理卡 ----
+
+    /**
+     * subagent 卡键："{rootCallId}:subagent"——同一 run_code 根调用下唯一稳定键。
+     *
+     * 为什么不用 wire subCallId（"{root}:code:{n}"）：fg 派发的子会话 id 只出现在
+     * 根 tool/result 信封里（信封只有 rootCallId），无状态映射下两事件要汇合到
+     * 同一 part，键必须由 rootCallId 单侧可推导。副作用：一个 run_code 内多次
+     * 子代理派发共享一卡（后者覆盖前者，run_code 根卡仍保全量输出）——罕见
+     * 场景的取舍，注释存档。
+     */
+    private fun subAgentCardKey(rootCallId: String): String = rootCallId + ":subagent"
+
+    /** 仅 subagent / subagent_fork 内层派发升格为卡；其余内层工具维持忽略。 */
+    private fun isSubAgentDispatchName(name: String?): Boolean =
+        name == "subagent" || name == "subagent_fork"
+
+    /** bg 派发回执文本："started subagent <uuid>"（runId 即派发即得）。 */
+    private val STARTED_SUBAGENT_RUN_ID = Regex("started subagent ([A-Za-z0-9-]+)")
+
+    /**
+     * 首个完整 JSON 对象提取：整串直试，失败则花括号深度扫描切前缀再解析。
+     *
+     * 动机（2026-09-07 真机实证 fb650391 seq12556）：run_code 根回执 text 可把
+     * 子代理信封**连发两份**（"{…}\n{…}"，959 字符 = 2×~480）——整串 parse 恒
+     * 失败致 fg 关联静默丢失。深度扫描尊重字符串/转义内的花括号，取首个
+     * 完整对象（两份同源，取首即可）。
+     */
+    private fun firstJsonObjectOf(text: String): JsonObject? {
+        runCatching { json.parseToJsonElement(text) as? JsonObject }.getOrNull()?.let { return it }
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for ((i, ch) in text.withIndex()) {
+            when {
+                escaped -> escaped = false
+                ch == '\\' && inString -> escaped = true
+                ch == '"' -> inString = !inString
+                !inString && ch == '{' -> depth++
+                !inString && ch == '}' -> {
+                    depth--
+                    if (depth == 0) {
+                        return runCatching {
+                            json.parseToJsonElement(text.substring(0, i + 1)) as? JsonObject
+                        }.getOrNull()
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    /** code-dispatch-start → 子代理卡 Running（arguments → input → 描述行）。 */
+    private fun mapCodeDispatchStart(sessionId: String, time: Long, data: JsonObject): List<DshMappedEvent> {
+        val name = data.str("name")
+        if (!isSubAgentDispatchName(name)) {
+            return listOf(DshMappedEvent.Ignored(DshIgnoreReason.CODE_DISPATCH))
+        }
+        val root = data.str("rootCallId")
+            ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+        val key = subAgentCardKey(root)
+        val input = data.obj("arguments") ?: JsonObject(emptyMap())
+        return listOf(
+            DshMappedEvent.Sse(
+                SseEvent.MessageUpdated(
+                    Message.Assistant(
+                        id = toolHostMessageId(key),
+                        sessionId = sessionId,
+                        time = TimeInfo(created = time),
+                        parentId = "",
+                    )
+                )
+            ),
+            DshMappedEvent.Sse(
+                SseEvent.MessagePartUpdated(
+                    Part.Tool(
+                        id = key,
+                        sessionId = sessionId,
+                        messageId = toolHostMessageId(key),
+                        callId = key,
+                        tool = name ?: "subagent",
+                        state = ToolState.Running(
+                            input = input,
+                            time = ToolState.Running.Time(start = time),
+                        ),
+                    )
+                )
+            ),
+        )
+    }
+
+    /**
+     * code-dispatch → 子代理卡终态。
+     *
+     * - bg：content 首行 "started subagent <uuid>" → runId 即 metadata（导航即达，
+     *   卡片完结而子代理后台续跑——DSH 语义：派发完成 ≠ 子代理完成）；
+     * - fg：content = 子代理最终报告（无 id）——runId 由随后的根 tool/result 信封
+     *   关联补写（[subAgentEnvelopeLinkEvents]）。
+     */
+    private fun mapCodeDispatch(sessionId: String, time: Long, data: JsonObject): List<DshMappedEvent> {
+        val name = data.str("name")
+        if (!isSubAgentDispatchName(name)) {
+            return listOf(DshMappedEvent.Ignored(DshIgnoreReason.CODE_DISPATCH))
+        }
+        val root = data.str("rootCallId")
+            ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+        val key = subAgentCardKey(root)
+        val output = (data.arr("content") ?: emptyList()).mapNotNull { el ->
+            (el as? JsonObject)?.str("text")
+        }.filter { it.isNotEmpty() }.joinToString("\n")
+        val isError = data.bool("isError") == true
+        val runId = STARTED_SUBAGENT_RUN_ID.find(output)?.groupValues?.get(1)
+        val metadata = runId?.let {
+            mapOf("sessionId" to JsonPrimitive(it), "sessionID" to JsonPrimitive(it))
+        }
+        val state = if (isError) {
+            // #453：Error 终态同补 time（对齐 Completed 腿——错误工具调用同样
+            // 显示累积时长；start=0 由 mergePart 从 Running 锚继承）
+            ToolState.Error(
+                error = output,
+                metadata = metadata,
+                time = ToolState.Error.Time(start = 0L, end = time),
+            )
+        } else {
+            ToolState.Completed(
+                output = output,
+                metadata = metadata,
+                time = ToolState.Completed.Time(start = time, end = time),
+            )
+        }
+        return listOf(
+            // 宿主重申（幂等 upsert）：防实况/回放边界上 start 帧缺席导致孤儿 part
+            DshMappedEvent.Sse(
+                SseEvent.MessageUpdated(
+                    Message.Assistant(
+                        id = toolHostMessageId(key),
+                        sessionId = sessionId,
+                        time = TimeInfo(created = time),
+                        parentId = "",
+                    )
+                )
+            ),
+            DshMappedEvent.Sse(
+                SseEvent.MessagePartUpdated(
+                    Part.Tool(
+                        id = key,
+                        sessionId = sessionId,
+                        messageId = toolHostMessageId(key),
+                        callId = key,
+                        tool = name ?: "subagent",
+                        state = state,
+                    )
+                )
+            ),
+        )
+    }
+
+    /**
+     * #349 fg 关联：根 tool/result 信封 {kind:"foreground", runId, output:[…]} →
+     * 给 "{root}:subagent" 卡补写 metadata（bg 已在 dispatch 带上，且 bg 信封
+     * kind≠foreground 不进本分支——两路互补不互踩）。非信封返回值（普通 run_code
+     * 结果）静默空集。output 取信封内层 text 块展平（与 dispatch 报告同源内容）。
+     */
+    private fun subAgentEnvelopeLinkEvents(
+        sessionId: String,
+        time: Long,
+        rootCallId: String,
+        rootOutput: String,
+    ): List<DshMappedEvent> {
+        val envelope = firstJsonObjectOf(rootOutput)
+        if (envelope?.str("kind") != "foreground") return emptyList()
+        val runId = envelope.str("runId")?.takeIf { it.isNotBlank() } ?: return emptyList()
+        if (envelope["output"] !is JsonArray) return emptyList()
+        val key = subAgentCardKey(rootCallId)
+        val report = (envelope["output"] as JsonArray).mapNotNull { el ->
+            (el as? JsonObject)?.str("text")
+        }.filter { it.isNotEmpty() }.joinToString("\n\n")
+        return listOf(
+            DshMappedEvent.Sse(
+                SseEvent.MessageUpdated(
+                    Message.Assistant(
+                        id = toolHostMessageId(key),
+                        sessionId = sessionId,
+                        time = TimeInfo(created = time),
+                        parentId = "",
+                    )
+                )
+            ),
+            DshMappedEvent.Sse(
+                SseEvent.MessagePartUpdated(
+                    Part.Tool(
+                        id = key,
+                        sessionId = sessionId,
+                        messageId = toolHostMessageId(key),
+                        callId = key,
+                        // 工具名缺席：mergePart 保留 existing 名 + input
+                        tool = "",
+                        state = ToolState.Completed(
+                            output = report,
+                            metadata = mapOf("sessionId" to JsonPrimitive(runId), "sessionID" to JsonPrimitive(runId)),
+                        ),
+                    )
+                )
+            ),
         )
     }
 
@@ -782,6 +1558,53 @@ object DshEventMapper {
 
     /** workflow 卡宿主消息 id（runId 键控——start/end 原位更新同一卡）。 */
     private fun workflowMessageId(runId: String): String = "dsh-workflow-" + runId
+
+    /**
+     * #323：command/run {commandId, name, args?, source} → [SseEvent.CommandRunStarted]。
+     *
+     * args 是原始入参串（recordInput=false 的命令缺席）；source={kind} 只取 kind
+     * 保真透传。缺 commandId = 畸形（配对键不可缺失）→ MALFORMED 具名降级。
+     */
+    private fun mapCommandRun(sessionId: String, seq: Long, time: Long, data: JsonObject): List<DshMappedEvent> {
+        val commandId = data.str("commandId")
+            ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+        return listOf(
+            DshMappedEvent.Sse(
+                SseEvent.CommandRunStarted(
+                    sessionId = sessionId,
+                    commandId = commandId,
+                    name = data.str("name") ?: "",
+                    args = data.str("args"),
+                    source = data.obj("source")?.str("kind"),
+                    seq = seq,
+                    time = time,
+                )
+            )
+        )
+    }
+
+    /**
+     * #323：command/done {commandId, kind, text?, sourceEventSeq?} →
+     * [SseEvent.CommandDone]。kind 词汇开放（success|error|…）原样透传，由
+     * CommandFeedbackFolder/UI 分支呈现。
+     */
+    private fun mapCommandDone(sessionId: String, seq: Long, time: Long, data: JsonObject): List<DshMappedEvent> {
+        val commandId = data.str("commandId")
+            ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+        return listOf(
+            DshMappedEvent.Sse(
+                SseEvent.CommandDone(
+                    sessionId = sessionId,
+                    commandId = commandId,
+                    kind = data.str("kind") ?: "success",
+                    text = data.str("text"),
+                    sourceEventSeq = data.long("sourceEventSeq"),
+                    seq = seq,
+                    time = time,
+                )
+            )
+        )
+    }
 
     /**
      * tool-workflow/run-start {runId, name} → synthetic 运行中卡（降级）。
@@ -858,11 +1681,14 @@ object DshEventMapper {
      * - block-start → MessagePartUpdated（空 part 种子，kind 按 blockType）；
      * - text-delta / reasoning-delta → MessagePartDelta（field 按 chunk.type——与设计
      *   §1.5 定稿一致；kind 推断实际走 partId 契约）；
-     * - block-end → Ignored：DSH block-end 不携带文本，而消费端 mergePart 的
-     *   isTerminal 覆盖语义假定 incoming 是全量终值（官方 text.ended 契约）——发空
-     *   文本终态 part 会清空已流式文本；终态化由 turn/end → SessionIdle →
-     *   markSessionIdle 路径承担（偏离任务草案的定点裁决，见报告）；
-     * - usage → Ignored（#276 SessionUsage 对位）。
+     * - block-end → MessagePartTimePatch（#453）：原整帧忽略（mergePart isTerminal
+     *   覆盖语义下空文本终态 part 会清空流式文本），块终态化拖到 turn/end 的
+     *   markSessionIdle——思考块完毕、正文流式期间思考卡计时持续虚涨的根因。
+     *   block-end 帧无 blockType，无法构造 kind 编码 part id，改发无 kind 的
+     *   时间补丁（消费端按 `_ord_{index}` 后缀扫描定位，幂等跳过已终态块）；
+     * - usage → tokens-only MessageUpdated 写流式宿主（(e) 全桶接入；宿主由消费端
+     *   惰性播种，terminate 时 assistant/message 的 MessageRemoved 拆除，
+     *   不污染终态权威 usage）。
      */
     private fun mapChunk(sessionId: String, time: Long, data: JsonObject): List<DshMappedEvent> {
         val chunk = data.obj("chunk")
@@ -910,8 +1736,45 @@ object DshEventMapper {
                     )
                 )
             )
-            "block-end" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.CHUNK_BLOCK_END))
-            "usage" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.CHUNK_USAGE))
+            // #453：块完结时间补丁（原 Ignored——终态化拖到 markSessionIdle 使
+            // 思考卡在正文流式期间计时虚涨）。无 blockType → 无 kind 补丁事件。
+            "block-end" -> listOf(
+                DshMappedEvent.Sse(
+                    SseEvent.MessagePartTimePatch(
+                        sessionId = sessionId,
+                        messageId = messageId,
+                        ordinal = index,
+                        endMs = time,
+                    )
+                )
+            )
+            "usage" -> {
+                // (2026-09-12 消息层扁平化 (e))：usage 帧按 turn/step 定址到流式宿主
+                // dsh-t{turn}s{step}，发 tokens-only MessageUpdated——消费端
+                // mergeAssistantMeta 的非空合并恰好「只写 tokens、不碰其余字段」
+                // (MessageMergeEngine.kt:549)，且宿主是桥消息（终态 assistant/message
+                // 到达时被 MessageRemoved 拆除），不会污染终态权威 usage。
+                // 注意：assistant/attempt 的流式 usage 不走本路径（attempt 整体静默），
+                // 故此处是正常流式尾部帧，宿主已由 block-start 播种。
+                val tokens = usageTokens(chunk.obj("usage"))
+                if (tokens == null) {
+                    listOf(DshMappedEvent.Ignored(DshIgnoreReason.CHUNK_USAGE))
+                } else {
+                    listOf(
+                        DshMappedEvent.Sse(
+                            SseEvent.MessageUpdated(
+                                Message.Assistant(
+                                    id = messageId,
+                                    sessionId = sessionId,
+                                    time = TimeInfo(created = time),
+                                    parentId = "",
+                                    tokens = tokens,
+                                )
+                            )
+                        )
+                    )
+                }
+            }
             // E2E 实况情报（spec 五子型之外）：工具调用流式增量与收尾标记——
             // 工具卡终态走 tool/call|result 事件，此处静默。
             "tool-call-delta", "finish" -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.CHUNK_LIFECYCLE))
@@ -953,6 +1816,25 @@ object DshEventMapper {
     // ============ jobs / projection 帧解析 ============
 
     /** session/jobs 帧单个 JobView 项 → 域模型（wire taskViewSchema 形状）。 */
+    /**
+     * WorkspaceView → [Workspace]（#311 契约 ①-d）：名字键=title（缺席回退
+     * basename(path)——服务器 create 默认语义）；workspaceId/path 必填，缺席
+     * 整行丢弃（行级容错）；sessionIds 显式数组（归属关系）。
+     */
+    private fun mapWorkspaceView(w: JsonObject): dev.leonardo.ocbeacon.domain.model.Workspace? {
+        val workspaceId = w.str("workspaceId") ?: return null
+        val path = w.str("path") ?: return null
+        val title = w.str("title")
+            ?: dev.leonardo.ocbeacon.util.PathUtils.fileName(path).takeIf { it.isNotEmpty() }
+            ?: path
+        return dev.leonardo.ocbeacon.domain.model.Workspace(
+            workspaceId = workspaceId,
+            path = path,
+            title = title,
+            sessionIds = (w.arr("sessionIds") ?: emptyList()).mapNotNull { it.text() },
+        )
+    }
+
     private fun mapJobView(j: JsonObject): dev.leonardo.ocbeacon.domain.model.JobView =
         dev.leonardo.ocbeacon.domain.model.JobView(
             id = j.str("id") ?: "",
@@ -1061,9 +1943,86 @@ object DshEventMapper {
 
     private fun JsonObject.arr(key: String): JsonArray? = this[key] as? JsonArray
 
+    /**
+     * (2026-09-12 消息层扁平化 (e)) usage 全桶 → Message.Assistant.Tokens。
+     *
+     * 权威形状（DSH 0.1.5 实况信封 + web normalizeUsage chat.js:6931-6964）：
+     * inputTokens / outputTokens / totalTokens? / cacheReadTokens? / cacheWriteTokens? /
+     * reasoningTokens?。input/output 缺席视为「无 usage」（null，不给全零假值）；
+     * total 优先取服务器 totalTokens，缺席时按 input + output + cacheRead + cacheWrite
+     * 派生——与 web knownPrompt + outputTokens（knownPrompt = input+cacheRead+cacheWrite）
+     * 同构（实况样本 input=8343 output=554 cacheRead=8576 total=17473 完全吻合）。
+     * reasoning 语义上是 output 的子集（web 校验 reasoningTokens <= outputTokens），
+     * 原样透传不并入 total。
+     */
+    private fun usageTokens(usage: JsonObject?): Message.Assistant.Tokens? {
+        if (usage == null) return null
+        val input = usage.long("inputTokens")?.toInt() ?: return null
+        val output = usage.long("outputTokens")?.toInt() ?: return null
+        val cacheRead = usage.long("cacheReadTokens")?.toInt() ?: 0
+        val cacheWrite = usage.long("cacheWriteTokens")?.toInt() ?: 0
+        val reasoning = usage.long("reasoningTokens")?.toInt() ?: 0
+        val total = usage.long("totalTokens")?.toInt() ?: (input + output + cacheRead + cacheWrite)
+        return Message.Assistant.Tokens(
+            input = input,
+            output = output,
+            total = total,
+            reasoning = reasoning,
+            cache = Message.Assistant.Tokens.Cache(read = cacheRead, write = cacheWrite),
+        )
+    }
+
     /** 位置参数取文本（#296 host/remote-event args 列表元素）。 */
     private fun JsonElement.text(): String? =
         (this as? JsonPrimitive)?.takeIf { it !is JsonNull }?.contentOrNull
+
+    /** #378：compaction 族配对键（wire compactionId；缺席/空白 → null 不发实体）。 */
+    private fun compactionIdOf(data: JsonObject): String? =
+        data.str("compactionId")?.takeIf { it.isNotBlank() }
+
+    /**
+     * 三层根修（2026-09-09）：compaction/summary|prune 的 data.shadowedRange
+     * （{"start":Long,"end":Long}）→ SurfaceRangeReplaced。区间残缺/越界 → null
+     * （调用方维持原行为；残缺时打点可观测）。
+     */
+    private fun shadowedRangeOf(
+        data: JsonObject,
+        sessionId: String,
+        seq: Long,
+        time: Long,
+    ): DshMappedEvent.Sse? {
+        val range = data.obj("shadowedRange") ?: return null
+        val start = range.long("start")
+        val end = range.long("end")
+        if (start == null || end == null || end < start) {
+            AppLogger.w(TAG, "compaction shadowedRange 残缺（start=$start end=$end），忽略折叠指令")
+            return null
+        }
+        return DshMappedEvent.Sse(
+            SseEvent.SurfaceRangeReplaced(
+                sessionId = sessionId, startSeq = start, endSeq = end,
+                byMessageId = messageId(sessionId, seq), seq = seq, time = time,
+            )
+        )
+    }
+
+    /**
+     * #378：ContentBlock[] → 全文（text 块拼接；块间双换行）。compaction/summary
+     * 的 wire 形状（types.d.ts + 实录 seq-5391）。非 text 块（图片等）跳过——
+     * 摘要域当前只有文本块，出现新块型时此处显式降级而非整块丢弃。
+     * 容错：字符串形态（旧源码阅读时代的载荷假设）原样透传——tolerant reader，
+     * 服务器版本漂移不致整事件丢失。
+     */
+    private fun contentBlocksText(element: JsonElement?): String? {
+        if (element == null || element is JsonNull) return null
+        if (element is JsonPrimitive) return element.contentOrNull?.takeIf { it.isNotBlank() }
+        val blocks = element as? JsonArray ?: return null
+        val texts = blocks.filterIsInstance<JsonObject>()
+            .filter { it.str("type") == "text" }
+            .mapNotNull { it.str("text") }
+        if (texts.isEmpty()) return null
+        return texts.joinToString("\n\n")
+    }
 
     /** 错误载荷转可读文本：对象优先 message，其次 code，最后整体序列化。 */
     /** 错误载荷转可读文本：对象优先 message，其次 code，最后整体序列化。
@@ -1092,8 +2051,8 @@ data class DshSubscribed(val sessionId: String, val lastSeq: Long)
 
 /**
  * 帧映射三态输出：SseEvent（喂 EventDispatcher）/ 订阅基线（喂对账）/ 忽略（带原因）。
- * [Ignored.reason] == [DshIgnoreReason.UNKNOWN_UNIGNORABLE] 是 DshHistoryFolder
- * 拒绝重建的唯一判据——其余忽略均为已核实无转录语义的具名类型。
+ * [Ignored.reason] == [DshIgnoreReason.STRUCTURAL_VIOLATION] 是 DshHistoryFolder
+ * 拒绝重建的唯一判据；未知词汇走 UNKNOWN_DEGRADED 具名降级，不拒绝重建。
  */
 sealed class DshMappedEvent {
     data class Sse(val event: SseEvent) : DshMappedEvent()
@@ -1101,10 +2060,16 @@ sealed class DshMappedEvent {
     data class Ignored(val reason: String) : DshMappedEvent()
 }
 
-/** 忽略原因常量闭集（日志/测试断言用；folder 只认 UNKNOWN_UNIGNORABLE）。 */
+/** 忽略原因常量闭集（日志/测试断言用；folder 只认 STRUCTURAL_VIOLATION）。 */
 object DshIgnoreReason {
-    /** 未知 SessionEvent 类型——可能携带未建模的转录语义，folder 据此拒绝重建（§5）。 */
-    const val UNKNOWN_UNIGNORABLE = "unknown-unignorable"
+    /** 结构性违约（事件乱序 / 种子缺失 / surfaceOp 越界）——拒绝重建的唯一判据。 */
+    const val STRUCTURAL_VIOLATION = "structural-violation"
+
+    /** 未知 SessionEvent 类型——#391 切片7 具名降级（不拒绝重建，仅日志/遥测计数）。 */
+    const val UNKNOWN_DEGRADED = "unknown-degraded"
+
+    /** DSH 0.1.5 会话格式 V3 新增词汇（已具名收编，渲染增强留后续切片）。 */
+    const val SESSION_FORMAT_V3 = "session-format-v3"
 
     /** 未知帧 method（连接层开放联合容错，非 SessionEvent 面）。 */
     const val FRAME_METHOD = "frame-method"
@@ -1130,7 +2095,7 @@ object DshIgnoreReason {
     /** host/remote-event 已解包但转发事件无消费端（#296 白名单其余项）。 */
     const val REMOTE_EVENT = "remote-event"
 
-    /** chunk block-end（空载荷终态 part 会清空流式文本——见 mapChunk 注释）。 */
+    /** chunk block-end 退役值（#453 改发 MessagePartTimePatch；保留防外部队列/日志串回流误判）。 */
     const val CHUNK_BLOCK_END = "chunk-block-end"
 
     /** chunk usage（#276 SessionUsage 对位）。 */
@@ -1157,8 +2122,8 @@ object DshIgnoreReason {
     /** step/end 等无独立语义的生命周期噪声（idle 边界是 turn/end）。 */
     const val LIFECYCLE_NOISE = "lifecycle-noise"
 
-    /** llm/retry(-started)——Part.Retry 对位留给后续。 */
-    const val LLM_RETRY = "llm-retry"
+    // 注：llm/retry(-started) 已映射为 SessionStatus（Retry/Busy，见 mapSessionEventInner），
+    // 不再是忽略原因——原 LLM_RETRY 常量随之删除（#391 切片7 词汇表收编）。
 
     /** llm/failover 提供商切换（E2E 实证曾致拒绝重建，2026-08-31 收编）。 */
     const val LLM_FAILOVER = "llm-failover"
@@ -1174,9 +2139,6 @@ object DshIgnoreReason {
 
     /** chunk 工具流式增量/收尾标记（tool-call-delta/finish）。 */
     const val CHUNK_LIFECYCLE = "chunk-lifecycle"
-
-    /** command/run|done。 */
-    const val COMMAND = "command"
 
     /** log-only 事件（设计 Tier3：request/header|context、session/end-seed 等）。 */
     const val LOG_ONLY = "log-only"

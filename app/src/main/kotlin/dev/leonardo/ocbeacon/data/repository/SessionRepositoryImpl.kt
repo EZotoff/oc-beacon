@@ -3,8 +3,7 @@ package dev.leonardo.ocbeacon.data.repository
 import dev.leonardo.ocbeacon.logging.AppLogger
 
 import dev.leonardo.ocbeacon.BuildConfig
-import dev.leonardo.ocbeacon.data.api.message.MessageApi
-import dev.leonardo.ocbeacon.data.api.session.SessionApi
+import dev.leonardo.ocbeacon.data.adapter.ServerAdapterRegistry
 import dev.leonardo.ocbeacon.domain.model.CreateSessionOpts
 import dev.leonardo.ocbeacon.domain.model.MessagePage
 import dev.leonardo.ocbeacon.domain.model.ServerConnection
@@ -20,7 +19,10 @@ import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import dev.leonardo.ocbeacon.di.ApplicationScope
 import dev.leonardo.ocbeacon.util.runCatchingCancellable
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 /**
  * [SessionRepository] 的实现。
@@ -31,10 +33,11 @@ import dev.leonardo.ocbeacon.util.runCatchingCancellable
  */
 @Singleton
 class SessionRepositoryImpl @Inject constructor(
-    private val sessionApi: SessionApi,
-    private val messageApi: MessageApi,
+    private val adapters: ServerAdapterRegistry,
     private val eventDispatcher: EventDispatcher,
     private val serverRepo: ServerDataStore,
+    private val sessionCache: dev.leonardo.ocbeacon.data.local.SessionCacheStore,
+    @ApplicationScope private val applicationScope: CoroutineScope,
 ) : SessionRepository {
 
     // ============ listMessages 在途去重（#91，2026-08-18） ============
@@ -79,15 +82,40 @@ class SessionRepositoryImpl @Inject constructor(
     ): Result<MessagePage> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
         if (BuildConfig.DEBUG) AppLogger.d("NetTrace", "listMessages REQUEST server=$serverId sid=${sessionId.take(12)} limit=$limit before=${before?.take(16)}")
-        messageApi.listMessages(conn, sessionId, limit, before).also {
-            if (BuildConfig.DEBUG) AppLogger.d("NetTrace", "listMessages RESPONSE server=$serverId sid=${sessionId.take(12)} msgs=${it.messages.size} (limit=$limit)")
+        adapters.ports(conn).message.listMessages(conn, sessionId, limit, before).let { page ->
+            // #378 历史卡族消费通道（Phase A 核心）：DSH 页携带的 transcriptEvents
+            // 在此统一 dispatch——与 orchestrator 断线回填等价的消费面（进场/
+            // L3/补漏/drain 四路径全收敛于此）。commandId/compactionId 幂等合并，
+            // SurfaceRangeReplaced 先行记账后过滤本页（older page 越页防护同源）。
+            if (page.transcriptEvents.isNotEmpty()) {
+                for (event in page.transcriptEvents) {
+                    eventDispatcher.processEvent(event, serverId)
+                }
+            }
+            val filtered = eventDispatcher.filterShadowed(sessionId, page.messages)
+            if (BuildConfig.DEBUG) {
+                AppLogger.d("NetTrace", "listMessages RESPONSE server=$serverId sid=${sessionId.take(12)} msgs=${filtered.size}/${page.messages.size} cards=${page.transcriptEvents.size} (limit=$limit)")
+            }
+            if (filtered.size == page.messages.size) page
+            else page.copy(messages = filtered)
         }
+    }
+
+    // ============ 服务端内容搜索（#322） ============
+
+    /** DSH session/search（null = 非 DSH 端点缺席；失败上抛供调用方软降级）。 */
+    override suspend fun searchSessions(
+        serverId: String,
+        query: String,
+    ): Result<dev.leonardo.ocbeacon.domain.model.SessionSearchResult?> = runCatchingCancellable {
+        val conn = resolveConnection(serverId)
+        adapters.ports(conn).session.searchSessions(conn, query)
     }
 
     // ============ 状态观察 ============
 
     /**
-     * DSH subagent.list 权威子目录（AgentSheet 多级树）：SessionApiImpl 三分路由
+     * DSH subagent.list 权威子目录（AgentSheet 多级树）：经注册表 subagents 端口（端口在场才提供）
      * （DSH → subagent.list；OpenCode → null）+ DTO→域模型映射。传输/业务错误
      * 折叠为 Result 失败，由调用方软降级本地镜像递归。
      */
@@ -96,7 +124,7 @@ class SessionRepositoryImpl @Inject constructor(
         parentSessionId: String,
     ): Result<List<dev.leonardo.ocbeacon.domain.model.SubagentChild>?> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.listSubagentCatalog(conn, parentSessionId)?.map { entry ->
+        adapters.ports(conn).session.listSubagentCatalog(conn, parentSessionId)?.map { entry ->
             val diagnostic = entry.kind == "diagnostic"
             dev.leonardo.ocbeacon.domain.model.SubagentChild(
                 sessionId = entry.id,
@@ -111,15 +139,21 @@ class SessionRepositoryImpl @Inject constructor(
     }
 
     override fun getSessionsFlow(serverId: String): Flow<List<Session>> {
-        // 将 服务器→会话 映射与全局会话列表合并，使任一变更
-        // 都触发重新发射。
+        // #306：三路合并——内存态（服务器→会话 映射 ∩ 全局会话表）为权威源；
+        // 映射缺失（null——断连 clearForServer 移除 key / 冷启动未拉取）时回退
+        // Room 缓存兜底展示（字段可陈旧到上次 REST 基线，总比白屏好）。
+        // 映射存在（含空集）永不回退——防缓存盖住「服务器真的零会话」的内存语义。
         return combine(
             eventDispatcher.serverSessions,
-            eventDispatcher.sessions
-        ) { mapping, allSessions ->
-            val sessionIds = mapping[serverId] ?: emptySet()
-            if (sessionIds.isEmpty()) emptyList()
-            else allSessions.filter { it.id in sessionIds }
+            eventDispatcher.sessions,
+            sessionCache.observe(serverId),
+        ) { mapping, allSessions, cached ->
+            val sessionIds = mapping[serverId]
+            when {
+                sessionIds == null -> cached
+                sessionIds.isEmpty() -> emptyList()
+                else -> allSessions.filter { it.id in sessionIds }
+            }
         }
             .catch { e ->
                 AppLogger.e("SessionRepository", "Error in getSessionsFlow", e)
@@ -158,7 +192,7 @@ class SessionRepositoryImpl @Inject constructor(
         limit: Int
     ): List<Session> {
         val conn = resolveConnection(serverId)
-        return sessionApi.listSessions(
+        return adapters.ports(conn).session.listSessions(
             conn = conn,
             directory = directory,
             search = search,
@@ -175,7 +209,7 @@ class SessionRepositoryImpl @Inject constructor(
         limit: Int
     ): dev.leonardo.ocbeacon.domain.model.SessionPage {
         val conn = resolveConnection(serverId)
-        return sessionApi.listSessionsPage(
+        return adapters.ports(conn).session.listSessionsPage(
             conn = conn,
             directory = directory,
             search = search,
@@ -188,11 +222,15 @@ class SessionRepositoryImpl @Inject constructor(
 
     override suspend fun createSession(serverId: String, opts: CreateSessionOpts): Result<Session> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.createSession(
+        adapters.ports(conn).session.createSession(
             conn = conn,
             title = opts.title,
             parentId = opts.parentId,
-            directory = opts.directory
+            directory = opts.directory,
+            // #311 ①-d：入组 workspace（DSH V012 专属；其余后端忽略）
+            workspaceId = opts.workspaceId,
+            // #354：创建即带预设（DSH V012 专属；其余后端忽略）
+            agentPreset = opts.agentPreset,
         )
     }
 
@@ -201,7 +239,7 @@ class SessionRepositoryImpl @Inject constructor(
         sessionId: String,
     ): Result<List<dev.leonardo.ocbeacon.domain.model.SseEvent.TodoUpdated.Todo>> = runCatching {
         val conn = resolveConnection(serverId)
-        sessionApi.getSessionTodos(conn, sessionId).map { item ->
+        adapters.ports(conn).session.getSessionTodos(conn, sessionId).map { item ->
             dev.leonardo.ocbeacon.domain.model.SseEvent.TodoUpdated.Todo(
                 content = item.content,
                 status = item.status,
@@ -215,53 +253,53 @@ class SessionRepositoryImpl @Inject constructor(
 
     override suspend fun deleteSession(serverId: String, sessionId: String): Result<Unit> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.deleteSession(conn, sessionId)
+        adapters.ports(conn).session.deleteSession(conn, sessionId)
     }
 
     override suspend fun getSession(serverId: String, sessionId: String): Result<Session> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.getSession(conn, sessionId)
+        adapters.ports(conn).session.getSession(conn, sessionId)
     }
 
     // ============ 会话生命周期 ============
 
     override suspend fun interrupt(serverId: String, sessionId: String, directory: String?): Result<Unit> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.interruptSession(conn, sessionId, directory)
+        adapters.ports(conn).session.interruptSession(conn, sessionId, directory)
     }
 
     override suspend fun rename(serverId: String, sessionId: String, title: String): Result<Unit> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.renameSession(conn, sessionId, title)
+        adapters.ports(conn).session.renameSession(conn, sessionId, title)
     }
 
-    override suspend fun fork(serverId: String, sessionId: String): Result<Session> = runCatchingCancellable {
+    override suspend fun fork(serverId: String, sessionId: String, messageId: String?): Result<Session> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.forkSession(conn, sessionId)
+        adapters.ports(conn).session.forkSession(conn, sessionId, messageId)
     }
 
     // ============ 归档 ============
 
     override suspend fun archive(serverId: String, sessionId: String): Result<Session> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.updateSessionFields(conn, sessionId, mapOf("archived" to true))
+        adapters.ports(conn).session.updateSessionFields(conn, sessionId, mapOf("archived" to true))
     }
 
     override suspend fun unarchive(serverId: String, sessionId: String): Result<Session> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.updateSessionFields(conn, sessionId, mapOf("archived" to false))
+        adapters.ports(conn).session.updateSessionFields(conn, sessionId, mapOf("archived" to false))
     }
 
     // ============ 分享 / 导出 ============
 
     override suspend fun shareSession(serverId: String, sessionId: String): Result<Session> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.shareSession(conn, sessionId)
+        adapters.ports(conn).session.shareSession(conn, sessionId)
     }
 
     override suspend fun unshareSession(serverId: String, sessionId: String): Result<Unit> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.unshareSession(conn, sessionId)
+        adapters.ports(conn).session.unshareSession(conn, sessionId)
     }
 
     override suspend fun compactSession(
@@ -271,7 +309,7 @@ class SessionRepositoryImpl @Inject constructor(
         modelId: String
     ): Result<Unit> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.compactSession(conn, sessionId, providerId, modelId)
+        adapters.ports(conn).session.compactSession(conn, sessionId, providerId, modelId)
     }
 
     override suspend fun exportSessionToStream(
@@ -281,14 +319,14 @@ class SessionRepositoryImpl @Inject constructor(
         onProgress: (Long) -> Unit
     ): Result<Unit> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        messageApi.exportSessionToStream(conn, sessionId, outputStream, onProgress)
+        adapters.ports(conn).message.exportSessionToStream(conn, sessionId, outputStream, onProgress)
     }
 
     // ============ 导入 ============
 
     override suspend fun importSession(serverId: String, shareUrl: String): Result<Session> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.importSession(conn, shareUrl)
+        adapters.ports(conn).session.importSession(conn, shareUrl)
     }
 
     // ============ 消息操作 ============
@@ -299,7 +337,7 @@ class SessionRepositoryImpl @Inject constructor(
         messageId: String
     ): Result<Boolean> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        messageApi.deleteMessage(conn, sessionId, messageId)
+        adapters.ports(conn).message.deleteMessage(conn, sessionId, messageId)
     }
 
     override suspend fun deleteMessagePart(
@@ -309,7 +347,7 @@ class SessionRepositoryImpl @Inject constructor(
         partIndex: Int
     ): Result<Boolean> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        messageApi.deleteMessagePart(conn, sessionId, messageId, partIndex)
+        adapters.ports(conn).message.deleteMessagePart(conn, sessionId, messageId, partIndex)
     }
 
     override suspend fun listMessages(
@@ -325,7 +363,7 @@ class SessionRepositoryImpl @Inject constructor(
         messageId: String,
     ): Result<dev.leonardo.ocbeacon.domain.model.MessageWithParts> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        messageApi.getMessage(conn, sessionId, messageId)
+        adapters.ports(conn).message.getMessage(conn, sessionId, messageId)
     }
 
     override suspend fun getApiVersion(serverId: String): dev.leonardo.ocbeacon.domain.model.ApiVersion =
@@ -365,13 +403,22 @@ class SessionRepositoryImpl @Inject constructor(
 
     override fun setSessions(serverId: String, sessions: List<Session>) {
         eventDispatcher.setSessions(serverId, sessions)
+        // #306：REST 基线异步落缓存——失败仅记日志（缓存缺失只影响下次兜底
+        // 显示的新鲜度，不影响本次内存态；绝不让落库拖慢/打断基线拉取链路）。
+        applicationScope.launch {
+            try {
+                sessionCache.cacheSessions(serverId, sessions)
+            } catch (e: Exception) {
+                AppLogger.w("SessionRepository", "Session cache write failed for $serverId: ${e.message}")
+            }
+        }
     }
 
     // ============ 会话状态同步 ============
 
     override suspend fun fetchSessionStatuses(serverId: String, directory: String?): Result<Map<String, SessionStatus>> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        val rawStatuses = sessionApi.fetchSessionStatus(conn, directory = directory).getOrThrow()
+        val rawStatuses = adapters.ports(conn).session.fetchSessionStatus(conn, directory = directory).getOrThrow()
         // 2026-08-16（状态误杀修复）：未知 type 不再翻译成 Idle——V2ApiClient
         // 已把 running/busy 归一化为 "busy"，此处未知值意味着服务器出现了新枚举
         //（backlog #70 type 完整枚举未确认），语义未知时跳过该条目（走「缺失」

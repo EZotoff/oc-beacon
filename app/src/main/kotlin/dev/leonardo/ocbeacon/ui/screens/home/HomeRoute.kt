@@ -3,6 +3,7 @@ package dev.leonardo.ocbeacon.ui.screens.home
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.runtime.Composable
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import dev.leonardo.ocbeacon.data.api.dsh.DshPairPayload
 
 /**
  * HomeScreen 的路由包装。
@@ -18,6 +19,9 @@ fun HomeRoute(
     onNavigateToAbout: () -> Unit,
     onNavigateToDiagnostics: () -> Unit = {},
     onNavigateToSupervisor: (serverId: String) -> Unit,
+    // #325②：DSH 配对深链预填载荷（null = 无待处理；消费后由 NavGraph 置空）
+    pendingPairRequest: DshPairPayload? = null,
+    onPairRequestConsumed: () -> Unit = {},
 ) {
     val viewModel: HomeViewModel = hiltViewModel()
     HomeScreen(
@@ -29,5 +33,7 @@ fun HomeRoute(
         onNavigateToAbout = onNavigateToAbout,
         onNavigateToDiagnostics = onNavigateToDiagnostics,
         onNavigateToSupervisor = onNavigateToSupervisor,
+        pendingPairRequest = pendingPairRequest,
+        onPairRequestConsumed = onPairRequestConsumed,
     )
 }

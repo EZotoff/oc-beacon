@@ -20,8 +20,18 @@
     <string name="sessions_new">새 세션</string>
     <string name="session_status_idle">대기 중</string>
     <string name="session_status_busy">작업 중…</string>
+    <string name="session_status_retry_countdown">%1$d초 후 재시도</string>
     <string name="session_status_retry">재시도 중 (%1$d)</string>
+    <string name="turn_max_tokens_title">출력 한도에 도달했습니다</string>
+    <string name="turn_max_tokens_continue">계속</string>
+    <string name="command_feedback_running">실행 중…</string>
+    <string name="command_feedback_accepted">접수됨</string>
+    <string name="command_feedback_completed">완료됨</string>
+    <string name="command_feedback_failed">실패</string>
+    <string name="command_feedback_a11y_running">명령 실행 중</string>
     <!-- Chat Screen -->
+    <string name="chat_mention_session_a11y">세션 %1$s</string>
+    <string name="chat_mention_same_workspace">같은 워크스페이스</string>
     <string name="chat_send">보내기</string>
     <string name="chat_send_queued">보내기(대기중)</string>
     <string name="chat_empty">세션을 시작하세요</string>
@@ -119,6 +129,9 @@
     <string name="session_rename_button">이름 변경</string>
     <string name="session_delete">세션 삭제</string>
     <string name="session_delete_confirm">"%1$s"을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</string>
+    <string name="session_menu_archive">보관 처리</string>
+    <string name="session_archived_section_title">보관됨 (%1$d)</string>
+    <string name="session_archive_failed">세션을 보관 처리하지 못했습니다</string>
     <string name="chat_stop">중지</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->
@@ -137,6 +150,8 @@
     <string name="pending_item_sending">전송 중…</string>
     <string name="todo_empty">TODO 항목이 없습니다</string>
     <string name="chat_copy">복사</string>
+    <string name="table_copy_cell">셀 복사</string>
+    <string name="table_copy_table">표 복사(TSV)</string>
     <string name="terminal_copy">복사</string>
     <string name="terminal_paste">붙여넣기</string>
     <string name="terminal_more">더 보기…</string>
@@ -163,6 +178,11 @@
     <string name="chat_share_url_copied">공유 URL 복사됨</string>
     <string name="chat_share_failed">세션 공유 실패</string>
     <string name="chat_copied_clipboard">클립보드에 복사됨</string>
+    <string name="chat_feedback_positive">도움이 됨으로 평가</string>
+    <string name="chat_feedback_negative">도움이 안 됨으로 평가</string>
+    <string name="chat_feedback_removed">평가를 취소했습니다</string>
+    <string name="chat_feedback_conflict">평가가 다른 곳에서 변경되었습니다. 다시 시도하세요</string>
+    <string name="chat_feedback_failed">평가 저장에 실패했습니다</string>
     <string name="image_count_single">이미지 1개</string>
     <string name="image_count_multiple">%1$d개의 이미지</string>
     <string name="sessions_new_dialog_title">새 세션</string>
@@ -174,6 +194,7 @@
     <string name="sessions_working">작업 중</string>
     <string name="sessions_retrying">재시도 중</string>
     <string name="session_pending_question">답변 대기</string>
+    <string name="session_pending_approval">승인 대기</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
     <string name="chat_response">응답</string>
@@ -201,7 +222,16 @@
     <string name="chat_event_task_failed">하위 에이전트 실패</string>
     <string name="chat_event_shell_completed">백그라운드 명령 완료</string>
     <string name="chat_event_shell_failed">백그라운드 명령 실패</string>
-    <string name="chat_event_generic">이벤트</string>
+    <string name="chat_turn_ledger_expand">턴 세부정보 표시</string>
+    <string name="chat_turn_ledger_collapse">턴 세부정보 숨기기</string>
+    <string name="chat_turn_fork_from_here">이 턴에서 분기</string>
+    <!-- #311 Task4 deliverables 产出文件行 + Task5 skill 工具卡 -->
+    <string name="chat_produced_files_label">산출물</string>
+    <string name="chat_produced_files_more">외 %1$d개</string>
+    <string name="chat_produced_files_open">%1$s 열기</string>
+    <string name="chat_skill_title">Skill</string>
+    <string name="chat_skill_instructions">지침</string>
+    <string name="chat_event_generic">알림</string>
     <string name="chat_event_locate_task">작업 찾기</string>
     <string name="task_sheet_subagent_completed">완료</string>
     <string name="agent_tree_diagnostic_corrupt">손상된 서브에이전트 항목</string>
@@ -209,6 +239,42 @@
     <string name="agent_tree_diagnostic_unavailable">사용할 수 없는 서브에이전트 항목</string>
     <string name="chat_label_user">사용자</string>
     <string name="chat_label_agent">에이전트</string>
+    <string name="chat_steer">끼어들기</string>
+
+    <string name="chat_msg_status_streaming">스트리밍 중</string>
+    <string name="chat_msg_status_interrupted">중단됨</string>
+    <string name="chat_msg_status_error">오류</string>
+    <string name="chat_msg_detail_title">메시지 세부정보</string>
+    <string name="chat_detail_time">시간</string>
+    <string name="chat_detail_duration">소요 시간</string>
+    <string name="chat_detail_tokens">토큰</string>
+    <string name="chat_copy_markdown_source">Markdown 원본 복사</string>
+    <string name="chat_delete_message">메시지 삭제</string>
+    <string name="chat_delete_message_title">메시지를 삭제하시겠습니까?</string>
+    <string name="chat_delete_message_message">이 작업은 서버 세션에서 해당 메시지를 삭제합니다. 이 작업은 취소할 수 없습니다.</string>
+    <string name="chat_message_deleted">메시지 삭제됨</string>
+    <string name="chat_message_delete_failed">메시지 삭제 실패</string>
+    <string name="chat_stats_ttft">TTFT</string>
+    <string name="chat_stats_tokens_per_second">토큰/초</string>
+    <string name="chat_msg_tail_summary">%1$d단계 · %2$d개 도구</string>
+    <string name="a11y_message_detail">메시지 세부정보</string>
+    <string name="chat_stats_session_title">세션 통계</string>
+    <string name="chat_stats_summary">턴 %1$d · %2$d단계 · %3$s LLM · %4$s개 도구</string>
+    <string name="chat_stats_ttft_avg">평균 TTFT: %1$s</string>
+    <string name="chat_stats_decode">%1$s 토큰/초</string>
+    <string name="chat_stats_per_turn_title">턴별 세부정보</string>
+    <string name="chat_stats_turn_row">턴 %1$d · %2$s · %3$s</string>
+    <string name="chat_stats_input">입력</string>
+    <string name="chat_stats_output">출력</string>
+    <string name="chat_stats_reasoning">추론</string>
+    <string name="chat_stats_cache_read">캐시 읽기</string>
+    <string name="chat_stats_cache_write">캐시 쓰기</string>
+    <string name="chat_stats_cost">비용</string>
+    <string name="chat_stats_model">모델</string>
+    <string name="chat_stats_steps">단계</string>
+    <string name="chat_stats_tools">도구</string>
+    <string name="chat_stats_expand">턴 세부정보 표시</string>
+    <string name="chat_stats_collapse">턴 세부정보 숨기기</string>
     <string name="chat_subagent_completed_notification">서브에이전트 완료</string>
     <string name="chat_subagent_failed_notification">서브에이전트 실패</string>
     <string name="chat_status_updating_tasks">작업 업데이트 중</string>
@@ -385,7 +451,9 @@
     <string name="chat_shell_placeholder">셸 명령어를 입력하세요…</string>
     <string name="chat_shell_failed">쉘 명령어 실행 실패</string>
     <string name="chat_shell_empty">먼저 쉘 명령어를 입력하세요</string>
+    <string name="chat_subagent_one_shot_read_only">원샷 서브에이전트 세션: 후속 메시지는 지원되지 않습니다</string>
     <string name="chat_shell_attachments_unsupported">쉘 모드에서는 첨부 파일을 지원하지 않습니다</string>
+    <string name="chat_command_images_unsupported">슬래시 명령은 이미지 첨부를 지원하지 않습니다</string>
     <string name="chat_terminal_connect_failed">터미널 열기 실패</string>
     <string name="server_settings_providers">프로바이더</string>
     <string name="server_settings_providers_desc">이 서버의 프로바이더를 활성화 또는 비활성화하세요</string>
@@ -459,6 +527,7 @@
     <string name="session_details_diff">Diff</string>
     <string name="session_details_diff_summary">+%1$d −%2$d (파일 %3$d개)</string>
     <string name="chat_thinking_complete">%1$s 간 생각 완료</string>
+    <string name="chat_thinking_complete_unknown">생각 완료</string>
     <string name="chat_token_usage_total">%,d 토큰</string>
     <string name="chat_token_input">입력</string>
     <string name="chat_token_output">출력</string>
@@ -482,13 +551,11 @@
     <string name="settings_delete_rule">규칙 삭제</string>
     <string name="settings_expand_reasoning">추론 자동 확장</string>
     <string name="settings_expand_reasoning_desc">기본적으로 생각 과정 표시; 헤더를 탭하여 전환</string>
-    <string name="chat_meta_tokens">토큰 %d개</string>
     <string name="chat_glob_match_count">일치 %d개</string>
     <string name="tool_web_fetch">WebFetch</string>
     <string name="chat_webfetch_prompt">프롬프트: %s</string>
     <string name="tool_web_search">WebSearch</string>
     <string name="chat_context_usage">컨텍스트: %1$d%%</string>
-    <string name="chat_queued">대기중</string>
     <string name="chat_retry_send">재시도</string>
     <string name="chat_title_placeholder">Chat</string>
     <string name="chat_context_detail_title">컨텍스트 사용 세부</string>
@@ -523,6 +590,7 @@
     <string name="a11y_icon_navigate_forward">앞으로 이동</string>
     <string name="a11y_locate_task">원래 작업 찾기</string>
     <string name="chat_locate_task_not_found">이 세션에서 원래 작업을 찾을 수 없습니다</string>
+    <string name="chat_locate_message_not_found">이 세션에서 메시지를 찾을 수 없습니다</string>
     <string name="a11y_icon_add">추가</string>
     <string name="a11y_icon_share">공유</string>
     <string name="a11y_icon_unlink">연결 해제</string>
@@ -747,9 +815,15 @@
     <string name="settings_storage_clear_confirm">삭제</string>
     <string name="settings_storage_cleared">아카이브가 삭제되었습니다</string>
     <string name="search_content_hits">메시지 일치 항목</string>
+    <!-- #322：DSH 服务器历史命中（session/search） -->
+    <string name="search_server_hits">세션 일치 항목</string>
+    <string name="search_server_more">처음 20개 일치만 표시</string>
     <string name="search_content_coverage_hint">이 세션의 전체 기록이 동기화되지 않았습니다</string>
     <string name="search_content_hit_count">메시지 %1$d개</string>
     <string name="search_filter_role_all">모든 역할</string>
+    <string name="search_filter_menu">필터</string>
+    <string name="search_filter_role_section">역할</string>
+    <string name="search_filter_time_section">기간</string>
     <string name="search_filter_role_user">사용자</string>
     <string name="search_filter_role_assistant">AI</string>
     <string name="search_filter_time_all">전체 기간</string>
@@ -762,10 +836,19 @@
     <string name="permission_custom">사용자 지정</string>
     <string name="permission_custom_hint">사용자 지정 권한 프리셋</string>
     <string name="permission_switch_failed">권한 모드를 전환하지 못했습니다</string>
+    <string name="permission_full_access_confirm_title">전체 액세스로 전환할까요?</string>
+    <string name="permission_full_access_confirm_message">전체 액세스를 사용하면 에이전트가 샌드박스 제한 없이 명령을 실행하고 파일을 수정할 수 있습니다. 신뢰할 수 있는 작업에만 활성화하세요.</string>
+    <string name="permission_full_access_confirm_button">전체 액세스로 전환</string>
     <string name="a11y_icon_permission_preset">권한 프리셋</string>
+    <string name="plan_chip_label">Plan</string>
+    <string name="plan_chip_active_a11y">Plan 모드가 켜져 있습니다. 탭하여 끕니다(/plan off)</string>
+    <string name="plan_chip_pending_a11y">Plan 모드로 전환 중입니다. 탭하여 취소합니다(/plan off)</string>
+    <string name="plan_exit_failed">Plan 모드 종료 실패</string>
     <string name="server_settings_default_permission">새 세션 기본 권한</string>
     <string name="agent_preset_locked">이 세션의 에이전트 프리셋이 잠겨 있습니다</string>
     <string name="agent_preset_switch_failed">에이전트 프리셋 전환 실패</string>
+    <string name="sessions_new_dialog_preset_label">에이전트 프리셋</string>
+    <string name="sessions_new_dialog_preset_default">기본</string>
     <string name="agent_preset_cards_title">에이전트 프리셋 선택</string>
     <string name="server_settings_default_agent_preset">새 세션 기본 에이전트 프리셋</string>
     <string name="session_details_agent_preset">에이전트 프리셋</string>
@@ -781,6 +864,7 @@
     <string name="goal_blocked_reason">이유: %1$s</string>
     <string name="goal_action_pause">일시정지</string>
     <string name="goal_action_resume">재개</string>
+    <string name="goal_action_complete">완료로 표시</string>
     <string name="goal_action_edit">편집</string>
     <string name="goal_action_clear">지우기</string>
     <string name="goal_create_heading">목표 만들기</string>
@@ -800,10 +884,13 @@
     <string name="queue_remove">대기 메시지 제거</string>
     <string name="queue_steer">다음 턴으로 유도</string>
     <string name="queue_edit_hint">대기 메시지 편집</string>
+    <string name="queue_title">대기열</string>
+    <string name="queue_empty">대기 중인 메시지가 없습니다</string>
     <string name="queue_steer_unavailable">유도는 세션이 실행 중일 때만 가능합니다</string>
     <string name="queue_action_failed">대기열 작업 실패</string>
     <!-- #267 Server disconnect awareness (banner + fast-fail message) -->
     <string name="server_link_disconnected_banner">서버 연결 끊김, 재연결 중…</string>
+    <string name="server_link_disconnected_banner_countdown">서버 연결이 끊어졌습니다. 다시 연결하는 중… (%1$d초 후 재시도)</string>
     <string name="server_link_disconnected_message">서버가 연결되지 않아 작업이 전송되지 않았습니다</string>
 
     <!-- #154a 崩溃启动提示 -->
@@ -850,4 +937,77 @@
     <string name="supervisor_notification_root_failing_title">슈퍼바이저: %1$d개 루트 실패</string>
     <string name="supervisor_notification_error_peak_title">슈퍼바이저: 오류 최대치 상승</string>
     <string name="supervisor_notification_error_peak">오류 최대치: %1$d</string>
+    <string name="dsh_token_banner_text">이 서버에는 액세스 토큰이 필요합니다</string>
+    <string name="dsh_token_banner_action">토큰 입력</string>
+    <string name="dsh_token_dialog_title">액세스 토큰 필요</string>
+    <string name="dsh_token_dialog_message">서버 시작 줄에서 토큰 또는 전체 URL을 붙여넣으세요(token=... 포함).</string>
+    <string name="dsh_token_dialog_hint">토큰 또는 URL</string>
+    <string name="dsh_token_dialog_connect">연결</string>
+    <string name="dsh_token_dialog_rejected">서버가 토큰을 거부했습니다. 확인 후 다시 시도하세요.</string>
+    <string name="server_pair_help_title">첫 페어링</string>
+    <string name="server_pair_help_manual">수동: 이 서버를 저장하고 연결한 뒤, 상단 배너의 "토큰 입력"을 눌러 서버 시작 줄의 토큰을 붙여넣으세요</string>
+    <string name="server_pair_help_adb">USB(dev 빌드): 호스트에서 ./scripts/dsh-pair.sh를 실행하면 토큰이 자동 주입됩니다</string>
+    <string name="server_pair_help_deeplink">또는 호스트에서 ./scripts/dsh-pair.sh --lan을 실행하고 ocbeacon:// 링크를 스캔하거나 탭하여 이 양식을 자동으로 채울 수 있습니다</string>
+
+    <!-- #324① DSH provider 目录/自定义增删 -->
+    <string name="dsh_settings_loopback_required">이 작업에는 루프백 연결(adb reverse로 127.0.0.1)이 필요합니다.</string>
+    <string name="dsh_providers_section_title">DSH 공급자 디렉터리</string>
+    <string name="dsh_providers_empty">서버가 보고한 공급자가 없습니다.</string>
+    <string name="dsh_provider_add_custom">사용자 지정 공급자 추가</string>
+    <string name="dsh_provider_route">경로 ID</string>
+    <string name="dsh_provider_route_hint">소문자, 숫자, 하이픈. 문자로 시작해야 합니다.</string>
+    <string name="dsh_provider_route_invalid">경로는 소문자, 숫자, 하이픈만 사용할 수 있으며 문자로 시작해야 합니다.</string>
+    <string name="dsh_provider_route_taken">이 경로는 이미 사용 중입니다.</string>
+    <string name="dsh_provider_display_name">표시 이름(선택 사항)</string>
+    <string name="dsh_provider_base_url">기본 URL</string>
+    <string name="dsh_provider_api_key">API 키(선택 사항)</string>
+    <string name="dsh_provider_api_key_hint">서버 자격 증명에 저장되며 값은 다시 표시되지 않습니다.</string>
+    <string name="dsh_provider_discover">모델 검색</string>
+    <string name="dsh_provider_discover_failed">검색 실패: %1$s</string>
+    <string name="dsh_provider_models_none">아직 검색된 모델이 없습니다. 기본 URL을 입력하고 검색을 누르세요.</string>
+    <string name="dsh_provider_model_select">포함할 모델 선택</string>
+    <string name="dsh_provider_create">만들기</string>
+    <string name="dsh_provider_delete">삭제</string>
+    <string name="dsh_provider_delete_confirm_title">사용자 지정 공급자 삭제</string>
+    <string name="dsh_provider_delete_confirm_text">사용자 지정 공급자 %1$s을(를) 삭제할까요? 저장된 자격 증명(있는 경우)도 함께 삭제됩니다.</string>
+    <string name="dsh_provider_credential_configured">자격 증명 구성됨</string>
+    <string name="dsh_provider_credential_missing">자격 증명 미설정</string>
+    <string name="dsh_provider_active">런타임에서 활성</string>
+    <string name="dsh_provider_inactive">런타임에서 비활성</string>
+
+    <!-- #324② preset 管理 -->
+    <string name="dsh_preset_view">구성 보기</string>
+    <string name="dsh_preset_copy_title">프리셋 %1$s 복제</string>
+    <string name="dsh_preset_copy_id">새 프리셋 ID</string>
+    <string name="dsh_preset_copy_name">새 이름(선택 사항)</string>
+    <string name="dsh_preset_copy">복제</string>
+    <string name="dsh_preset_delete_confirm_title">프리셋 삭제</string>
+    <string name="dsh_preset_delete_confirm_text">사용자 프리셋 %1$s을(를) 삭제할까요? 실행 중인 세션은 영향을 받지 않으며 새 세션은 기본값으로 돌아갑니다.</string>
+    <string name="dsh_preset_broken_badge">손상됨: %1$s</string>
+
+    <!-- #324③ 插件配置与清单 -->
+    <string name="dsh_plugins_inventory_title">서버 플러그인</string>
+    <string name="dsh_plugins_inventory_empty">보고된 플러그인 목록이 없습니다.</string>
+    <string name="dsh_plugin_enabled">활성화</string>
+    <string name="dsh_plugin_disabled">비활성화</string>
+    <string name="dsh_plugin_conditional">조건부</string>
+    <string name="dsh_plugin_preset_group">프리셋: %1$s</string>
+    <string name="dsh_server_config_title">서버 구성</string>
+    <string name="dsh_config_applies_live">즉시 적용</string>
+    <string name="dsh_config_applies_restart">재시작 필요</string>
+    <string name="dsh_secret_no_ref">이 앱 외부에서 관리됨(자격 증명 참조가 선언되지 않음).</string>
+
+    <!-- #324④ skills 触发组 -->
+    <string name="slash_skills_group">스킬</string>
+    <string name="slash_skill_model_invocable">모델이 호출 가능한 스킬</string>
+    <string name="chat_busy_menu_send_now">지금 보내기</string>
+    <string name="chat_busy_menu_send_now_desc">실행 중인 턴에 삽입되어 즉시 표시됩니다</string>
+    <string name="chat_busy_menu_queue">메시지 큐</string>
+    <string name="chat_busy_menu_queue_desc">이번 턴이 끝나면 자동으로 전송됩니다</string>
+    <string name="chat_busy_menu_queue_no_attachments">첨부파일이 있는 메시지는 지금 보내야 합니다</string>
+    <!-- #385: DSH context injection compact card labels (source.kind) -->
+    <string name="chat_injection_agent_instructions">워크스페이스 지침</string>
+    <string name="chat_injection_skill_catalog">스킬 카탈로그</string>
+    <string name="chat_injection_plugin">플러그인 구성</string>
+    <string name="chat_injection_context">컨텍스트 주입</string>
 </resources>

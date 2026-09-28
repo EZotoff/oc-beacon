@@ -1,5 +1,6 @@
 package dev.leonardo.ocbeacon.ui.screens.chat
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -168,12 +169,12 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
 import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.ui.components.ProviderIcon
+import dev.leonardo.ocbeacon.ui.extension.LocalServerActions
+import dev.leonardo.ocbeacon.ui.extension.ServerActionSurface
 import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
 import dev.leonardo.ocbeacon.ui.screens.chat.util.toolOutputContainerColor
 import dev.leonardo.ocbeacon.ui.screens.chat.util.agentColor
 import dev.leonardo.ocbeacon.ui.screens.chat.util.agentColorCycle
-import dev.leonardo.ocbeacon.ui.theme.QueuedBadgeColor
-import dev.leonardo.ocbeacon.ui.theme.QueuedBadgeTextColor
 import dev.leonardo.ocbeacon.ui.screens.chat.util.formatTokenCount
 import dev.leonardo.ocbeacon.ui.screens.chat.util.formatAssistantErrorMessage
 import dev.leonardo.ocbeacon.ui.screens.chat.util.formatDuration
@@ -225,13 +226,16 @@ import dev.leonardo.ocbeacon.ui.screens.chat.util.PromptBuilder
 import dev.leonardo.ocbeacon.ui.screens.chat.components.MessageCard
 import dev.leonardo.ocbeacon.ui.screens.chat.components.MessageCardRole
 import dev.leonardo.ocbeacon.ui.screens.chat.components.ChatEmptyState
-import dev.leonardo.ocbeacon.ui.screens.chat.components.dedupeConsecutiveSynthetics
+import dev.leonardo.ocbeacon.ui.screens.chat.components.syntheticEventIdentityKey
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.dedupeByEventIdentity
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.rowCapabilitiesFor
 import dev.leonardo.ocbeacon.ui.screens.chat.components.ChatErrorState
 import dev.leonardo.ocbeacon.domain.model.SessionStatus
 import dev.leonardo.ocbeacon.ui.screens.chat.components.ChatMessageList
-import dev.leonardo.ocbeacon.ui.screens.chat.components.QueueDock
+import dev.leonardo.ocbeacon.ui.screens.chat.components.QueueSheet
 import dev.leonardo.ocbeacon.service.ServerLinkState
 import dev.leonardo.ocbeacon.ui.components.ServerLinkBanner
+import dev.leonardo.ocbeacon.ui.components.ZeroTopAppBarWindowInsets
 import dev.leonardo.ocbeacon.ui.screens.chat.components.ChatTopBar
 import dev.leonardo.ocbeacon.ui.screens.chat.components.ErrorPayloadContent
 import dev.leonardo.ocbeacon.ui.components.indicators.PulsingDotsIndicator
@@ -246,6 +250,8 @@ import dev.leonardo.ocbeacon.ui.screens.viewer.FileViewerOverlay
 import dev.leonardo.ocbeacon.ui.screens.viewer.FileViewerParams
 import dev.leonardo.ocbeacon.ui.screens.viewer.FileViewerSource
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
+import dev.leonardo.ocbeacon.ui.theme.AppMotion
+import dev.leonardo.ocbeacon.ui.util.eventTimeString
 import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 
@@ -286,11 +292,14 @@ fun ChatScreen(
 ) {
     val messageState by viewModel.conversation.messageListState.collectAsStateWithLifecycle()
     val sessionMeta by viewModel.sessionMetaState.collectAsStateWithLifecycle()
+    val turnActive by viewModel.turnActiveState.collectAsStateWithLifecycle()
     val interaction by viewModel.conversation.interactionState.collectAsStateWithLifecycle()
     val tokenStats by viewModel.tokenStatsState.collectAsStateWithLifecycle()
     val modelConfig by viewModel.modelConfigState.collectAsStateWithLifecycle()
     val directory by viewModel.directoryState.collectAsStateWithLifecycle()
     val contextDetail by viewModel.contextDetailState.collectAsStateWithLifecycle()
+    // v2：会话级 agent 名字解析（DSH agentPreset id → roster name）
+    val agentPresets by viewModel.agentPresets.collectAsStateWithLifecycle()
     val restoredDraft by viewModel.composer.restoredDraftState.collectAsStateWithLifecycle()
     val draftText by viewModel.composer.draftText.collectAsStateWithLifecycle()
     val serverCapabilities by viewModel.serverCapabilities.collectAsStateWithLifecycle()
@@ -327,6 +336,10 @@ fun ChatScreen(
         pendingCount = interaction.pendingQuestions.size + interaction.pendingPermissions.size,
         hasMessages = { messageState.messages.isNotEmpty() },
         jumpLockActive = jumpLockActiveState,
+        // #437 验收六轮：流式期间 MSGEFFECT/GUARD 静默（配对 set 保画面，物理贴底跟随）
+        // 2026-09-26 根修：改用回合级 turnActive（3s 宽限防抖）——步间 force-Idle
+        // 空窗（streaming true→false 闪断，真机 01:04 实录）不再放行守卫/锚底。
+        streamingActive = { turnActive },
     )
 
     // FileViewer 浮层状态 —— 取代到 FileViewerNav 路由的导航。
@@ -343,6 +356,8 @@ fun ChatScreen(
 
     var showModelPicker by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
+    // /rename <new> 打字路径的预填标题（null = 面板 tap / 裸 /rename，维持旧标题起点）
+    var renamePrefill by remember { mutableStateOf<String?>(null) }
     var showMenu by remember { mutableStateOf(false) }
     var isTerminalMode by rememberSaveable { mutableStateOf(startInTerminalMode) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -469,7 +484,7 @@ fun ChatScreen(
         onRemoveDraftAttachment = { viewModel.composer.removeDraftAttachment(it) },
         onExportSession = { ctx, uri, callback -> viewModel.exportSession(ctx, uri, callback) },
         // #279：DSH 导出是 ZIP 流——SAF 预填 .zip + application/zip
-        exportIsArchiveProvider = { viewModel.serverCapabilities.value.exportIsArchive },
+        exportIsArchiveProvider = { viewModel.serverCapabilities.value.coreFlags.exportIsArchive },
         onShowSnackbar = { msg -> snackbarHostState.showSnackbar(msg) },
     )
     val attachments = attachmentHandler.attachments
@@ -612,7 +627,8 @@ fun ChatScreen(
     CompositionLocalProvider(
         LocalHapticFeedbackEnabled provides hapticEnabled,
         LocalImageSaveRequest provides attachmentHandler.requestSaveImage,
-        LocalToolExpandedStates provides messageState.toolExpandedStates,
+        // #429 L0:StateFlow 整体下沉(稳定身份),读者 per-key 派生读取
+        LocalToolExpandedStates provides viewModel.toolExpandedStates,
         LocalOnToggleToolExpanded provides onToggleToolExpandedLambda,
         LocalToolCardResolver provides viewModel.toolCardResolver,
         // #182：Task 卡片展开时的全量输出拉取（part 优先→降级子智能体会话 transcript）
@@ -629,6 +645,8 @@ fun ChatScreen(
     // D1③：会话运行错误持久卡（sendMessage 成功/手动 dismiss 清卡）
     val sessionErrors by viewModel.sessionErrors.collectAsStateWithLifecycle()
     val sessionTodos by viewModel.sessionTodos.collectAsStateWithLifecycle()
+    // #313：队列计数（FAB 菜单角标）——sheet 内容另在 QUEUE 分支采集（同一源）
+    val queueItemsForFab by viewModel.queueItems.collectAsStateWithLifecycle()
     val todoCapable by viewModel.todoCapable.collectAsStateWithLifecycle()
     val taskUi by viewModel.taskUiState.collectAsStateWithLifecycle()
     var toolbarSheet by remember { mutableStateOf<ChatToolbarEntry?>(null) }
@@ -692,13 +710,28 @@ fun ChatScreen(
                 Column {
                     // #267：断连常驻细条幅（恢复自动消失，不弹恢复提示）
                     val serverLinkState by viewModel.serverLinkState.collectAsStateWithLifecycle()
-                    if (serverLinkState != ServerLinkState.Connected) {
-                        ServerLinkBanner()
+                    // #408：横幅自带 statusBars inset —— 下方 TopAppBar 须归零状态栏 inset，
+                    // 否则状态栏高度被计两次，内容被顶推「横幅高度 + 2×状态栏」。
+                    val linkBannerVisible = serverLinkState != ServerLinkState.Connected
+                    // #409：下次自动重连时间（倒计时）
+                    val serverReconnectAt by viewModel.serverReconnectAt.collectAsStateWithLifecycle()
+                    if (linkBannerVisible) {
+                        ServerLinkBanner(retryAtEpochMs = serverReconnectAt)
                     }
                     ChatTopBar(
+                        windowInsets = if (linkBannerVisible) {
+                            ZeroTopAppBarWindowInsets
+                        } else {
+                            TopAppBarDefaults.windowInsets
+                        },
                         sessionTitle = sessionMeta.sessionTitle,
                         directory = directory,
+                        // v2：单 agent 会话（DSH）逐消息 agent 缺席 → 会话级显示一次
+                        sessionAgent = sessionMeta.sessionAgentPreset?.let { id ->
+                            agentPresets.firstOrNull { it.id == id }?.name ?: id
+                        },
                         contextDetail = contextDetail,
+                        caps = rowCapabilitiesFor(serverCapabilities),
                         sessionParentId = sessionMeta.sessionParentId,
                         shareUrl = sessionMeta.shareUrl,
                         contextWindow = modelConfig.contextWindow,
@@ -734,9 +767,9 @@ fun ChatScreen(
                                 }
                             }
                         },
-                        isShareSupported = serverCapabilities.shareSupported,
-                        isBackgroundSupported = serverCapabilities.backgroundSessionsSupported,
-                        isTerminalSupported = serverCapabilities.terminalSupported,
+                        isShareSupported = ServerFeatures.SESSION_SHARE in serverCapabilities,
+                        isBackgroundSupported = ServerFeatures.SESSION_BACKGROUND in serverCapabilities,
+                        isTerminalSupported = ServerFeatures.TERMINAL in serverCapabilities,
                         onShare = {
                             viewModel.shareSession { url ->
                                 coroutineScope.launch {
@@ -765,7 +798,7 @@ fun ChatScreen(
                                 .ifBlank { "session" }
                             // #279：扩展名随能力位（DSH=zip，OpenCode=json）——
                             // SAF 建议名与 MIME 一致，免落盘后 renameDocument 兜底
-                            val ext = if (viewModel.serverCapabilities.value.exportIsArchive) "zip" else "json"
+                            val ext = if (viewModel.serverCapabilities.value.coreFlags.exportIsArchive) "zip" else "json"
                             attachmentHandler.launchExport("$slug.$ext")
                         },
                         onBackgroundSession = { viewModel.backgroundSession() },
@@ -776,34 +809,14 @@ fun ChatScreen(
         },
         bottomBar = {
             Column {
-                // 2026-09-01（Task 4 QueueDock）：排队收件箱条——ChatScreenBottomBar
-                // 上方；空队列不渲染；子代理会话只读（隐藏动作）；steer 仅运行中启用。
-                val queueItems by viewModel.queueItems.collectAsStateWithLifecycle()
-                val queueRunning = sessionMeta.sessionStatus is SessionStatus.Busy
-                val queueReadOnly = sessionMeta.sessionParentId != null
-                LaunchedEffect(queueRunning) {
+                // #313（2026-09-03 用户裁决）：队列面板迁入 FAB 菜单（QUEUE 入口 →
+                // QueueSheet），输入条上方 QueueDock 条退役（对 DSH Web dock 布局
+                // 照搬的废除）；状态采集与分发见 toolbarSheet when() 的 QUEUE 分支。
+                LaunchedEffect(Unit) {
                     viewModel.queueActionResult.collect { resId ->
-                        snackbarHostState.showSnackbar(context.getString(resId))
+                        snackbarHostState.showSnackbar(context.eventTimeString(resId))
                     }
                 }
-                QueueDock(
-                    items = queueItems,
-                    isRunning = queueRunning,
-                    isReadOnly = queueReadOnly,
-                    onSaveEdit = { itemId, text ->
-                        viewModel.updateQueueItem(
-                            itemId,
-                            dev.leonardo.ocbeacon.domain.model.QueueActionKind.EDIT,
-                            text,
-                        )
-                    },
-                    onRemove = { itemId ->
-                        viewModel.updateQueueItem(itemId, dev.leonardo.ocbeacon.domain.model.QueueActionKind.REMOVE, null)
-                    },
-                    onSteer = { itemId ->
-                        viewModel.updateQueueItem(itemId, dev.leonardo.ocbeacon.domain.model.QueueActionKind.STEER, null)
-                    },
-                )
                 ChatScreenBottomBar(
                 viewModel = viewModel,
                 sessionMeta = sessionMeta,
@@ -825,7 +838,10 @@ fun ChatScreen(
                 onInputModeChange = { inputMode = it },
                 onForceScroll = { scrollController.forceScrollToBottom() },
                 onShowModelPicker = { showModelPicker = true },
-                onShowRenameDialog = { showRenameDialog = true },
+                onShowRenameDialog = { prefill ->
+                    renamePrefill = prefill
+                    showRenameDialog = true
+                },
                 onShowSendConfirmDialog = { showSendConfirmDialog = true },
                 onPendingSendActionSet = { pendingSendAction = it },
                 coroutineScope = coroutineScope,
@@ -841,6 +857,21 @@ fun ChatScreen(
                 .padding(padding)
                 .consumeWindowInsets(padding)
         ) {
+            // #365：命令反馈行在场时不得落入空态 hero——受理/反馈卡是
+            // ChatMessageList 的 LazyColumn item，空转录 hero 会整块替换
+            // 消息区致卡不可见（2026-08-19 pending 卡片同款先例延伸）。
+            val commandFeedbackForSession by viewModel.chatRepositoryExposed
+                .getCommandFeedbackForSession(viewModel.sessionId)
+                .collectAsStateWithLifecycle(initialValue = emptyList())
+            // #378：压缩转录实体（流内 box）+ 表面遮蔽区间（读侧抑制）——
+            // 遮蔽/绑定消息在上游过滤（displayItems 索引一致重建），卡归并
+            // 在 ChatMessageList（TranscriptPlan）。
+            val compactionEntriesForSession by viewModel.chatRepositoryExposed
+                .getCompactionEntriesForSession(viewModel.sessionId)
+                .collectAsStateWithLifecycle(initialValue = emptyList())
+            val shadowedRangesForSession by viewModel.chatRepositoryExposed
+                .getShadowedRangesForSession(viewModel.sessionId)
+                .collectAsStateWithLifecycle(initialValue = emptyList())
             when {
                 isTerminalMode -> {
                     ChatTerminalView(
@@ -857,10 +888,17 @@ fun ChatScreen(
                         },
                     )
                 }
-                // 进入会话加载过渡：仅在真正加载时显示 PulsingDots。
+                // 进入会话加载过渡：仅在**无可渲染内容**时显示 PulsingDots（#383 根修）。
                 // （#53：移除 2026-08-10 的 MIN_LOADING_VISIBLE_MS 人为延迟补丁——
                 // NavHost 全局 fadeIn 过渡已提供进入过渡感，双过渡叠加是反模式）
-                interaction.isLoading && !isTerminalMode && interaction.error == null -> {
+                // 2026-09-09（#383）：加载分支此前无条件替换消息区——消息已在态
+                //（Room 回放/上一屏残留）也被整块吞掉；DSH 长轮期间 session/page
+                // 读阻塞数分钟时用户面对全空白转录。与下方 error 分支对称补
+                // messages.isEmpty() 守卫：有内容时走消息列表分支（cache-first
+                // 呈现，刷新在后台进行），真空转（无缓存首进）才落 dots。
+                interaction.isLoading && messageState.messages.isEmpty() &&
+                    commandFeedbackForSession.isEmpty() && compactionEntriesForSession.isEmpty() &&
+                    !isTerminalMode && interaction.error == null -> {
                     PulsingDotsIndicator(
                         modifier = Modifier.align(Alignment.Center)
                     )
@@ -878,18 +916,54 @@ fun ChatScreen(
                 // agent 首轮就要权限/提问，3 分钟无人应答即超时）。有 pending 卡片
                 // 时走完整消息列表分支（空消息 + 卡片 item，LazyColumn 正常渲染）。
                 messageState.messages.isEmpty() && !interaction.isLoading &&
-                    interaction.pendingQuestions.isEmpty() && interaction.pendingPermissions.isEmpty() -> {
+                    interaction.pendingQuestions.isEmpty() && interaction.pendingPermissions.isEmpty() &&
+                    commandFeedbackForSession.isEmpty() && compactionEntriesForSession.isEmpty() -> {
                     ChatEmptyState(
                         modifier = Modifier.align(Alignment.Center)
                     )
                 }
                 else -> {
-                     val messageSpacing = if (LocalChatDensity.current == ChatDensity.Compact) 2.dp else 8.dp
+                    val messageSpacing = if (LocalChatDensity.current == ChatDensity.Compact) 8.dp else 16.dp
 
                         // messageListState 返回最旧优先；常规布局将
                         // 索引 0（最旧）渲染在顶部，最后一个索引（最新）在底部。
-                        val rawMessages = remember(messageState.messages) {
-                            messageState.messages.reversed()
+                        // #378 读侧抑制（上游统一过滤——displayItems 索引一致重建）：
+                        // - 表面遮蔽消息（seq 落入 surfaceOp.replace 区间＝已被压缩摘要取代，
+                        //   含冷存回读兜底）；
+                        // - 压缩摘要表面载体（entry.messageId——内容由压缩 box 独占承载，防双份）。
+                        val compactionBoundIds = remember(compactionEntriesForSession) {
+                            compactionEntriesForSession.mapNotNull { it.messageId }.toSet()
+                        }
+                        // [#437 卡顿诊断批次] 滚动期 UI 快照冻结：流式中 messageState.messages
+                        // 每 48ms 新实例 → rawMessages/displayItems/chatEntries 全链重算 +
+                        // LazyColumn 全可见 item 重组（组合风暴落在滚动帧 = 非贴底滑动卡顿）。
+                        // ScrollHold 已在 pilot 层挡 append，此处把同一语义补到快照层：
+                        // holding 期间派生冻结在最近快照（实例相等 → 下游 remember 全命中 →
+                        // 零重算零重组），settle 后首个新快照一次追平（与 append 追平同帧）。
+                        // A/B 开关 JankHoldGate（debug.ocbeacon.jankhold），确证后转默认开。
+                        val jkFrozenRef = remember { arrayOfNulls<List<ChatMessage>>(1) }
+                        val jkFrozenStateRef = remember { arrayOfNulls<dev.leonardo.ocbeacon.ui.screens.chat.MessageListState>(1) }
+                        val jkHold = dev.leonardo.ocbeacon.ui.screens.chat.markdown.JankHoldGate.enabled &&
+                            dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingScrollHold.holding
+                        // messageState 一并冻结（二十四世轮终修）：否则其每 48ms 新实例
+                        // 经传参旁路触发 ChatMessageList 整体重组（三千行函数体重跑），
+                        // 冻结 rawMessages 无效的实证正源于此洞——滚动期快照静止语义补全。
+                        val jkMsgState = if (jkHold && jkFrozenStateRef[0] != null) {
+                            jkFrozenStateRef[0]!!
+                        } else {
+                            messageState.also { jkFrozenStateRef[0] = it }
+                        }
+                        val jkMsgs = if (jkHold && jkFrozenRef[0] != null) {
+                            jkFrozenRef[0]!!
+                        } else {
+                            jkMsgState.messages.also { jkFrozenRef[0] = it }
+                        }
+                        val rawMessages = remember(jkMsgs, shadowedRangesForSession, compactionBoundIds) {
+                            jkMsgs.reversed().filterNot { m ->
+                                val shadowed = dev.leonardo.ocbeacon.domain.model.DshMessageId.seqOf(m.message.id)
+                                    ?.let { seq -> shadowedRangesForSession.any { seq in it } } == true
+                                shadowed || m.message.id in compactionBoundIds
+                            }
                         }
 
                         // 过滤：保留用户消息 + 每个 turn 组中的第一条 assistant 消息
@@ -904,36 +978,62 @@ fun ChatScreen(
                         // return 空，保留在 displayItems 会形成空行（"返回后消息流
                         // 乱了"的现象之一）。
                         // #243 连续同内容 shell 卡去重（首张 + ×N，其余抑制渲染）
-                        val displayItemsPair = remember(rawMessages) {
-                            dedupeConsecutiveSynthetics(
-                            rawMessages.mapIndexedNotNull { index, msg ->
-                                when {
-                                    msg.isUser && !msg.isSynthetic -> index to msg
-                                    msg.isSynthetic -> {
-                                        val hasText = msg.parts
-                                            .filterIsInstance<Part.Text>()
-                                            .any { it.text.isNotBlank() } ||
-                                            (msg.message as? Message.User)?.summary?.body?.isNotBlank() == true
-                                        // 2026-08-12 用户决策：synthetic 是独立消息 → 独立气泡
-                                        // （与 user 消息同构，ChatMessageList 已按 role 分发
-                                        // SYNTHETIC 卡片）。不再邻接判断/嵌入 assistant turn。
-                                        if (!hasText) {
-                                            null
-                                        } else {
-                                            index to msg
-                                        }
-                                    }
-                                    msg.isAssistant -> {
-                                        val prevMsg = rawMessages.getOrNull(index - 1)
-                                        if (prevMsg?.isAssistant != true) index to msg else null
-                                    }
-                                    else -> null
-                                }
-                            }
-                            )
+                        // 2026-09-12 扁平化（US#22）：撤销 UI 层「×N」连续同内容合并——
+                        // 改为装配层按**事件身份键**（子会话 id / shell id / 消息 id）
+                        // 收敛为一条并原位更新状态（rowmodel.dedupeByEventIdentity）。
+                        // [R4-B3 步2] displayItems 承载 SnapshotStateList + 差量写入：
+                        // get(i) 为 index 级依赖，set(i) 只失效读该槽的 item——流式期
+                        // 列表长度不变、仅尾槽内容变 → 重组收敛到流式 item 本体
+                        // （原每 flush 新 List 实例 = 全 item content 失效的根因收口）。
+                        val displayItemsState = remember {
+                            androidx.compose.runtime.mutableStateListOf<Pair<Int, ChatMessage>>()
                         }
-                        val displayItems = displayItemsPair.first
-                        val syntheticDupCounts = displayItemsPair.second
+                        // #452 P-display 日志门控（size 变化才发射一条）
+                        val lastDisplayLogSize = remember { intArrayOf(-1) }
+                        remember(rawMessages) {
+                            diffDisplayItemsInto(
+                                displayItemsState,
+                                dedupeByEventIdentity(
+                                rawMessages.mapIndexedNotNull { index, msg ->
+                                    when {
+                                        msg.isUser && !msg.isSynthetic -> index to msg
+                                        msg.isSynthetic -> {
+                                            val hasText = msg.parts
+                                                .filterIsInstance<Part.Text>()
+                                                .any { it.text.isNotBlank() } ||
+                                                (msg.message as? Message.User)?.summary?.body?.isNotBlank() == true
+                                            // 2026-08-12 用户决策：synthetic 是独立消息 → 独立气泡
+                                            // （与 user 消息同构，ChatMessageList 已按 role 分发
+                                            //  SYNTHETIC 卡片）。不再邻接判断/嵌入 assistant turn。
+                                            if (!hasText) {
+                                                null
+                                            } else {
+                                                index to msg
+                                            }
+                                        }
+                                        msg.isAssistant -> {
+                                            val prevMsg = rawMessages.getOrNull(index - 1)
+                                            if (prevMsg?.isAssistant != true) index to msg else null
+                                        }
+                                        else -> null
+                                    }
+                                },
+                                ) { pair -> syntheticEventIdentityKey(pair.second) },
+                            )
+                            // #452 四点计时 P-display：displayItems 差量写入后规模
+                            //（size 变化才打——流式期 rawMessages 每 48ms 新实例，
+                            // 无门控会以 ~20/s 刷屏，见 MsgDiag 移除教训）。
+                            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
+                                displayItemsState.size != lastDisplayLogSize[0]
+                            ) {
+                                lastDisplayLogSize[0] = displayItemsState.size
+                                dev.leonardo.ocbeacon.logging.AppLogger.d(
+                                    "ChatScreen",
+                                    "[452-display] n=" + displayItemsState.size,
+                                )
+                            }
+                            true
+                        }
 
                     // #137（D2-L65）：此处原重复定义 onViewToolLambda（死代码——
                     // LocalOnViewTool 由外层的定义提供，本内层定义从未被使用）
@@ -943,12 +1043,11 @@ fun ChatScreen(
                     val isMainSession = sessionMeta.sessionParentId == null
                     ChatMessageList(
                         listState = listState,
-                        messageState = messageState,
+                        messageState = jkMsgState,
                         sessionMeta = sessionMeta,
                         interaction = interaction,
                         rawMessages = rawMessages,
-                        displayItems = displayItems,
-                        syntheticDupCounts = syntheticDupCounts,
+                        displayItems = displayItemsState,
                         isAtBottomState = scrollController.isAtBottomState,
                         autoScrollState = scrollController.autoScrollState,
                         isAmoled = isAmoled,
@@ -963,6 +1062,8 @@ fun ChatScreen(
                         navigateToChildSession = onNavigateToChildSession,
                         onOpenFile = handleOpenFile,
                         onForceScrollToBottom = { scrollController.forceScrollToBottom() },
+                        // #420:原地展开越过贴底区即离开跟随模式(守卫不拽回)
+                        onExpandDeparture = { scrollController.autoScrollEnabled = false },
                         // 子智能体会话不显示快速定位（show=false 时 onDismiss 不可达，可无条件传）
                         showQuickNavigate = if (isMainSession) showQuickNavigate else false,
                         onQuickNavigateDismiss = { showQuickNavigate = false },
@@ -977,6 +1078,9 @@ fun ChatScreen(
                         // 2026-09-01（走查 #2）：会话运行错误转录内行（消息流内渲染，
                         // 随历史滚动，非悬浮浮层；DSH turn-error 对位）
                         sessionErrorRows = sessionErrors,
+                        // #378：压缩转录实体（流内 box 数据源；命令反馈行在
+                        // ChatMessageList 内自采——同 ViewModel 通道）
+                        compactionEntries = compactionEntriesForSession,
                         // 2026-09-01（B1 链）：内容检索跳转目标消息（打开即异步定位）
                         initialJumpTarget = initialJumpToMessageId,
                         // 走查 #1：跳转视口锁上提回传（守卫重锚/锚底让位依据）
@@ -991,29 +1095,90 @@ fun ChatScreen(
               // ChatFabMenu 四入口 + ModalBottomSheet（StackedSheet/TodoSheet/
               // AgentSheet/ShellSheet，见下方 toolbarSheet 分发）承接；更早的模态
               // PendingTodoSheet 亦已退役。）
-              // ⬇ 滚动到底部（第二十一轮移左）：底部左侧与右下菜单 FAB 镜像；
-              // 声明在 ChatFabMenu 之前——菜单展开时被外点收起层盖住（点它先收菜单）
               // 右下角 FAB Menu：单 FAB 收纳四入口（角标=总数），展开官方交错菜单
-              //（堆积/TODO/智能体/Shell）；键盘弹起时被键盘自然盖住
+              //（堆积/TODO/智能体/Shell）；键盘弹起时被键盘自然盖住。
+              // ⬇ 滚动到底部 FAB（2026-09-18 用户裁决）：第二十一轮的左下镜像位
+              // 退役——并入右下 FAB 组，菜单 button 下方成列「组成一个整体」
+              //（整列贴边拖动联动；离开底部时带动画滑入并把菜单 FAB 推上，
+              // 回底滑出回落——平时菜单 FAB 贴底基线与旧版完全一致）。
               if (!isTerminalMode) {
-                  ChatScrollBottomFab(
-                      isAtBottomState = scrollController.isAtBottomState,
-                      // 即时吸附（旧 FAB 同语义）——不走 forceScrollTick 路径：
-                      // 那是「发送后等新消息增长再滚」的执行器，点 ⬇ 无新消息时
-                      // 要等 5s 增长超时才滚（真机日志实锤 grew=-1 后才滚）
-                      onClick = { coroutineScope.launch { listState.snapToBottom() } },
-                      modifier = Modifier.align(Alignment.BottomStart),
-                  )
+                  // #451：FAB 组透明度控制器（isScrollInProgress 同时覆盖 fling 与
+                  // 触摸滚动——LazyListState 语义）。菜单 FAB：3s 回落。
+                  val fabAlphaController = remember {
+                      dev.leonardo.ocbeacon.ui.screens.chat.FabTransparencyController(
+                          isContentScrolling = { listState.isScrollInProgress },
+                      )
+                  }
+                  // ⬇ 触底 FAB 独立控制器（2026-09-27 用户裁决）：滚动中即不透明
+                  // （与停靠位无关），停动 2s 回落。
+                  val scrollFabAlphaController = remember {
+                      dev.leonardo.ocbeacon.ui.screens.chat.FabTransparencyController(
+                          isContentScrolling = { listState.isScrollInProgress },
+                          fadeDelayMs = dev.leonardo.ocbeacon.ui.screens.chat.FAB_SCROLL_FADE_DELAY_MS,
+                          scrollHoldOnly = true,
+                      )
+                  }
+                  LaunchedEffect(Unit) { scrollFabAlphaController.run() }
                   ChatFabMenu(
                       todoPendingCount = sessionTodos.count { it.status == "pending" || it.status == "in_progress" },
                       agentRunningCount = taskUi.runningSubagentCount,
                       shellRunningCount = taskUi.runningShellCount,
                       goalPhase = goalState?.goal?.phase,
+                      queueCount = queueItemsForFab.size,
                       onOpenEntry = { toolbarSheet = it },
+                      // 统一审计批1：FAB 入口按能力位门控（GOAL=DSH、SHELL=V1/V2；
+                      // TODO/AGENT 两面通用；QUEUE 门控 #351 裁决→#356 扩面：DSH queue 埧域 +
+            // V2 inbox 域在场（V1 无可见域不泄漏））
+                      // #391 切片9：入口改由统一贡献注册表的条目级动作声明
+                      // （表面 + 所需能力 + 顺序）；通用壳只做「按能力过滤 → 排序」。
+                      entries = LocalServerActions.current
+                          .actions(ServerActionSurface.CHAT_FAB, serverCapabilities)
+                          .mapNotNull { action ->
+                              runCatching { ChatToolbarEntry.valueOf(action.actionId) }.getOrNull()
+                          },
                       // 2026-08-29 基线对齐：菜单 08-27 稳定 API 复刻把按钮钉底（内部
-                      // 底距移除）后，与 ⬇ FAB 的 padding(bottom=16dp) 失配 16dp——
-                      // 实测图标中心差 48px。此处补对称底距恢复「双 FAB 同基线」。
-                      modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 16.dp),
+                      // 底距移除）后补的对称底距（16dp）——⬇ FAB 并入后由整列共享。
+                      modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = SpacingTokens.LG.dp),
+                      // ⬇ 滚动到底部（2026-09-18 并入 FAB 组）：离开底部滑入（动态
+                      // 推上）/回底滑出（回落）；即时吸附（旧 FAB 同语义）——不走
+                      // forceScrollTick 路径：那是「发送后等新消息增长再滚」的执行器，
+                      // 点 ⬇ 无新消息时要等 5s 增长超时才滚（真机日志实锤 grew=-1 后才滚）
+                      alphaController = fabAlphaController,
+                      bottomSlot = {
+                           // 2026-09-19 终态阴影突跳根修：显隐高度过渡不走 expand/shrink
+                           // Vertically（裁剪窗口会把动画期投影裁掉，展开完成 clip 撤除
+                           // 瞬间阴影整体绽放）。外层 animateContentSize 承担高度过渡
+                           //（推上/回落菜单 FAB，不裁剪内容）；内层纯位移滑入/滑出：
+                          dev.leonardo.ocbeacon.ui.screens.chat.FabSlotHeightReveal(visible = !scrollController.isAtBottomState.value) {
+                              androidx.compose.animation.AnimatedVisibility(
+                                  visible = !scrollController.isAtBottomState.value,
+                                  // 2026-09-19 三轮定案：纯位移、无 fade——投影不随
+                                  // 绘制层 alpha 变化的根源场景（半透明挂全影）直接消除；
+                                  // 按钮带原生 6dp 投影整体滑入/滑出，阴影全程跟随。
+                                  enter = androidx.compose.animation.slideInVertically(
+                                      animationSpec = androidx.compose.animation.core.tween(durationMillis = AppMotion.MEDIUM),
+                                  ) { fullHeight -> fullHeight },
+                                  exit = androidx.compose.animation.slideOutVertically(
+                                      animationSpec = androidx.compose.animation.core.tween(durationMillis = AppMotion.MEDIUM),
+                                  ) { fullHeight -> fullHeight },
+                              ) {
+                                  androidx.compose.foundation.layout.Column(
+                                      horizontalAlignment = Alignment.End,
+                                  ) {
+                                      androidx.compose.foundation.layout.Spacer(
+                                          Modifier.height(SpacingTokens.LG.dp),
+                                      )
+                                      ChatScrollBottomFab(
+                                          onClick = {
+                                              scrollFabAlphaController.notifyInteraction()
+                                              coroutineScope.launch { listState.snapToBottom() }
+                                          },
+                                          contentAlpha = { scrollFabAlphaController.value },
+                                      )
+                                  }
+                              }
+                          }
+                      },
                   )
 
                   // 走查 #2：会话运行错误持久卡浮层已移除——改为转录内错误行
@@ -1031,7 +1196,7 @@ fun ChatScreen(
     val goalErrorContext = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(goalError) {
         goalError?.let { resId ->
-            snackbarHostState.showSnackbar(goalErrorContext.getString(resId))
+            snackbarHostState.showSnackbar(goalErrorContext.eventTimeString(resId))
         }
     }
 
@@ -1040,14 +1205,24 @@ fun ChatScreen(
         showModelPicker = showModelPicker,
         onDismissModelPicker = { showModelPicker = false },
         showRenameDialog = showRenameDialog,
-        onDismissRenameDialog = { showRenameDialog = false },
+        renameInitialOverride = renamePrefill,
+        onDismissRenameDialog = {
+            showRenameDialog = false
+            renamePrefill = null
+        },
         showSendConfirmDialog = showSendConfirmDialog,
         onConfirmSend = {
             pendingSendAction?.invoke()
             pendingSendAction = null
+            // #341：确认后必须复位弹窗标志——SendConfirmDialog 按钮仅回调
+            // onConfirm/onDismiss，本侧不置 false 则对话框永不离开（真机实证
+            // 「免疫弹窗」：发送成功后驻留，点击/BACK 均似失效）。
+            showSendConfirmDialog = false
         },
         onDismissSendConfirm = {
             pendingSendAction = null
+            // #341：同上——取消/外点/BACK 路径复位
+            showSendConfirmDialog = false
         },
         providers = modelConfig.providers,
         selectedProviderId = modelConfig.selectedProviderId,
@@ -1096,7 +1271,36 @@ fun ChatScreen(
                 onEdit = { objective, rounds -> viewModel.editGoal(objective, rounds) },
                 onPause = { viewModel.pauseGoal() },
                 onResume = { viewModel.resumeGoal() },
+                onComplete = { viewModel.completeGoal() },
                 onClear = { viewModel.clearGoal() },
+            )
+        }
+        // #313：排队队列面板（QUEUE 入口）——QueueSheet（FAB 体系第五面板；
+        // 行为沿 QueueDock 全量迁移：三动作/只读/编辑态；steer 仅运行中启用。
+        // #356：V2 inbox 拉取面——打开面板即刷新（DSH 帧推送免拉取，VM 门控
+        // 跳过）；edit 动词按能力位（DSH=有 / V2 inbox 仅 remove+steer 转换）。
+        ChatToolbarEntry.QUEUE -> {
+            val queueItems by viewModel.queueItems.collectAsStateWithLifecycle()
+            LaunchedEffect(Unit) { viewModel.refreshQueueItems() }
+            QueueSheet(
+                items = queueItems,
+                isRunning = sessionMeta.sessionStatus is SessionStatus.Busy,
+                isReadOnly = sessionMeta.sessionParentId != null,
+                editSupported = ServerFeatures.QUEUE_EDIT in serverCapabilities,
+                onDismiss = { toolbarSheet = null },
+                onSaveEdit = { itemId, text ->
+                    viewModel.updateQueueItem(
+                        itemId,
+                        dev.leonardo.ocbeacon.domain.model.QueueActionKind.EDIT,
+                        text,
+                    )
+                },
+                onRemove = { itemId ->
+                    viewModel.updateQueueItem(itemId, dev.leonardo.ocbeacon.domain.model.QueueActionKind.REMOVE, null)
+                },
+                onSteer = { itemId ->
+                    viewModel.updateQueueItem(itemId, dev.leonardo.ocbeacon.domain.model.QueueActionKind.STEER, null)
+                },
             )
         }
             ChatToolbarEntry.SHELL -> ShellSheet(

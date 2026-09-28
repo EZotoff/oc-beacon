@@ -1,6 +1,6 @@
 package dev.leonardo.ocbeacon.data.repository
 
-import dev.leonardo.ocbeacon.data.api.provider.ProviderApi
+import dev.leonardo.ocbeacon.data.adapter.ServerAdapterRegistry
 import dev.leonardo.ocbeacon.data.mapper.ConfigMapper
 import dev.leonardo.ocbeacon.data.mapper.ProviderMapper
 import dev.leonardo.ocbeacon.domain.model.ServerConnection
@@ -29,7 +29,8 @@ import javax.inject.Singleton
 @Singleton
 class ServerRepositoryImpl @Inject constructor(
     private val dataRepo: dev.leonardo.ocbeacon.data.repository.ServerDataStore,
-    private val api: ProviderApi
+    private val adapters: ServerAdapterRegistry,
+    private val sessionCache: dev.leonardo.ocbeacon.data.local.SessionCacheStore,
 ) : ServerRepository {
 
     // ── 服务器 CRUD ──
@@ -52,6 +53,14 @@ class ServerRepositoryImpl @Inject constructor(
 
     override suspend fun removeServer(id: String): Result<Unit> = runCatchingCancellable {
         dataRepo.deleteServer(id)
+        // #306：清会话缓存孤儿——serverId 不复用，残留行永不可达（白占库）。
+        // 失败不阻断删除语义：DataStore 已删成功，若因此报失败，重试 removeServer
+        // 对已不存在 id 可能再抛错 →「已删却报失败」循环；孤儿缓存本身无害。
+        try {
+            sessionCache.deleteForServer(id)
+        } catch (e: Exception) {
+            dev.leonardo.ocbeacon.logging.AppLogger.w("ServerRepository", "Session cache cleanup failed for $id: ${e.message}")
+        }
     }
 
     override suspend fun updateServer(server: ServerConfig): Result<Unit> = runCatchingCancellable {
@@ -72,7 +81,7 @@ class ServerRepositoryImpl @Inject constructor(
 
     override suspend fun loadProviders(serverId: String): Result<List<DomainProviderInfo>> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        val catalog = api.listProviderCatalog(conn)
+        val catalog = adapters.ports(conn).requireProvider(conn).listProviderCatalog(conn)
         val connected = catalog.connected.toSet()
         catalog.all.map { dto ->
             DomainProviderInfo(
@@ -93,7 +102,7 @@ class ServerRepositoryImpl @Inject constructor(
 
     override suspend fun loadProviderCatalog(serverId: String): Result<ProvidersResponse> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        val response: DataProvidersResponse = api.getProviders(conn)
+        val response: DataProvidersResponse = adapters.ports(conn).requireProvider(conn).getProviders(conn)
         ProvidersResponse(
             providers = response.providers.map { dto ->
                 ProviderCatalog(
@@ -121,7 +130,7 @@ class ServerRepositoryImpl @Inject constructor(
         apiKey: String
     ): Result<Unit> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        val success = api.setProviderApiKey(conn, providerId, apiKey)
+        val success = adapters.ports(conn).requireProvider(conn).setProviderApiKey(conn, providerId, apiKey)
         check(success) { "Failed to set provider API key" }
         Unit
     }
@@ -131,7 +140,7 @@ class ServerRepositoryImpl @Inject constructor(
         providerId: String
     ): Result<Unit> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        api.removeProviderCredential(conn, providerId)
+        adapters.ports(conn).requireProvider(conn).removeProviderCredential(conn, providerId)
     }
 
     // ── Provider 连接状态与全局配置 ──
@@ -140,13 +149,13 @@ class ServerRepositoryImpl @Inject constructor(
         serverId: String
     ): Result<ProviderConnectionStatus> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        val catalog = api.listProviderCatalog(conn)
+        val catalog = adapters.ports(conn).requireProvider(conn).listProviderCatalog(conn)
         ProviderMapper.toConnectionStatus(catalog)
     }
 
     override suspend fun getGlobalConfig(serverId: String): Result<GlobalConfig> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        ConfigMapper.toDomain(api.getGlobalConfig(conn))
+        ConfigMapper.toDomain(adapters.ports(conn).requireProvider(conn).getGlobalConfig(conn))
     }
 
     override suspend fun updateGlobalConfig(
@@ -155,14 +164,14 @@ class ServerRepositoryImpl @Inject constructor(
     ): Result<GlobalConfig> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
         val dtoPatch = ConfigMapper.toDto(patch)
-        ConfigMapper.toDomain(api.updateGlobalConfig(conn, dtoPatch))
+        ConfigMapper.toDomain(adapters.ports(conn).requireProvider(conn).updateGlobalConfig(conn, dtoPatch))
     }
 
     override suspend fun getProviderAuthMethods(
         serverId: String
     ): Result<Map<String, List<ProviderAuthMethod>>> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        ProviderMapper.toDomainAuthMethods(api.getProviderAuthMethods(conn))
+        ProviderMapper.toDomainAuthMethods(adapters.ports(conn).requireProvider(conn).getProviderAuthMethods(conn))
     }
 
     override suspend fun authorizeProviderOauth(
@@ -171,7 +180,7 @@ class ServerRepositoryImpl @Inject constructor(
         methodIndex: Int
     ): Result<ProviderOauthAuthorization?> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        api.authorizeProviderOauth(conn, providerId, methodIndex)?.let { ProviderMapper.toDomain(it) }
+        adapters.ports(conn).requireProvider(conn).authorizeProviderOauth(conn, providerId, methodIndex)?.let { ProviderMapper.toDomain(it) }
     }
 
     override suspend fun completeProviderOauth(
@@ -181,7 +190,7 @@ class ServerRepositoryImpl @Inject constructor(
         code: String?
     ): Result<Boolean> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        api.completeProviderOauth(conn, providerId, methodIndex, code)
+        adapters.ports(conn).requireProvider(conn).completeProviderOauth(conn, providerId, methodIndex, code)
     }
 
     override suspend fun removeProviderCredential(
@@ -189,12 +198,12 @@ class ServerRepositoryImpl @Inject constructor(
         providerId: String
     ): Result<Boolean> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        api.removeProviderCredential(conn, providerId)
+        adapters.ports(conn).requireProvider(conn).removeProviderCredential(conn, providerId)
     }
 
     override suspend fun disposeGlobal(serverId: String): Result<Boolean> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        api.disposeGlobal(conn)
+        adapters.ports(conn).requireProvider(conn).disposeGlobal(conn)
     }
 
     // ── Repository 辅助方法 ──

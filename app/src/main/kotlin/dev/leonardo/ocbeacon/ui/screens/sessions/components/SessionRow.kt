@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,9 +25,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.GppMaybe
 import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Badge
@@ -50,6 +55,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.leonardo.ocbeacon.R
+import dev.leonardo.ocbeacon.data.repository.PendingInteractionKind
 import dev.leonardo.ocbeacon.domain.model.SessionStatus
 import dev.leonardo.ocbeacon.domain.model.Tag
 import androidx.compose.material3.BasicAlertDialog
@@ -68,11 +74,12 @@ import dev.leonardo.ocbeacon.ui.theme.ButtonTokens
 import dev.leonardo.ocbeacon.ui.theme.DiffAdded
 import dev.leonardo.ocbeacon.ui.theme.DiffRemoved
 import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
+import dev.leonardo.ocbeacon.ui.theme.StatusWarning
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 internal fun SessionRow(
     item: SessionItem,
@@ -94,6 +101,10 @@ internal fun SessionRow(
     syncState: dev.leonardo.ocbeacon.data.local.SessionSyncEntity? = null,
     onRequestSync: () -> Unit = {},
     onCancelSync: () -> Unit = {},
+    // #311 归档：归档集合成员位 + 能力位门控 + 归档动作（#347 后唯一入口=行菜单项）
+    isArchived: Boolean = false,
+    archiveSupported: Boolean = false,
+    onArchive: () -> Unit = {},
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
     val addColor = DiffAdded
@@ -101,8 +112,11 @@ internal fun SessionRow(
 
     var showDetailsDialog by remember { mutableStateOf(false) }
 
+    // #347（2026-09-07 用户裁决）：左滑归档手势下线——归档入口收敛进行内动作。
+    // #353 终型（2026-09-09）：长按直达「会话详情」对话框（动作收进详情、去重）。
+    Box(modifier = modifier.fillMaxWidth()) {
     Row(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .defaultMinSize(minHeight = 64.dp)
             .combinedClickable(
@@ -208,6 +222,41 @@ internal fun SessionRow(
                     else -> {}
                 }
 
+                // #311 Task4：待交互行指示（客户端本地 PendingInteractionDomain——
+                // wire 契约④真服务器不推 approvals/questions 状态）。approval=琥珀
+                // 点（StatusWarning，与 Asking 指示同族形态：14dp 图标+labelSmall
+                // 文案）；question 族（plan-review 归并）复用提问标签形态——builder
+                // 已与 Asking 合流去重，此处到达即 Asking 未表达的残留态，勿双点。
+                when (item.pendingInteraction) {
+                    PendingInteractionKind.APPROVAL -> {
+                        Icon(
+                            imageVector = Icons.Outlined.GppMaybe,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = StatusWarning,
+                        )
+                        Text(
+                            text = stringResource(R.string.session_pending_approval),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = StatusWarning,
+                        )
+                    }
+                    PendingInteractionKind.QUESTION, PendingInteractionKind.PLAN_REVIEW -> {
+                        Icon(
+                            imageVector = Icons.Outlined.HelpOutline,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = stringResource(R.string.session_pending_question),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    null -> {}
+                }
+
                 // 草稿指示器
                 if (item.hasDraft) {
                     Icon(
@@ -278,6 +327,13 @@ internal fun SessionRow(
         }
     }
 
+    // #353 终型（2026-09-09 用户二次裁决）：长按直接打开「会话详情」对话框——
+    // 动作按钮收进详情（去重：不再有独立菜单/sheet 层）；删除优先、归档仅在没有
+    // 删除接口的面顶替（DSH）；已归档行同样直达详情（动作区仅保留复制 ID——
+    // 归档单向契约，无恢复动词）。菜单/sheet 中间形态（DropdownMenu→
+    // ModalBottomSheet）随之退役，sessionRowMenuActions 纯函数一并移除。
+    }
+
     // 带操作按钮的详情对话框
     if (showDetailsDialog) {
         val isAmoled = isAmoledTheme()
@@ -299,7 +355,13 @@ internal fun SessionRow(
                 showDetailsDialog = false
                 onAssignCategory()
             },
+            onArchive = {
+                showDetailsDialog = false
+                onArchive()
+            },
             deleteSupported = deleteSupported,
+            archiveSupported = archiveSupported,
+            isArchived = isArchived,
             agentPresetSupported = agentPresetSupported,
             agentPresetNames = agentPresetNames,
             syncState = syncState,
@@ -310,6 +372,7 @@ internal fun SessionRow(
     }
 }
 
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun SessionDetailsDialog(
@@ -319,7 +382,12 @@ private fun SessionDetailsDialog(
     onDelete: () -> Unit,
     onCopyId: () -> Unit,
     onAssignCategory: () -> Unit,
+    onArchive: () -> Unit = {},
     deleteSupported: Boolean,
+    // #353 终型：归档动作（仅无删除接口的面——DSH；与删除互斥呈现）
+    archiveSupported: Boolean = false,
+    // 已归档行：动作区仅保留复制 ID（归档单向契约）
+    isArchived: Boolean = false,
     // UI-B：Agent 预设只读标签（DSH 专属）
     agentPresetSupported: Boolean,
     agentPresetNames: Map<String, String>,
@@ -405,88 +473,73 @@ private fun SessionDetailsDialog(
                                 stringResource(R.string.session_details_diff_summary, summary.additions, summary.deletions, summary.files)
                             )
                         }
-                    }
-                }
-                // #271：同步详情区——状态（未同步/同步中/已同步/失败·原因）+
-                // lastSyncAt + 已入库提示 + 「同步全部历史」/「取消同步」按钮。
-                // drain 静默后台运行，完成无提示（spec §2.5 四轮定稿）。
-                Spacer(Modifier.height(16.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp)) {
-                    Text(
-                        text = stringResource(R.string.session_sync_section),
-                        style = MaterialTheme.typography.titleSmall,
-                    )
-                    val state = syncState?.state
-                    val statusColor = when (state) {
-                        dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCING -> MaterialTheme.colorScheme.primary
-                        dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCED -> DiffAdded
-                        dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_FAILED -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                    DetailRow(
-                        stringResource(R.string.session_details_status),
-                        stringResource(
-                            when (state) {
-                                dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCING -> R.string.session_sync_state_syncing
-                                dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCED -> R.string.session_sync_state_synced
-                                dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_FAILED -> R.string.session_sync_state_failed
-                                else -> R.string.session_sync_state_none
-                            }
-                        ),
-                    )
-                    Text(
-                        text = run {
-                            if (state == dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_FAILED && !syncState?.errorMessage.isNullOrBlank()) {
-                                stringResource(R.string.session_sync_failed_reason, syncState?.errorMessage.orEmpty())
-                            } else {
-                                stringResource(
-                                    if (state == dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCED) {
-                                        R.string.session_sync_hint_synced
-                                    } else {
-                                        R.string.session_sync_hint_partial
-                                    }
-                                )
-                            }
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = statusColor,
-                    )
-                    val lastSyncAt = syncState?.lastSyncAt
-                    if (state == dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCED && lastSyncAt != null) {
-                        Text(
-                            text = stringResource(R.string.session_sync_last_at, dateFormat.format(Date(lastSyncAt))),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.MUTED),
+                        // #353 打磨（2026-09-09 用户裁决）：同步状态并入详情信息区
+                        //（去独立 box 与「状态」重名——以「历史同步」为行标签）
+                        val syncStateValue = syncState?.state
+                        DetailRow(
+                            stringResource(R.string.session_sync_section),
+                            stringResource(
+                                when (syncStateValue) {
+                                    dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCING -> R.string.session_sync_state_syncing
+                                    dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCED -> R.string.session_sync_state_synced
+                                    dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_FAILED -> R.string.session_sync_state_failed
+                                    else -> R.string.session_sync_state_none
+                                }
+                            ),
                         )
                     }
-                    if (state == dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCING) {
-                        // 同步中 → 显示「取消同步」（可打断 drain，状态回未同步）
-                        Button(
-                            onClick = onCancelSync,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonTokens.filledColors(),
-                            border = ButtonTokens.amoledBorder(),
-                        ) {
-                            Text(stringResource(R.string.session_sync_cancel))
-                        }
-                    } else {
-                        // 已同步 → 禁用（drain 已全量，重复触发无意义）；其余状态可手动触发
-                        Button(
-                            onClick = onRequestSync,
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = state != dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCED,
-                            colors = ButtonTokens.filledColors(),
-                            border = ButtonTokens.amoledBorder(),
-                        ) {
-                            Text(stringResource(R.string.session_sync_action))
-                        }
-                    }
                 }
+                // 同步提示行（失败原因/入库提示/最近同步时刻）——紧随信息区，小字着色
+                val syncStateValue2 = syncState?.state
+                val syncStatusColor = when (syncStateValue2) {
+                    dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCING -> MaterialTheme.colorScheme.primary
+                    dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCED -> DiffAdded
+                    dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_FAILED -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                Text(
+                    text = run {
+                        if (syncStateValue2 == dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_FAILED && !syncState?.errorMessage.isNullOrBlank()) {
+                            stringResource(R.string.session_sync_failed_reason, syncState?.errorMessage.orEmpty())
+                        } else {
+                            stringResource(
+                                if (syncStateValue2 == dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCED) {
+                                    R.string.session_sync_hint_synced
+                                } else {
+                                    R.string.session_sync_hint_partial
+                                }
+                            )
+                        }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = syncStatusColor,
+                )
+                val lastSyncAt = syncState?.lastSyncAt
+                if (syncStateValue2 == dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCED && lastSyncAt != null) {
+                    Text(
+                        text = stringResource(R.string.session_sync_last_at, dateFormat.format(Date(lastSyncAt))),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.MUTED),
+                    )
+                }
+                // #353 打磨（2026-09-09 用户裁决）：同步动作并入下方动作栈——
+                // 去独立 box（状态/提示行已上移详情信息区），间距由栈统一。
                 Spacer(Modifier.height(16.dp))
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(SpacingTokens.SM.dp),
                 ) {
+                    if (isArchived) {
+                        // #353 终型：已归档行——仅复制 ID（归档单向契约，无恢复动词）
+                        Button(
+                            onClick = { onCopyId() },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonTokens.filledColors(),
+                            border = ButtonTokens.amoledBorder(),
+                        ) {
+                            Text(stringResource(R.string.menu_copy_session_id))
+                        }
+                    } else {
                     // 第一行：复制会话 ID + 重命名会话
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -524,7 +577,30 @@ private fun SessionDetailsDialog(
                     ) {
                         Text(stringResource(R.string.assign_tag))
                     }
-                    // 第三行：删除（#276 能力位门控：DSH 无 session.delete——隐藏）
+                    // 同步动作（#353 打磨并入动作栈）：同步中→「取消同步」可打断；
+                    // 已同步→禁用（drain 已全量）；其余→「同步全部历史」可触发
+                    if (syncStateValue2 == dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCING) {
+                        Button(
+                            onClick = onCancelSync,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonTokens.filledColors(),
+                            border = ButtonTokens.amoledBorder(),
+                        ) {
+                            Text(stringResource(R.string.session_sync_cancel))
+                        }
+                    } else {
+                        Button(
+                            onClick = onRequestSync,
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = syncStateValue2 != dev.leonardo.ocbeacon.data.local.SessionSyncEntity.STATE_SYNCED,
+                            colors = ButtonTokens.filledColors(),
+                            border = ButtonTokens.amoledBorder(),
+                        ) {
+                            Text(stringResource(R.string.session_sync_action))
+                        }
+                    }
+                    // 第三行：移除动作（#353 终型用户裁决：删除优先——有删除接口的
+                    // 面用删除；归档仅在没有删除接口的面顶替〔DSH〕，二者互斥）
                     if (deleteSupported) {
                         Button(
                             onClick = {
@@ -537,6 +613,19 @@ private fun SessionDetailsDialog(
                         ) {
                             Text(stringResource(R.string.session_delete))
                         }
+                    } else if (archiveSupported) {
+                        Button(
+                            onClick = {
+                                onDismiss()
+                                onArchive()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonTokens.dangerColors(),
+                            border = ButtonTokens.amoledBorder(),
+                        ) {
+                            Text(stringResource(R.string.session_menu_archive))
+                        }
+                    }
                     }
                 }
             }

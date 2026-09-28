@@ -28,8 +28,12 @@ import dev.leonardo.ocbeacon.domain.model.AgentPreset
 import dev.leonardo.ocbeacon.domain.model.DshAgentPresetDefault
 import dev.leonardo.ocbeacon.domain.model.DshPermissionDefault
 import dev.leonardo.ocbeacon.domain.model.McpServerStatus
+import dev.leonardo.ocbeacon.domain.model.ServerCapabilities
+import dev.leonardo.ocbeacon.domain.model.ServerUiSlot
 import dev.leonardo.ocbeacon.domain.model.Session
 import dev.leonardo.ocbeacon.domain.model.Tag
+import dev.leonardo.ocbeacon.ui.extension.LocalServerUiSlots
+import dev.leonardo.ocbeacon.ui.extension.ServerSettingsSlotHost
 import dev.leonardo.ocbeacon.ui.screens.sessions.components.AgentPresetDefaultRow
 import dev.leonardo.ocbeacon.ui.screens.sessions.components.McpServerRow
 import dev.leonardo.ocbeacon.ui.screens.sessions.components.PermissionDefaultRow
@@ -64,6 +68,15 @@ fun ServerSettingsContent(
     agentPresetDefault: DshAgentPresetDefault? = null,
     onSetAgentPresetDefault: (String) -> Unit = {},
     agentPresetDefaultBlocked: Boolean = false,
+    // #324②：preset 管理（authorable 位 + 查看/复制/删除回调）
+    agentPresetAuthorable: Boolean = false,
+    onViewAgentPreset: (AgentPreset) -> Unit = {},
+    onCopyAgentPreset: (AgentPreset) -> Unit = {},
+    onDeleteAgentPreset: (AgentPreset) -> Unit = {},
+    // #391 切片9：SERVER_SETTINGS 插槽两级门禁的输入（适配器声明 + 能力位）由调用方
+    // 显式传入——漏传即编译失败，不留「默认空能力位静默隐藏全部插槽」的失败不可见面。
+    serverCapabilities: ServerCapabilities,
+    serverUiSlots: Set<ServerUiSlot>,
 ) {
     var mcpExpanded by remember { mutableStateOf(false) }
 
@@ -90,6 +103,22 @@ fun ServerSettingsContent(
                     currentValue = agentPresetDefault?.currentValue,
                     onSelect = onSetAgentPresetDefault,
                     blocked = agentPresetDefaultBlocked,
+                    authorable = agentPresetAuthorable,
+                    onViewPreset = onViewAgentPreset,
+                    onCopyPreset = onCopyAgentPreset,
+                    onDeletePreset = onDeleteAgentPreset,
+                )
+            }
+        }
+
+        // #324④ / #391 切片9：服务器配置动态表单 + 插件清单是 DSH 私有区块，迁到
+        // SERVER_SETTINGS 插槽；两级门禁：适配器声明先决 + 贡献方能力过滤。
+        if (ServerUiSlot.SERVER_SETTINGS in serverUiSlots) {
+            item {
+                LocalServerUiSlots.current.Render(
+                    slot = ServerUiSlot.SERVER_SETTINGS,
+                    caps = serverCapabilities,
+                    host = ServerSettingsSlotHost(),
                 )
             }
         }

@@ -37,6 +37,19 @@ import io.ktor.utils.io.ByteReadChannel
 private const val TAG = "SseClientV2"
 private const val HEARTBEAT_TIMEOUT_MS = 40_000L
 
+/**
+ * #305-net：SSE socket 读超时（engine 级）。
+ *
+ * 原 `Long.MAX_VALUE` 在「等待响应头」阶段形成无超时死区：网络黑洞/半开隧道下
+ * `execute` 永久挂起（FIN 可能不达——adb 隧道/NAT 静默断），重连协程被单飞门
+ * （`Reconnect already in progress`）永久占用 → 服务器**永不自动重连**（用户
+ * 「须手动点连接」的根因形态，2026-09-03 黑洞 E2E 实证挂死 9min+ 零 attempt）。
+ *
+ * 取值必须 **大于 [HEARTBEAT_TIMEOUT_MS]**：流建立后应用层 40s 读防护
+ * （#108 withTimeoutOrNull）先触发，本值不改变流中行为，仅封顶响应头等待。
+ */
+internal const val SSE_SOCKET_TIMEOUT_MS = HEARTBEAT_TIMEOUT_MS + 5_000L
+
 /** V2 事件信封元字段（非 payload 数据）——顶层格式剥除用。 */
 private val EVENT_META_KEYS = setOf("id", "created", "type", "durable", "location", "event")
 
@@ -61,6 +74,11 @@ class SseClientV2 @Inject constructor(
     private val json: Json,
     private val httpClient: io.ktor.client.HttpClient
 ) {
+    /** #448：本实例累计跳过的坏帧数（parse 失败）——诊断观测（对齐 V1 客户端）。 */
+    @Volatile
+    var skippedFrameCount: Int = 0
+        private set
+
     /**
      * 2026-08-15（research/06 P0）：durable.seq 游标回调——每条含 durable 信封
      * 的事件到达时上报（aggregateId, seq），供消费方（EventDispatcher 装配）
@@ -100,7 +118,11 @@ class SseClientV2 @Inject constructor(
      *
      * V2 事件流格式：标准 SSE（event: + data: + id: 帧）
      */
-    fun connectToEvents(conn: ServerConnection, directory: String? = null): Flow<SseEvent> = flow {
+    fun connectToEvents(
+        conn: ServerConnection,
+        directory: String? = null,
+        socketTimeoutMs: Long = SSE_SOCKET_TIMEOUT_MS,
+    ): Flow<SseEvent> = flow {
         val sseUrl = "${conn.baseUrl}/api/event"
         // #98（M-1）：新连接代际开始——上一代残留的 admitted 条目
         //（断连丢失 promoted）不再有配对事件，清空防永驻。
@@ -113,9 +135,11 @@ class SseClientV2 @Inject constructor(
             directory?.let { header("x-opencode-directory", URLEncoder.encode(it, "UTF-8")) }
 
             timeout {
+                // requestTimeout 必须无限（SSE 流不限时长）；socketTimeout 封顶
+                // 响应头等待死区（见 [SSE_SOCKET_TIMEOUT_MS]）——流中由 #108 应用层防护接管。
                 requestTimeoutMillis = Long.MAX_VALUE
                 connectTimeoutMillis = 10_000
-                socketTimeoutMillis = Long.MAX_VALUE
+                socketTimeoutMillis = socketTimeoutMs
             }
         }
 
@@ -128,6 +152,16 @@ class SseClientV2 @Inject constructor(
             }
             if (statusCode !in 200..299) {
                 throw SseConnectionException("V2 HTTP $statusCode")
+            }
+
+            // #448 嗅探：200 但非 event-stream = 对面不是 SSE 端点（SPA fallback /
+            // 反代错误页）——升格为协议不匹配异常，不再以 0 事件静默完成
+            val v2ContentType = response.headers["content-type"] ?: ""
+            if (!v2ContentType.substringBefore(';').trim().equals("text/event-stream", ignoreCase = true)) {
+                AppLogger.e(TAG, "V2 SSE endpoint returned non-event-stream content-type '$v2ContentType' (status $statusCode)")
+                throw dev.leonardo.ocbeacon.data.api.SseProtocolMismatchException(
+                    "Expected text/event-stream but got '$v2ContentType' (HTTP $statusCode) — endpoint is not an SSE stream"
+                )
             }
 
             val channel = response.bodyAsChannel()
@@ -182,7 +216,13 @@ class SseClientV2 @Inject constructor(
                         }
                     }
                 } catch (e: Exception) {
-                    AppLogger.e(TAG, "V2 parse error: ${frame.take(200)}", e)
+                    // #448：坏帧跳过计数（对齐 V1 客户端——单帧坏不致死但要可观测）
+                    skippedFrameCount++
+                    if (skippedFrameCount % 50 == 1) {
+                        AppLogger.w(TAG, "V2 SSE skipped " + skippedFrameCount + " bad frames so far (last: " + frame.take(80) + ": " + e.message + ")")
+                    } else {
+                        AppLogger.e(TAG, "V2 parse error: " + frame.take(200), e)
+                    }
                 }
             }
 
@@ -291,6 +331,11 @@ class SseClientV2 @Inject constructor(
         val root = try {
             json.parseToJsonElement(data).jsonObject
         } catch (e: Exception) {
+            // #448：坏帧（非 JSON）计数——原静默 null 让「线在吐坏数据」不可观测
+            skippedFrameCount++
+            if (skippedFrameCount % 50 == 1) {
+                AppLogger.w(TAG, "V2 SSE skipped " + skippedFrameCount + " bad frames so far (last: " + data.take(80) + ": " + e.message + ")")
+            }
             return null
         }
 
@@ -317,7 +362,11 @@ class SseClientV2 @Inject constructor(
             if (seq != null && aggregateId != null) {
                 sequenceTracker?.invoke(aggregateId, seq)
             }
-            return handleEvent(type, payload)
+            // #368：信封顶层服务器时刻（实测 {id, created, type, ...}）——穿入
+            // mapper 替代设备钟盖戳（台账时长/未读水位同钟域）。
+            val envelopeCreated = root["created"]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+                ?: payload["created"]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+            return handleEvent(type, payload, envelopeCreated)
         }
 
         // 没有 type 字段——server.connected/heartbeat 等特殊事件
@@ -340,13 +389,15 @@ class SseClientV2 @Inject constructor(
         } else {
             JsonObject(emptyMap())
         }
-        return handleEvent(eventType, properties)
+        // #368：event: 帧形态下 properties 即完整信封（含 created）——先萃取再分发
+        val envelopeCreated = properties["created"]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+        return handleEvent(eventType, properties, envelopeCreated)
     }
 
     /**
      * 统一事件分发：优先解析器，特殊处理 V2 delta 流事件。
      */
-    private fun handleEvent(type: String, props: JsonObject): SseEvent? {
+    private fun handleEvent(type: String, props: JsonObject, envelopeTimeMs: Long? = null): SseEvent? {
         // synthetic 实时通知（2026-08-12 修复，与 TUI 机制对齐）：
         // 事件契约演进（2026-08-14 实测抓帧）：
         // 最新（next-17403+）：session.inbox.enqueued {sessionID, inboxID,
@@ -398,9 +449,8 @@ class SseClientV2 @Inject constructor(
                             sessionId = sessionId,
                             role = inputType, // "synthetic"（兼容其他非 user 类型）
                             time = TimeInfo(created = System.currentTimeMillis()),
-                            // 2026-08-12：映射 metadata.agent（子智能体类型）→ agent 字段
-                            agent = dataObj?.get("metadata")?.jsonObject
-                                ?.get("agent")?.jsonPrimitive?.contentOrNull,
+                            // 2026-09-12（(f)）：删除 metadata.agent → agent 漂移映射
+                            //（全链零消费者；来源类型由 SyntheticNotificationCard 解析文本标签）。
                             summary = Message.User.UserSummary(
                                 body = text,
                                 title = description
@@ -424,7 +474,7 @@ class SseClientV2 @Inject constructor(
 
         // V2SseMapper 优先：v2 细粒度生命周期事件 → 领域事件
         // （input.admitted / step / reasoning / text / tool 全映射）
-        val mapped = V2SseMapper.map(type, props)
+        val mapped = V2SseMapper.map(type, props, envelopeTimeMs)
         if (mapped != null) return mapped
 
         // 兼容旧 delta 路径（mapV2DeltaEvent 保留，partId 已按 ordinal 派生）

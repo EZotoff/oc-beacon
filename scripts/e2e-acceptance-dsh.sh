@@ -24,6 +24,12 @@
 set -uo pipefail
 
 SERIAL=${1:-192.168.110.239:5555}
+# #319：目标端口可参（默认 3080 生产；DSH_E2E_PORT=3082 打 0.1.1-rc.2 回归容器）
+DSH_E2E_PORT=${DSH_E2E_PORT:-3080}
+# #314-316 回归适配（容器）：既有会话锚 + 新建目录 fallback 链（默认=生产环境）
+DSH_E2E_SESS=${DSH_E2E_SESS:-仲裁申请书}
+DSH_E2E_DIR1=${DSH_E2E_DIR1:-dsh-openapi-scratch}
+DSH_E2E_DIR2=${DSH_E2E_DIR2:-oc-beacon}
 PKG=dev.leonardo.ocbeacon.dev
 ACT=dev.leonardo.ocbeacon.dev/dev.leonardo.ocbeacon.MainActivity
 OUT=/tmp/e2e-acceptance-$(date +%H%M%S)
@@ -32,11 +38,16 @@ PASS=(); FAIL=(); SKIP=()
 
 adb() { command adb -s "$SERIAL" "$@"; }
 
+ensure_reverse() { # #316：adb reverse 可被 adbd 重启/USB-WiFi 切换静默拆除——入口探测重建
+  adb reverse --list 2>/dev/null | tr -d '\r' | grep -q "tcp:$DSH_E2E_PORT" \
+    || { adb reverse "tcp:$DSH_E2E_PORT" "tcp:$DSH_E2E_PORT" >/dev/null 2>&1 && echo "  [reverse] tcp:$DSH_E2E_PORT 已重建"; }
+}
+
 # 宿主侧全程序连续 logcat（#293 批教训：设备缓冲在洪泛期分钟级旋转，-d 快照会
 # 吃掉 Ktor/派发行）——一切日志门禁 grep 本文件，行号偏移做卡内隔离。
 LOG_HOST="$OUT/host-logcat.log"
 : > "$LOG_HOST"
-adb reverse tcp:3080 tcp:3080 >/dev/null
+ensure_reverse
 adb logcat -c
 adb logcat -v time > "$LOG_HOST" 2>&1 &
 LGPID=$!
@@ -45,11 +56,11 @@ trap 'kill $LGPID 2>/dev/null' EXIT
 snap() { adb exec-out screencap -p > "$OUT/$1.png"; echo "  [shot] $1.png"; }
 
 rpc() { # rpc <method> <payload-json> → stdout=value JSON
-  python3 - "$1" "$2" <<'PYEOF'
+  python3 - "$1" "$2" "$DSH_E2E_PORT" <<'PYEOF'
 import json, sys, urllib.request
 method, payload = sys.argv[1], json.loads(sys.argv[2])
 req = urllib.request.Request(
-    "http://127.0.0.1:3080/api/" + method,
+    "http://127.0.0.1:" + sys.argv[3] + "/api/" + method,
     data=json.dumps({"type":"client-request","rpcId":"e2e","method":method,"payload":payload}).encode(),
     headers={"Content-Type":"application/json"})
 with urllib.request.urlopen(req, timeout=8) as r:
@@ -79,11 +90,12 @@ enter_dsh() { # 冷启 + debug intent 直达 DSH 会话列表，等待回放沉�
   # 沉降两段式（#293 批教训：纯静默窗会在回放开始前假通过——8s「沉降完成」致
   # 导航撞进通知风暴/骨架屏）：①先等回放证据（persist queue full，上限 60s，
   # 温缓存可缺席）；②再等该行 24s 无新增。
+  ensure_reverse                                # #316：每卡冷启前探测重建
   local lc0; lc0=$(log_count)
   adb shell am force-stop "$PKG"; sleep 1
   adb shell pidof "$PKG" >/dev/null 2>&1 && { echo "  [warn] force-stop 未生效"; return 1; }
-  adb shell am start -n "$ACT" --es debug_url http://127.0.0.1:3080 \
-    --es debug_username opencode --es debug_name 127.0.0.1:3080 >/dev/null
+  adb shell am start -n "$ACT" --es debug_url "http://127.0.0.1:$DSH_E2E_PORT" \
+    --es debug_username opencode --es debug_server_type dsh --es debug_name "127.0.0.1:$DSH_E2E_PORT" >/dev/null
   wait_logcat 'Debug channel → SessionList' 40 "$lc0" || { echo "  [fail] 未到达会话列表"; return 1; }
   echo "  已进入 DSH 会话列表，等待回放沉降（证据→静默两段式，上限 ${SETTLE_S:-240}s）…"
   local i=0
@@ -112,10 +124,10 @@ open_new_chat() { # 顶栏「新建会话」(固定坐标) → 目录选择表 �
     adb shell input tap 972 230; sleep 2
     if wait_dump '打开其他项目' 8; then
       for scroll in 1 2 3 4; do
-        tap_text 'dsh-openapi-scratch' 2 2 850 2150 && { echo "  目录: dsh-openapi-scratch"; return 0; }
+        tap_text "$DSH_E2E_DIR1" 2 2 850 2150 && { echo "  目录: $DSH_E2E_DIR1"; return 0; }
         adb shell input swipe 600 1600 600 800 400; sleep 1
       done
-      tap_text 'oc-beacon' 3 2 850 2150 && { echo "  目录: oc-beacon（scratch 缺席回落）"; return 0; }
+      tap_text "$DSH_E2E_DIR2" 3 2 850 2150 && { echo "  目录: $DSH_E2E_DIR2（$DSH_E2E_DIR1 缺席回落）"; return 0; }
     fi
     # 表未开：heads-up 深链劫持 → BACK 回列表重试
     adb shell rm -f /sdcard/e2e-chk.xml
@@ -170,7 +182,7 @@ tap_text() { # tap_text <grep-pattern> [retries] [settle-s] [ymin] [ymax] ——
     local best_by=999999 bx=0 by=0 line x1 y1 x2 y2
     while IFS= read -r line; do
       [ -z "$line" ] && continue
-      IFS='[],' read -r _ x1 y1 x2 y2 _ <<< "$line"
+      IFS='[],' read -r _ x1 y1 x2 y2 _ <<< "${line//']['/','}"   # #315：先剥 ][ 空段（[x1,y1][x2,y2] 切分 token 错位根因）
       if [ "$y1" -ge "$ymin" ] && [ "$y1" -le "$ymax" ] && [ "$y1" -lt "$best_by" ]; then
         best_by=$y1; bx=$(( (x1+x2)/2 )); by=$(( (y1+y2)/2 ))
       fi
@@ -203,8 +215,8 @@ wait_dump() { # wait_dump <grep-pattern> <timeout-s> —— uiautomator dump 轮
 card_279() {
   echo "== #279 导出 SAF MIME/扩展名（落盘 .zip + unzip -t）=="
   enter_dsh || { FAIL+=("#279:无法进入DSH"); return; }
-  wait_dump '仲裁申请书' 30 || { FAIL+=("#279:会话列表未就绪"); return; }
-  tap_text '仲裁申请书'                          # 列表首条（最新会话）
+  wait_dump "$DSH_E2E_SESS" 30 || { FAIL+=("#279:会话列表未就绪"); return; }
+  tap_text "$DSH_E2E_SESS"                            # 列表首条（最新会话）
   wait_dump '提问' 30 || echo "  [warn] 聊天页 30s 未就绪"
   adb shell input tap 1130 185                  # ⋮
   wait_dump '导出' 15 || { FAIL+=("#279:菜单未打开"); return; }
@@ -232,7 +244,7 @@ card_279() {
   sb=$(grep -ao 'text="保存[^"]*"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' "$OUT"/279-saf-dump-*.xml 2>/dev/null | head -1 | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]')
   if [ -n "$sb" ]; then
     local x1 y1 x2 y2
-    IFS='[],' read -r _ x1 y1 x2 y2 _ <<< "$sb"
+    IFS='[],' read -r _ x1 y1 x2 y2 _ <<< "${sb//']['/','}"   # #315 同款修复
     adb shell input tap $(( (x1+x2)/2 )) $(( (y1+y2)/2 )); sleep 6
   else
     adb shell input keyevent KEYCODE_ENTER; sleep 6   # 兜底
@@ -302,11 +314,12 @@ card_285() {
   else
     echo "  [warn] 懒建未观察到位（发送通道环境受阻——回落既有会话弹层门禁）"
     adb shell am force-stop "$PKG"; sleep 1      # 回退不稳（BACK 层级漂移），冷启重进
-    adb shell am start -n "$ACT" --es debug_url http://127.0.0.1:3080 \
-      --es debug_username opencode --es debug_name 127.0.0.1:3080 >/dev/null
+    ensure_reverse                               # #316
+    adb shell am start -n "$ACT" --es debug_url "http://127.0.0.1:$DSH_E2E_PORT" \
+      --es debug_username opencode --es debug_server_type dsh --es debug_name "127.0.0.1:$DSH_E2E_PORT" >/dev/null
     wait_logcat 'Debug channel → SessionList' 20 || true
-    wait_dump '仲裁申请书' 30 || true
-    tap_text '仲裁申请书'                          # 开最新既有会话
+    wait_dump "$DSH_E2E_SESS" 30 || true              # 回退锚定既有会话（容器回归走懒建主路径）
+    tap_text "$DSH_E2E_SESS"                          # 开最新既有会话
     wait_dump '提问' 30 || echo "  [warn] 聊天页未就绪"
   fi
   tap_text '提问' 4 2 || true
@@ -356,8 +369,8 @@ card_278() {
   local new_pid; new_pid=$(pid_now)
   if [ -n "$new_pid" ] && [ "$old_pid" = "$new_pid" ]; then FAIL+=("#278:force-stop 未生效"); return; fi
   local lc278; lc278=$(log_count)
-  adb shell am start -n "$ACT" --es debug_url http://127.0.0.1:3080 \
-    --es debug_username opencode --es debug_name 127.0.0.1:3080 >/dev/null
+  adb shell am start -n "$ACT" --es debug_url "http://127.0.0.1:$DSH_E2E_PORT" \
+    --es debug_username opencode --es debug_server_type dsh --es debug_name "127.0.0.1:$DSH_E2E_PORT" >/dev/null
   wait_logcat '\[syncFromRest\]' 45 "$lc278" || { FAIL+=("#278:重启后未见 syncFromRest 同步行"); return; }
   sleep 3
   local sync; sync=$(grep_from "$lc278" '\[syncFromRest\]' | tail -1)

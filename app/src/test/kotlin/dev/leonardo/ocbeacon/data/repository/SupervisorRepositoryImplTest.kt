@@ -1,5 +1,7 @@
 package dev.leonardo.ocbeacon.data.repository
 
+import dev.leonardo.ocbeacon.data.adapter.ServerAdapterRegistry
+import dev.leonardo.ocbeacon.data.adapter.ServerPorts
 import dev.leonardo.ocbeacon.data.api.message.MessageApi
 import dev.leonardo.ocbeacon.data.api.session.SessionApi
 import dev.leonardo.ocbeacon.data.dto.request.PromptPart
@@ -12,6 +14,7 @@ import dev.leonardo.ocbeacon.domain.repository.FileRepository
 import dev.leonardo.ocbeacon.domain.repository.ServerRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.test.runTest
@@ -30,6 +33,9 @@ class SupervisorRepositoryImplTest {
     private val servers: ServerRepository = mockk()
     private val sessions: SessionApi = mockk()
     private val messages: MessageApi = mockk()
+    private val adapters: ServerAdapterRegistry = mockk {
+        every { ports(any()) } returns ServerPorts(sessions, messages, mockk())
+    }
     private val json = Json { ignoreUnknownKeys = true }
 
     @Test
@@ -43,7 +49,7 @@ class SupervisorRepositoryImplTest {
         coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/ledger.jsonl") } returns
             text("ledger.jsonl", LEDGER_JSONL)
 
-        val result = SupervisorRepositoryImpl(files, servers, sessions, messages, json).load("server-1")
+        val result = SupervisorRepositoryImpl(files, servers, adapters, json).load("server-1")
 
         assertTrue(result.isSuccess)
         val snapshot = result.getOrThrow()
@@ -80,7 +86,7 @@ class SupervisorRepositoryImplTest {
                 text("operator-view.json", operatorViewJson(producedAtOffsetMs = -60_000)),
             )
 
-        val repository = SupervisorRepositoryImpl(files, servers, sessions, messages, json)
+        val repository = SupervisorRepositoryImpl(files, servers, adapters, json)
         val live = repository.load("server-1").getOrThrow()
         assertFalse(live.stale)
 
@@ -101,7 +107,7 @@ class SupervisorRepositoryImplTest {
         coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/operator-view.json") } returns
             text("operator-view.json", "not json at all")
 
-        val snapshot = SupervisorRepositoryImpl(files, servers, sessions, messages, json).load("server-1").getOrThrow()
+        val snapshot = SupervisorRepositoryImpl(files, servers, adapters, json).load("server-1").getOrThrow()
 
         assertTrue(snapshot.stale)
         assertEquals("invalid-schema", snapshot.staleReason)
@@ -118,7 +124,7 @@ class SupervisorRepositoryImplTest {
         coEvery { files.getFileContent("server-1", home, "$home/.local/state/opencode-supervisor/operator-view.json") } returns
             text("operator-view.json", operatorViewJson(cards = 20))
 
-        val snapshot = SupervisorRepositoryImpl(files, servers, sessions, messages, json).load("server-1").getOrThrow()
+        val snapshot = SupervisorRepositoryImpl(files, servers, adapters, json).load("server-1").getOrThrow()
 
         assertFalse(snapshot.stale)
         assertEquals((1..19).map { "att_$it" } + "att_open", snapshot.attentionItems.map { it.id })
@@ -146,7 +152,7 @@ class SupervisorRepositoryImplTest {
             messages.promptAsync(any(), sessionId = "ses_inbox", parts = any(), model = null, agent = null, variant = null, directory = root)
         } returns null
 
-        val result = SupervisorRepositoryImpl(files, servers, sessions, messages, json)
+        val result = SupervisorRepositoryImpl(files, servers, adapters, json)
             .sendReply("server-1", root, BeaconReply.text("use Qdrant", explicitItemID = "att_open"))
 
         assertTrue(result.isSuccess)
@@ -168,7 +174,7 @@ class SupervisorRepositoryImplTest {
             messages.promptAsync(any(), sessionId = "ses_inbox", parts = any(), model = null, agent = null, variant = null, directory = root)
         } returns null
 
-        val result = SupervisorRepositoryImpl(files, servers, sessions, messages, json)
+        val result = SupervisorRepositoryImpl(files, servers, adapters, json)
             .sendReply("server-1", root, BeaconReply.text("go ahead", explicitItemID = "att_open"))
 
         assertTrue(result.isSuccess)
@@ -192,7 +198,7 @@ class SupervisorRepositoryImplTest {
             messages.promptAsync(any(), sessionId = "ses_inbox", parts = any(), model = null, agent = null, variant = null, directory = root)
         } returns null
 
-        SupervisorRepositoryImpl(files, servers, sessions, messages, json)
+        SupervisorRepositoryImpl(files, servers, adapters, json)
             .sendReply("server-1", root, BeaconReply.text("skip", explicitItemID = "att_x"))
 
         val partSlot = slot<List<PromptPart>>()
@@ -222,7 +228,7 @@ class SupervisorRepositoryImplTest {
             messages.promptAsync(any(), sessionId = "ses_inbox", parts = any(), model = null, agent = null, variant = null, directory = root)
         } throws java.io.IOException("offline")
 
-        val result = SupervisorRepositoryImpl(files, servers, sessions, messages, json)
+        val result = SupervisorRepositoryImpl(files, servers, adapters, json)
             .sendReply("server-1", root, BeaconReply.text("hello", explicitItemID = "att_open"))
 
         assertTrue(result.isFailure)

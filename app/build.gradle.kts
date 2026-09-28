@@ -89,10 +89,9 @@ android {
             // GitHub 分发渠道保留应用内自更新
             buildConfigField("boolean", "ENABLE_AUTO_UPDATE", "true")
             // #265 流式 Markdown 增量解析试点：dev 先行 A/B（回退=置 false 一行）
-            // 2026-09-21 暂停：流式渲染越界模型对击穿进程（单日 3 崩，取证见
-            // docs/journal/2026-09-21-markdown-stream-crash-guard.md）——防护落地后
-            // 待 MDGuard 取证日志定位真实来源再评估重开。
-            buildConfigField("boolean", "STREAMING_MD_PILOT", "false")
+            buildConfigField("boolean", "STREAMING_MD_PILOT", "true")
+            // #437 两级安全放行闸（stable reveal）：dev 先行（回退=置 false 一行）
+            buildConfigField("boolean", "STABLE_REVEAL_PILOT", "true")
             // 2026-08-13 用户决策：dev 测试构建 versionCode 用 Unix 时间戳——
             // 每次构建自动递增，adb install -r 可覆盖安装（保留 App 数据/服务器配置，
             // 禁止卸载重装）；正式版本号（version.properties）仅 beta/stable 使用。
@@ -107,6 +106,8 @@ android {
             buildConfigField("boolean", "ENABLE_AUTO_UPDATE", "true")
             // #265 试点未达标前 beta/stable 不放开
             buildConfigField("boolean", "STREAMING_MD_PILOT", "false")
+            // #437 同步关闭（依赖 STREAMING_MD_PILOT）
+            buildConfigField("boolean", "STABLE_REVEAL_PILOT", "false")
         }
         create("stable") {
             dimension = "flavor"
@@ -114,6 +115,7 @@ android {
             // Google Play 渠道：政策禁止 REQUEST_INSTALL_PACKAGES 自更新，禁用
             buildConfigField("boolean", "ENABLE_AUTO_UPDATE", "false")
             buildConfigField("boolean", "STREAMING_MD_PILOT", "false")
+            buildConfigField("boolean", "STABLE_REVEAL_PILOT", "false")
         }
     }
 
@@ -177,6 +179,8 @@ android {
 }
 
 dependencies {
+    // #391 切片8 / #397：自定义 Lint 规则（服务器类型引用白名单门禁）
+    lintChecks(project(":lint-checks"))
     // Android 核心
     implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
@@ -287,6 +291,10 @@ dependencies {
     androidTestImplementation(composeBom)
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("com.google.dagger:hilt-android-testing:2.60.1")
+    // 2026-09-17（#387 收尾）：androidTest 的 Hilt 代码生成缺失——@HiltAndroidTest 的
+    // *_TestComponentDataSupplier 从未生成（ClassNotFoundException → 全部 Hilt 插桩测试失败）。
+    // 主源集有 ksp("hilt-compiler")，androidTest 源集同样需要它。
+    kspAndroidTest("com.google.dagger:hilt-compiler:2.60.1")
 }
 
 tasks.withType<Test>().configureEach {
@@ -303,4 +311,3 @@ tasks.withType<Test>().configureEach {
 //   docs/journal/2026-08-26 滚动卡顿收口批次）。2026-08-30 随 BOM 2026.08.00
 //   （core 全家 1.12.0 稳定、material3 仍 1.4.0）撤销，矩阵一致性由 BOM 单源保证，
 //   丝滑基线回归以真机 fling 矩阵 + 用户 V6 验证把关。
-

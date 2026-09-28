@@ -20,7 +20,7 @@ class MessageApiCursorTest {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    private fun apiWith(engine: MockEngine): MessageApiImpl {
+    private fun apiWith(engine: MockEngine): MessageApi {
         val client = HttpClient(engine) {
             install(ContentNegotiation) { json(json) }
         }
@@ -28,9 +28,21 @@ class MessageApiCursorTest {
         val v1 = dev.leonardo.ocbeacon.data.api.v1.V1ApiClient(apiClient)
         val v2 = dev.leonardo.ocbeacon.data.api.v2.V2ApiClient(apiClient)
         val dsh = dev.leonardo.ocbeacon.data.api.dsh.DshApiClient(
-            dev.leonardo.ocbeacon.data.api.dsh.DshRpcClient(apiClient),
+            dev.leonardo.ocbeacon.data.api.dsh.DshRpcClient(apiClient, io.mockk.mockk(relaxed = true)),
         )
-        return MessageApiImpl(v1, v2, dsh)
+        val registry = dev.leonardo.ocbeacon.data.adapter.ServerAdapterRegistry(
+            setOf(
+                dev.leonardo.ocbeacon.data.adapter.OpenCodeServerAdapter(v1, v2),
+                dev.leonardo.ocbeacon.data.adapter.DshServerAdapter(
+                    dsh,
+                    object : dev.leonardo.ocbeacon.data.api.dsh.DshProtocolSource {
+                        override fun protocolOf(baseUrl: String): dev.leonardo.ocbeacon.data.api.dsh.DshWireProtocol? = null
+                    },
+                    io.mockk.mockk(relaxed = true),
+                ),
+            )
+        )
+        return registry.ports(conn).message
     }
 
     private val conn = ServerConnection.from("http://test.local", username = "u", password = "p")

@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -27,7 +28,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import dev.leonardo.ocbeacon.ui.theme.LocalChatDensity
+import dev.leonardo.ocbeacon.ui.theme.typography
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AllInclusive
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -43,16 +49,25 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.text.style.TextOverflow
 import dev.leonardo.ocbeacon.R
+import dev.leonardo.ocbeacon.ui.components.CardStandardBorder
 import dev.leonardo.ocbeacon.ui.screens.chat.markdown.MarkdownContent
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalHapticFeedbackEnabled
 import dev.leonardo.ocbeacon.ui.screens.chat.util.halfScreenHeight
 import dev.leonardo.ocbeacon.ui.screens.chat.util.performHaptic
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 import dev.leonardo.ocbeacon.ui.theme.AppMotion
 import kotlinx.coroutines.delay
 
@@ -65,10 +80,21 @@ internal fun resolveReasoningDisplayDuration(durationMs: Long?, frozenElapsedMs:
     durationMs?.takeIf { it > 0 } ?: frozenElapsedMs.takeIf { it > 0 }
 
 @Composable
-internal fun ReasoningBlock(text: String, isExpanded: Boolean = false, onToggleExpand: () -> Unit = {}, durationMs: Long? = null, isStreaming: Boolean = false, startTimeMs: Long? = null) {
+internal fun ReasoningBlock(
+    text: String,
+    isExpanded: Boolean = false,
+    onToggleExpand: () -> Unit = {},
+    durationMs: Long? = null,
+    isStreaming: Boolean = false,
+    startTimeMs: Long? = null,
+    /** #423 批次八:REPIN 键(part.id)——空=不参与(预览/单测)。 */
+    pinKey: String = "",
+) {
     val hapticView = LocalView.current
     val hapticOn = LocalHapticFeedbackEnabled.current
     val expanded = isExpanded
+    val reportY = LocalFoldRowYReport.current
+    val clickHook = LocalFoldRowClick.current
 
     // 流式推理的实时计时器
     // #207：fallback 锚点 remember → rememberSaveable。time=null 的残留 part 无
@@ -126,27 +152,42 @@ internal fun ReasoningBlock(text: String, isExpanded: Boolean = false, onToggleE
         )
         alpha
     }
-    val headerText = when {
-        isStreaming -> stringResource(R.string.chat_thinking_in_progress, formatReasoningDuration(elapsedMs.longValue))
-        isComplete -> stringResource(R.string.chat_thinking_complete, formatReasoningDuration(displayDurationMs ?: 0L))
-        else -> stringResource(R.string.chat_status_thinking)
+    // 2026-09-20 摘要二轮(用户反馈:展示最后一句的尾部而非开头;流式莫名跳动):
+    // - 摘要=最后一行的**尾部**窗口(takeLast)——推理结论在末尾,流式跟随生成端;
+    // - 跳动根因=时长嵌在左侧标签内,每秒变宽把摘要/右侧整体推移 → 时长拆到
+    //   行尾**固定区**(SpaceBetween 右槽),标签用无参文案,左锚(图标+标签)
+    //   与右锚(时长)恒定,中间摘要窗口滑动属信息流预期。
+    val headerLabel = when {
+        isStreaming -> stringResource(R.string.chat_status_thinking)
+        // #338 语义沿用:label 恒无时长(时长在行尾独立区),未知时不显示尾部
+        else -> stringResource(R.string.chat_thinking_complete_unknown)
     }
+    val durationText = if (isStreaming) {
+        formatReasoningDuration(elapsedMs.longValue)
+    } else {
+        // #338：时长未知（displayDurationMs 零/负且无本地冻结样本——DSH 整装
+        // 事件 start=end 同信封族）不显示伪造 0ms。
+        displayDurationMs?.let { formatReasoningDuration(it) }
+    }
+    val summaryLine = remember(text) {
+        if (text.isBlank()) null else {
+            text.lines().lastOrNull { it.isNotBlank() }?.trim()?.takeLast(60)
+        }
+    }
+    val headerText = if (summaryLine != null) headerLabel + " · " + summaryLine else headerLabel
 
     Surface(
-        shape = ShapeTokens.none,
-        color = containerColor,
+        // 2026-09-20 单行形态裁决(全面 DSH 化):思考卡去容器——透明底/无描边,
+        // 「脉冲点+思考·摘要」平铺消息流(DSH web 实证:灰度弱化单行,无边框
+        // 底色);2.5dp 强调色条同步移除(DSH 无此元素,脉冲点已承担流式指示)。
+        shape = ShapeTokens.smallMedium,
+        color = Color.Transparent,
+        border = null,
+        // #432(用户裁决:上下间距一致):occupyBottomGap 移除(工具卡同步;透明卡
+        // 形态下背景溢出前提消失,收缩只剩上下不对称)。
         modifier = Modifier.fillMaxWidth()
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            // 强调色左侧条
-            Box(
-                modifier = Modifier
-                    .width(2.5.dp)
-                    .fillMaxHeight()
-                    .background(accentColor)
-            )
-
-            Column(
+        Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     // #215 批3（推翻 2026-08-16 卡片职责分离规范，用户授权）：
@@ -154,13 +195,35 @@ internal fun ReasoningBlock(text: String, isExpanded: Boolean = false, onToggleE
                     // 右侧 chevron 按钮移除；复制维持内容区 SelectionContainer 选中。
                     // 2026-08-16（用户反馈）：折叠态行高与其他卡片单行一致——
                     // 垂直 padding 8dp → 4dp（对齐 ToolCardScaffold 的
-                    // Column padding(4.dp)），总高 ~36dp 与工具卡折叠态等高。
-                    .padding(start = 12.dp, end = 10.dp, top = 4.dp, bottom = 4.dp)
+                    // Column padding(SpacingTokens.XS.dp)），总高 ~36dp 与工具卡折叠态等高。
+                    // 2026-09-20 间距统一裁决:垂直 4→2dp——实测卡↔正文空白 63px
+                    // (卡内留白 20px/侧 × 2 + sectionGap 8dp + leading),为正文行间
+                    // 24px 的 2.6 倍;收敛卡内留白 20→14px(与 ToolCardScaffold 同步)。
+                    // 2026-09-20 单行形态:水平 padding 对齐工具卡 scaffold(XS)——
+                    // 原 MD(12) 是给 2.5dp 色条让位的档位,色条已移除。
+                    // #432(用户反馈):水平缩进归零,与正文同缘(工具卡 scaffold 同步)。
+                    // #455(2026-09-27):垂直 2→0 与 ToolCardScaffold 同步归零——透明卡
+                    // 容器 padding 只叠加卡间节奏(12dp vs 8dp 两档混杂),统一 8dp。
+                    .padding(start = 0.dp, end = 0.dp, top = 0.dp, bottom = 0.dp)
             ) {
+                // 2026-09-20 用户裁决修正:标题行(图标+标签)常驻,展开时仅摘要
+                // 部分(· xxxx)隐藏——正文竖线区出现在下方;摘要显隐同行内无高度
+                // 变化,零补偿需求;收起入口回归标题行本体点击。
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { performHaptic(hapticView, hapticOn); onToggleExpand() },
+                        // 批次八:REPIN 上报/快照(与组折叠行同机制)
+                        .onGloballyPositioned {
+                            if (pinKey.isNotEmpty()) reportY?.invoke(pinKey, it.positionInRoot().y)
+                        }
+                        // 2026-09-20 方案A回退(用户裁决:还是正常卡片就行)——
+                        // 强制 height(12dp) 单行胶囊只瘦了思考卡,工具卡未同步,
+                        // 卡族折叠态高度失配=「不协调」来源,且违背 2026-08-16
+                        // 「折叠行高与工具卡一致」裁决。恢复自然行高。
+                        .clickable {
+                            if (pinKey.isNotEmpty()) clickHook?.invoke(pinKey)
+                            performHaptic(hapticView, hapticOn); onToggleExpand()
+                        },
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -168,46 +231,98 @@ internal fun ReasoningBlock(text: String, isExpanded: Boolean = false, onToggleE
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f),
                     ) {
-                        // 动画脉冲圆点（仅在思考时显示）
-                        Box(
-                            modifier = Modifier
-                                .size(5.dp)
-                                .drawBehind {
-                                    drawCircle(
-                                        color = accentColor.copy(alpha = pulseAlpha)
-                                    )
-                                }
+                        // 2026-09-20 单行形态(DSH 对齐):缠绕球形图标替代脉冲圆点——
+                        // 流式时 alpha 脉冲(复用 pulseAlpha),完成态静态弱化
+                        Icon(
+                            imageVector = Icons.Default.AllInclusive,
+                            contentDescription = null,
+                            // #432(用户裁决:卡族垂直节奏一致):16dp 对齐工具卡
+                            // LEADING_ICON_SIZE(原 14dp 行高偏矮);间距 3dp 同步。
+                            modifier = Modifier.size(16.dp),
+                            tint = accentColor.copy(alpha = pulseAlpha),
                         )
-                        Spacer(modifier = Modifier.width(5.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            text = headerText,
-                            style = MaterialTheme.typography.labelMedium,
+                            text = headerLabel,
+                            // #432(用户裁决):标题=正文字号+Medium(层级靠字重;
+                            // 摘要/时长保持小号辅助)
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontSize = LocalChatDensity.current.typography.bodyFontSize,
+                                fontWeight = FontWeight.Medium,
+                            ),
                             color = textColor.copy(alpha = AlphaTokens.MUTED),
                             maxLines = 1,
                         )
+                        // 摘要:收起态显示(· 最新内容),展开态让位给正文。
+                        // #430:原 `!expanded` 一帧瞬消=顿挫第一拍(高度未动、文字
+                        // 先没)——改交叉淡化与 Reveal 揭示同拍;行内元素显隐
+                        // 无高度变化,零补偿需求(2026-09-20 裁决仍成立)。
+                        if (summaryLine != null) {
+                            AnimatedVisibility(
+                                visible = !expanded,
+                                enter = fadeIn(tween(AppMotion.SHORT)),
+                                exit = fadeOut(tween(AppMotion.SHORT)),
+                                modifier = Modifier.weight(1f, fill = false),
+                            ) {
+                                Text(
+                                    text = " · " + summaryLine,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = textColor.copy(alpha = AlphaTokens.FAINT),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
                         // 2026-08-16（用户反馈）：流式占位进度圈并入标题行内——
                         // 原实现单独占一行使折叠态高度翻倍，超出其他卡片单行高度。
                         if (isStreaming && text.isBlank()) {
                             Spacer(modifier = Modifier.width(6.dp))
                             CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp),
+                                modifier = Modifier.size(16.dp), // #432:与标题图标同槽同尺寸
                                 strokeWidth = 2.dp,
                                 color = accentColor.copy(alpha = AlphaTokens.MUTED)
                             )
                         }
                     }
+                    // 2026-09-20 摘要二轮:时长=行尾固定区(SpaceBetween 右槽)——
+                    // 不随摘要/时长自身宽度变化推移左区,消除流式横向跳动
+                    if (durationText != null) {
+                        Text(
+                            text = durationText,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = textColor.copy(alpha = AlphaTokens.FAINT),
+                            maxLines = 1,
+                        )
+                    }
                     // #215 批3：chevron IconButton 移除——本体点击=展开唯一入口
                 }
 
-                // 可展开内容（2026-08-30 用户裁决：撤销全部展开补偿改造，回归
-                // AnimatedVisibility 出厂默认动画——spring + fade + 默认揭幕方向）
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = expanded,
-                    enter = CardExpandEnterTransition,
-                    exit = CardExpandExitTransition,
-                ) {
+                // 批次九(用户裁决 2026-09-22):回归统一高度控制引擎——
+                // CardExpandReveal 已改造为「渲染前计算+反射逐帧设置」双写契约
+                // (高度分数与滚动位同遍 measure 原子生效,配对构造性精确),
+                // 批次八的瞬时显隐+REPIN 后置修正模式退役。
+                CardExpandReveal(visible = expanded, cacheKey = pinKey.ifEmpty { null }) {
+                    // 2026-09-20 单行形态:展开区左竖线(Roo 式,与工具卡同语言;
+                    // 修饰在 Reveal content 内部——#420 硬地板教训)
+                    val guideColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = AlphaTokens.FAINT)
+                    Box(
+                        modifier = Modifier
+                            // 2026-09-20 居中修正:图标与竖线同一起点(内容区 x=0)。
+                            // #432:16dp 图标中心 8dp;线宽 2dp → 锚位 7dp(工具卡同款公式)。
+                            .padding(start = (SpacingTokens.LG / 2 - 1).dp)
+                            .drawBehind {
+                                drawRect(
+                                    color = guideColor,
+                                    topLeft = Offset(1.dp.toPx(), 0f),
+                                    size = Size(2.dp.toPx(), size.height),
+                                )
+                            }
+                            // 2026-09-20 用户反馈修:竖线→内容缩进(原内容贴线粘连)
+                            .padding(start = SpacingTokens.SM.dp),
+                    ) {
                         Column {
-                        Spacer(modifier = Modifier.height(6.dp))
+                        // #432(卡族垂直节奏一致):顶部 6dp 顶距移除——工具卡展开区
+                        // 顶边零距,思考卡多 6dp 使两族展开态首行不同高。
                         // 2026-08-16（用户反馈调整）：高度上限从半屏收紧为固定值——
                         // 思考内容是长 Markdown，半屏上限下总是顶满（其他工具卡片
                         // 内容短、实际远达不到半屏上限），视觉上显著高于其他卡片。
@@ -229,7 +344,14 @@ internal fun ReasoningBlock(text: String, isExpanded: Boolean = false, onToggleE
                                     markdown = text,
                                     textColor = textColor.copy(alpha = AlphaTokens.MUTED),
                                     isUser = false,
-                                    customFontSize = "small"
+                                    customFontSize = "small",
+                                    // #461 根修(2026-09-29):历史思考文本不得走流式 pilot——
+                                    // StreamingMarkdownState 初始空靠逐帧 append 填充,在
+                                    // CardExpandReveal ε/展开窗内与 settle 竞态 → 600ms 内
+                                    // 未落地 → H=0 僵尸态(展开集完成但 0 高,toggle 永无视觉;
+                                    // 真机三方定罪:settle H=0×3/dump 无内容节点/像素 8dp 单档)。
+                                    // 与正文 PartContent 同语义:流式走 pilot,历史走 #428 分层。
+                                    asyncParse = !isStreaming,
                                 )
                             }
                         }
@@ -239,6 +361,30 @@ internal fun ReasoningBlock(text: String, isExpanded: Boolean = false, onToggleE
         }
     }
 }
+
+/**
+ * 方案 B（2026-09-20 间距统一第三步）：卡片**占位底部收缩** [CARDS_BOTTOM_SHRINK]。
+ *
+ * 实测卡背景↔正文字形 49px(无 emoji 基准) = spacedBy 8dp(24px) + Markdown
+ * 组件首段固有顶部空 ~25px(行高 leading + 库内行为,不可配)——为正文行间
+ * 24px 的 2 倍。本修饰符把卡片占位高度上收 [CARDS_BOTTOM_SHRINK]：
+ * spacedBy 从收缩后的占位底起算 → 下一元素上移 → 视觉间隙收敛到正文
+ * 行间同档。卡片背景绘制溢出占位（Column 不裁剪),溢出区与正文首行
+ * leading 空白重叠、不碰字形。
+ * - #420 安全：收缩量为常量，toggle 间占位 delta == 视觉 delta；
+ * - 上侧间隙不受影响（占位顶=视觉顶）；
+ * - 卡族同步：ToolCardScaffold 同款引用，保持互相对齐。
+ */
+internal fun Modifier.occupyBottomGap(): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val shrink = CARDS_BOTTOM_SHRINK.roundToPx()
+    layout(placeable.width, (placeable.height - shrink).coerceAtLeast(0)) {
+        placeable.placeRelative(0, 0)
+    }
+}
+
+/** 卡族占位底部收缩量(dp)——首段固有顶部空 25px 的 dp 取整。 */
+internal val CARDS_BOTTOM_SHRINK = 8.dp
 
 private fun formatReasoningDuration(ms: Long): String = when {
     ms < 1000 -> "${ms}ms"

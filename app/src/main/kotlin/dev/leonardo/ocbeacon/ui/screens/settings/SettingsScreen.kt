@@ -56,6 +56,8 @@ import dev.leonardo.ocbeacon.ui.screens.settings.sections.GeneralSection
 import dev.leonardo.ocbeacon.ui.screens.settings.sections.NotificationsSection
 import dev.leonardo.ocbeacon.ui.screens.settings.sections.StorageSection
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
+import dev.leonardo.ocbeacon.ui.util.eventTimeString
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 /**
  * 设置屏幕 — 全局应用偏好。
@@ -94,7 +96,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     LaunchedEffect(Unit) {
         viewModel.archiveCleared.collect {
-            snackbarHostState.showSnackbar(context.getString(R.string.settings_storage_cleared))
+            snackbarHostState.showSnackbar(context.eventTimeString(R.string.settings_storage_cleared))
         }
     }
 
@@ -125,7 +127,7 @@ fun SettingsScreen(
                     .verticalScroll(rememberScrollState())
                     .widthIn(max = 600.dp)
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(SpacingTokens.LG.dp)
             ) {
             // ======== General ========
             GeneralSection(
@@ -214,7 +216,7 @@ fun SettingsScreen(
                                         viewModel.setChatDensity(value)
                                         showChatDensityPicker = false
                                     }
-                                    .padding(vertical = 12.dp),
+                                    .padding(vertical = SpacingTokens.MD.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 RadioButton(
@@ -223,7 +225,7 @@ fun SettingsScreen(
                                 )
                                 Text(
                                     stringResource(labelRes),
-                                    modifier = Modifier.padding(start = 12.dp)
+                                    modifier = Modifier.padding(start = SpacingTokens.MD.dp)
                                 )
                             }
                         }

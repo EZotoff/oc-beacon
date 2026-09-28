@@ -40,6 +40,7 @@ import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
 import dev.leonardo.ocbeacon.ui.theme.AgentError
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 /**
  * 统一事件卡（#234 对话流事件卡片统一——spec §1–§2 严格同构模子）。
@@ -76,6 +77,8 @@ internal fun EventCard(
     timeMs: Long,
     label: String,
     leadingIcon: ImageVector,
+    /** 覆盖 leadingIcon 的前导内容槽（如运行中 spinner）；null = 用 leadingIcon。 */
+    leadingContent: (@Composable () -> Unit)? = null,
     expandedStates: MutableMap<String, Boolean>,
     modifier: Modifier = Modifier,
     failed: Boolean = false,
@@ -120,10 +123,12 @@ internal fun EventCard(
     MessageBubble(
         alignEnd = false,
         containerColor = Color.Transparent,
-        border = BorderStroke(1.dp, borderColor),
+        // 2026-09-20 单行形态裁决(Q1 ok):事件卡去容器——标签行(图标+类型+时间)
+        // 即单行本体,失败语义由 iconTint/文本色承担(DSH 式行级着色,无红底红框)
+        border = null,
         shape = ShapeTokens.medium,
         label = label,
-        labelLeading = {
+        labelLeading = leadingContent ?: {
             Icon(
                 imageVector = labelIcon,
                 contentDescription = null,
@@ -133,12 +138,11 @@ internal fun EventCard(
         },
         timeMs = timeMs,
         // V6 反馈：标题行右贴边——chevron 不再悬在 16dp 内容缩进处；
-        // 8dp 保持与圆角描边的呼吸空间（左侧时间戳同步左移，两侧对称收窄）
+        // 8dp 保持与圆角描边的呼吸空间。
         labelRowHorizontalPadding = 8.dp,
-        // F1/V4 复验实证：仅收窄 padding 右缘未生效——根因是双权重均分
-        // （label fill=false 与 Spacer 瓜分弹性，trailing 随标题长度浮动）。
-        // labelFillRemaining 让 label 独吃弹性，箭头/chevron 恒贴右缘。
-        labelFillRemaining = true,
+        // #389 三轮c：内容栏 AnimatedVisibility（统一展开/收起动画）。
+        // 有描述行＝内容常驻（null，正文走卡内 AV）；无描述行＝随展开态动画。
+        contentExpanded = if (description != null) null else (hasBody && expanded),
         onCardClick = if (hasBody) ({ expandedStates[eventKey] = !expanded }) else null,
         labelTrailing = {
             // 跳转箭头（Q4 常驻折叠+展开两态；点击不冒泡到整卡 toggle）
@@ -179,10 +183,8 @@ internal fun EventCard(
         // 展开态两段式（Q11）：分隔线 → 正文(300dp 上限内滚) → 分隔线 → 动作区
         // 2026-08-30 用户裁决：撤销全部展开补偿改造，回归 AnimatedVisibility
         // 出厂默认动画（spring + fade + 默认揭幕方向）
-        AnimatedVisibility(
+        CardExpandReveal(
             visible = hasBody && expanded,
-            enter = CardExpandEnterTransition,
-            exit = CardExpandExitTransition,
         ) {
             // ★ AnimatedVisibility 内容是 Box 叠放语义（非 Column）——多子级全部
             // 原点重叠：分割线被正文整体盖住（透明 Markdown 时从字底透出、
@@ -232,7 +234,7 @@ internal fun EventCard(
             if (actions != null) {
                 HorizontalDivider(
                     color = dividerColor,
-                    modifier = Modifier.padding(vertical = 8.dp),
+                    modifier = Modifier.padding(vertical = SpacingTokens.SM.dp),
                 )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

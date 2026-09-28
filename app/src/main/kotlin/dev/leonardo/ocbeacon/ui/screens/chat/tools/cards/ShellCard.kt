@@ -31,6 +31,7 @@ import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
 import dev.leonardo.ocbeacon.ui.theme.CodeTypography
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.components.AmoledDefaultBorder
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 /**
  * 后台 shell 命令卡片（V2 Shell part）——2 行布局，与 [TaskToolCard] 对称：
@@ -84,6 +85,11 @@ internal fun ShellCard(
         hasContent = output.isNotBlank(),
         isAmoled = isAmoled,
         onToggleExpand = onToggleExpand,
+        // #453：累积计时（Part.Shell.time——V2 shell started/ended 信封）
+        runningStartMs = shell.time?.start?.takeIf { it > 0 },
+        completedDurationMs = shell.time?.let { t ->
+            t.end?.let { e -> (e - t.start).takeIf { d -> d > 0 } }
+        },
         titleContent = {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
@@ -105,7 +111,7 @@ internal fun ShellCard(
                     )
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp)
                     ) {
                         Text(
                             text = statusText,
@@ -138,7 +144,7 @@ internal fun ShellCard(
                 .heightIn(max = halfScreenHeight)
                 .verticalScroll(scrollState)
         ) {
-            Column(modifier = Modifier.padding(8.dp)) {
+            Column(modifier = Modifier.padding(SpacingTokens.SM.dp)) {
                 Text(
                     text = stringResource(R.string.chat_shell_output_summary),
                     style = MaterialTheme.typography.labelSmall,

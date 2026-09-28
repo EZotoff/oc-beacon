@@ -12,6 +12,9 @@ import dev.leonardo.ocbeacon.domain.model.*
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.spyk
+import io.mockk.verify
+import io.mockk.coVerify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +41,14 @@ class ChatRepositoryImplTest {
     private lateinit var messageHandler: MessageEventHandler
     private lateinit var permissionHandler: PermissionEventHandler
     private lateinit var questionHandler: QuestionEventHandler
+    // #311 Task1：workspace 归档代理 + 快照流（真 store 断言流式投影）
+    private lateinit var dshWorkspaceStore: DshWorkspaceStore
+    // #391 切片9：私有能力端口——仓库层只经端口取数，不接触具体服务器客户端
+    private lateinit var workspaceApi: dev.leonardo.ocbeacon.data.api.workspace.WorkspaceApi
+    private lateinit var referencesApi: dev.leonardo.ocbeacon.data.api.reference.ReferenceApi
+    private lateinit var attachmentApi: dev.leonardo.ocbeacon.data.api.attachment.AttachmentApi
+    // #391：唯一路由 seam（私有能力端口）
+    private lateinit var adapters: dev.leonardo.ocbeacon.data.adapter.ServerAdapterRegistry
 
     @Before
     fun setup() {
@@ -71,13 +82,44 @@ class ChatRepositoryImplTest {
             ownershipRegistry = StreamingOwnershipRegistry(),
             // #122 接线新增：自动批准（relaxed mock——既有用例不受影响）
             permissionAutoApprover = permissionAutoApprover,
+            pendingInteractionStore = io.mockk.mockk<dev.leonardo.ocbeacon.data.repository.PendingInteractionStore>(relaxed = true),
             historySyncManagerProvider = javax.inject.Provider { io.mockk.mockk<dev.leonardo.ocbeacon.data.repository.HistorySyncManager>(relaxed = true) },
             dshJobsHandler = io.mockk.mockk<dev.leonardo.ocbeacon.data.repository.handler.DshJobsHandler>(relaxed = true),
             dshQueueHandler = dev.leonardo.ocbeacon.data.repository.handler.DshQueueHandler(mockk(relaxed = true)),
+            dshWorkspaceHandler = dev.leonardo.ocbeacon.data.repository.handler.DshWorkspaceHandler(
+                dev.leonardo.ocbeacon.data.repository.DshWorkspaceStore(),
+            ),
 
         )
+        // #362：spy 包裹真实 dispatcher——播种门控用 processEvent 交互断言（对既有用例透明）
+        eventDispatcher = spyk(eventDispatcher)
         every { sessionStateRepository.statusFlow } returns MutableStateFlow(emptyMap())
-        repo = ChatRepositoryImpl(messageApi, sessionApi, terminalApi, mockk(relaxed = true), providerApi, eventDispatcher, serverRepo, permissionAutoApprover, messageStore, mockk(relaxed = true))
+        dshWorkspaceStore = DshWorkspaceStore()
+        workspaceApi = mockk(relaxed = true)
+        referencesApi = mockk(relaxed = true)
+        attachmentApi = mockk(relaxed = true)
+        // #391：被测类只经注册表取端口——把测试自己的 mock 端口塞进注册表。
+        // workspace / attachments 仅 DSH 在场（用能力位差异断言端口缺席语义）。
+        val basePorts = dev.leonardo.ocbeacon.data.adapter.ServerPorts(
+            session = sessionApi,
+            message = messageApi,
+            system = mockk(relaxed = true),
+            file = mockk(relaxed = true),
+            provider = providerApi,
+            terminal = terminalApi,
+            shell = mockk(relaxed = true),
+            references = referencesApi,
+        )
+        adapters = dev.leonardo.ocbeacon.data.adapter.ServerAdapterRegistry(
+            setOf(
+                dev.leonardo.ocbeacon.testing.FakeServerAdapter(ServerType.OpenCode, basePorts),
+                dev.leonardo.ocbeacon.testing.FakeServerAdapter(
+                    ServerType.Dsh,
+                    basePorts.copy(workspace = workspaceApi, attachments = attachmentApi),
+                ),
+            )
+        )
+        repo = ChatRepositoryImpl(eventDispatcher, serverRepo, permissionAutoApprover, messageStore, dshWorkspaceStore, adapters)
     }
 
     // ============ getMessagesFlow ============
@@ -169,6 +211,65 @@ class ChatRepositoryImplTest {
         assertEquals("Yes", questions[0].questions[0].options[0].label)
     }
 
+    // ============ #362：echo 播种门控（busy+queue 队列行不上屏） ============
+
+    private fun setupTrackedServerWithAdmission(admission: dev.leonardo.ocbeacon.data.api.message.PromptAdmission?) {
+        sessionHandler.setSessions("server1", listOf(
+            Session(id = "s1", title = "Test", time = Session.Time(created = 1000L, updated = 2000L))
+        ))
+        coEvery { serverRepo.getServer("server1") } returns ServerConfig(
+            id = "server1", url = "http://localhost:4096"
+        )
+        coEvery {
+            messageApi.promptAsync(any(), "s1", any(), any(), any(), any(), any(), any())
+        } returns admission
+    }
+
+    @Test
+    fun `promptAsync seeds transcript echo when seedTranscript true`() = runTest {
+        setupTrackedServerWithAdmission(
+            dev.leonardo.ocbeacon.data.api.message.PromptAdmission(id = "pending-r1", sessionId = "s1", text = "hello")
+        )
+        val result = repo.promptAsync(
+            "server1", "s1", listOf(PromptPart(type = "text", text = "hello")),
+            seedTranscript = true,
+        )
+        assertTrue(result.isSuccess)
+        verify(exactly = 1) {
+            eventDispatcher.processEvent(ofType<SseEvent.MessageUpdated>(), "server1")
+        }
+    }
+
+    @Test
+    fun `promptAsync skips echo seeding for queue row when seedTranscript false`() = runTest {
+        setupTrackedServerWithAdmission(
+            dev.leonardo.ocbeacon.data.api.message.PromptAdmission(id = "pending-r2", sessionId = "s1", text = "queued note")
+        )
+        val result = repo.promptAsync(
+            "server1", "s1", listOf(PromptPart(type = "text", text = "queued note")),
+            seedTranscript = false,
+        )
+        assertTrue(result.isSuccess)
+        // 排队消息不进转录——唯一可见面是队列 UI（QueueSheet/角标），轮末派发后
+        // durable user/message 才自然入列。
+        verify(exactly = 0) {
+            eventDispatcher.processEvent(ofType<SseEvent.MessageUpdated>(), any())
+        }
+    }
+
+    @Test
+    fun `promptAsync no admission means no seed regardless of flag`() = runTest {
+        setupTrackedServerWithAdmission(null)
+        val result = repo.promptAsync(
+            "server1", "s1", listOf(PromptPart(type = "text", text = "v1 style")),
+            seedTranscript = true,
+        )
+        assertTrue(result.isSuccess)
+        verify(exactly = 0) {
+            eventDispatcher.processEvent(ofType<SseEvent.MessageUpdated>(), any())
+        }
+    }
+
     // ============ sendMessage ============
 
     @Test
@@ -191,5 +292,84 @@ class ChatRepositoryImplTest {
         val textPart = Part.Text(id = "", sessionId = "s1", messageId = "", text = "hello")
         val result = repo.sendMessage("s1", listOf(textPart))
         assertTrue(result.isSuccess)
+    }
+
+    // ============ #311 Task1：DSH workspace 归档代理 ============
+
+    @Test
+    fun `archiveSession proxies to workspace port and returns new archived set for dsh server`() = runTest {
+        coEvery { serverRepo.getServer("srv-dsh") } returns ServerConfig(
+            id = "srv-dsh", url = "http://dsh.local", serverType = ServerType.Dsh,
+        )
+        coEvery { workspaceApi.archiveSession(any(), "s-9") } returns listOf("s-2", "s-9")
+        val result = repo.archiveSession("srv-dsh", "s-9")
+        assertEquals(listOf("s-2", "s-9"), result.getOrThrow())
+    }
+
+    @Test
+    fun `mentionCandidates delegates to references port`() = runTest {
+        coEvery { serverRepo.getServer("srv-dsh") } returns ServerConfig(
+            id = "srv-dsh", url = "http://dsh.local", serverType = ServerType.Dsh,
+        )
+        coEvery { referencesApi.candidates(any(), "s1", "foo", null, false) } returns
+            listOf(MentionCandidate.FileMention("a.kt"))
+        val result = repo.mentionCandidates("srv-dsh", "s1", "foo", null, quoted = false)
+        assertEquals(listOf<MentionCandidate>(MentionCandidate.FileMention("a.kt")), result.getOrThrow())
+    }
+
+    @Test
+    fun `listSessionsIncludingBlank reads workspace port and stays empty without it`() = runTest {
+        val sessions = listOf(Session(id = "s-1", title = "t", time = Session.Time(created = 1L, updated = 1L)))
+        coEvery { serverRepo.getServer("srv-dsh") } returns ServerConfig(
+            id = "srv-dsh", url = "http://dsh.local", serverType = ServerType.Dsh,
+        )
+        coEvery { serverRepo.getServer("srv-v1") } returns ServerConfig(
+            id = "srv-v1", url = "http://v1.local",
+        )
+        coEvery { workspaceApi.listSessionsIncludingBlank(any()) } returns sessions
+        assertEquals(sessions, repo.listSessionsIncludingBlank("srv-dsh").getOrThrow())
+        assertTrue(repo.listSessionsIncludingBlank("srv-v1").getOrThrow().isEmpty())
+        coVerify(exactly = 1) { workspaceApi.listSessionsIncludingBlank(any()) }
+    }
+
+    @Test
+    fun `fetchAttachmentDataUrl stays null without the attachments port`() = runTest {
+        coEvery { serverRepo.getServer("srv-dsh") } returns ServerConfig(
+            id = "srv-dsh", url = "http://dsh.local", serverType = ServerType.Dsh,
+        )
+        coEvery { attachmentApi.readAttachment(any(), "s1", "a1") } returns ("image/png" to "AAAA")
+        assertEquals("data:image/png;base64,AAAA", repo.fetchAttachmentDataUrl("srv-dsh", "s1", "a1"))
+
+        coEvery { serverRepo.getServer("srv-v1") } returns ServerConfig(
+            id = "srv-v1", url = "http://v1.local",
+        )
+        assertNull(repo.fetchAttachmentDataUrl("srv-v1", "s1", "a1"))
+    }
+
+    @Test
+    fun `archiveSession fails unsupported for non-dsh server`() = runTest {
+        coEvery { serverRepo.getServer("srv-v1") } returns ServerConfig(
+            id = "srv-v1", url = "http://v1.local",
+        )
+        val result = repo.archiveSession("srv-v1", "s-1")
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is dev.leonardo.ocbeacon.data.api.UnsupportedServerCapability)
+    }
+
+    @Test
+    fun `workspace snapshot flow maps store state and defaults empty for unknown server`() = runTest {
+        // 未知服务器 → 恒空快照（非 DSH 无 workspace 帧的降级形态）
+        val empty = repo.getWorkspaceSnapshotFlow("srv-none").first()
+        assertTrue(empty.workspaces.isEmpty())
+        assertTrue(empty.archivedSessionIds.isEmpty())
+        // store baseline 后 → 流投影注册表 + 归档集合
+        dshWorkspaceStore.applyBaseline(
+            "srv-dsh",
+            listOf(Workspace(workspaceId = "ws-1", path = "/w", title = "W", sessionIds = listOf("s-1"))),
+            archivedSessionIds = listOf("s-9"),
+        )
+        val snapshot = repo.getWorkspaceSnapshotFlow("srv-dsh").first()
+        assertEquals(listOf("ws-1"), snapshot.workspaces.map { it.workspaceId })
+        assertEquals(listOf("s-9"), snapshot.archivedSessionIds)
     }
 }

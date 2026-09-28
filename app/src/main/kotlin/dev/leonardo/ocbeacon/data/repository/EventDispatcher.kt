@@ -4,6 +4,7 @@ import dev.leonardo.ocbeacon.logging.AppLogger
 
 import dev.leonardo.ocbeacon.BuildConfig
 import dev.leonardo.ocbeacon.data.repository.handler.*
+import dev.leonardo.ocbeacon.domain.model.CommandFeedback
 import dev.leonardo.ocbeacon.domain.model.FileDiff
 import dev.leonardo.ocbeacon.domain.model.MergeStrategy
 import dev.leonardo.ocbeacon.domain.model.Message
@@ -46,6 +47,8 @@ class EventDispatcher @Inject constructor(
     private val shellJobsHandler: ShellJobsHandler,
     private val dshJobsHandler: DshJobsHandler,
     private val dshQueueHandler: DshQueueHandler,
+    // #311 Task1：workspace 域事件 → DshWorkspaceStore（漏 bind 即静默丢弃——goal 前车之鉴）
+    private val dshWorkspaceHandler: DshWorkspaceHandler,
     private val sessionStateRepository: SessionStateService,
     private val unreadBadgeService: UnreadBadgeService,
     private val ownershipRegistry: StreamingOwnershipRegistry,
@@ -53,6 +56,9 @@ class EventDispatcher @Inject constructor(
     // respondPermission + 专属协程）收进 PermissionAutoApprover.maybeAutoApprove——
     // 本类只在 PermissionAsked 分发点异步触发，不再持有 chatRepoProvider/scope。
     private val permissionAutoApprover: PermissionAutoApprover,
+    // #311 Task4：等待审批/提问状态点本地域（wire 契约④——真服务器不推
+    // approvals/questions 状态；PermissionAsked/QuestionAsked 分发点旁路记录）
+    private val pendingInteractionStore: PendingInteractionStore,
     // #271：Provider 打破 HistorySyncManager→SessionRepository→EventDispatcher 环
     private val historySyncManagerProvider: javax.inject.Provider<HistorySyncManager>,
 ) {
@@ -107,13 +113,15 @@ class EventDispatcher @Inject constructor(
             SseEvent.SessionTokenUsageChanged::class, SseEvent.SessionSubagentTimingChanged::class,
             SseEvent.VcsBranchUpdated::class, SseEvent.ProjectUpdated::class
         )
-        // 消息（updated/removed/part×3）→ MessageEventHandler 直接实现 SseEventHandler
+        // 消息（updated/removed/part×4）→ MessageEventHandler 直接实现 SseEventHandler
         //（#175：原三壳 handler 全指向同一 store 且 serverId 未用，删壳单 bind）
         bind(
             messageHandler,
             SseEvent.MessageUpdated::class, SseEvent.MessageRemoved::class,
             SseEvent.MessagePartUpdated::class, SseEvent.MessagePartDelta::class,
-            SseEvent.MessagePartRemoved::class
+            SseEvent.MessagePartRemoved::class,
+            // #453：块完结时间补丁（DSH block-end）
+            SseEvent.MessagePartTimePatch::class
         )
         // 权限 → PermissionEventHandler
         bind(
@@ -138,10 +146,20 @@ class EventDispatcher @Inject constructor(
             SseEvent.WorktreeReady::class, SseEvent.WorktreeFailed::class,
             SseEvent.LspUpdated::class,
             // #285：DSH 命令注册表全局帧（commands/change → MiscEventHandler 广播）
-            SseEvent.CommandsChanged::class
+            SseEvent.CommandsChanged::class,
+            // #323：斜杠命令执行反馈行（command/run|done → MiscEventHandler 折叠，
+            // TurnMaxTokens 同款既有 handler 扩展——漏 bind 即静默丢弃，goal 前车之鉴）
+            SseEvent.CommandRunStarted::class, SseEvent.CommandDone::class,
+            // #378：压缩转录实体族（compaction/start|summary|end + 表面绑定 →
+            // MiscEventHandler CompactionFolder 折叠；漏 bind 即静默丢弃）
+            SseEvent.CompactionStarted::class, SseEvent.CompactionSummary::class,
+            SseEvent.CompactionFinished::class, SseEvent.CompactionSurfaceBound::class
         )
+        // #378：表面区间替换（surfaceOp.replace）→ MessageEventHandler 遮蔽台账
+        //（内存/热表移除 + 迟到重加拦截；历史 transcriptEvents dispatch 与实况同路）
+        bind(messageHandler, SseEvent.SurfaceRangeReplaced::class)
         // SessionNext → SessionNextEventHandler
-        bind(sessionNextHandler, SseEvent.SessionNext::class)
+        bind(sessionNextHandler, SseEvent.SessionNext::class, SseEvent.TurnMaxTokens::class)
         // V2 后台 shell → ShellJobsHandler
         bind(
             shellJobsHandler,
@@ -153,8 +171,20 @@ class EventDispatcher @Inject constructor(
         // goal/change 帧到达即弃「No handler registered」，Session.goal 恒空，
         // GoalSheet 不翻转/FAB 角标不亮——一修双愈）
         bind(sessionHandler, SseEvent.SessionGoalChanged::class)
+        // DSH plan 投影 → SessionEventHandler 折叠（#310③；漏 bind 即静默丢弃，
+        // goal 前车之鉴——EventDispatcherPlan310Test 钉死）
+        bind(sessionHandler, SseEvent.SessionPlanChanged::class)
         // DSH 排队收件箱整快照 → DshQueueHandler（2026-09-01 QueueDock）
         bind(dshQueueHandler, SseEvent.QueueSnapshot::class)
+        // DSH workspace 域（follow baseline + archived/upsert/remove/order 增量）
+        // → DshWorkspaceHandler（#311 Task1/Task3 + #330；漏 bind 即静默丢弃——
+        // EventDispatcherWorkspace311Test 钉死）
+        bind(
+            dshWorkspaceHandler,
+            SseEvent.WorkspaceSnapshotChanged::class, SseEvent.WorkspaceArchivedChanged::class,
+            SseEvent.WorkspaceUpserted::class, SseEvent.WorkspaceRemoved::class,
+            SseEvent.WorkspaceOrderChanged::class,
+        )
         return map
     }
 
@@ -215,6 +245,40 @@ class EventDispatcher @Inject constructor(
     val compactedSessions: StateFlow<Map<String, Long>> get() = sessionHandler.compactedSessions
     val shellState: StateFlow<Map<String, ShellStateInfo>> get() = sessionNextHandler.shellState
     val retryState: StateFlow<Map<String, Int>> get() = sessionNextHandler.retryState
+
+    /** #309 批1⑤：turn/end max-tokens 通知（sessionId → turn）。 */
+    val turnMaxTokens: StateFlow<Map<String, Long>> get() = sessionNextHandler.turnMaxTokens
+
+    /** #323：斜杠命令执行反馈行（sessionId → 卡态列表，seq 升序；commandId 配对原位更新）。 */
+    val commandFeedback: StateFlow<Map<String, List<CommandFeedback>>> get() = miscHandler.commandFeedback
+
+    /** #378：压缩转录实体（sessionId → seq 升序卡列表；compactionId 配对原位更新）。 */
+    val compactionEntries: StateFlow<Map<String, List<dev.leonardo.ocbeacon.domain.model.CompactionEntry>>>
+        get() = miscHandler.compactionEntries
+
+    /** #378：表面遮蔽区间响应流（sessionId → 区间列表）——UI 读侧抑制订阅。 */
+    val shadowedRangesFlow: StateFlow<Map<String, List<LongRange>>> get() = messageHandler.shadowedRangesFlow
+
+    /** #378：表面遮蔽区间（sessionId → 区间列表）——读侧抑制（UI 归并/仓储页过滤）。 */
+    fun shadowedRanges(sessionId: String): List<LongRange> = messageHandler.shadowedRanges(sessionId)
+
+    /** #378：消息过滤（按遮蔽台账）——历史页 dispatch 后的统一读侧过滤。 */
+    fun filterShadowed(sessionId: String, messages: List<dev.leonardo.ocbeacon.domain.model.MessageWithParts>):
+        List<dev.leonardo.ocbeacon.domain.model.MessageWithParts> {
+        if (messageHandler.shadowedRanges(sessionId).isEmpty()) return messages
+        return messages.filter { m ->
+            dev.leonardo.ocbeacon.domain.model.DshMessageId.seqOf(m.info.id)
+                ?.let { !messageHandler.isShadowed(sessionId, it) } ?: true
+        }
+    }
+
+    /** #365：命令受理即知——派发时本地合成反馈行写入（不等 RPC 返回）。 */
+    fun recordLocalCommandAcceptance(sessionId: String, name: String, args: String?) =
+        miscHandler.recordLocalAcceptance(sessionId, name, args)
+
+    /** #365：派发失败——同名占位翻 error 终态。 */
+    fun recordLocalCommandFailure(sessionId: String, name: String) =
+        miscHandler.recordLocalFailure(sessionId, name)
     val gapDetected: StateFlow<Set<String>> get() = sessionNextHandler.gapDetected
 
     // ============ 事件处理 ============
@@ -242,13 +306,29 @@ class EventDispatcher @Inject constructor(
     fun processEvent(event: SseEvent, serverId: String) {
         // 所有权检查：当两条 SSE 连接投递相同事件
         //（同一后端，不同配置）时，防止重复事件处理。
+        //
+        // #303（2026-09-03 真机定罪）：会话生命周期事件（Created/Updated/Deleted）
+        // **豁免**——三者幂等（trackSession 集合并集 + 列表 set/replace/移除），
+        // 双配置各自处理=各自归属呈现（用户配同一后端双入口即期望各自列表显示）。
+        // 原拦截形态：同一后端双配置（reverse 隧道 vs LAN 直连）下直连物理快几 ms
+        // 永赢 claim → 展示中服务器的 created 被当「重复」吞掉 → 列表不实时
+        // （真机打点三轮全直连赢；REST 下拉刷新不经此路径故能恢复——症状闭环）。
+        // 高频流式事件（delta/message 等）保留去重（防双倍入库/UI）。
+        val ownershipExempt = event is SseEvent.SessionCreated ||
+            event is SseEvent.SessionUpdated ||
+            event is SseEvent.SessionDeleted
         val sessionId = extractSessionId(event)
-        if (sessionId != null && !ownershipRegistry.claim(sessionId, serverId)) {
-            if (BuildConfig.DEBUG) {
-                AppLogger.d(TAG, "Skipping duplicate ${event::class.simpleName} for session " +
-                    "${sessionId.take(12)} from server=$serverId (owner=${ownershipRegistry.ownerOf(sessionId)})")
+        if (sessionId != null) {
+            // claim 总是执行（豁免类事件也首达即占位——后续非豁免事件按此拦截）；
+            // 豁免类忽略 claim 失败继续处理（幂等，双配置各自呈现）。
+            val claimed = ownershipRegistry.claim(sessionId, serverId)
+            if (!claimed && !ownershipExempt) {
+                if (BuildConfig.DEBUG) {
+                    AppLogger.d(TAG, "Skipping duplicate ${event::class.simpleName} for session " +
+                        "${sessionId.take(12)} from server=$serverId (owner=${ownershipRegistry.ownerOf(sessionId)})")
+                }
+                return
             }
-            return
         }
         // 注册表分发：将事件路由到其唯一注册的 handler（O(1) 查找）。
         // 替代了之前的广播模型，即每个事件都发送给全部 6 个 handler，
@@ -272,6 +352,16 @@ class EventDispatcher @Inject constructor(
         } else if (BuildConfig.DEBUG) {
             AppLogger.w(TAG, "No handler registered for ${event::class.simpleName}")
         }
+        // #338：会话时间域基准采集——先于 FSM forward（forceCompleteSession 的
+        // completed 回填即刻消费）：MessageUpdated.created（DSH=服务器信封时刻、
+        // V2=本地构造时刻——与该会话 created 腿同钟域）+ SessionIdle.time
+        //（DSH turn/end 信封时刻，回放携带原始时刻——resync 期回填不再用本地钟）。
+        if (event is SseEvent.MessageUpdated) {
+            messageHandler.recordDomainTime(event.info.sessionId, event.info.time.created)
+        }
+        if (event is SseEvent.SessionIdle && (event.time ?: 0L) > 0L) {
+            messageHandler.recordDomainTime(event.sessionId, event.time!!)
+        }
         forwardToSessionStateService(event, serverId)
 
         // #122（2026-08-18 接线）+ C7（2026-08-26）：PermissionAsked 自动批准——
@@ -279,7 +369,22 @@ class EventDispatcher @Inject constructor(
         // .maybeAutoApprove（规则列表为空 = 恒不匹配，天然关闭；不阻塞事件分发
         // 主路径）。成功后 PermissionReplied 事件回流自然清卡片（handler 幂等去重已防重复）。
         if (event is SseEvent.PermissionAsked) {
+            // #311 Task4：等待审批指示先于 auto-approve 记录（ok 路径随
+            // removePermission 委托同点清除——clearIfKind 同族判定，净效果无指示）
+            pendingInteractionStore.record(event.sessionId, PendingInteractionKind.APPROVAL, event.permission)
             permissionAutoApprover.maybeAutoApprove(event, serverId)
+        }
+
+        // #311 Task4：等待提问指示记录（plan-review intent 如实区分——#310③ kind）。
+        if (event is SseEvent.QuestionAsked) {
+            pendingInteractionStore.record(
+                event.sessionId,
+                if (event.questions.any { q -> q.intent?.kind == "plan-review" })
+                    PendingInteractionKind.PLAN_REVIEW
+                else PendingInteractionKind.QUESTION,
+                // #344：记录时刻携带问题原文（原始未消毒——补发载荷源）
+                event.questions.firstOrNull()?.question,
+            )
         }
 
         // 跨 handler：#216——.next 的 tool.progress 携带 subagent 子智能体会话
@@ -305,6 +410,8 @@ class EventDispatcher @Inject constructor(
             unreadBadgeService.removeSession(deletedSessionId)
             permissionHandler.clearForSession(deletedSessionId)
             questionHandler.clearForSession(deletedSessionId)
+            // #311 Task4：待审批/提问指示级联清除（③）
+            pendingInteractionStore.clearForSession(deletedSessionId)
             miscHandler.clearForSession(deletedSessionId)
             sessionNextHandler.clearForSession(deletedSessionId)
             shellJobsHandler.clearForSession(deletedSessionId)
@@ -313,6 +420,14 @@ class EventDispatcher @Inject constructor(
             sessionStateRepository.clearSession(deletedSessionId)
                 // #271：同步状态行 + 本地缓存（热表/冷存/FTS）级联清理
             historySyncManagerProvider.get().onSessionDeleted(deletedSessionId)
+        }
+
+        // 跨 handler：#309 批1⑤——新一轮 turn/start/step/start（SessionStatus Busy）
+        // → max-tokens 通知退场（续写/新 prompt 后通知不再滞留）。
+        if (event is SseEvent.SessionStatus &&
+            event.status is dev.leonardo.ocbeacon.domain.model.SessionStatus.Busy
+        ) {
+            sessionNextHandler.clearTurnMaxTokens(event.sessionId)
         }
 
         // 跨 handler：SessionCompacted（V2 session.compaction.ended 映射 /
@@ -376,6 +491,9 @@ class EventDispatcher @Inject constructor(
             is SseEvent.SessionStatus -> event.sessionId
             is SseEvent.SessionIdle -> event.sessionId
             is SseEvent.SessionError -> event.sessionId
+            is SseEvent.TurnMaxTokens -> event.sessionId
+            is SseEvent.CommandRunStarted -> event.sessionId
+            is SseEvent.CommandDone -> event.sessionId
             is SseEvent.SessionNext -> event.event.sessionId
             // 会话生命周期（信息）
             is SseEvent.SessionCreated -> event.info.id
@@ -386,6 +504,7 @@ class EventDispatcher @Inject constructor(
             is SseEvent.SessionTokenUsageChanged -> event.sessionId
             is SseEvent.SessionSubagentTimingChanged -> event.sessionId
             is SseEvent.SessionGoalChanged -> event.sessionId
+            is SseEvent.SessionPlanChanged -> event.sessionId
             is SseEvent.SessionContextPressureChanged -> event.sessionId
             is SseEvent.SessionContextBreakdownChanged -> event.sessionId
             is SseEvent.SessionStatsChanged -> event.sessionId
@@ -400,6 +519,8 @@ class EventDispatcher @Inject constructor(
             is SseEvent.MessagePartUpdated -> event.part.sessionId
             is SseEvent.MessagePartDelta -> event.sessionId
             is SseEvent.MessagePartRemoved -> event.sessionId
+            // #453：块完结时间补丁（DSH block-end）
+            is SseEvent.MessagePartTimePatch -> event.sessionId
             // 权限 / 问题
             is SseEvent.PermissionAsked -> event.sessionId
             is SseEvent.PermissionReplied -> event.sessionId
@@ -409,6 +530,12 @@ class EventDispatcher @Inject constructor(
             // Todo / 命令
             is SseEvent.TodoUpdated -> event.sessionId
             is SseEvent.CommandExecuted -> event.sessionId
+            // #378：压缩转录实体族 + 表面区间替换（按归属会话路由）
+            is SseEvent.CompactionStarted -> event.sessionId
+            is SseEvent.CompactionSummary -> event.sessionId
+            is SseEvent.CompactionFinished -> event.sessionId
+            is SseEvent.CompactionSurfaceBound -> event.sessionId
+            is SseEvent.SurfaceRangeReplaced -> event.sessionId
             // 无 sessionId 的事件
             is SseEvent.CommandsChanged -> null // #285：全局注册表帧（不参与会话所有权判定）
             is SseEvent.ServerConnected -> null
@@ -432,6 +559,13 @@ class EventDispatcher @Inject constructor(
             is SseEvent.InstallationUpdateAvailable -> null
             is SseEvent.WorktreeReady -> null
             is SseEvent.WorktreeFailed -> null
+            // #311 Task1：workspace 域事件（服务器级注册表/归档集合——无单一会话归属）
+            is SseEvent.WorkspaceSnapshotChanged -> null
+            is SseEvent.WorkspaceArchivedChanged -> null
+            is SseEvent.WorkspaceUpserted -> null
+            // #330：remove/order 同为服务器级注册表增量——无单一会话归属
+            is SseEvent.WorkspaceRemoved -> null
+            is SseEvent.WorkspaceOrderChanged -> null
         }
     }
 
@@ -496,14 +630,37 @@ class EventDispatcher @Inject constructor(
         unreadBadgeService.onEvent(UnreadEvent.RestSnapshot(sessionId, maxTs))
     }
 
-    fun removePermission(permissionId: String) =
+    fun removePermission(permissionId: String) {
+        // #311 Task4（清除①本地应答）：auto approver ok 路径（#308 Layer2）与手动
+        // 应答共用本委托——同点清待审批指示。先解析归属会话（handler 移除后无从
+        // 查起）；该会话已无同类 pending 才清（多条审批并存时保留指示）。
+        val owners = permissionHandler.permissions.value
+            .filterValues { perms -> perms.any { it.id == permissionId } }
+            .keys
         permissionHandler.removePermission(permissionId)
+        owners.forEach { sessionId ->
+            if (permissionHandler.permissions.value[sessionId].isNullOrEmpty()) {
+                pendingInteractionStore.clearIfKind(sessionId, PendingInteractionKind.APPROVAL)
+            }
+        }
+    }
 
     fun setPermissions(sessionId: String, permissions: List<SseEvent.PermissionAsked>) =
         permissionHandler.setPermissions(sessionId, permissions)
 
-    fun removeQuestion(questionId: String) =
+    fun removeQuestion(questionId: String) {
+        // #311 Task4（清除①本地应答）：reply/reject 成功路径共用本委托——同点清
+        // 提问指示（question 族互清含 plan-review）；先解析归属会话。
+        val owners = questionHandler.questions.value
+            .filterValues { qs -> qs.any { it.id == questionId } }
+            .keys
         questionHandler.removeQuestion(questionId)
+        owners.forEach { sessionId ->
+            if (questionHandler.questions.value[sessionId].isNullOrEmpty()) {
+                pendingInteractionStore.clearIfKind(sessionId, PendingInteractionKind.QUESTION)
+            }
+        }
+    }
 
     fun setQuestions(sessionId: String, questions: List<SseEvent.QuestionAsked>) =
         questionHandler.setQuestions(sessionId, questions)
@@ -538,6 +695,7 @@ class EventDispatcher @Inject constructor(
         sessionNextHandler.clearAll()
         sessionStateRepository.clearAll()
         ownershipRegistry.clearAll()
+        pendingInteractionStore.clearAll()
     }
 
     /**

@@ -22,8 +22,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
+import dev.leonardo.ocbeacon.ui.theme.AppMotion
 import dev.leonardo.ocbeacon.util.copyToClipboard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -38,9 +41,11 @@ import kotlinx.coroutines.launch
 fun CopyButton(
     text: String,
     modifier: Modifier = Modifier,
-    contentDescription: String = "Copy",
+    /** null = 取本地化的 `chat_copy`（i18n 硬规则：禁止硬编码英文无障碍描述）。 */
+    contentDescription: String? = null,
     onCopied: (() -> Unit)? = null,
 ) {
+    val desc = contentDescription ?: stringResource(R.string.chat_copy)
     val clipboard = LocalClipboard.current
     val clipScope = rememberCoroutineScope()
     var copied by remember { mutableStateOf(false) }
@@ -60,14 +65,14 @@ fun CopyButton(
         AnimatedContent(
             targetState = copied,
             transitionSpec = {
-                (fadeIn(tween(150)) + scaleIn(tween(150), initialScale = 0.5f))
-                    .togetherWith(fadeOut(tween(100)) + scaleOut(tween(100), targetScale = 0.5f))
+                (fadeIn(tween(AppMotion.SHORT)) + scaleIn(tween(AppMotion.SHORT), initialScale = 0.5f))
+                    .togetherWith(fadeOut(tween(AppMotion.FAST)) + scaleOut(tween(AppMotion.FAST), targetScale = 0.5f))
             },
             label = "copyIcon"
         ) { isCopied ->
             Icon(
                 imageVector = if (isCopied) Icons.Filled.Check else Icons.Default.ContentCopy,
-                contentDescription = contentDescription,
+                contentDescription = desc,
                 tint = if (isCopied) MaterialTheme.colorScheme.primary
                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AlphaTokens.MUTED),
                 modifier = Modifier.size(16.dp)

@@ -42,6 +42,8 @@ class WireCompatMatrixTest {
                 "blank", "agentPreset", "tokenUsage", "subagentTiming",
                 // backlog #285 批：goal + 环三投影（DSH 专属，OpenCode 恒 null 不落盘——encodeDefaults=false）
                 "goal", "contextPressure", "contextBreakdown", "sessionStats",
+                // backlog #310③：plan 投影裁剪视图（DSH 专属，同上不落盘）
+                "plan",
             ),
             names(Session.serializer()),
         )
@@ -103,6 +105,12 @@ class WireCompatMatrixTest {
         assertEquals(listOf("id", "sessionID", "messageID", "question"), names(Part.Question.serializer()))
         assertEquals(listOf("id", "sessionID", "messageID", "reason"), names(Part.Abort.serializer()))
         assertEquals(listOf("id", "sessionID", "messageID"), names(Part.SessionTurn.serializer()))
+        // #398：DSH V3 deliverables/presented 的服务器权威交付载荷
+        assertEquals(
+            listOf("id", "sessionID", "messageID", "presented", "time"),
+            names(Part.Deliverables.serializer()),
+        )
+        assertEquals(listOf("path", "description"), names(Part.Deliverables.PresentedFile.serializer()))
         assertEquals(listOf("id", "sessionID", "messageID"), names(Part.Unknown.serializer()))
     }
 

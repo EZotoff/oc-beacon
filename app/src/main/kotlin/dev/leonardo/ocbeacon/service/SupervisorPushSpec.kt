@@ -31,17 +31,17 @@ internal object SupervisorPushSpec {
         SupervisorOpenTarget(serverId, itemId = null, healthContext = true)
 
     fun attentionNotificationId(serverId: String, itemId: String): Int =
-        stableHash(serverId, itemId)
+        stableHash("supervisor-item:", serverId, itemId)
 
     fun attentionRequestCode(serverId: String, itemId: String): Int =
-        stableHash(serverId, itemId)
+        stableHash("supervisor-item:", serverId, itemId)
 
     fun rootHealthNotificationId(serverId: String): Int =
-        stableHash(serverId, ROOT_HEALTH_KEY)
+        stableHash("supervisor-health:", serverId, ROOT_HEALTH_KEY)
 
     /** Per-server requestCode：extras 不区分 PendingIntent，requestCode 必须按 serverId 派生。 */
     fun rootHealthRequestCode(serverId: String): Int =
-        stableHash(serverId, ROOT_HEALTH_KEY)
+        stableHash("supervisor-health:", serverId, ROOT_HEALTH_KEY)
 
     /** FNV-1a 32 位稳定 hash（与 AppNotificationManager 同款，跨进程一致）。 */
     fun stableHash(vararg parts: String): Int {

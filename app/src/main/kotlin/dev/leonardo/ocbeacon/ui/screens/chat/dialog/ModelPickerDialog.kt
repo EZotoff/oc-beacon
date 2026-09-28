@@ -56,6 +56,9 @@ import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.theme.ItemTokens
+import dev.leonardo.ocbeacon.ui.screens.chat.components.SmallSheetDragHandle
+import dev.leonardo.ocbeacon.ui.screens.chat.components.sheetContentGestureIsolation
+import dev.leonardo.ocbeacon.ui.screens.chat.components.sheetNonScrollableDragBlock
 import dev.leonardo.ocbeacon.ui.theme.SheetTokens
 import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
@@ -112,13 +115,18 @@ internal fun ModelPickerDialog(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        dragHandle = {},
+        // #379：统一小样式手柄（行高很小）
+        dragHandle = { SmallSheetDragHandle() },
         containerColor = params.containerColor,
         shape = params.shape,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                // #379：内容手势隔离——内部拖拽/fling 不致收起（仅手柄/点外/返回）
+                .sheetContentGestureIsolation()
+                // #405：非滚动区（标题带/空白带）也不发起收起（指针层兜底）
+                .sheetNonScrollableDragBlock()
                 // 2026-08-20（用户决策）：主对话抽屉高度统一——min = max = 75% 屏高
                 .height(
                     androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp *
@@ -164,7 +172,7 @@ internal fun ModelPickerDialog(
                                 .heightIn(min = ItemTokens.MinHeightDense.dp)
                                 .padding(start = SpacingTokens.XS.dp, end = SpacingTokens.MD.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(SpacingTokens.SM.dp)
                         ) {
                             ProviderIcon(
                                 providerId = provider.id,
@@ -230,7 +238,7 @@ internal fun ModelPickerDialog(
                                         text = stringResource(R.string.chat_free_label),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.tertiary.copy(alpha = AlphaTokens.HIGH),
-                                        modifier = Modifier.padding(start = 8.dp),
+                                        modifier = Modifier.padding(start = SpacingTokens.SM.dp),
                                     )
                                 }
                                 // 2026-08-22 用户决策：星标恢复点击=设置/取消默认模型

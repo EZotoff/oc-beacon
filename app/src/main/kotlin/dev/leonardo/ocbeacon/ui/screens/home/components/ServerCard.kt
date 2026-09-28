@@ -20,6 +20,7 @@ import dev.leonardo.ocbeacon.ui.components.AmoledDefaultBorder
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
 import dev.leonardo.ocbeacon.ui.theme.LocalAmoledMode
 import dev.leonardo.ocbeacon.ui.theme.StatusConnected
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,8 +51,8 @@ internal fun ServerCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(SpacingTokens.LG.dp),
+            verticalArrangement = Arrangement.spacedBy(SpacingTokens.SM.dp)
         ) {
             // 头部行：名称、URL、状态、菜单
             Row(
@@ -95,33 +96,27 @@ internal fun ServerCard(
                         if (server.serverType == dev.leonardo.ocbeacon.domain.model.ServerType.Dsh) {
                             Surface(
                                 shape = MaterialTheme.shapes.small,
-                                color = MaterialTheme.colorScheme.tertiaryContainer
+                                // #371-D7：版本徽标统一中性容器（原 DSH=tertiary/V2=primary/
+                                // V1=surfaceVariant 三色并存——类型区分已由文本承载）
+                                color = MaterialTheme.colorScheme.surfaceVariant
                             ) {
                                 Text(
                                     text = "DSH",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                         } else {
                             Surface(
                                 shape = MaterialTheme.shapes.small,
-                                color = when (server.apiVersion) {
-                                    dev.leonardo.ocbeacon.domain.model.ApiVersion.V2 ->
-                                        MaterialTheme.colorScheme.primaryContainer
-                                    else -> MaterialTheme.colorScheme.surfaceVariant
-                                }
+                                color = MaterialTheme.colorScheme.surfaceVariant
                             ) {
                                 Text(
                                     text = "API v${if (server.apiVersion.isV2) "2" else "1"}" +
                                         (server.serverVersion?.let { " · $it" } ?: ""),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = when (server.apiVersion) {
-                                        dev.leonardo.ocbeacon.domain.model.ApiVersion.V2 ->
-                                            MaterialTheme.colorScheme.onPrimaryContainer
-                                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }

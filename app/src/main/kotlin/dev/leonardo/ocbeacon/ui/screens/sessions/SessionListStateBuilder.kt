@@ -35,10 +35,23 @@ internal suspend fun buildContentState(
     // #171：readTimes 已是模块合并读（持久 ∥ 内存）单源产物，无需再合并
     val readTimes = data.readTimes
 
-    val serverSessionIds = data.serverSessionMap[serverId].orEmpty()
+    // #306：serverSessionMap 无该服务器映射（null）时放行——断连 clearForServer /
+    // 冷启动下 sessions 来自 getSessionsFlow 的缓存兜底流（已按 serverId 限定），
+    // 原硬交集会把兜底数据全部过滤掉（白屏根因②）。映射存在（含空集）语义不变。
+    val serverSessionIds = data.serverSessionMap[serverId]
 
-    val filteredSessions = data.sessions
-        .filter { it.id in serverSessionIds && it.parentId == null }
+    // #311：按 workspace 快照归档集合分流（官方 web sessionVisible 同形——主列表/
+    // 搜索/快照一律排除；集合引用未入缓存的会话（分页窗口外）只呈现已知会话）。
+    val archivedIds = data.archivedSessionIds
+    val serverScopedSessions = data.sessions
+        .filter { (serverSessionIds == null || it.id in serverSessionIds) && it.parentId == null }
+    val filteredSessions = serverScopedSessions
+        .filter { it.id !in archivedIds }
+        .sortedByDescending { session ->
+            data.lastUserMessageTime[session.id] ?: session.time.updated
+        }
+    val archivedList = serverScopedSessions
+        .filter { it.id in archivedIds }
         .sortedByDescending { session ->
             data.lastUserMessageTime[session.id] ?: session.time.updated
         }
@@ -95,21 +108,29 @@ internal suspend fun buildContentState(
     val mergedStatuses: Map<String, SessionStatus> =
         data.statuses + data.pendingQuestionIds.associateWith { SessionStatus.Asking }
 
+    // #311：SessionItem 构建（RECENT 主列表与已归档列表共用形状）
+    val toSessionItem: (dev.leonardo.ocbeacon.domain.model.Session) -> SessionItem = { session ->
+        val status = mergedStatuses[session.id] ?: SessionStatus.Idle
+        SessionItem(
+            session = session,
+            status = status,
+            hasDraft = session.id in draftSessionIds,
+            tags = resolvedTags[session.id].orEmpty(),
+            hasUnread = isUnread(session.id, data.lastReplyTime, readTimes, data.allReadAt, status),
+            // #311 Task4：待交互指示合流去重（question 族已由 Asking 表达时勿双点）
+            pendingInteraction = mergePendingInteraction(data.pendingInteractions[session.id], status),
+        )
+    }
+
     val treeNodes = if (ui.viewMode == SessionViewMode.RECENT) {
         favoritesFilteredSessions.map { session ->
             TreeNode.Session(
                 id = session.id,
-                session = SessionItem(
-                    session = session,
-                    status = mergedStatuses[session.id] ?: SessionStatus.Idle,
-                    hasDraft = session.id in draftSessionIds,
-                    tags = resolvedTags[session.id].orEmpty(),
-                    hasUnread = isUnread(session.id, data.lastReplyTime, readTimes, data.allReadAt, mergedStatuses[session.id] ?: SessionStatus.Idle),
-                )
+                session = toSessionItem(session),
             )
         }
     } else {
-        buildTreeNodes(favoritesFilteredSessions, ui.expandedPaths, ui.baseDirectory, mergedStatuses, draftSessionIds, resolvedTags, data.lastReplyTime, readTimes, data.allReadAt)
+        buildTreeNodes(favoritesFilteredSessions, ui.expandedPaths, ui.baseDirectory, mergedStatuses, draftSessionIds, resolvedTags, data.lastReplyTime, readTimes, data.allReadAt, data.pendingInteractions)
     }
 
     val prefillDirectory = if (ui.lastToggledDirectory != null && ui.lastToggledDirectory in ui.expandedPaths)
@@ -125,5 +146,6 @@ internal suspend fun buildContentState(
         baseDirectory = ui.baseDirectory,
         searchQuery = ui.searchQuery,
         prefillDirectory = prefillDirectory,
+        archivedSessions = archivedList.map(toSessionItem),
     )
 }

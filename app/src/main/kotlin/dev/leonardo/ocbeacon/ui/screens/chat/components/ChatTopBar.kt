@@ -1,8 +1,11 @@
 package dev.leonardo.ocbeacon.ui.screens.chat.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -26,6 +29,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,16 +43,22 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.ui.components.AmoledDefaultBorder
+import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.RowCapabilities
 import dev.leonardo.ocbeacon.ui.screens.chat.util.ContextDetailState
 import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatTopBar(
     sessionTitle: String,
     directory: String,
+    /** v2：会话级 agent（单 agent 会话——逐消息 agent 缺席时显示一次；null = 不渲染）。 */
+    sessionAgent: String? = null,
     contextDetail: ContextDetailState,
+    /** 行模型能力位（批3 统计弹窗逐轮明细门控：cost/timing 缺席即整项隐藏）。 */
+    caps: RowCapabilities,
     sessionParentId: String?,
     shareUrl: String?,
     contextWindow: Int = 0,
@@ -77,19 +87,42 @@ fun ChatTopBar(
     onUnshare: () -> Unit,
     onExport: () -> Unit,
     onOpenWorkspace: () -> Unit,
+    /** #408：断连横幅在上方时传 [dev.leonardo.ocbeacon.ui.components.ZeroTopAppBarWindowInsets]，
+     *  避免状态栏 inset 被横幅与本栏各吃一次。 */
+    windowInsets: WindowInsets = TopAppBarDefaults.windowInsets,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showContextDialog by remember { mutableStateOf(false) }
 
     TopAppBar(
+        windowInsets = windowInsets,
         title = {
             Column {
-                Text(
-                    text = sessionTitle.ifBlank { stringResource(R.string.chat_title_placeholder) },
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                // v2：标题行内联会话级 agent（不新增第三行——M3 TopAppBar 固定 64dp，
+                // 三行在 fontScale ≳1.15 时会裁末行）
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
+                ) {
+                    Text(
+                        text = sessionTitle.ifBlank { stringResource(R.string.chat_title_placeholder) },
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (!sessionAgent.isNullOrBlank()) {
+                        Text(
+                            text = listOf(
+                                stringResource(R.string.chat_label_agent),
+                                sessionAgent,
+                            ).joinToString(" · "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = AlphaTokens.MUTED),
+                            maxLines = 1,
+                        )
+                    }
+                }
                 // 副标题：会话工作目录（为空时隐藏）
                 if (directory.isNotBlank()) {
                     Text(
@@ -133,7 +166,7 @@ fun ChatTopBar(
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .padding(end = 4.dp)
+                            .padding(end = SpacingTokens.XS.dp)
                             .clickable { showContextDialog = true }
                     ) {
                         CircularProgressIndicator(
@@ -155,6 +188,7 @@ fun ChatTopBar(
             if (showContextDialog) {
                 ContextDetailDialog(
                     state = contextDetail,
+                    caps = caps,
                     onDismiss = { showContextDialog = false }
                 )
             }

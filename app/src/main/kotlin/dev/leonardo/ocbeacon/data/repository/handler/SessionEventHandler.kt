@@ -46,6 +46,11 @@ class SessionEventHandler @Inject constructor() : SseEventHandler {
 
     private val _sessions = MutableStateFlow<List<Session>>(emptyList())
 
+    /** #354：早于 session.list 基线到达的 agentPreset 暂存（control 投影基线竞态）。
+     *  setSessions 合并命中的 id 时补投并出队；session.list 基线不携带该字段，
+     *  服务器真源在 session/control 投影流。 */
+    private val pendingAgentPresets = LinkedHashMap<String, String>()
+
     /** 2026-08-15：已压缩会话 id 集合（SessionCompacted 事件累积）——UI 监听触发刷新。 */
     /** #217 R3 修复（2026-08-24）：Set → per-session 压缩计数。原 Set 判变在同会话
      * 第二次压缩时不发射 → ChatViewModel 刷新/通知双双跳过（真机 round 3 实证
@@ -68,7 +73,18 @@ class SessionEventHandler @Inject constructor() : SseEventHandler {
     val lastUserMessageTime: StateFlow<Map<String, Long>> = _lastUserMessageTime.asStateFlow()
 
     fun recordUserMessage(sessionId: String, time: Long) {
-        _lastUserMessageTime.update { it + (sessionId to time) }
+        _lastUserMessageTime.update {
+            // #331 A2（2026-09-06 验收残余）：排序键单调——fork 子会话行由 added 帧/
+            // 回执腿先立 updated=创建时刻（与服务器 summaryFor 的 max(createdAt,
+            // lastPromptAt) 同源），随后的 fork 历史重放（session/title、user/message
+            // 携**原始**时刻）不得把行拉回旧位（真机：回列表行沉出视口，冷重进
+            // REST 基线才回顶位）。两道下限：①会话行当前 time.updated（服务器认可
+            // 的活跃位）；②per-session 已记录值（只进不退）。实时消息（now ≥ 两者）
+            // 语义不变。
+            val floor = _sessions.value.firstOrNull { s -> s.id == sessionId }?.time?.updated ?: 0L
+            val prev = it[sessionId] ?: 0L
+            it + (sessionId to maxOf(time, floor, prev))
+        }
     }
 
     override fun handle(event: SseEvent, serverId: String): Boolean {
@@ -86,6 +102,7 @@ class SessionEventHandler @Inject constructor() : SseEventHandler {
             is SseEvent.SessionTokenUsageChanged -> { handleSessionTokenUsageChanged(event); true }
             is SseEvent.SessionSubagentTimingChanged -> { handleSessionSubagentTimingChanged(event); true }
             is SseEvent.SessionGoalChanged -> { handleSessionGoalChanged(event); true }
+            is SseEvent.SessionPlanChanged -> { handleSessionPlanChanged(event); true }
             is SseEvent.SessionContextPressureChanged -> { handleSessionContextPressureChanged(event); true }
             is SseEvent.SessionContextBreakdownChanged -> { handleSessionContextBreakdownChanged(event); true }
             is SseEvent.SessionStatsChanged -> { handleSessionStatsChanged(event); true }
@@ -209,7 +226,14 @@ class SessionEventHandler @Inject constructor() : SseEventHandler {
      * 会话尚未入列表（事件早于 session.list 基线）时 no-op——基线随后补齐。
      */
     private fun handleSessionAgentPresetChanged(event: SseEvent.SessionAgentPresetChanged) {
-        updateSession(event.sessionId) { it.copy(agentPreset = event.agentPreset) }
+        // #354（R3 复验发现持久性缺口）：session/control 投影基线可能在 session.list
+        // 基线之前到达——会话尚不在列表时暂存，setSessions 合并时补投。
+        val known = _sessions.value.any { it.id == event.sessionId }
+        if (known) {
+            updateSession(event.sessionId) { it.copy(agentPreset = event.agentPreset) }
+        } else {
+            synchronized(pendingAgentPresets) { pendingAgentPresets[event.sessionId] = event.agentPreset }
+        }
     }
 
     /**
@@ -229,6 +253,11 @@ class SessionEventHandler @Inject constructor() : SseEventHandler {
     /** goal 投影（goal/change 事件 / session/projection key=goal）→ 折叠进 Session.goal（last-wins 全量快照；null = clear）。 */
     private fun handleSessionGoalChanged(event: SseEvent.SessionGoalChanged) {
         updateSession(event.sessionId) { it.copy(goal = event.goal) }
+    }
+
+    /** plan 投影（session/projection key=plan 裁剪视图，#310③）→ 折叠进 Session.plan（last-wins；null = clear）。 */
+    private fun handleSessionPlanChanged(event: SseEvent.SessionPlanChanged) {
+        updateSession(event.sessionId) { it.copy(plan = event.plan) }
     }
 
     /** contextPressure 投影帧 → 折叠进 Session.contextPressure（环分子/分母源，last-wins）。 */
@@ -323,14 +352,25 @@ class SessionEventHandler @Inject constructor() : SseEventHandler {
             val existing = current[serverId] ?: emptySet()
             current + (serverId to (existing + sessionIds))
         }
+        // #354（R3 复验）：①补投早到的 agentPreset 暂存；②基线不携带预设——
+        // 替换已存在会话时保留本地已回填值（防列表刷新抹除）。
+        val stashed = synchronized(pendingAgentPresets) {
+            val hit = newSessions.mapNotNull { s -> pendingAgentPresets[s.id]?.let { s.id to it } }.toMap()
+            pendingAgentPresets.keys.removeAll(hit.keys)
+            hit
+        }
         _sessions.update { current ->
             val updated = current.toMutableList()
             for (session in visible) {
-                val idx = updated.indexOfFirst { it.id == session.id }
+                val merged = stashed[session.id]?.let { session.copy(agentPreset = it) } ?: session
+                val idx = updated.indexOfFirst { it.id == merged.id }
                 if (idx >= 0) {
-                    updated[idx] = session
+                    val old = updated[idx]
+                    updated[idx] = if (merged.agentPreset == null && old.agentPreset != null) {
+                        merged.copy(agentPreset = old.agentPreset)
+                    } else merged
                 } else {
-                    updated.add(session)
+                    updated.add(merged)
                 }
             }
             updated.sortedByDescending { it.time.updated }

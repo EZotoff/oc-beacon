@@ -1,6 +1,7 @@
 package dev.leonardo.ocbeacon.ui.screens.chat.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
@@ -64,22 +65,37 @@ internal fun CompactTag(
 }
 
 /**
- * agent 名称标签（与输入组件 AgentModelVariantSelector 完全同款视觉）。
+ * agent 名称标签（统计栏信息簇）。
  * agentColor 提供语义色（不同 agent 不同色相）。
+ *
+ * 2026-09-27 用户裁决：去实底背景改**边框**形态——消息层扁平化后正文/
+ * 统计栏皆无背景，实底徽标与周遭不协调；色相语义保留在边框 + 文字色。
+ * （原「与输入组件 AgentModelVariantSelector 完全同款」的实底形态退役。）
  */
 @Composable
 internal fun AgentTag(
     agent: String,
     tagColor: Color,
     modifier: Modifier = Modifier,
-    // 2026-08-16（agent 徽标可点击）：透传 CompactTag
+    // 2026-08-16（agent 徽标可点击）：点击 = 选中该 agent 到输入栏
     onClick: (() -> Unit)? = null,
 ) {
-    CompactTag(
-        text = agent.replaceFirstChar { it.uppercase() },
-        containerColor = tagColor.copy(alpha = AlphaTokens.FAINT),
-        contentColor = tagColor,
-        modifier = modifier,
-        onClick = onClick,
-    )
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .clip(ShapeTokens.smallMedium)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .border(
+                width = 1.dp,
+                color = tagColor.copy(alpha = AlphaTokens.MUTED),
+                shape = ShapeTokens.smallMedium,
+            )
+            .padding(horizontal = SpacingTokens.SM.dp, vertical = SpacingTokens.XS.dp)
+    ) {
+        Text(
+            text = agent.replaceFirstChar { it.uppercase() },
+            style = MaterialTheme.typography.labelSmall,
+            color = tagColor,
+        )
+    }
 }

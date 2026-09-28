@@ -10,9 +10,13 @@ import dev.leonardo.ocbeacon.domain.model.ApiVersion
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import dev.leonardo.ocbeacon.data.local.SessionCacheStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -23,13 +27,21 @@ import org.junit.Test
  */
 class SessionRepositoryImplDedupTest {
 
+    private val dispatcher = mockk<dev.leonardo.ocbeacon.data.repository.EventDispatcher>(relaxed = true)
+
+    init {
+        // #378：历史页遮蔽过滤——relaxed mock 对 List 返回 null，桩为恒等过滤
+        io.mockk.every { dispatcher.filterShadowed(any(), any()) } answers { secondArg() }
+    }
+
     private val messageApi = mockk<MessageApi>()
     private val serverStore = mockk<ServerDataStore>()
     private val repo = SessionRepositoryImpl(
-        sessionApi = mockk<SessionApi>(relaxed = true),
-        messageApi = messageApi,
-        eventDispatcher = mockk(relaxed = true),
+        adapters = dev.leonardo.ocbeacon.testing.testAdapterRegistry(message = messageApi),
+        eventDispatcher = dispatcher,
         serverRepo = serverStore,
+        sessionCache = mockk<SessionCacheStore>(relaxed = true),
+        applicationScope = CoroutineScope(UnconfinedTestDispatcher() + SupervisorJob()),
     )
 
     private fun stubConfig() {

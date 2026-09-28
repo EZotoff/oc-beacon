@@ -66,7 +66,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.util.copyToClipboard
 import dev.leonardo.ocbeacon.ui.components.DialogButtonRole
+import dev.leonardo.ocbeacon.domain.model.ServerUiSlot
 import dev.leonardo.ocbeacon.ui.components.DialogButtons
+import dev.leonardo.ocbeacon.ui.extension.LocalServerUiSlots
+import dev.leonardo.ocbeacon.ui.extension.ProviderSettingsSlotHost
 import dev.leonardo.ocbeacon.ui.components.amoledDialogParams
 import dev.leonardo.ocbeacon.ui.components.amoledOutlinedTextFieldColors
 import dev.leonardo.ocbeacon.ui.screens.settings.components.SectionHeader
@@ -75,6 +78,7 @@ import dev.leonardo.ocbeacon.ui.theme.ButtonTokens
 import dev.leonardo.ocbeacon.ui.theme.LocalAmoledMode
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import kotlinx.coroutines.launch
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,6 +87,8 @@ fun ServerProvidersScreen(
     viewModel: ServerSettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val capabilities by viewModel.serverCapabilities.collectAsStateWithLifecycle()
+    val uiSlots by viewModel.uiSlots.collectAsStateWithLifecycle()
     val isAmoled = LocalAmoledMode.current
     val uriHandler = LocalUriHandler.current
     val clipboard = LocalClipboard.current
@@ -172,8 +178,8 @@ fun ServerProvidersScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.padding(SpacingTokens.XL.dp),
+                    verticalArrangement = Arrangement.spacedBy(SpacingTokens.MD.dp)
                 ) {
                     Text(
                         text = stringResource(R.string.server_settings_connect_provider, provider.providerName),
@@ -229,8 +235,8 @@ fun ServerProvidersScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.padding(SpacingTokens.XL.dp),
+                    verticalArrangement = Arrangement.spacedBy(SpacingTokens.MD.dp)
                 ) {
                     Text(stringResource(R.string.server_settings_api_key_title, provider.providerName), style = MaterialTheme.typography.titleMedium)
                     OutlinedTextField(
@@ -285,8 +291,8 @@ fun ServerProvidersScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.padding(SpacingTokens.XL.dp),
+                    verticalArrangement = Arrangement.spacedBy(SpacingTokens.MD.dp)
                 ) {
                     Text(
                         text = stringResource(R.string.server_settings_oauth_title, pending.providerName),
@@ -327,7 +333,7 @@ fun ServerProvidersScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    .padding(horizontal = SpacingTokens.LG.dp, vertical = 14.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -439,7 +445,7 @@ fun ServerProvidersScreen(
                         text = error,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        modifier = Modifier.padding(horizontal = SpacingTokens.LG.dp, vertical = SpacingTokens.SM.dp)
                     )
                 }
             }
@@ -491,6 +497,19 @@ fun ServerProvidersScreen(
                         }
                     )
                     HorizontalDivider()
+                }
+            }
+
+            // #391 切片5：类型私有提供商区块经插槽注册表渲染——通用屏幕零服务器类型知识。
+            // 两级门禁：先由适配器声明（uiSlots）决定该类型是否拥有此槽位，
+            // 再由贡献方 isEnabled(caps) 做细粒度能力过滤（SERVER_SETTINGS 端口缺席即不渲染）。
+            if (ServerUiSlot.PROVIDER_SETTINGS in uiSlots) {
+                item {
+                    LocalServerUiSlots.current.Render(
+                        slot = ServerUiSlot.PROVIDER_SETTINGS,
+                        caps = capabilities,
+                        host = ProviderSettingsSlotHost(capabilities),
+                    )
                 }
             }
 

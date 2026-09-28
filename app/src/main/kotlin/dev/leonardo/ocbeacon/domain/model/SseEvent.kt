@@ -54,7 +54,61 @@ sealed class SseEvent {
     @Serializable
     data class SessionError(
         val sessionId: String?,
-        val error: String
+        val error: String,
+        /** 事件原始时刻（epoch ms；DSH turn/end reason=error 携带）。null=来源无时刻。
+         *  #339：回放的历史错误轮重发通知（「错误·hi」×7-8 实证）按此刻做陈旧过滤。 */
+        val time: Long? = null,
+    ) : SseEvent()
+
+    /**
+     * #309 批1⑤：DSH turn/end reason.kind="max-tokens"（输出达上限，本轮被截断）。
+     * Web 对位 turn-max-tokens 通知节点（chat 内插、非悬浮）；续写=用户再发一条
+     * prompt（无专用 continue 端点）——UI 卡带「继续」钮发 "continue"。
+     * 新一轮 turn/start（SessionStatus Busy）即清除（跨 handler，dispatcher 装配）。
+     */
+    @Serializable
+    data class TurnMaxTokens(
+        val sessionId: String,
+        val turn: Long,
+    ) : SseEvent()
+
+    /**
+     * #323：DSH 斜杠命令执行开始（转录 log-only 事件 command/run——先于 handler
+     * 的直追加，无轮包裹）。由 MiscEventHandler 折叠进 commandFeedback
+     * （commandId 配对，见 [CommandFeedbackFolder]）；历史重放同路径（durable）。
+     */
+    @Serializable
+    data class CommandRunStarted(
+        val sessionId: String,
+        /** 配对键（command/done 携带同一 id）。 */
+        val commandId: String,
+        val name: String,
+        /** 命令原始入参（recordInput=false 的命令缺席为 null）。 */
+        val args: String? = null,
+        /** 发起来源（wire source.kind，如 "user"；保真透传）。 */
+        val source: String? = null,
+        /** 信封 seq（消息列表插入序键）。 */
+        val seq: Long = 0L,
+        /** 信封 time（卡时间戳）。 */
+        val time: Long = 0L,
+    ) : SseEvent()
+
+    /**
+     * #323：DSH 斜杠命令执行结算（command/done——handler 结算后的直追加）。
+     * 与 [CommandRunStarted] 经 commandId 配对，同卡原位刷新为终态（非两行）。
+     */
+    @Serializable
+    data class CommandDone(
+        val sessionId: String,
+        val commandId: String,
+        /** 结算种类（success|error|…——dsh-commands 契约开放词汇）。 */
+        val kind: String,
+        /** 结算文本（缺席为 null）。 */
+        val text: String? = null,
+        /** success 结算引用的源事件 seq（缺席为 null）。 */
+        val sourceEventSeq: Long? = null,
+        val seq: Long = 0L,
+        val time: Long = 0L,
     ) : SseEvent()
 
     // 消息事件
@@ -85,6 +139,24 @@ sealed class SseEvent {
         val sessionId: String,
         val messageId: String,
         val partId: String
+    ) : SseEvent()
+
+    /**
+     * #453：part 终态时间补丁——只带 ordinal 不带 kind 的块完结信号。
+     *
+     * DSH block-end 帧无 blockType（黄金样本 mux-frames-extra #10），无法构造
+     * kind 编码的派生 part id（PartIdContract），故按 `_ord_{ordinal}` 后缀由
+     * 消费端扫描定位（见 MessageEventHandler.handleMessagePartTimePatch）。
+     * 语义：命中流式中的 Text/Reasoning part（time.end == null）补 end →
+     * 块级计时及时冻结（原实现 block-end 整帧忽略，终态化拖到 turn/end 的
+     * markSessionIdle——思考块完毕、正文流式期间思考卡计时持续虚涨的根因）。
+     */
+    @Serializable
+    data class MessagePartTimePatch(
+        val sessionId: String,
+        val messageId: String,
+        val ordinal: Long,
+        val endMs: Long,
     ) : SseEvent()
 
     // 权限事件
@@ -183,6 +255,72 @@ sealed class SseEvent {
     ) : SseEvent()
 
     /**
+     * DSH workspace 基线整快照（workspace/follow baseline → 合成帧 workspace/baseline；#311 Task1）。
+     *
+     * wire = WorkspaceBaseline {items:[WorkspaceView], archivedSessionIds}——每代
+     * 重连恰一帧（集合替换式）。瞬态语义（不入历史/不重放）；由 DshWorkspaceHandler
+     * 写入 DshWorkspaceStore；OpenCode 无此帧。增量消费面：upsert 见
+     * [WorkspaceUpserted]、remove/order 见 [WorkspaceRemoved]/[WorkspaceOrderChanged]（#330）。
+     */
+    @Serializable
+    data class WorkspaceSnapshotChanged(
+        val workspaces: List<Workspace>,
+        val archivedSessionIds: List<String>,
+    ) : SseEvent()
+
+    /**
+     * DSH workspace 注册表行变更（workspace/follow 增量 {type:'upsert',
+     * workspace:WorkspaceView} → 合成帧 workspace/upsert；#311 Task3）。
+     *
+     * [workspace] 携带整行（title + sessionIds 显式数组 + path）——title 重命名、
+     * 新会话入组均走此帧；由 DshWorkspaceHandler 按 workspaceId 原位替换写入
+     * DshWorkspaceStore（archived 集合保持）。OpenCode 无此帧。
+     */
+    @Serializable
+    data class WorkspaceUpserted(
+        val workspace: Workspace,
+    ) : SseEvent()
+
+    /**
+     * DSH workspace 归档集合变更（workspace/follow 增量 {type:'archived'} →
+     * 合成帧 workspace/archived；#311 Task1）。
+     *
+     * [archivedSessionIds] 是**完整新集合**（集合替换式，非增量合并——契约 ①-a：
+     * workspace/archiveSession 回执同语义）；由 DshWorkspaceHandler 写入
+     * DshWorkspaceStore（workspaces 保持不变）。OpenCode 无此帧。
+     */
+    @Serializable
+    data class WorkspaceArchivedChanged(
+        val archivedSessionIds: List<String>,
+    ) : SseEvent()
+
+    /**
+     * DSH workspace 注册表行删除（workspace/follow 增量 {type:'remove', workspaceId}
+     * → 合成帧 workspace/remove；#330）。
+     *
+     * 由 DshWorkspaceHandler 按 workspaceId 删行写入 DshWorkspaceStore（其余行与
+     * archived 集合保持）；重连 baseline 前即收敛——#331 对话框陈旧条目随 remove
+     * 消费而减。OpenCode 无此帧。
+     */
+    @Serializable
+    data class WorkspaceRemoved(
+        val workspaceId: String,
+    ) : SseEvent()
+
+    /**
+     * DSH workspace 注册表序变更（workspace/follow 增量 {type:'order', workspaceIds}
+     * → 合成帧 workspace/order；#330）。
+     *
+     * [workspaceIds] 是**完整新序**（服务器 changed() 在序变时 publish 全量
+     * workspaceIds 数组）；由 DshWorkspaceHandler 写入 DshWorkspaceStore 按帧序
+     * 重排（帧内未知 id 忽略、未提及行防丢行，见 applyOrder）。OpenCode 无此帧。
+     */
+    @Serializable
+    data class WorkspaceOrderChanged(
+        val workspaceIds: List<String>,
+    ) : SseEvent()
+
+    /**
      * DSH tokenUsage 投影变更（session/projection 帧 key=tokenUsage）。
      * 由 SessionEventHandler 折叠进 Session.tokenUsage（last-wins）。
      */
@@ -210,6 +348,16 @@ sealed class SseEvent {
     data class SessionGoalChanged(
         val sessionId: String,
         val goal: DshGoalProjection?,
+    ) : SseEvent()
+
+    /**
+     * DSH plan 投影变更（session/projection 帧 key=plan，#310③）。
+     * 由 SessionEventHandler 折叠进 Session.plan（last-wins；[plan] null = tombstone）。
+     */
+    @Serializable
+    data class SessionPlanChanged(
+        val sessionId: String,
+        val plan: DshPlanProjection?,
     ) : SseEvent()
 
     /**
@@ -261,7 +409,23 @@ sealed class SseEvent {
             val custom: Boolean = true,
             val options: List<Option>,
             /** V2 form field key（q0/q1...）；V1 为 null。用于 form reply 构造 answer map。 */
-            val key: String? = null
+            val key: String? = null,
+            /** #310③：DSH 问题描述正文（user-questions detail）——plan-review 时为计划全文。 */
+            val detail: String? = null,
+            /** #310③：呈现意图（只改呈现不改协议；不认识 kind 的 UI 按通用选项表渲染）。 */
+            val intent: Intent? = null,
+        )
+
+        /**
+         * #310③：调用方声明的呈现意图（dsh-user-questions AskUserQuestionIntent）。
+         * kind="plan-review"：detail 是待审计划全文，[approve] 命名批准选项的
+         * label（非位置、非布尔——服务端 intent.approve 即 option label 字符串），
+         * 其余选项均为否决。
+         */
+        @Serializable
+        data class Intent(
+            val kind: String? = null,
+            val approve: String? = null,
         )
 
         @Serializable
@@ -316,6 +480,80 @@ sealed class SseEvent {
     // 会话压缩
     @Serializable
     data class SessionCompacted(val sessionId: String) : SseEvent()
+
+    // ============ #378 DSH 转录实体事件（命令/压缩卡族流内重建） ============
+    // 设计：docs/journal/2026-09-09-378-380-wire.md §五。这族事件是「转录卡」的域
+    // 载体——与消息共用信封 seq 全序（流内时序定位的权威键），经 EventDispatcher
+    // 折叠进 CommandFeedback/CompactionEntry；历史重放（transcriptEvents dispatch）
+    // 与实况 SSE 同路径（durable，#376 修复通道）。
+
+    /** #378：压缩开始（compaction/start 转录实体；banner 呈现走 SessionNext 域不变）。 */
+    @Serializable
+    data class CompactionStarted(
+        val sessionId: String,
+        /** 配对键（同族 start/summary/end/surface 共享）。 */
+        val compactionId: String,
+        /** 发起命令（手动压缩时的 commandId；缺席为 null）。 */
+        val sourceCommandId: String? = null,
+        /** 信封 seq（流内时序位）。 */
+        val seq: Long = 0L,
+        val time: Long = 0L,
+    ) : SseEvent()
+
+    /** #378：压缩摘要到达（compaction/summary——全文单帧到达，非流式增量）。 */
+    @Serializable
+    data class CompactionSummary(
+        val sessionId: String,
+        val compactionId: String,
+        val sourceCommandId: String? = null,
+        /** 摘要全文（wire ContentBlock[] 的 text 块拼接）。 */
+        val summaryText: String,
+        /**
+         * shadowedRange 起点被遮蔽内容区间的时序锚（2026-09-25 DSH 0.1.7 源码调研
+         * docs/research/dsh-compaction-binding.md §3）：压缩卡的流内绑定点不是
+         * summary 信封 seq（那落在日志尾部），而是被替代消息区间的起点——卡随
+         * 后续消息上推。null = wire 缺席（降级回信封 seq）。
+         */
+        val shadowStartSeq: Long? = null,
+        val seq: Long = 0L,
+        val time: Long = 0L,
+    ) : SseEvent()
+
+    /** #378：压缩结束（compaction/end——[error] 非空 = 失败终态）。 */
+    @Serializable
+    data class CompactionFinished(
+        val sessionId: String,
+        val compactionId: String,
+        val error: String? = null,
+        val seq: Long = 0L,
+        val time: Long = 0L,
+    ) : SseEvent()
+
+    /** #378：压缩实体 ↔ 表面消息绑定（user/message 的 data.source.compactionId——摘要的表面载体）。 */
+    @Serializable
+    data class CompactionSurfaceBound(
+        val sessionId: String,
+        val compactionId: String,
+        /** 表面载体消息 id（UI 抑制该气泡、由压缩 box 承载）。 */
+        val messageId: String,
+        val seq: Long = 0L,
+        val time: Long = 0L,
+    ) : SseEvent()
+
+    /**
+     * #378：表面区间替换（user/message 的 surfaceOp.op="replace"）——被遮蔽旧消息
+     * 折叠的权威指令：seq ∈ [startSeq, endSeq] 的表面消息由 [byMessageId] 取代。
+     * 实况与历史回放同事件（MessageEventHandler 台账 + 移除双消费）。
+     */
+    @Serializable
+    data class SurfaceRangeReplaced(
+        val sessionId: String,
+        val startSeq: Long,
+        val endSeq: Long,
+        val byMessageId: String,
+        val seq: Long = 0L,
+        val time: Long = 0L,
+    ) : SseEvent()
 
     // PTY 事件（使用简单字段以避免跨包依赖）
     @Serializable

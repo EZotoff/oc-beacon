@@ -3,10 +3,7 @@ package dev.leonardo.ocbeacon.data.repository
 import dev.leonardo.ocbeacon.BuildConfig
 import dev.leonardo.ocbeacon.logging.AppLogger
 
-import dev.leonardo.ocbeacon.data.api.message.MessageApi
-import dev.leonardo.ocbeacon.data.api.provider.ProviderApi
-import dev.leonardo.ocbeacon.data.api.session.SessionApi
-import dev.leonardo.ocbeacon.data.api.terminal.TerminalApi
+import dev.leonardo.ocbeacon.data.adapter.ServerAdapterRegistry
 import dev.leonardo.ocbeacon.domain.model.ServerConnection
 import dev.leonardo.ocbeacon.data.dto.common.ModelSelection as DataModelSelection
 import dev.leonardo.ocbeacon.data.dto.request.PromptPart as DataPromptPart
@@ -15,9 +12,11 @@ import dev.leonardo.ocbeacon.data.repository.handler.StepProgressInfo as DataSte
 import dev.leonardo.ocbeacon.data.repository.handler.ToolProgressInfo as DataToolProgressInfo
 import dev.leonardo.ocbeacon.domain.model.ActiveSessionInfo
 import dev.leonardo.ocbeacon.domain.model.AgentPreset
+import dev.leonardo.ocbeacon.domain.model.CommandFeedback
 import dev.leonardo.ocbeacon.domain.model.DshGoalRef
 import dev.leonardo.ocbeacon.domain.model.CompactionStateInfo
 import dev.leonardo.ocbeacon.domain.model.FileDiff
+import dev.leonardo.ocbeacon.domain.model.MentionCandidate
 import dev.leonardo.ocbeacon.domain.model.MergeStrategy
 import dev.leonardo.ocbeacon.domain.model.Message
 import dev.leonardo.ocbeacon.domain.model.MessageWithParts
@@ -31,6 +30,8 @@ import dev.leonardo.ocbeacon.domain.model.ShellJob
 import dev.leonardo.ocbeacon.domain.model.ShellOutput
 import dev.leonardo.ocbeacon.domain.model.SseEvent
 import dev.leonardo.ocbeacon.domain.model.StepProgressInfo
+import dev.leonardo.ocbeacon.domain.model.WorkspaceSnapshot
+import dev.leonardo.ocbeacon.domain.model.SubagentCatalog
 import dev.leonardo.ocbeacon.domain.model.TimeInfo
 import dev.leonardo.ocbeacon.domain.model.ToolProgressInfo
 import dev.leonardo.ocbeacon.domain.repository.ChatRepository
@@ -58,18 +59,14 @@ import dev.leonardo.ocbeacon.util.runCatchingCancellable
  */
 @Singleton
 class ChatRepositoryImpl @Inject constructor(
-    private val messageApi: MessageApi,
-    private val sessionApi: SessionApi,
-    private val terminalApi: TerminalApi,
-    private val shellApi: dev.leonardo.ocbeacon.data.api.shell.ShellApi,
-    private val providerApi: ProviderApi,
     private val eventDispatcher: EventDispatcher,
     private val serverRepo: ServerDataStore,
     private val permissionAutoApprover: PermissionAutoApprover,
     private val messageStore: MessageCacheRepository,
-    // #287：DSH 附件字节拉取（session.attachment → data URL）。
-    // DshApiClient @Singleton 可注入；非 DSH 服务器由 readAttachment 失败自然降级 null。
-    private val dshApiClient: dev.leonardo.ocbeacon.data.api.dsh.DshApiClient,
+    // #311 Task1：workspace 快照读取（workspace/follow baseline 维护的单一真相源）。
+    private val dshWorkspaceStore: DshWorkspaceStore,
+    // #391：唯一路由 seam——私有能力经端口挂载，不按服务器类型分派。
+    private val adapters: ServerAdapterRegistry,
 ) : ChatRepository {
 
     // ============ 状态观察 ============
@@ -187,7 +184,7 @@ class ChatRepositoryImpl @Inject constructor(
     override suspend fun sendMessage(sessionId: String, parts: List<Part>): Result<Message> = runCatchingCancellable {
         val conn = resolveConnectionForSession(sessionId)
         val promptParts = parts.map { it.toDataPromptPart() }
-        messageApi.promptAsync(conn, sessionId, promptParts)
+        adapters.ports(conn).message.promptAsync(conn, sessionId, promptParts)
         // 实际消息通过 SSE 到达——返回一个轻量占位符。
         // 调用方应通过 [getMessagesFlow] 观察真实 Message。
         Message.User(
@@ -204,7 +201,7 @@ class ChatRepositoryImpl @Inject constructor(
         // #130：V2 form reply 需要领域问题（key/value 映射）——从 pending 状态查找。
         val question = eventDispatcher.questions.value.values.flatten()
             .firstOrNull { it.id == questionId }
-        messageApi.replyToQuestion(conn, questionId, listOf(listOf(answer)), question = question)
+        adapters.ports(conn).message.replyToQuestion(conn, questionId, listOf(listOf(answer)), question = question)
     }
 
     override suspend fun promptAsync(
@@ -214,11 +211,13 @@ class ChatRepositoryImpl @Inject constructor(
         model: ModelSelection?,
         agent: String?,
         variant: String?,
-        directory: String?
+        directory: String?,
+        steer: Boolean,
+        seedTranscript: Boolean
     ): Result<Unit> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        val admission = messageApi.promptAsync(
-            conn, sessionId, parts.map { it.toData() }, model?.toData(), agent, variant, directory
+        val admission = adapters.ports(conn).message.promptAsync(
+            conn, sessionId, parts.map { it.toData() }, model?.toData(), agent, variant, directory, steer
         )
         // 2026-08-14 根治（用户消息"发送后无气泡"系统性修复）：
         // V2 prompt 响应体即 Inbox 条目（含消息 id）——立即本地播种用户消息，
@@ -226,8 +225,11 @@ class ChatRepositoryImpl @Inject constructor(
         // （handleMessageUpdated idx>=0 替换分支）；SSE 丢失/延迟/服务器
         // 版本事件名差异均不再导致用户消息气泡缺失。
         // V1（prompt_async 204 无响应体）→ admission=null → 依赖 SSE 回显。
+        // #362（2026-09-08）：seedTranscript=false（busy+queue「消息排队」）
+        // 跳过播种——排队消息是转录外瞬态队列行（DSH inbox.nextTurn / V2 inbox），
+        // 仅队列 UI 呈现；轮末派发后 durable user/message 自然进转录。
         val text = parts.firstOrNull { it.type == "text" }?.text
-        if (admission != null && admission.id.isNotBlank()) {
+        if (admission != null && admission.id.isNotBlank() && seedTranscript) {
             if (BuildConfig.DEBUG) {
                 AppLogger.d("ChatRepository", "[send-seed] user message ${admission.id} (SSE 回显前本地播种)")
             }
@@ -237,6 +239,8 @@ class ChatRepositoryImpl @Inject constructor(
                         id = admission.id,
                         sessionId = admission.sessionId,
                         time = TimeInfo(System.currentTimeMillis()),
+                        // #395：插话（steer）路径标记——徽标随消息携带（transient，不落缓存）
+                        viaSteer = steer,
                         summary = Message.User.UserSummary(body = admission.text ?: text)
                     )
                 ),
@@ -247,12 +251,12 @@ class ChatRepositoryImpl @Inject constructor(
 
     override suspend fun revertSession(serverId: String, sessionId: String, messageId: String): Result<Unit> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.revertSession(conn, sessionId, messageId)
+        adapters.ports(conn).session.revertSession(conn, sessionId, messageId)
     }
 
     override suspend fun unrevertSession(serverId: String, sessionId: String): Result<Unit> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.unrevertSession(conn, sessionId)
+        adapters.ports(conn).session.unrevertSession(conn, sessionId)
     }
 
     override suspend fun respondPermission(
@@ -263,19 +267,25 @@ class ChatRepositoryImpl @Inject constructor(
         directory: String?
     ): Result<Boolean> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        messageApi.replyToPermission(conn, sessionId, permissionId, reply, directory = directory)
+        // #308：DSH 回程路由键 = approval/requested 帧稳定 rpcId（mapper 存
+        // PermissionAsked.metadata）——从内存 pending 补查；查不到（重启丢内存）
+        // 传 null，DSH 适配层回退 permissionId 尽力而为。
+        val metadata = eventDispatcher.permissions.value.values.flatten()
+            .firstOrNull { it.id == permissionId }?.metadata
+        adapters.ports(conn).message.replyToPermission(conn, sessionId, permissionId, reply, directory = directory, metadata = metadata)
     }
 
     // ============ 待处理查询 ============
 
-    override suspend fun listPendingPermissions(serverId: String, directory: String?): Result<List<PermissionState>> = runCatchingCancellable {
+    override suspend fun listPendingPermissions(serverId: String, directory: String?): Result<List<PermissionState>?> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        messageApi.listPendingPermissions(conn, directory).map { it.toDomainPermissionState() }
+        // #314：null=端点缺席（DSH）原样上抛——上游跳过同步，不当权威空表
+        adapters.ports(conn).message.listPendingPermissions(conn, directory)?.map { it.toDomainPermissionState() }
     }
 
-    override suspend fun listPendingQuestions(serverId: String, directory: String?): Result<List<QuestionState>> = runCatchingCancellable {
+    override suspend fun listPendingQuestions(serverId: String, directory: String?): Result<List<QuestionState>?> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        messageApi.listPendingQuestions(conn, directory).map { it.toDomainQuestionState() }
+        adapters.ports(conn).message.listPendingQuestions(conn, directory)?.map { it.toDomainQuestionState() }
     }
 
     override suspend fun replyToQuestion(
@@ -289,7 +299,7 @@ class ChatRepositoryImpl @Inject constructor(
         // V1 分支忽略该参数；找不到时 V2 返回 false（调用方移除卡片兜底）。
         val question = eventDispatcher.questions.value.values.flatten()
             .firstOrNull { it.id == requestId }
-        messageApi.replyToQuestion(conn, requestId, answers, directory, question)
+        adapters.ports(conn).message.replyToQuestion(conn, requestId, answers, directory, question)
     }
 
     override suspend fun rejectQuestion(
@@ -301,7 +311,7 @@ class ChatRepositoryImpl @Inject constructor(
         // #130：V2 form cancel 需要 sessionID（路径参数）。
         val sessionId = eventDispatcher.questions.value.entries
             .firstOrNull { (_, qs) -> qs.any { it.id == requestId } }?.key
-        messageApi.rejectQuestion(conn, requestId, directory, sessionId)
+        adapters.ports(conn).message.rejectQuestion(conn, requestId, directory, sessionId)
     }
 
     // ============ 命令执行 ============
@@ -311,14 +321,10 @@ class ChatRepositoryImpl @Inject constructor(
         sessionId: String,
         command: String,
         arguments: String,
-        directory: String?,
-        agent: String?,
-        model: String?,
-        variant: String?,
-        parts: List<Map<String, String>>?
+        directory: String?
     ): Result<Boolean> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.executeCommand(conn, sessionId, command, arguments, directory, agent, model, variant, parts)
+        adapters.ports(conn).session.executeCommand(conn, sessionId, command, arguments, directory)
     }
 
     override suspend fun setPermissionPreset(
@@ -327,12 +333,12 @@ class ChatRepositoryImpl @Inject constructor(
         preset: String,
     ): Result<Boolean> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.setPermissionPreset(conn, sessionId, preset)
+        adapters.ports(conn).session.setPermissionPreset(conn, sessionId, preset)
     }
 
     override suspend fun listAgentPresets(serverId: String): Result<List<AgentPreset>> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.listAgentPresets(conn)
+        adapters.ports(conn).session.listAgentPresets(conn)
     }
 
     override suspend fun selectAgentPreset(
@@ -341,14 +347,14 @@ class ChatRepositoryImpl @Inject constructor(
         presetId: String,
     ): Result<Boolean> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.selectAgentPreset(conn, sessionId, presetId)
+        adapters.ports(conn).session.selectAgentPreset(conn, sessionId, presetId)
     }
 
-    /** #287：附件字节 → data URL（仅 DSH 有 session.attachment；其他类型直接 null）。 */
+    /** #287：附件字节 → data URL（经 attachments 端口；端口缺席即 null，不按类型判断）。 */
     override suspend fun fetchAttachmentDataUrl(serverId: String, sessionId: String, attachmentId: String): String? {
         val conn = runCatching { resolveConnection(serverId) }.getOrNull() ?: return null
-        val dsh = dshApiClient
-        val (mediaType, base64) = dsh.readAttachment(conn, sessionId, attachmentId) ?: return null
+        val attachment = adapters.ports(conn).attachments ?: return null
+        val (mediaType, base64) = attachment.readAttachment(conn, sessionId, attachmentId) ?: return null
         return "data:$mediaType;base64,$base64"
     }
 
@@ -360,9 +366,167 @@ class ChatRepositoryImpl @Inject constructor(
         editText: String?,
     ): dev.leonardo.ocbeacon.domain.model.QueueMutationResult {
         val conn = resolveConnection(serverId)
-        return sessionApi.updateQueue(conn, sessionId, itemId, action, editText)
+        return adapters.ports(conn).session.updateQueue(conn, sessionId, itemId, action, editText)
     }
 
+    override suspend fun listQueueItems(
+        serverId: String,
+        sessionId: String,
+    ): List<dev.leonardo.ocbeacon.domain.model.QueuedInboxItem>? {
+        val conn = runCatching { resolveConnection(serverId) }.getOrNull() ?: return null
+        return adapters.ports(conn).queue?.listInbox(conn, sessionId)
+    }
+
+    // ============ DSH 子智能体续聊（backlog #310①） ============
+
+    /**
+     * subagents/prompt（mode=continuable）：仅 DSH 线面——非 DSH 显式 unsupported
+     * （续聊静默假成功会误导用户，不走常量降级）；DSH V011 由 DshApiClient 同判。
+     * clientTimeZone 填设备 IANA 时区（服务端 canonicalClientTimeZone 校验通过）。
+     */
+    override suspend fun subagentPrompt(
+        serverId: String,
+        parentSessionId: String,
+        childSessionId: String,
+        parts: List<PromptPart>,
+    ): Result<String?> = runCatchingCancellable {
+        val conn = resolveConnection(serverId)
+        val port = adapters.ports(conn).subagents
+            ?: throw dev.leonardo.ocbeacon.data.api.UnsupportedServerCapability(
+                "subagent.prompt", conn.serverType.name,
+            )
+        port.subagentPrompt(
+            conn,
+            parentSessionId,
+            childSessionId,
+            parts.map { it.toData() },
+            clientTimeZone = java.util.TimeZone.getDefault().id,
+        )
+    }
+
+    /** subagents/interruptByParent：非 DSH → false（布尔常量降级先例）。 */
+    override suspend fun subagentInterrupt(
+        serverId: String,
+        parentSessionId: String,
+        childSessionId: String,
+    ): Result<Boolean> = runCatchingCancellable {
+        val conn = resolveConnection(serverId)
+        val port = adapters.ports(conn).subagents ?: return@runCatchingCancellable false
+        port.subagentInterrupt(conn, parentSessionId, childSessionId)
+    }
+
+    /** subagents/list 整帧：非 DSH → null（端点缺席语义，#314 先例）。 */
+    override suspend fun subagentCatalog(
+        serverId: String,
+        parentSessionId: String,
+    ): Result<SubagentCatalog?> = runCatchingCancellable {
+        val conn = resolveConnection(serverId)
+        val port = adapters.ports(conn).subagents ?: return@runCatchingCancellable null
+        port.subagentCatalog(conn, parentSessionId)
+    }
+
+    // ============ DSH 消息反馈（backlog #310②） ============
+
+    /**
+     * messageFeedback/put：非 DSH 显式 unsupported（写操作假成功会误导）；
+     * DSH V011 由 DshApiClient 同判。业务结果密封于成功值（CAS 冲突不算传输失败）。
+     */
+    override suspend fun messageFeedbackPut(
+        serverId: String,
+        sessionId: String,
+        messageId: String,
+        rating: dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating,
+        note: String?,
+        ifVersion: String?,
+    ): Result<dev.leonardo.ocbeacon.domain.model.MessageFeedbackPutResult> = runCatchingCancellable {
+        val conn = resolveConnection(serverId)
+        val port = adapters.ports(conn).feedback
+            ?: throw dev.leonardo.ocbeacon.data.api.UnsupportedServerCapability(
+                "messageFeedback.put", conn.serverType.name,
+            )
+        port.messageFeedbackPut(conn, sessionId, messageId, rating, note, ifVersion)
+    }
+
+    /** messageFeedback/delete：非 DSH 显式 unsupported（同 put → 撤销不可假成功）。 */
+    override suspend fun messageFeedbackDelete(
+        serverId: String,
+        sessionId: String,
+        messageId: String,
+        ifVersion: String,
+    ): Result<dev.leonardo.ocbeacon.domain.model.MessageFeedbackDeleteResult> = runCatchingCancellable {
+        val conn = resolveConnection(serverId)
+        val port = adapters.ports(conn).feedback
+            ?: throw dev.leonardo.ocbeacon.data.api.UnsupportedServerCapability(
+                "messageFeedback.delete", conn.serverType.name,
+            )
+        port.messageFeedbackDelete(conn, sessionId, messageId, ifVersion)
+    }
+
+    /** messageFeedback/list：非 DSH → null（端点缺席语义，#314 先例）。 */
+    override suspend fun messageFeedbackList(
+        serverId: String,
+        sessionId: String,
+    ): Result<List<dev.leonardo.ocbeacon.domain.model.MessageFeedbackItem>?> = runCatchingCancellable {
+        val conn = resolveConnection(serverId)
+        val port = adapters.ports(conn).feedback ?: return@runCatchingCancellable null
+        port.messageFeedbackList(conn, sessionId)
+    }
+
+    // ============ DSH workspace 归档（backlog #311 Task1） ============
+
+    /**
+     * workspace/archiveSession：经 workspace 端口——端口缺席显式 unsupported（归档是
+     * 写操作，假成功会误导；DSH V011 由端口实现同判）。回执即新 archived 集合。
+     */
+    override suspend fun archiveSession(
+        serverId: String,
+        sessionId: String,
+    ): Result<List<String>> = runCatchingCancellable {
+        val conn = resolveConnection(serverId)
+        adapters.ports(conn).requireWorkspace(conn).archiveSession(conn, sessionId)
+    }
+
+    /**
+     * workspace 快照流：DshWorkspaceStore 直读（非 DSH 服务器无 workspace 帧 →
+     * 恒空快照——端点缺席降级形态，listAgentPresets 空表先例同款）。
+     */
+    override fun getWorkspaceSnapshotFlow(serverId: String): Flow<WorkspaceSnapshot> =
+        dshWorkspaceStore.snapshots
+            .map { it[serverId] ?: WorkspaceSnapshot() }
+            .distinctUntilChanged()
+
+    /**
+     * #311 Task3：session.list 全量（含 blank 空壳）——连接复用判定候选源
+     * （web connectWorkspace mod29:46-58 在含 blank 的会话集上找复用；列表流
+     * 的 blank 滤除面见 DshSessionMapper.filterByDirectory）。workspace 端口缺席
+     * → 空表（无工作区连接语义，快照恒空不产生 workspace 条目）。
+     */
+    override suspend fun listSessionsIncludingBlank(serverId: String): Result<List<Session>> =
+        runCatchingCancellable {
+            val conn = resolveConnection(serverId)
+            // workspace 端口缺席 = 无工作区连接语义 → 空表（快照恒空不产生 workspace 条目）
+            adapters.ports(conn).workspace?.listSessionsIncludingBlank(conn) ?: emptyList()
+        }
+
+    // ============ DSH @ 引用候选（backlog #310⑤/#321） ============
+
+    /**
+     * @ 引用候选：取数策略由 references 端口实现承载——DSH 并行两域后纯合并，
+     * OpenCode findFiles 单域包装；任一域失败整体 failure（Result 收编，同
+     * messageFeedbackList 语义）。
+     */
+    override suspend fun mentionCandidates(
+        serverId: String,
+        sessionId: String,
+        query: String,
+        directory: String?,
+        quoted: Boolean,
+    ): Result<List<MentionCandidate>> = runCatchingCancellable {
+        val conn = resolveConnection(serverId)
+        // 取数策略由 references 端口实现承载（DSH 两域合并 / OpenCode findFiles 单域）
+        adapters.ports(conn).requireReferences(conn)
+            .candidates(conn, sessionId, query, directory, quoted)
+    }
 
     // ============ DSH goal mutation（backlog #286） ============
 
@@ -373,7 +537,11 @@ class ChatRepositoryImpl @Inject constructor(
         maxGoalRounds: Long?,
     ): Result<DshGoalRef?> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.goalCreate(conn, sessionId, objective, maxGoalRounds)
+        val port = adapters.ports(conn).goals
+            ?: throw dev.leonardo.ocbeacon.data.api.UnsupportedServerCapability(
+                "goal.create", conn.serverType.name,
+            )
+        port.goalCreate(conn, sessionId, objective, maxGoalRounds)
     }
 
     override suspend fun editGoal(
@@ -384,31 +552,51 @@ class ChatRepositoryImpl @Inject constructor(
         maxGoalRounds: Long?,
     ): Result<DshGoalRef?> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        sessionApi.goalEdit(conn, sessionId, ref, objective, maxGoalRounds)
+        val port = adapters.ports(conn).goals
+            ?: throw dev.leonardo.ocbeacon.data.api.UnsupportedServerCapability(
+                "goal.edit", conn.serverType.name,
+            )
+        port.goalEdit(conn, sessionId, ref, objective, maxGoalRounds)
     }
 
     override suspend fun pauseGoal(serverId: String, sessionId: String, ref: DshGoalRef): Result<DshGoalRef?> =
         runCatchingCancellable {
             val conn = resolveConnection(serverId)
-            sessionApi.goalPause(conn, sessionId, ref)
+            val port = adapters.ports(conn).goals
+                ?: throw dev.leonardo.ocbeacon.data.api.UnsupportedServerCapability(
+                    "goal.pause", conn.serverType.name,
+                )
+            port.goalPause(conn, sessionId, ref)
         }
 
     override suspend fun resumeGoal(serverId: String, sessionId: String, ref: DshGoalRef): Result<DshGoalRef?> =
         runCatchingCancellable {
             val conn = resolveConnection(serverId)
-            sessionApi.goalResume(conn, sessionId, ref)
+            val port = adapters.ports(conn).goals
+                ?: throw dev.leonardo.ocbeacon.data.api.UnsupportedServerCapability(
+                    "goal.resume", conn.serverType.name,
+                )
+            port.goalResume(conn, sessionId, ref)
         }
 
     override suspend fun completeGoal(serverId: String, sessionId: String, ref: DshGoalRef): Result<DshGoalRef?> =
         runCatchingCancellable {
             val conn = resolveConnection(serverId)
-            sessionApi.goalComplete(conn, sessionId, ref)
+            val port = adapters.ports(conn).goals
+                ?: throw dev.leonardo.ocbeacon.data.api.UnsupportedServerCapability(
+                    "goal.complete", conn.serverType.name,
+                )
+            port.goalComplete(conn, sessionId, ref)
         }
 
     override suspend fun clearGoal(serverId: String, sessionId: String, ref: DshGoalRef): Result<Boolean> =
         runCatchingCancellable {
             val conn = resolveConnection(serverId)
-            sessionApi.goalClear(conn, sessionId, ref)
+            val port = adapters.ports(conn).goals
+                ?: throw dev.leonardo.ocbeacon.data.api.UnsupportedServerCapability(
+                    "goal.clear", conn.serverType.name,
+                )
+            port.goalClear(conn, sessionId, ref)
         }
 
     override suspend fun runShellCommand(
@@ -424,25 +612,25 @@ class ChatRepositoryImpl @Inject constructor(
         val model = if (providerId != null && modelId != null) {
             DataModelSelection(providerId = providerId, modelId = modelId)
         } else null
-        terminalApi.runShellCommand(conn, sessionId, command, agent, model, directory)
+        adapters.ports(conn).requireTerminal(conn).runShellCommand(conn, sessionId, command, agent, model, directory)
     }
 
     override suspend fun backgroundSession(serverId: String, sessionId: String): Result<Boolean> =
         runCatchingCancellable {
             val conn = resolveConnection(serverId)
-            sessionApi.backgroundSession(conn, sessionId)
+            adapters.ports(conn).session.backgroundSession(conn, sessionId)
         }
 
     override suspend fun listActiveSessions(serverId: String): Result<Map<String, ActiveSessionInfo>> =
         runCatchingCancellable {
             val conn = resolveConnection(serverId)
-            sessionApi.activeSessions(conn)
+            adapters.ports(conn).session.activeSessions(conn)
         }
 
     override suspend fun listShells(serverId: String, directory: String?): Result<List<ShellJob>> =
         runCatchingCancellable {
             val conn = resolveConnection(serverId)
-            shellApi.listShells(conn, directory)
+            adapters.ports(conn).requireShell(conn).listShells(conn, directory)
         }
 
     override suspend fun getShellOutput(
@@ -453,7 +641,7 @@ class ChatRepositoryImpl @Inject constructor(
         directory: String?
     ): Result<ShellOutput?> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        shellApi.getShellOutput(conn, shellId, cursor, limit, directory)
+        adapters.ports(conn).requireShell(conn).getShellOutput(conn, shellId, cursor, limit, directory)
     }
 
     override suspend fun removeShell(
@@ -462,7 +650,7 @@ class ChatRepositoryImpl @Inject constructor(
         directory: String?
     ): Result<Boolean> = runCatchingCancellable {
         val conn = resolveConnection(serverId)
-        shellApi.removeShell(conn, shellId, directory)
+        adapters.ports(conn).requireShell(conn).removeShell(conn, shellId, directory)
     }
 
     // ============ 私有辅助方法 ============
@@ -648,6 +836,24 @@ class ChatRepositoryImpl @Inject constructor(
 
     override fun getCompactionStateForSession(sessionId: String): Flow<CompactionStateInfo?> =
         eventDispatcher.compactionState.map { it[sessionId]?.toDomain() }.distinctUntilChanged()
+
+    override fun getTurnMaxTokensForSession(sessionId: String): Flow<Long?> =
+        eventDispatcher.turnMaxTokens.map { it[sessionId] }.distinctUntilChanged()
+
+    override fun getCommandFeedbackForSession(sessionId: String): Flow<List<CommandFeedback>> =
+        eventDispatcher.commandFeedback.map { it[sessionId].orEmpty() }.distinctUntilChanged()
+
+    override fun getCompactionEntriesForSession(sessionId: String): Flow<List<dev.leonardo.ocbeacon.domain.model.CompactionEntry>> =
+        eventDispatcher.compactionEntries.map { it[sessionId].orEmpty() }.distinctUntilChanged()
+
+    override fun getShadowedRangesForSession(sessionId: String): Flow<List<LongRange>> =
+        eventDispatcher.shadowedRangesFlow.map { it[sessionId].orEmpty() }.distinctUntilChanged()
+
+    override fun recordCommandAcceptance(sessionId: String, command: String, arguments: String?) =
+        eventDispatcher.recordLocalCommandAcceptance(sessionId, command, arguments)
+
+    override fun recordCommandFailure(sessionId: String, command: String) =
+        eventDispatcher.recordLocalCommandFailure(sessionId, command)
 
     override fun getSessionDiffsForSession(sessionId: String): Flow<List<FileDiff>> =
         eventDispatcher.sessionDiffs.map { it[sessionId] ?: emptyList() }.distinctUntilChanged()

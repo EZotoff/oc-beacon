@@ -84,9 +84,11 @@ class MessageStoreTest {
 
     @Test
     fun upsertMessages_persistOldBeyondWindowFalse_skipsMessagesOlderThanOldestCached() = runTest {
-        // 本地已有 msg_3（created=300）为最旧 → 窗口边界 = 300
+        // 本地已有 msg_3（created=300）为最旧 → 窗口边界 = 300（#386：过滤仅在
+        // 裁剪边界生效——缓存满限才激活，桩 count=LIMIT）
         coEvery { dao.oldestMessageId("ses_1") } returns "msg_3"
         coEvery { dao.messageCreatedAt("msg_3") } returns 300L
+        coEvery { dao.countForSession("ses_1") } returns MessageCacheRepository.SESSION_MESSAGE_LIMIT
         val older = msg("msg_1", 100)
         val newer = msg("msg_4", 400)
 
@@ -215,6 +217,34 @@ class MessageStoreTest {
     }
 
     @Test
+    fun upsertMessages_overflowBeyondChunk_drainsInChunksWithPreciseTargets() = runTest {
+        // #437 十四轮：overflow 450 > ARCHIVE_CHUNK_MSGS 200 → 三块排水；
+        // 每块 prune 目标 = LIMIT + 未归档剩余（1250/1050/1000 递减），块间
+        // 让出写锁（单块短事务），终块回到 LIMIT 与原终态一致。
+        coEvery { dao.oldestMessageId("ses_1") } returns "msg_0"
+        coEvery { dao.messageCreatedAt("msg_0") } returns 0L
+        // 状态化桩：count 由 prune 目标回写（prune 到 T → 计数=T），与调用序解耦
+        var countNow = 1450
+        coEvery { dao.countForSession("ses_1") } answers { countNow }
+        val m = msg("msg_o", 100)
+        coEvery { dao.oldestMessages("ses_1", any()) } returns
+            listOf(CachedMessageEntity("msg_o", "ses_1", 100, "user", json.encodeToString(m.info)))
+        coEvery { dao.partsForMessagesChunked(any()) } returns emptyList()
+        coEvery { dao.pruneToLimit("ses_1", any()) } answers {
+            countNow = secondArg()
+            1
+        }
+
+        store.upsertMessages("ses_1", listOf(msg("msg_new", 999)), persistOldBeyondWindow = false)
+
+        // 三块 = 三次短事务归档 + 三个精确递减目标
+        coVerify(exactly = 3) { archiveDao.upsertAll(any()) }
+        coVerify(exactly = 1) { dao.pruneToLimit("ses_1", 1000 + 250) }
+        coVerify(exactly = 1) { dao.pruneToLimit("ses_1", 1000 + 50) }
+        coVerify(exactly = 1) { dao.pruneToLimit("ses_1", 1000) }
+    }
+
+    @Test
     fun upsertMessages_noOverflow_doesNotArchiveOrPrune() = runTest {
         coEvery { dao.oldestMessageId("ses_1") } returns null
         coEvery { dao.countForSession("ses_1") } returns 999
@@ -227,15 +257,31 @@ class MessageStoreTest {
 
     @Test
     fun upsertMessages_windowSkip_noArchiveNoPrune() = runTest {
-        // 窗口外消息全部跳过 → 不落库 → 不触发归档
+        // 窗口外消息全部跳过 → 不落库 → 不触发归档（#386：过滤仅在裁剪边界生效，
+        // 缓存满限才激活——桩 count=LIMIT）
         coEvery { dao.oldestMessageId("ses_1") } returns "msg_9"
         coEvery { dao.messageCreatedAt("msg_9") } returns 900L
+        coEvery { dao.countForSession("ses_1") } returns MessageCacheRepository.SESSION_MESSAGE_LIMIT
         val older = msg("msg_1", 100)
 
         store.upsertMessages("ses_1", listOf(older), persistOldBeyondWindow = false)
 
         coVerify(exactly = 0) { archiveDao.upsertAll(any()) }
         coVerify(exactly = 0) { dao.upsertMessages(any()) }
+    }
+
+    @Test
+    fun upsertMessages_belowLimit_persistsEarlyBootstrapHole() = runTest {
+        // #386：缓存未满限（引导洞：迁移清库后部分行幸存）→ 早期消息不再被
+        // oldest 锚静默滤掉，全量落库自愈
+        coEvery { dao.oldestMessageId("ses_1") } returns "msg_9"
+        coEvery { dao.messageCreatedAt("msg_9") } returns 900L
+        coEvery { dao.countForSession("ses_1") } returns 5
+        val older = msg("msg_1", 100)
+
+        store.upsertMessages("ses_1", listOf(older), persistOldBeyondWindow = false)
+
+        coVerify(exactly = 1) { dao.upsertMessages(any()) }
     }
 
     @Test
@@ -413,6 +459,8 @@ class MessageStoreTest {
             override suspend fun oldestMessages(sessionId: String, limit: Int) = emptyList<CachedMessageEntity>()
             override suspend fun pruneToLimit(sessionId: String, limit: Int): Int = 0
             override suspend fun clearSession(sessionId: String) = Unit
+            override suspend fun deleteMessage(sessionId: String, id: String) = Unit
+            override suspend fun deletePartsForMessage(messageId: String) = Unit
             override suspend fun upsertMessages(entities: List<CachedMessageEntity>) = Unit
             override suspend fun insertMessagesIfAbsent(entities: List<CachedMessageEntity>) = Unit
             override suspend fun upsertParts(entities: List<CachedPartEntity>) = Unit

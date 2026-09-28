@@ -24,7 +24,6 @@ data class MessageListState(
     /** 自动续载暂停（连续失败达上限）——UI 停止自动分页，等待手动触发。 */
     val autoLoadPaused: Boolean = false,
     val toolExpandedStates: Map<String, Boolean> = emptyMap(),
-    val queuedMessageIds: Set<String> = emptySet(),
     /**
      * 原始（未过滤）消息 —— 本会话 combine 管道内的消息快照（revert/加载空态过滤前）。
      * 供 fixIncompleteMessagesIfIdle 检查（避免新 assistant 消息尚无 parts 时的窗口期），
@@ -109,6 +108,8 @@ data class ModelConfigState(
     val variantNames: List<String> = emptyList(),
     val selectedVariant: String? = null,
     val commands: List<CommandInfo> = emptyList(),
+    /** #324⑤：会话技能（skills/list 触发组；斜杠面板 skills 分组数据源）。 */
+    val skills: List<dev.leonardo.ocbeacon.domain.model.DshSkillInfo> = emptyList(),
     /** 上下文窗口大小 —— 从 token 统计解析，带 provider 回退。 */
     val contextWindow: Int = 0,
 )

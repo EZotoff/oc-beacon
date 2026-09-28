@@ -34,13 +34,26 @@
     <string name="sessions_new">Новая сессия</string>
     <string name="session_status_idle">Ожидание</string>
     <string name="session_status_busy">Выполняется…</string>
+    <string name="session_status_retry_countdown">Повторная попытка через %1$d с</string>
     <string name="session_status_retry">Повтор попытки (%1$d)</string>
+    <string name="turn_max_tokens_title">Достигнут лимит вывода</string>
+    <string name="turn_max_tokens_continue">Продолжить</string>
+    <string name="command_feedback_running">Выполняется…</string>
+    <string name="command_feedback_accepted">Принято</string>
+    <string name="command_feedback_completed">Завершено</string>
+    <string name="command_feedback_failed">Не удалось</string>
+    <string name="command_feedback_a11y_running">Команда выполняется</string>
     <string name="session_rename">Переименовать сессию</string>
     <string name="session_rename_title">Заголовок</string>
     <string name="session_rename_button">Переименовать</string>
     <string name="session_delete">Удалить сессию</string>
     <string name="session_delete_confirm">Удалить «%1$s»? Это действие нельзя отменить.</string>
+    <string name="session_menu_archive">В архив</string>
+    <string name="session_archived_section_title">В архиве (%1$d)</string>
+    <string name="session_archive_failed">Не удалось отправить сессию в архив</string>
     <!-- Chat Screen -->
+    <string name="chat_mention_session_a11y">Сессия %1$s</string>
+    <string name="chat_mention_same_workspace">Тот же воркспейс</string>
     <string name="chat_send">Отправить</string>
     <string name="chat_send_queued">Отправить (в очереди)</string>
     <string name="chat_stop">Остановить</string>
@@ -62,6 +75,8 @@
     <string name="todo_empty">Нет элементов TODO</string>
     <string name="chat_empty">Начать сессию</string>
     <string name="chat_copy">Копировать</string>
+    <string name="table_copy_cell">Копировать ячейку</string>
+    <string name="table_copy_table">Копировать таблицу (TSV)</string>
     <string name="terminal_copy">Копировать</string>
     <string name="terminal_paste">Вставить</string>
     <string name="terminal_more">Ещё…</string>
@@ -183,6 +198,11 @@
     <string name="chat_share_url_copied">Ссылка для обмена скопирована</string>
     <string name="chat_share_failed">Не удалось поделиться сессией</string>
     <string name="chat_copied_clipboard">Скопировано в буфер обмена</string>
+    <string name="chat_feedback_positive">Оценить как полезное</string>
+    <string name="chat_feedback_negative">Оценить как бесполезное</string>
+    <string name="chat_feedback_removed">Оценка убрана</string>
+    <string name="chat_feedback_conflict">Оценка изменена в другом месте, попробуйте ещё раз</string>
+    <string name="chat_feedback_failed">Не удалось сохранить оценку</string>
     <string name="image_count_single">1 изображение</string>
     <string name="image_count_multiple">%1$d изображений</string>
     <string name="sessions_new_dialog_title">Новая сессия</string>
@@ -194,6 +214,7 @@
     <string name="sessions_working">Выполняется</string>
     <string name="sessions_retrying">Повтор попытки</string>
     <string name="session_pending_question">Ожидает ответа</string>
+    <string name="session_pending_approval">Ожидает одобрения</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
     <string name="chat_response">Ответ</string>
@@ -227,7 +248,16 @@
     <string name="chat_event_task_failed">Сбой субагента</string>
     <string name="chat_event_shell_completed">Фоновая команда завершена</string>
     <string name="chat_event_shell_failed">Сбой фоновой команды</string>
-    <string name="chat_event_generic">Событие</string>
+    <string name="chat_turn_ledger_expand">Показать подробности раунда</string>
+    <string name="chat_turn_ledger_collapse">Скрыть подробности раунда</string>
+    <string name="chat_turn_fork_from_here">Ответвить от этого хода</string>
+    <!-- #311 Task4 deliverables 产出文件行 + Task5 skill 工具卡 -->
+    <string name="chat_produced_files_label">Создано</string>
+    <string name="chat_produced_files_more">ещё %1$d</string>
+    <string name="chat_produced_files_open">Открыть %1$s</string>
+    <string name="chat_skill_title">Skill</string>
+    <string name="chat_skill_instructions">Инструкции</string>
+    <string name="chat_event_generic">Уведомление</string>
     <string name="chat_event_locate_task">Найти задачу</string>
     <string name="task_sheet_subagent_completed">Завершено</string>
     <string name="agent_tree_diagnostic_corrupt">Повреждённая запись субагента</string>
@@ -235,6 +265,42 @@
     <string name="agent_tree_diagnostic_unavailable">Недоступная запись субагента</string>
     <string name="chat_label_user">Пользователь</string>
     <string name="chat_label_agent">Агент</string>
+    <string name="chat_steer">Вставлено</string>
+
+    <string name="chat_msg_status_streaming">Потоковая передача</string>
+    <string name="chat_msg_status_interrupted">Прервано</string>
+    <string name="chat_msg_status_error">Ошибка</string>
+    <string name="chat_msg_detail_title">Детали сообщения</string>
+    <string name="chat_detail_time">Время</string>
+    <string name="chat_detail_duration">Длительность</string>
+    <string name="chat_detail_tokens">Токены</string>
+    <string name="chat_copy_markdown_source">Копировать исходный Markdown</string>
+    <string name="chat_delete_message">Удалить сообщение</string>
+    <string name="chat_delete_message_title">Удалить сообщение?</string>
+    <string name="chat_delete_message_message">Это удалит сообщение из сессии на сервере. Это действие нельзя отменить.</string>
+    <string name="chat_message_deleted">Сообщение удалено</string>
+    <string name="chat_message_delete_failed">Не удалось удалить сообщение</string>
+    <string name="chat_stats_ttft">TTFT</string>
+    <string name="chat_stats_tokens_per_second">токенов/с</string>
+    <string name="chat_msg_tail_summary">%1$d шагов · %2$d инструментов</string>
+    <string name="a11y_message_detail">Детали сообщения</string>
+    <string name="chat_stats_session_title">Статистика сессии</string>
+    <string name="chat_stats_summary">%1$d раундов · %2$d шагов · %3$s LLM · %4$s инструментов</string>
+    <string name="chat_stats_ttft_avg">Ср. TTFT: %1$s</string>
+    <string name="chat_stats_decode">%1$s токенов/с</string>
+    <string name="chat_stats_per_turn_title">Подробности по раундам</string>
+    <string name="chat_stats_turn_row">Раунд %1$d · %2$s · %3$s</string>
+    <string name="chat_stats_input">Вход</string>
+    <string name="chat_stats_output">Выход</string>
+    <string name="chat_stats_reasoning">Размышление</string>
+    <string name="chat_stats_cache_read">Чтение кэша</string>
+    <string name="chat_stats_cache_write">Запись в кэш</string>
+    <string name="chat_stats_cost">Стоимость</string>
+    <string name="chat_stats_model">Модель</string>
+    <string name="chat_stats_steps">Шаги</string>
+    <string name="chat_stats_tools">Инструменты</string>
+    <string name="chat_stats_expand">Показать подробности раунда</string>
+    <string name="chat_stats_collapse">Скрыть подробности раунда</string>
     <string name="chat_subagent_completed_notification">Субагент завершён</string>
     <string name="chat_subagent_failed_notification">Сбой субагента</string>
     <string name="chat_status_updating_tasks">Обновление задач</string>
@@ -306,7 +372,9 @@
     <string name="chat_shell_placeholder">Введите команду shell…</string>
     <string name="chat_shell_failed">Не удалось выполнить команду shell</string>
     <string name="chat_shell_empty">Сначала введите команду shell</string>
+    <string name="chat_subagent_one_shot_read_only">Одноразовая сессия субагента: повторные сообщения не поддерживаются</string>
     <string name="chat_shell_attachments_unsupported">В режиме shell нельзя прикреплять файлы</string>
+    <string name="chat_command_images_unsupported">Команды со слэшем не поддерживают вложения изображений</string>
     <string name="chat_terminal_connect_failed">Не удалось открыть терминал</string>
     <string name="share_send_image_to">Отправить изображение…</string>
     <string name="share_no_connected_servers">Нет подключённых серверов</string>
@@ -468,6 +536,7 @@
     <string name="session_details_diff">Diff</string>
     <string name="session_details_diff_summary">+%1$d −%2$d (%3$d файлов)</string>
     <string name="chat_thinking_complete">Думал %1$s</string>
+    <string name="chat_thinking_complete_unknown">Размышление завершено</string>
     <string name="chat_token_usage_total">%,d токенов</string>
     <string name="chat_token_input">Вход</string>
     <string name="chat_token_output">Выход</string>
@@ -491,13 +560,11 @@
     <string name="settings_delete_rule">Удалить правило</string>
     <string name="settings_expand_reasoning">Авторазворачивать размышление</string>
     <string name="settings_expand_reasoning_desc">Показывать размышления по умолчанию; нажмите на заголовок для переключения</string>
-    <string name="chat_meta_tokens">%d токенов</string>
     <string name="chat_glob_match_count">%d совпадений</string>
     <string name="tool_web_fetch">WebFetch</string>
     <string name="chat_webfetch_prompt">Запрос: %s</string>
     <string name="tool_web_search">WebSearch</string>
     <string name="chat_context_usage">Контекст: %1$d%%</string>
-    <string name="chat_queued">В очереди</string>
     <string name="chat_retry_send">Повторить</string>
     <string name="chat_title_placeholder">Чат</string>
     <string name="chat_context_detail_title">Детали использования контекста</string>
@@ -532,6 +599,7 @@
     <string name="a11y_icon_navigate_forward">Перейти вперёд</string>
     <string name="a11y_locate_task">Найти исходную задачу</string>
     <string name="chat_locate_task_not_found">Исходная задача не найдена в этой сессии</string>
+    <string name="chat_locate_message_not_found">Сообщение не найдено в этой сессии</string>
     <string name="a11y_icon_add">Добавить</string>
     <string name="a11y_icon_share">Поделиться</string>
     <string name="a11y_icon_unlink">Отвязать</string>
@@ -756,9 +824,15 @@
     <string name="settings_storage_clear_confirm">Очистить</string>
     <string name="settings_storage_cleared">Архив очищен</string>
     <string name="search_content_hits">Совпадения в сообщениях</string>
+    <!-- #322：DSH 服务器历史命中（session/search） -->
+    <string name="search_server_hits">Совпадения в сессиях</string>
+    <string name="search_server_more">Показаны только первые 20 совпадений</string>
     <string name="search_content_coverage_hint">Полная история не синхронизирована для этой сессии</string>
     <string name="search_content_hit_count">%1$d сообщений</string>
     <string name="search_filter_role_all">Все роли</string>
+    <string name="search_filter_menu">Фильтр</string>
+    <string name="search_filter_role_section">Роль</string>
+    <string name="search_filter_time_section">Период</string>
     <string name="search_filter_role_user">Пользователь</string>
     <string name="search_filter_role_assistant">ИИ</string>
     <string name="search_filter_time_all">Всё время</string>
@@ -771,10 +845,19 @@
     <string name="permission_custom">Пользовательский</string>
     <string name="permission_custom_hint">Пользовательский режим разрешений</string>
     <string name="permission_switch_failed">Не удалось переключить режим разрешений</string>
+    <string name="permission_full_access_confirm_title">Перейти в полный доступ?</string>
+    <string name="permission_full_access_confirm_message">При полном доступе агент выполняет команды и изменяет файлы без ограничений песочницы. Включайте только для доверенных задач.</string>
+    <string name="permission_full_access_confirm_button">Перейти в полный доступ</string>
     <string name="a11y_icon_permission_preset">Режим разрешений</string>
+    <string name="plan_chip_label">Plan</string>
+    <string name="plan_chip_active_a11y">Режим Plan включён — нажмите, чтобы выключить (/plan off)</string>
+    <string name="plan_chip_pending_a11y">Переключение в режим Plan — нажмите, чтобы отменить (/plan off)</string>
+    <string name="plan_exit_failed">Не удалось выйти из режима Plan</string>
     <string name="server_settings_default_permission">Разрешение по умолчанию для новых сессий</string>
     <string name="agent_preset_locked">Пресет агента заблокирован для этой сессии</string>
     <string name="agent_preset_switch_failed">Не удалось сменить пресет агента</string>
+    <string name="sessions_new_dialog_preset_label">Пресет агента</string>
+    <string name="sessions_new_dialog_preset_default">По умолчанию</string>
     <string name="agent_preset_cards_title">Выберите пресет агента</string>
     <string name="server_settings_default_agent_preset">Пресет агента по умолчанию для новых сессий</string>
     <string name="session_details_agent_preset">Пресет агента</string>
@@ -790,6 +873,7 @@
     <string name="goal_blocked_reason">Причина: %1$s</string>
     <string name="goal_action_pause">Пауза</string>
     <string name="goal_action_resume">Продолжить</string>
+    <string name="goal_action_complete">Отметить выполненной</string>
     <string name="goal_action_edit">Изменить</string>
     <string name="goal_action_clear">Очистить</string>
     <string name="goal_create_heading">Создать цель</string>
@@ -809,10 +893,13 @@
     <string name="queue_remove">Удалить сообщение из очереди</string>
     <string name="queue_steer">Направить в следующий ход</string>
     <string name="queue_edit_hint">Редактировать сообщение в очереди</string>
+    <string name="queue_title">Очередь</string>
+    <string name="queue_empty">Нет сообщений в очереди</string>
     <string name="queue_steer_unavailable">Направление доступно только при работающей сессии</string>
     <string name="queue_action_failed">Ошибка операции с очередью</string>
     <!-- #267 Server disconnect awareness (banner + fast-fail message) -->
     <string name="server_link_disconnected_banner">Сервер отключён, переподключение…</string>
+    <string name="server_link_disconnected_banner_countdown">Сервер отключён, переподключение… (повтор через %1$d с)</string>
     <string name="server_link_disconnected_message">Сервер отключён, операция не отправлена</string>
 
     <!-- #154a 崩溃启动提示 -->
@@ -859,4 +946,77 @@
     <string name="supervisor_notification_root_failing_title">Супервизор: проектов с ошибками: %1$d</string>
     <string name="supervisor_notification_error_peak_title">Супервизор: рост пика ошибок</string>
     <string name="supervisor_notification_error_peak">Пик ошибок: %1$d</string>
+    <string name="dsh_token_banner_text">Этому серверу требуется токен доступа</string>
+    <string name="dsh_token_banner_action">Ввести токен</string>
+    <string name="dsh_token_dialog_title">Требуется токен доступа</string>
+    <string name="dsh_token_dialog_message">Вставьте токен или полный URL из строки запуска сервера (содержит token=...).</string>
+    <string name="dsh_token_dialog_hint">Токен или URL</string>
+    <string name="dsh_token_dialog_connect">Подключиться</string>
+    <string name="dsh_token_dialog_rejected">Сервер отклонил токен. Проверьте его и попробуйте снова.</string>
+    <string name="server_pair_help_title">Первое сопряжение</string>
+    <string name="server_pair_help_manual">Вручную: сохраните и подключите этот сервер, затем нажмите «Ввести токен» на баннере и вставьте токен из строки запуска сервера</string>
+    <string name="server_pair_help_adb">По USB (dev-сборки): выполните ./scripts/dsh-pair.sh на хосте — токен будет введён автоматически</string>
+    <string name="server_pair_help_deeplink">Или выполните ./scripts/dsh-pair.sh --lan на хосте и отсканируйте или нажмите ссылку ocbeacon://, чтобы заполнить эту форму</string>
+
+    <!-- #324① DSH provider 目录/自定义增删 -->
+    <string name="dsh_settings_loopback_required">Это действие требует loopback-соединения (adb reverse на 127.0.0.1).</string>
+    <string name="dsh_providers_section_title">Каталог провайдеров DSH</string>
+    <string name="dsh_providers_empty">Сервер не сообщил о провайдерах.</string>
+    <string name="dsh_provider_add_custom">Добавить свой провайдер</string>
+    <string name="dsh_provider_route">Идентификатор маршрута</string>
+    <string name="dsh_provider_route_hint">Строчные буквы, цифры и дефисы; должен начинаться с буквы.</string>
+    <string name="dsh_provider_route_invalid">Маршрут должен состоять из строчных букв, цифр и дефисов и начинаться с буквы.</string>
+    <string name="dsh_provider_route_taken">Этот маршрут уже занят.</string>
+    <string name="dsh_provider_display_name">Отображаемое имя (необязательно)</string>
+    <string name="dsh_provider_base_url">Базовый URL</string>
+    <string name="dsh_provider_api_key">API-ключ (необязательно)</string>
+    <string name="dsh_provider_api_key_hint">Хранится в учётных данных сервера; значение больше никогда не показывается.</string>
+    <string name="dsh_provider_discover">Найти модели</string>
+    <string name="dsh_provider_discover_failed">Не удалось выполнить поиск: %1$s</string>
+    <string name="dsh_provider_models_none">Модели пока не найдены. Заполните базовый URL и нажмите «Найти».</string>
+    <string name="dsh_provider_model_select">Выберите модели для включения</string>
+    <string name="dsh_provider_create">Создать</string>
+    <string name="dsh_provider_delete">Удалить</string>
+    <string name="dsh_provider_delete_confirm_title">Удалить свой провайдер</string>
+    <string name="dsh_provider_delete_confirm_text">Удалить свой провайдер %1$s? Сохранённые учётные данные (если есть) также будут удалены.</string>
+    <string name="dsh_provider_credential_configured">Учётные данные настроены</string>
+    <string name="dsh_provider_credential_missing">Учётные данные не заданы</string>
+    <string name="dsh_provider_active">Активен в среде выполнения</string>
+    <string name="dsh_provider_inactive">Не активен в среде выполнения</string>
+
+    <!-- #324② preset 管理 -->
+    <string name="dsh_preset_view">Показать состав</string>
+    <string name="dsh_preset_copy_title">Дублировать пресет %1$s</string>
+    <string name="dsh_preset_copy_id">ID нового пресета</string>
+    <string name="dsh_preset_copy_name">Новое имя (необязательно)</string>
+    <string name="dsh_preset_copy">Дублировать</string>
+    <string name="dsh_preset_delete_confirm_title">Удалить пресет</string>
+    <string name="dsh_preset_delete_confirm_text">Удалить пользовательский пресет %1$s? Текущие сессии не затрагиваются; новые возвращаются к значению по умолчанию.</string>
+    <string name="dsh_preset_broken_badge">Повреждён: %1$s</string>
+
+    <!-- #324③ 插件配置与清单 -->
+    <string name="dsh_plugins_inventory_title">Плагины сервера</string>
+    <string name="dsh_plugins_inventory_empty">Инвентарь плагинов не получен.</string>
+    <string name="dsh_plugin_enabled">Включён</string>
+    <string name="dsh_plugin_disabled">Отключён</string>
+    <string name="dsh_plugin_conditional">Условно</string>
+    <string name="dsh_plugin_preset_group">Пресет: %1$s</string>
+    <string name="dsh_server_config_title">Конфигурация сервера</string>
+    <string name="dsh_config_applies_live">Применяется сразу</string>
+    <string name="dsh_config_applies_restart">Требуется перезапуск</string>
+    <string name="dsh_secret_no_ref">Управляется вне этого приложения (ссылка на учётные данные не объявлена).</string>
+
+    <!-- #324④ skills 触发组 -->
+    <string name="slash_skills_group">Навыки</string>
+    <string name="slash_skill_model_invocable">Навык, вызываемый моделью</string>
+    <string name="chat_busy_menu_send_now">Отправить сейчас</string>
+    <string name="chat_busy_menu_send_now_desc">Вставляется в текущий ход и сразу отображается</string>
+    <string name="chat_busy_menu_queue">Поставить в очередь</string>
+    <string name="chat_busy_menu_queue_desc">Отправится автоматически по завершении этого хода</string>
+    <string name="chat_busy_menu_queue_no_attachments">Сообщения с вложениями нужно отправить сейчас</string>
+    <!-- #385: DSH context injection compact card labels (source.kind) -->
+    <string name="chat_injection_agent_instructions">Инструкции рабочей области</string>
+    <string name="chat_injection_skill_catalog">Каталог навыков</string>
+    <string name="chat_injection_plugin">Конфигурация плагинов</string>
+    <string name="chat_injection_context">Внедрение контекста</string>
 </resources>

@@ -20,8 +20,18 @@
     <string name="sessions_new">Yeni Oturum</string>
     <string name="session_status_idle">Boşta</string>
     <string name="session_status_busy">Çalışıyor…</string>
+    <string name="session_status_retry_countdown">%1$d sn sonra yeniden deneniyor</string>
     <string name="session_status_retry">Yeniden deneniyor (%1$d)</string>
+    <string name="turn_max_tokens_title">Çıktı sınırına ulaşıldı</string>
+    <string name="turn_max_tokens_continue">Devam et</string>
+    <string name="command_feedback_running">Çalışıyor…</string>
+    <string name="command_feedback_accepted">Kabul edildi</string>
+    <string name="command_feedback_completed">Tamamlandı</string>
+    <string name="command_feedback_failed">Başarısız</string>
+    <string name="command_feedback_a11y_running">Komut çalışıyor</string>
     <!-- Chat Screen -->
+    <string name="chat_mention_session_a11y">Oturum %1$s</string>
+    <string name="chat_mention_same_workspace">Aynı çalışma alanı</string>
     <string name="chat_send">Gönder</string>
     <string name="chat_send_queued">Gönder (sırada)</string>
     <string name="chat_empty">Bir oturum başlat</string>
@@ -119,6 +129,9 @@
     <string name="session_rename_button">Yeniden Adlandır</string>
     <string name="session_delete">Oturumu Sil</string>
     <string name="session_delete_confirm">"%1$s" silinsin mi? Bu işlem geri alınamaz.</string>
+    <string name="session_menu_archive">Arşivle</string>
+    <string name="session_archived_section_title">Arşivlenenler (%1$d)</string>
+    <string name="session_archive_failed">Oturum arşivlenemedi</string>
     <string name="chat_stop">Dur</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->
@@ -137,6 +150,8 @@
     <string name="pending_item_sending">Gönderiliyor…</string>
     <string name="todo_empty">TODO öğesi yok</string>
     <string name="chat_copy">Kopyala</string>
+    <string name="table_copy_cell">Hücreyi kopyala</string>
+    <string name="table_copy_table">Tabloyu kopyala (TSV)</string>
     <string name="terminal_copy">Kopyala</string>
     <string name="terminal_paste">Yapıştır</string>
     <string name="terminal_more">Diğer…</string>
@@ -163,6 +178,11 @@
     <string name="chat_share_url_copied">Paylaşım URL\'si kopyalandı</string>
     <string name="chat_share_failed">Oturum paylaşımı başarısız</string>
     <string name="chat_copied_clipboard">Panoya kopyalandı</string>
+    <string name="chat_feedback_positive">Faydalı olarak değerlendir</string>
+    <string name="chat_feedback_negative">Faydasız olarak değerlendir</string>
+    <string name="chat_feedback_removed">Değerlendirme kaldırıldı</string>
+    <string name="chat_feedback_conflict">Değerlendirme başka yerde değişti, tekrar deneyin</string>
+    <string name="chat_feedback_failed">Değerlendirme kaydedilemedi</string>
     <string name="image_count_single">1 görsel</string>
     <string name="image_count_multiple">%1$d görsel</string>
     <string name="sessions_new_dialog_title">Yeni oturum</string>
@@ -174,6 +194,7 @@
     <string name="sessions_working">Çalışıyor</string>
     <string name="sessions_retrying">Yeniden deneniyor</string>
     <string name="session_pending_question">Yanıt bekleniyor</string>
+    <string name="session_pending_approval">Onay bekleniyor</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
     <string name="chat_response">Cevap</string>
@@ -201,7 +222,16 @@
     <string name="chat_event_task_failed">Alt ajan başarısız</string>
     <string name="chat_event_shell_completed">Arka plan komutu tamamlandı</string>
     <string name="chat_event_shell_failed">Arka plan komutu başarısız</string>
-    <string name="chat_event_generic">Olay</string>
+    <string name="chat_turn_ledger_expand">Tur ayrıntılarını göster</string>
+    <string name="chat_turn_ledger_collapse">Tur ayrıntılarını gizle</string>
+    <string name="chat_turn_fork_from_here">Bu turdan çatalla</string>
+    <!-- #311 Task4 deliverables 产出文件行 + Task5 skill 工具卡 -->
+    <string name="chat_produced_files_label">Üretilen</string>
+    <string name="chat_produced_files_more">+%1$d daha</string>
+    <string name="chat_produced_files_open">%1$s öğesini aç</string>
+    <string name="chat_skill_title">Skill</string>
+    <string name="chat_skill_instructions">Talimatlar</string>
+    <string name="chat_event_generic">Bildirim</string>
     <string name="chat_event_locate_task">Görevi bul</string>
     <string name="task_sheet_subagent_completed">Tamamlandı</string>
     <string name="agent_tree_diagnostic_corrupt">Bozuk alt ajan kaydı</string>
@@ -209,6 +239,42 @@
     <string name="agent_tree_diagnostic_unavailable">Kullanılamayan alt ajan kaydı</string>
     <string name="chat_label_user">Kullanıcı</string>
     <string name="chat_label_agent">Ajan</string>
+    <string name="chat_steer">Araya girme</string>
+
+    <string name="chat_msg_status_streaming">Akış halinde</string>
+    <string name="chat_msg_status_interrupted">Yarıda kesildi</string>
+    <string name="chat_msg_status_error">Hata</string>
+    <string name="chat_msg_detail_title">Mesaj ayrıntıları</string>
+    <string name="chat_detail_time">Zaman</string>
+    <string name="chat_detail_duration">Süre</string>
+    <string name="chat_detail_tokens">Token</string>
+    <string name="chat_copy_markdown_source">Markdown kaynağını kopyala</string>
+    <string name="chat_delete_message">Mesajı sil</string>
+    <string name="chat_delete_message_title">Mesaj silinsin mi?</string>
+    <string name="chat_delete_message_message">Bu işlem mesajı sunucu oturumundan kaldırır. Bu işlem geri alınamaz.</string>
+    <string name="chat_message_deleted">Mesaj silindi</string>
+    <string name="chat_message_delete_failed">Mesaj silinemedi</string>
+    <string name="chat_stats_ttft">TTFT</string>
+    <string name="chat_stats_tokens_per_second">token/s</string>
+    <string name="chat_msg_tail_summary">%1$d adım · %2$d araç</string>
+    <string name="a11y_message_detail">Mesaj ayrıntıları</string>
+    <string name="chat_stats_session_title">Oturum istatistikleri</string>
+    <string name="chat_stats_summary">%1$d tur · %2$d adım · %3$s LLM · %4$s araç</string>
+    <string name="chat_stats_ttft_avg">Ort. TTFT: %1$s</string>
+    <string name="chat_stats_decode">%1$s token/s</string>
+    <string name="chat_stats_per_turn_title">Tur başına ayrıntılar</string>
+    <string name="chat_stats_turn_row">Tur %1$d · %2$s · %3$s</string>
+    <string name="chat_stats_input">Giriş</string>
+    <string name="chat_stats_output">Çıkış</string>
+    <string name="chat_stats_reasoning">Akıl yürütme</string>
+    <string name="chat_stats_cache_read">Önbellek okuma</string>
+    <string name="chat_stats_cache_write">Önbellek yazma</string>
+    <string name="chat_stats_cost">Maliyet</string>
+    <string name="chat_stats_model">Model</string>
+    <string name="chat_stats_steps">Adım</string>
+    <string name="chat_stats_tools">Araçlar</string>
+    <string name="chat_stats_expand">Tur ayrıntılarını göster</string>
+    <string name="chat_stats_collapse">Tur ayrıntılarını gizle</string>
     <string name="chat_subagent_completed_notification">Alt ajan tamamlandı</string>
     <string name="chat_subagent_failed_notification">Alt ajan başarısız</string>
     <string name="chat_status_updating_tasks">Görevler güncelleniyor</string>
@@ -385,7 +451,9 @@
     <string name="chat_shell_placeholder">Kabuk komutunu girin…</string>
     <string name="chat_shell_failed">Kabuk komutu çalıştırılamadı</string>
     <string name="chat_shell_empty">Önce bir kabuk komutu girin</string>
+    <string name="chat_subagent_one_shot_read_only">Tek kullanımlık alt ajan oturumu: sonraki mesajlar desteklenmez</string>
     <string name="chat_shell_attachments_unsupported">Kabuk modu ekleri desteklemiyor</string>
+    <string name="chat_command_images_unsupported">Eğik çizgi komutları resim eklerini desteklemez</string>
     <string name="chat_terminal_connect_failed">Terminal açılamadı</string>
     <string name="server_settings_providers">Sağlayıcılar</string>
     <string name="server_settings_providers_desc">Bu sunucu için sağlayıcıları etkinleştir veya devre dışı bırak</string>
@@ -459,6 +527,7 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="session_details_diff">Diff</string>
     <string name="session_details_diff_summary">+%1$d −%2$d (%3$d dosya)</string>
     <string name="chat_thinking_complete">%1$s düşündü</string>
+    <string name="chat_thinking_complete_unknown">Düşünme tamamlandı</string>
     <string name="chat_token_usage_total">%,d token</string>
     <string name="chat_token_input">Giriş</string>
     <string name="chat_token_output">Çıkış</string>
@@ -482,13 +551,11 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="settings_delete_rule">Kuralı sil</string>
     <string name="settings_expand_reasoning">Akıl yürütmeyi otomatik genişlet</string>
     <string name="settings_expand_reasoning_desc">Düşünce sürecini varsayılan olarak göster; geçiş yapmak için başlığa dokun</string>
-    <string name="chat_meta_tokens">%d token</string>
     <string name="chat_glob_match_count">%d eşleşme</string>
     <string name="tool_web_fetch">WebFetch</string>
     <string name="chat_webfetch_prompt">İstem: %s</string>
     <string name="tool_web_search">WebSearch</string>
     <string name="chat_context_usage">Bağlam: %1$d%%</string>
-    <string name="chat_queued">SIRADA</string>
     <string name="chat_retry_send">Yeniden dene</string>
     <string name="chat_title_placeholder">Chat</string>
     <string name="chat_context_detail_title">Bağlam kullanım detayları</string>
@@ -523,6 +590,7 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="a11y_icon_navigate_forward">İleri git</string>
     <string name="a11y_locate_task">Orijinal görevi bul</string>
     <string name="chat_locate_task_not_found">Bu oturumda orijinal görev bulunamadı</string>
+    <string name="chat_locate_message_not_found">Bu oturumda mesaj bulunamadı</string>
     <string name="a11y_icon_add">Ekle</string>
     <string name="a11y_icon_share">Paylaş</string>
     <string name="a11y_icon_unlink">Bağlantıyı kaldır</string>
@@ -747,9 +815,15 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="settings_storage_clear_confirm">Temizle</string>
     <string name="settings_storage_cleared">Arşiv temizlendi</string>
     <string name="search_content_hits">Mesaj eşleşmeleri</string>
+    <!-- #322：DSH 服务器历史命中（session/search） -->
+    <string name="search_server_hits">Oturum eşleşmeleri</string>
+    <string name="search_server_more">Yalnızca ilk 20 eşleşme gösteriliyor</string>
     <string name="search_content_coverage_hint">Bu oturum için tüm geçmiş eşitlenmedi</string>
     <string name="search_content_hit_count">%1$d mesaj</string>
     <string name="search_filter_role_all">Tüm roller</string>
+    <string name="search_filter_menu">Filtrele</string>
+    <string name="search_filter_role_section">Rol</string>
+    <string name="search_filter_time_section">Zaman aralığı</string>
     <string name="search_filter_role_user">Kullanıcı</string>
     <string name="search_filter_role_assistant">YZ</string>
     <string name="search_filter_time_all">Tüm zamanlar</string>
@@ -762,10 +836,19 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="permission_custom">Özel</string>
     <string name="permission_custom_hint">Özel izin modu</string>
     <string name="permission_switch_failed">İzin modu değiştirilemedi</string>
+    <string name="permission_full_access_confirm_title">Tam erişime geçilsin mi?</string>
+    <string name="permission_full_access_confirm_message">Tam erişimde aracı, sandbox kısıtlaması olmadan komut çalıştırır ve dosyaları düzenler. Yalnızca güvenilen görevler için etkinleştirin.</string>
+    <string name="permission_full_access_confirm_button">Tam erişime geç</string>
     <string name="a11y_icon_permission_preset">İzin modu</string>
+    <string name="plan_chip_label">Plan</string>
+    <string name="plan_chip_active_a11y">Plan modu açık — kapatmak için dokunun (/plan off)</string>
+    <string name="plan_chip_pending_a11y">Plan moduna geçiliyor — iptal etmek için dokunun (/plan off)</string>
+    <string name="plan_exit_failed">Plan modundan çıkılamadı</string>
     <string name="server_settings_default_permission">Yeni oturumlar için varsayılan izin</string>
     <string name="agent_preset_locked">Ajan ön ayarı bu oturum için kilitli</string>
     <string name="agent_preset_switch_failed">Ajan ön ayarı değiştirilemedi</string>
+    <string name="sessions_new_dialog_preset_label">Agent ön ayarı</string>
+    <string name="sessions_new_dialog_preset_default">Varsayılan</string>
     <string name="agent_preset_cards_title">Ajan ön ayarı seç</string>
     <string name="server_settings_default_agent_preset">Yeni oturumlar için varsayılan ajan ön ayarı</string>
     <string name="session_details_agent_preset">Ajan ön ayarı</string>
@@ -781,6 +864,7 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="goal_blocked_reason">Neden: %1$s</string>
     <string name="goal_action_pause">Duraklat</string>
     <string name="goal_action_resume">Sürdür</string>
+    <string name="goal_action_complete">Tamamlandı olarak işaretle</string>
     <string name="goal_action_edit">Düzenle</string>
     <string name="goal_action_clear">Temizle</string>
     <string name="goal_create_heading">Hedef oluştur</string>
@@ -800,10 +884,13 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="queue_remove">Sıradaki mesajı kaldır</string>
     <string name="queue_steer">Sonraki tura yönlendir</string>
     <string name="queue_edit_hint">Sıradaki mesajı düzenle</string>
+    <string name="queue_title">Kuyruk</string>
+    <string name="queue_empty">Kuyrukta mesaj yok</string>
     <string name="queue_steer_unavailable">Yönlendirme yalnızca oturum çalışırken kullanılabilir</string>
     <string name="queue_action_failed">Sıra işlemi başarısız oldu</string>
     <!-- #267 Server disconnect awareness (banner + fast-fail message) -->
     <string name="server_link_disconnected_banner">Sunucu bağlantısı kesildi, yeniden bağlanıyor…</string>
+    <string name="server_link_disconnected_banner_countdown">Sunucu bağlantısı kesildi, yeniden bağlanılıyor… (%1$d sn içinde yeniden denenecek)</string>
     <string name="server_link_disconnected_message">Sunucu bağlı değil, işlem gönderilmedi</string>
 
     <!-- #154a 崩溃启动提示 -->
@@ -850,4 +937,77 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_notification_root_failing_title">Süpervizör: %1$d kök başarısız</string>
     <string name="supervisor_notification_error_peak_title">Süpervizör: hata zirvesi yükseliyor</string>
     <string name="supervisor_notification_error_peak">Hata zirvesi: %1$d</string>
+    <string name="dsh_token_banner_text">Bu sunucu bir erişim belirteci gerektiriyor</string>
+    <string name="dsh_token_banner_action">Belirteç gir</string>
+    <string name="dsh_token_dialog_title">Erişim belirteci gerekli</string>
+    <string name="dsh_token_dialog_message">Sunucunun başlangıç satırından belirteci veya tam URL\'yi yapıştırın (token=... içerir).</string>
+    <string name="dsh_token_dialog_hint">Belirteç veya URL</string>
+    <string name="dsh_token_dialog_connect">Bağlan</string>
+    <string name="dsh_token_dialog_rejected">Belirteç sunucu tarafından reddedildi. Kontrol edip tekrar deneyin.</string>
+    <string name="server_pair_help_title">İlk eşleştirme</string>
+    <string name="server_pair_help_manual">Manuel: bu sunucuyu kaydedip bağlayın, ardından bannerdaki "Token gir"e dokunun ve sunucu başlatma satırındaki tokeni yapıştırın</string>
+    <string name="server_pair_help_adb">USB (dev sürümleri): ana makinede ./scripts/dsh-pair.sh çalıştırın — token otomatik olarak enjekte edilir</string>
+    <string name="server_pair_help_deeplink">Veya ana makinede ./scripts/dsh-pair.sh --lan çalıştırın ve bu formu doldurmak için ocbeacon:// bağlantısını tarayın veya dokunun</string>
+
+    <!-- #324① DSH provider 目录/自定义增删 -->
+    <string name="dsh_settings_loopback_required">Bu işlem bir loopback bağlantısı gerektirir (adb reverse ile 127.0.0.1).</string>
+    <string name="dsh_providers_section_title">DSH sağlayıcı dizini</string>
+    <string name="dsh_providers_empty">Sunucu hiçbir sağlayıcı bildirmedi.</string>
+    <string name="dsh_provider_add_custom">Özel sağlayıcı ekle</string>
+    <string name="dsh_provider_route">Yol kimliği</string>
+    <string name="dsh_provider_route_hint">Küçük harfler, rakamlar ve tire; harfle başlamalıdır.</string>
+    <string name="dsh_provider_route_invalid">Yol yalnızca küçük harf, rakam ve tire içerebilir ve harfle başlamalıdır.</string>
+    <string name="dsh_provider_route_taken">Bu yol zaten kullanımda.</string>
+    <string name="dsh_provider_display_name">Görünen ad (isteğe bağlı)</string>
+    <string name="dsh_provider_base_url">Temel URL</string>
+    <string name="dsh_provider_api_key">API anahtarı (isteğe bağlı)</string>
+    <string name="dsh_provider_api_key_hint">Sunucu kimlik bilgilerinde saklanır; değer bir daha asla gösterilmez.</string>
+    <string name="dsh_provider_discover">Modelleri keşfet</string>
+    <string name="dsh_provider_discover_failed">Keşif başarısız: %1$s</string>
+    <string name="dsh_provider_models_none">Henüz model keşfedilmedi. Temel URL\'yi doldurun ve Keşfet\'e dokunun.</string>
+    <string name="dsh_provider_model_select">Dahil edilecek modelleri seçin</string>
+    <string name="dsh_provider_create">Oluştur</string>
+    <string name="dsh_provider_delete">Sil</string>
+    <string name="dsh_provider_delete_confirm_title">Özel sağlayıcıyı sil</string>
+    <string name="dsh_provider_delete_confirm_text">%1$s özel sağlayıcısı silinsin mi? Saklanan kimlik bilgisi (varsa) da kaldırılır.</string>
+    <string name="dsh_provider_credential_configured">Kimlik bilgisi yapılandırıldı</string>
+    <string name="dsh_provider_credential_missing">Kimlik bilgisi ayarlanmadı</string>
+    <string name="dsh_provider_active">Çalışma zamanında etkin</string>
+    <string name="dsh_provider_inactive">Çalışma zamanında etkin değil</string>
+
+    <!-- #324② preset 管理 -->
+    <string name="dsh_preset_view">Oluşumu görüntüle</string>
+    <string name="dsh_preset_copy_title">%1$s hazır ayarını çoğalt</string>
+    <string name="dsh_preset_copy_id">Yeni hazır ayar kimliği</string>
+    <string name="dsh_preset_copy_name">Yeni ad (isteğe bağlı)</string>
+    <string name="dsh_preset_copy">Çoğalt</string>
+    <string name="dsh_preset_delete_confirm_title">Hazır ayarı sil</string>
+    <string name="dsh_preset_delete_confirm_text">%1$s kullanıcı hazır ayarı silinsin mi? Devam eden oturumlar etkilenmez; yeni oturumlar varsayılana döner.</string>
+    <string name="dsh_preset_broken_badge">Bozuk: %1$s</string>
+
+    <!-- #324③ 插件配置与清单 -->
+    <string name="dsh_plugins_inventory_title">Sunucu eklentileri</string>
+    <string name="dsh_plugins_inventory_empty">Bildirilen eklenti envanteri yok.</string>
+    <string name="dsh_plugin_enabled">Etkin</string>
+    <string name="dsh_plugin_disabled">Devre dışı</string>
+    <string name="dsh_plugin_conditional">Koşullu</string>
+    <string name="dsh_plugin_preset_group">Hazır ayar: %1$s</string>
+    <string name="dsh_server_config_title">Sunucu yapılandırması</string>
+    <string name="dsh_config_applies_live">Anında uygulanır</string>
+    <string name="dsh_config_applies_restart">Yeniden başlatma gerekir</string>
+    <string name="dsh_secret_no_ref">Bu uygulamanın dışında yönetiliyor (bildirilmiş bir kimlik bilgisi referansı yok).</string>
+
+    <!-- #324④ skills 触发组 -->
+    <string name="slash_skills_group">Yetenekler</string>
+    <string name="slash_skill_model_invocable">Model tarafından çağrılabilir yetenek</string>
+    <string name="chat_busy_menu_send_now">Şimdi gönder</string>
+    <string name="chat_busy_menu_send_now_desc">Devam eden tura eklenir, anında görünür</string>
+    <string name="chat_busy_menu_queue">Kuyruğa al</string>
+    <string name="chat_busy_menu_queue_desc">Bu tur bittiğinde otomatik gönderilir</string>
+    <string name="chat_busy_menu_queue_no_attachments">Ekli mesajlar şimdi gönderilmelidir</string>
+    <!-- #385: DSH context injection compact card labels (source.kind) -->
+    <string name="chat_injection_agent_instructions">Çalışma alanı talimatları</string>
+    <string name="chat_injection_skill_catalog">Yetenek kataloğu</string>
+    <string name="chat_injection_plugin">Eklenti yapılandırması</string>
+    <string name="chat_injection_context">Bağlam enjeksiyonu</string>
 </resources>

@@ -17,6 +17,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import dev.leonardo.ocbeacon.ui.screens.chat.components.CardExpandEnterTransition
+import dev.leonardo.ocbeacon.ui.screens.chat.components.CardExpandReveal
 import dev.leonardo.ocbeacon.ui.screens.chat.components.CardExpandExitTransition
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -36,6 +37,9 @@ import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.frozenDurationMs
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.timingStartMs
 
 /**
  * Glob tool card — shows glob pattern + match count + expandable file list.
@@ -71,6 +75,9 @@ internal fun GlobToolCard(
         copyText = files.joinToString("\n"),
         isExpanded = isExpanded,
         isRunning = isRunning,
+        // #453：累积计时（运行中走动/终态冻结；无锚不显示）
+        runningStartMs = tool.state.timingStartMs(),
+        completedDurationMs = tool.state.frozenDurationMs(),
         hasContent = files.isNotEmpty(),
         isAmoled = isAmoled,
         onToggleExpand = onToggleExpand
@@ -83,15 +90,13 @@ internal fun GlobToolCard(
                     style = MaterialTheme.typography.labelSmall.copy(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AlphaTokens.MUTED)
                     ),
-                    modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+                    modifier = Modifier.padding(start = SpacingTokens.XS.dp, bottom = SpacingTokens.XS.dp)
                 )
             }
 
             // Expandable file list（2026-08-30 用户裁决：统一顶边垂直揭幕）
-            AnimatedVisibility(
+            CardExpandReveal(
                 visible = isExpanded,
-                enter = CardExpandEnterTransition,
-                exit = CardExpandExitTransition,
             ) {
                 Surface(
                     shape = ShapeTokens.extraSmall,
@@ -103,7 +108,7 @@ internal fun GlobToolCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(max = 200.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        contentPadding = PaddingValues(horizontal = SpacingTokens.SM.dp, vertical = SpacingTokens.XS.dp),
                         verticalArrangement = Arrangement.spacedBy(1.dp)
                     ) {
                         items(files, key = { it }) { filePath ->

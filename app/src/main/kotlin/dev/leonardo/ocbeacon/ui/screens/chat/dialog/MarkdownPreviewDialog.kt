@@ -26,6 +26,7 @@ import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.ui.screens.chat.markdown.MarkdownContent
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalHapticFeedbackEnabled
 import dev.leonardo.ocbeacon.ui.screens.chat.util.performHaptic
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 private enum class PreviewMode { SOURCE, RENDERED }
 
@@ -112,7 +113,7 @@ internal fun MarkdownPreviewDialog(
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .verticalScroll(scrollState)
-                                        .padding(16.dp)
+                                        .padding(SpacingTokens.LG.dp)
                                 ) {
                                     Text(
                                         text = markdown,
@@ -130,12 +131,14 @@ internal fun MarkdownPreviewDialog(
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .verticalScroll(scrollState)
-                                        .padding(16.dp)
+                                        .padding(SpacingTokens.LG.dp)
                                 ) {
                                     MarkdownContent(
                                         markdown = markdown,
                                         textColor = MaterialTheme.colorScheme.onSurface,
-                                        isUser = false
+                                        isUser = false,
+                                        // #461 同款防御:预览对话框静态全文(常超长,异步路径本就正确)
+                                        asyncParse = true
                                     )
                                 }
                             }

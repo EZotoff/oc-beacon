@@ -1,11 +1,7 @@
 package dev.leonardo.ocbeacon.data.api.session
 
 import dev.leonardo.ocbeacon.data.api.RestSessionStatusInfo
-import dev.leonardo.ocbeacon.data.api.asApiError
-import dev.leonardo.ocbeacon.data.api.logApiError
-import dev.leonardo.ocbeacon.data.api.dsh.DshApiClient
-import dev.leonardo.ocbeacon.data.api.v1.V1ApiClient
-import dev.leonardo.ocbeacon.data.api.v2.V2ApiClient
+import dev.leonardo.ocbeacon.data.adapter.ServerAdapterRegistry
 import dev.leonardo.ocbeacon.data.dto.response.*
 import dev.leonardo.ocbeacon.domain.model.ActiveSessionInfo
 import dev.leonardo.ocbeacon.domain.model.AgentPreset
@@ -13,8 +9,7 @@ import dev.leonardo.ocbeacon.domain.model.DshGoalRef
 import dev.leonardo.ocbeacon.domain.model.FileDiff
 import dev.leonardo.ocbeacon.domain.model.ServerConnection
 import dev.leonardo.ocbeacon.domain.model.Session
-import javax.inject.Inject
-import javax.inject.Singleton
+import dev.leonardo.ocbeacon.domain.model.SessionSearchResult
 
 private const val TAG = "SessionApi"
 
@@ -48,7 +43,11 @@ interface SessionApi {
         conn: ServerConnection,
         title: String? = null,
         parentId: String? = null,
-        directory: String? = null
+        directory: String? = null,
+        /** #311 ①-d：DSH V012 SessionCreateRequest.workspaceId（指定入组 workspace）；其余后端忽略。 */
+        workspaceId: String? = null,
+        /** #354：DSH V012 SessionCreateRequest.agentPreset（创建即带预设）；其余后端忽略。 */
+        agentPreset: String? = null
     ): Session
 
     suspend fun deleteSession(conn: ServerConnection, sessionId: String): Boolean
@@ -93,11 +92,7 @@ interface SessionApi {
         sessionId: String,
         command: String,
         arguments: String = "",
-        directory: String? = null,
-        agent: String? = null,
-        model: String? = null,
-        variant: String? = null,
-        parts: List<Map<String, String>>? = null
+        directory: String? = null
     ): Boolean
 
     suspend fun listSessionChildren(conn: ServerConnection, sessionId: String): List<Session>
@@ -121,8 +116,10 @@ interface SessionApi {
     suspend fun selectAgentPreset(conn: ServerConnection, sessionId: String, presetId: String): Boolean = false
 
     /**
-     * DSH updateQueue（2026-09-01 QueueDock）：排队项 edit/remove/steer。
-     * OpenCode V1/V2 无队列域 → Failed(unsupported)。错误码映射见 DshApiClient。
+     * 排队项变更（#356 双面）：DSH updateQueue（edit/remove/steer）；
+     * V2 inbox 变更（remove=DELETE /inbox/{id}、steer=POST /inbox/{id}/steer、
+     * edit 无动词 → Failed——UI 按 queueEditSupported 隐藏）。
+     * V1 无队列域 → Failed(unsupported)。错误码映射见各客户端。
      */
     suspend fun updateQueue(
         conn: ServerConnection,
@@ -132,6 +129,16 @@ interface SessionApi {
         editText: String? = null,
     ): dev.leonardo.ocbeacon.domain.model.QueueMutationResult =
         dev.leonardo.ocbeacon.domain.model.QueueMutationResult.Failed("updateQueue unsupported")
+
+    /**
+     * #356 V2 inbox 排队列表（GET /api/session/{id}/inbox → type=user 项）。
+     * DSH 队列经 session/queue 控制帧推送（DshQueueStore 单一真相源）→ null；
+     * V1 无可见域 → null。失败亦 null（调用方保旧值）。
+     */
+    suspend fun listInbox(
+        conn: ServerConnection,
+        sessionId: String,
+    ): List<dev.leonardo.ocbeacon.domain.model.QueuedInboxItem>? = null
 
     /** DSH goal.create（创建并 arm 目标；maxGoalRounds 可选）。回执 value.ref = 新 CAS ref。
      *  OpenCode V1/V2 无 goal 域 → null（UI 按能力位 goalSupported 隐藏）。 */
@@ -173,6 +180,12 @@ interface SessionApi {
         parentSessionId: String,
     ): List<dev.leonardo.ocbeacon.data.dto.response.SubagentListEntryDto>? = null
 
+    /**
+     * DSH 服务端内容搜索（session/search，backlog #322）：按名字+内容搜全部历史会话。
+     * OpenCode V1/V2 无对应域 → 默认 null（端点缺席语义，#314 先例——UI 走本地 FTS 零外溢）。
+     */
+    suspend fun searchSessions(conn: ServerConnection, query: String): SessionSearchResult? = null
+
     suspend fun getSessionTodos(conn: ServerConnection, sessionId: String): List<TodoItem>
 
     /**
@@ -193,197 +206,4 @@ interface SessionApi {
         conn: ServerConnection,
         directory: String? = null
     ): Result<Map<String, RestSessionStatusInfo>>
-}
-
-/**
- * C1-2（2026-08-26 架构走查，Q2-a）：分发层收缩为单点路由 + 逐方法单行委托。
- * [V1ApiClient]/[V2ApiClient] 已直接实现 [SessionApi]（含 V1 的
- * backgroundSession=false / activeSessions=emptyMap 降级），本类不再逐方法
- * if (conn.apiVersion.isV2) 分发。
- */
-@Singleton
-class SessionApiImpl @Inject constructor(
-    private val v1: V1ApiClient,
-    private val v2: V2ApiClient,
-    private val dsh: DshApiClient,
-) : SessionApi {
-
-    /** #276 三分：serverType==Dsh 优先（apiVersion 不参与 DSH 路由，设计 §2.1）。 */
-    private fun pick(conn: ServerConnection): SessionApi = when (conn.serverType) {
-        dev.leonardo.ocbeacon.domain.model.ServerType.Dsh -> dsh
-        else -> if (conn.apiVersion.isV2) v2 else v1
-    }
-
-    override suspend fun listSessions(
-        conn: ServerConnection,
-        directory: String?,
-        search: String?,
-        cursor: String?,
-        limit: Int
-    ): List<Session> = pick(conn).listSessions(conn, directory, search, cursor, limit)
-
-    override suspend fun listSessionsPage(
-        conn: ServerConnection,
-        directory: String?,
-        search: String?,
-        cursor: String?,
-        limit: Int
-    ): dev.leonardo.ocbeacon.domain.model.SessionPage =
-        pick(conn).listSessionsPage(conn, directory, search, cursor, limit)
-
-    override suspend fun getSession(conn: ServerConnection, sessionId: String): Session =
-        pick(conn).getSession(conn, sessionId)
-
-    override suspend fun getSessionRaw(conn: ServerConnection, sessionId: String): String =
-        pick(conn).getSessionRaw(conn, sessionId)
-
-    override suspend fun createSession(
-        conn: ServerConnection,
-        title: String?,
-        parentId: String?,
-        directory: String?
-    ): Session = pick(conn).createSession(conn, title, parentId, directory)
-
-    override suspend fun deleteSession(conn: ServerConnection, sessionId: String): Boolean =
-        pick(conn).deleteSession(conn, sessionId)
-
-    override suspend fun renameSession(conn: ServerConnection, sessionId: String, title: String): Session =
-        pick(conn).renameSession(conn, sessionId, title)
-
-    override suspend fun updateSessionFields(
-        conn: ServerConnection,
-        sessionId: String,
-        fields: Map<String, Any>
-    ): Session = pick(conn).updateSessionFields(conn, sessionId, fields)
-
-    override suspend fun interruptSession(conn: ServerConnection, sessionId: String, directory: String?): Boolean =
-        pick(conn).interruptSession(conn, sessionId, directory)
-
-    override suspend fun getSessionDiff(conn: ServerConnection, sessionId: String): List<FileDiff> =
-        pick(conn).getSessionDiff(conn, sessionId)
-
-    override suspend fun shareSession(conn: ServerConnection, sessionId: String): Session =
-        pick(conn).shareSession(conn, sessionId)
-
-    override suspend fun unshareSession(conn: ServerConnection, sessionId: String): Session =
-        pick(conn).unshareSession(conn, sessionId)
-
-    override suspend fun compactSession(
-        conn: ServerConnection,
-        sessionId: String,
-        providerId: String,
-        modelId: String
-    ): Boolean = pick(conn).compactSession(conn, sessionId, providerId, modelId)
-
-    override suspend fun revertSession(conn: ServerConnection, sessionId: String, messageId: String): Session =
-        pick(conn).revertSession(conn, sessionId, messageId)
-
-    override suspend fun unrevertSession(conn: ServerConnection, sessionId: String): Session =
-        pick(conn).unrevertSession(conn, sessionId)
-
-    override suspend fun forkSession(conn: ServerConnection, sessionId: String, messageId: String?): Session =
-        pick(conn).forkSession(conn, sessionId, messageId)
-
-    override suspend fun importSession(conn: ServerConnection, shareUrl: String): Session =
-        pick(conn).importSession(conn, shareUrl)
-
-    override suspend fun executeCommand(
-        conn: ServerConnection,
-        sessionId: String,
-        command: String,
-        arguments: String,
-        directory: String?,
-        agent: String?,
-        model: String?,
-        variant: String?,
-        parts: List<Map<String, String>>?
-    ): Boolean = pick(conn).executeCommand(conn, sessionId, command, arguments, directory, agent, model, variant, parts)
-
-    override suspend fun listSessionChildren(conn: ServerConnection, sessionId: String): List<Session> =
-        pick(conn).listSessionChildren(conn, sessionId)
-
-    override suspend fun setPermissionPreset(conn: ServerConnection, sessionId: String, preset: String): Boolean =
-        pick(conn).setPermissionPreset(conn, sessionId, preset)
-
-    override suspend fun listAgentPresets(conn: ServerConnection): List<AgentPreset> =
-        pick(conn).listAgentPresets(conn)
-
-    override suspend fun selectAgentPreset(conn: ServerConnection, sessionId: String, presetId: String): Boolean =
-        pick(conn).selectAgentPreset(conn, sessionId, presetId)
-
-    override suspend fun updateQueue(
-        conn: ServerConnection,
-        sessionId: String,
-        itemId: String,
-        action: dev.leonardo.ocbeacon.domain.model.QueueActionKind,
-        editText: String?,
-    ): dev.leonardo.ocbeacon.domain.model.QueueMutationResult =
-        pick(conn).updateQueue(conn, sessionId, itemId, action, editText)
-
-
-    // ============ DSH goal 六 mutation（#286 用户裁决；OpenCode V1/V2 走接口默认 null/false） ============
-
-    override suspend fun goalCreate(
-        conn: ServerConnection,
-        sessionId: String,
-        objective: String,
-        maxGoalRounds: Long?,
-    ): DshGoalRef? = pick(conn).goalCreate(conn, sessionId, objective, maxGoalRounds)
-
-    override suspend fun goalEdit(
-        conn: ServerConnection,
-        sessionId: String,
-        ref: DshGoalRef,
-        objective: String?,
-        maxGoalRounds: Long?,
-    ): DshGoalRef? = pick(conn).goalEdit(conn, sessionId, ref, objective, maxGoalRounds)
-
-    override suspend fun goalPause(conn: ServerConnection, sessionId: String, ref: DshGoalRef): DshGoalRef? =
-        pick(conn).goalPause(conn, sessionId, ref)
-
-    override suspend fun goalResume(conn: ServerConnection, sessionId: String, ref: DshGoalRef): DshGoalRef? =
-        pick(conn).goalResume(conn, sessionId, ref)
-
-    override suspend fun goalComplete(conn: ServerConnection, sessionId: String, ref: DshGoalRef): DshGoalRef? =
-        pick(conn).goalComplete(conn, sessionId, ref)
-
-    override suspend fun goalClear(conn: ServerConnection, sessionId: String, ref: DshGoalRef): Boolean =
-        pick(conn).goalClear(conn, sessionId, ref)
-
-    /** #276 三分路由同款：DSH → subagent.list；OpenCode V1/V2 → null（本地镜像递归）。 */
-    override suspend fun listSubagentCatalog(
-        conn: ServerConnection,
-        parentSessionId: String,
-    ): List<dev.leonardo.ocbeacon.data.dto.response.SubagentListEntryDto>? =
-        pick(conn).listSubagentCatalog(conn, parentSessionId)
-
-    override suspend fun getSessionTodos(conn: ServerConnection, sessionId: String): List<TodoItem> =
-        pick(conn).getSessionTodos(conn, sessionId)
-
-    override suspend fun listSessionStatus(conn: ServerConnection, directory: String?): Map<String, SessionStatusInfo> =
-        pick(conn).listSessionStatus(conn, directory)
-
-    /**
-     * C8（2026-08-26）：错误分类学接线——V1/V2 实现返回的 Result 失败值在分发层
-     * 统一翻译为 ApiError taxonomy（recoverCatching { throw e.asApiError() }，
-     * GitHub asGitHubError 同款边缘翻译）+ 分类日志。成功语义与 Result 返回类型不变
-     *（消费方 getOrNull/getOrDefault 不受影响；onFailure 可按 isTransient 分支）。
-     */
-    override suspend fun fetchSessionStatus(
-        conn: ServerConnection,
-        directory: String?
-    ): Result<Map<String, RestSessionStatusInfo>> {
-        val result = pick(conn).fetchSessionStatus(conn, directory)
-        return result.recoverCatching { e ->
-            val apiError = e.asApiError()
-            logApiError(TAG, apiError, "fetchSessionStatus v2=${conn.apiVersion.isV2} dir=$directory", e)
-            throw apiError
-        }
-    }
-
-    override suspend fun backgroundSession(conn: ServerConnection, sessionId: String): Boolean =
-        pick(conn).backgroundSession(conn, sessionId)
-
-    override suspend fun activeSessions(conn: ServerConnection): Map<String, ActiveSessionInfo> =
-        pick(conn).activeSessions(conn)
 }

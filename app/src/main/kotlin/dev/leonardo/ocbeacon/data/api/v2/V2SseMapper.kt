@@ -49,7 +49,16 @@ object V2SseMapper {
     /**
      * 尝试将 V2 事件映射为领域 SseEvent。不识别的事件返回 null（由下游 parser 处理）。
      */
-    fun map(type: String, props: JsonObject): SseEvent? = when (type) {
+    fun map(type: String, props: JsonObject): SseEvent? = map(type, props, null)
+
+    /**
+     * #368（2026-09-10 wire 实证钉死）：V2 SSE 信封顶层携带 created（服务器
+     * epoch ms，实测帧 {id, created, type, location, data, durable}）+ durable.seq
+     * （每会话严格递增游标）。原实现盖 System.currentTimeMillis()（设备钟）——
+     * 台账时长/未读水位随设备钟漂移（#338 同族跨钟域问题）。信封时刻经
+     * [SseClientV2.handleEvent] 穿入；缺席（旧帧/测试桩）回退设备钟不劣化。
+     */
+    fun map(type: String, props: JsonObject, envelopeTimeMs: Long?): SseEvent? = when (type) {
         // ============ 消息生命周期 ============
 
         // 用户消息播种。事件契约演进（2026-08-14 实测抓帧 + 官方 schema）：
@@ -83,12 +92,41 @@ object V2SseMapper {
             val inputType = props["item"]?.jsonObject?.get("type")?.jsonPrimitive?.contentOrNull
                 ?: props["input"]?.jsonObject?.get("type")?.jsonPrimitive?.contentOrNull
                 ?: "user"
+            // 2026-09-10（用户裁决⑦）：delivery=queue 的排队项不上转录——
+            // 忙时排队消息仅在 QueueSheet 呈现，轮末派发后经轮末刷新入转录；
+            // steer/直发（缺席或非 queue）受理即上屏。三服务器类型交互统一
+            // （DSH 队列本就 inbox 帧不走转录；V1 无队列域）。
+            // delivery 契约三态：字符串（"queue"/"steer"，实测）/ 空对象（过渡契约
+            // next-171xx 实证 delivery:{} —— 视为无档位即播种）/ 缺席。对象形态
+            // 防御性探 mode 字段（未观测到，保守兼容）。
+            // #395：delivery 三处形态——inbox.enqueued 在 item.delivery、input.admitted
+            // 在 input.delivery（此前漏读 → 该路径的 queue/steer 档位全部失灵）、
+            // 过渡契约在顶层 delivery。
+            val deliveryPrim = props["item"]?.jsonObject?.get("delivery") as? kotlinx.serialization.json.JsonPrimitive
+                ?: props["input"]?.jsonObject?.get("delivery") as? kotlinx.serialization.json.JsonPrimitive
+                ?: props["delivery"] as? kotlinx.serialization.json.JsonPrimitive
+            val deliveryObj = props["item"]?.jsonObject?.get("delivery") as? kotlinx.serialization.json.JsonObject
+                ?: props["input"]?.jsonObject?.get("delivery") as? kotlinx.serialization.json.JsonObject
+                ?: props["delivery"] as? kotlinx.serialization.json.JsonObject
+            val delivery = deliveryPrim?.contentOrNull
+                ?: deliveryObj?.get("mode")?.jsonPrimitive?.contentOrNull
+            if (delivery == "queue") {
+                dev.leonardo.ocbeacon.logging.AppLogger.d(
+                    "V2SseMapper",
+                    "inbox.enqueued delivery=queue skipped transcript seed: session=" +
+                        sessionId.take(12) + " inbox=" + inputId.take(12),
+                )
+                return null
+            }
             SseEvent.MessageUpdated(
                 Message.User(
                     id = inputId,
                     sessionId = sessionId,
                     role = inputType,
-                    time = TimeInfo(System.currentTimeMillis()),
+                    // #395：V2 wire 的 steer 档位（delivery 三态之一）→ 插话徽标标记；
+                    // queue 已在上方拦截，其余（缺席/空对象）为普通发送。
+                    viaSteer = delivery == "steer",
+                    time = TimeInfo(envelopeTimeMs ?: System.currentTimeMillis()),
                     // 2026-08-16 根治（P0 附件 SSE 通道丢失）：inbox 携带的 files
                     // 文件名并入播种文本——发送带附件消息后 SSE 回显立即显示
                     // 附件 chip（完整 Part.File 由 REST 对账/进会话增量的
@@ -126,7 +164,7 @@ object V2SseMapper {
                 Message.Assistant(
                     id = messageId,
                     sessionId = sessionId,
-                    time = TimeInfo(System.currentTimeMillis()),
+                    time = TimeInfo(envelopeTimeMs ?: System.currentTimeMillis()),
                     parentId = props["parentID"]?.jsonPrimitive?.contentOrNull ?: "",
                     agent = props["agent"]?.jsonPrimitive?.contentOrNull,
                     modelId = modelIdFrom(props),
@@ -162,8 +200,11 @@ object V2SseMapper {
             // 完成边界——置 time.completed 与 finish（官方直接写入）。原实现
             // 不置 → 消息永不完成（completed 依赖 REST 兜底 mergeMessageMeta）
             // → 统计栏耗时缺失/流式 ticker 永不停。completed 用服务器事件
-            // 到达时刻（无服务器时间戳字段；偏差毫秒级可接受）。
-            val now = System.currentTimeMillis()
+            // 到达时刻兜底。
+            // #368（2026-09-10 勘误）：completed 优先用服务器信封时刻（实测帧
+            // 顶层 created 字段在场）——设备钟仅在信封缺席时兜底；created 腿由
+            // 下游 mergeAssistantMeta 的 min 合并保住 started 事件的更早值。
+            val now = envelopeTimeMs ?: System.currentTimeMillis()
             SseEvent.MessageUpdated(
                 Message.Assistant(
                     id = messageId,
@@ -187,8 +228,8 @@ object V2SseMapper {
                     sessionId = sessionId,
                     messageId = messageId,
                     text = "",
-                    // #109：started 事件无时间戳——用本地时刻；ended 合并时作为回退 start
-                    time = Part.Reasoning.Time(start = System.currentTimeMillis())
+                    // #109：started 时间戳优先用信封时刻（#368）；缺席回退本地时刻
+                    time = Part.Reasoning.Time(start = envelopeTimeMs ?: System.currentTimeMillis())
                 )
             )
         }
@@ -204,7 +245,7 @@ object V2SseMapper {
                     text = text,
                     // #109：start=0 表示未知——mergePart 回退到 started 记录的本地时刻
                     // （旧实现 start=ordinal → epoch 0 → "思考完毕 · 29778524m" 垃圾时长）
-                    time = Part.Reasoning.Time(start = 0L, end = System.currentTimeMillis())
+                    time = Part.Reasoning.Time(start = 0L, end = envelopeTimeMs ?: System.currentTimeMillis())
                 )
             )
         }
@@ -217,7 +258,7 @@ object V2SseMapper {
                     sessionId = sessionId,
                     messageId = messageId,
                     text = "",
-                    time = Part.Text.Time(start = System.currentTimeMillis())
+                    time = Part.Text.Time(start = envelopeTimeMs ?: System.currentTimeMillis())
                 )
             )
         }
@@ -231,7 +272,7 @@ object V2SseMapper {
                     sessionId = sessionId,
                     messageId = messageId,
                     text = text,
-                    time = Part.Text.Time(start = 0L, end = System.currentTimeMillis())
+                    time = Part.Text.Time(start = 0L, end = envelopeTimeMs ?: System.currentTimeMillis())
                 )
             )
         }
@@ -324,7 +365,12 @@ object V2SseMapper {
                     messageId = messageId,
                     callId = callId,
                     tool = input["tool"]?.jsonPrimitive?.contentOrNull ?: "",
-                    state = ToolState.Running(input = input, output = "")
+                    // #453：执行开始锚（信封时刻缺席回退本地钟）——工具卡走动计时
+                    state = ToolState.Running(
+                        input = input,
+                        output = "",
+                        time = ToolState.Running.Time(start = envelopeTimeMs ?: System.currentTimeMillis()),
+                    )
                 )
             )
         }
@@ -346,8 +392,15 @@ object V2SseMapper {
                 }
                 mapped
             }
+            // #453：终态 time——start=0 哨兵（mergePart Tool 分支从 existing
+            // Running/Pending 锚继承真实 start），end=信封时刻缺席回退本地钟
+            val endMs = envelopeTimeMs ?: System.currentTimeMillis()
             val state = if (type == "session.tool.success") {
-                ToolState.Completed(output = contentText, metadata = metadata?.ifEmpty { null })
+                ToolState.Completed(
+                    output = contentText,
+                    metadata = metadata?.ifEmpty { null },
+                    time = ToolState.Completed.Time(start = 0L, end = endMs),
+                )
             } else {
                 val error = props["error"]?.let { elem ->
                     when {
@@ -356,7 +409,11 @@ object V2SseMapper {
                         else -> elem.toString()
                     }
                 } ?: ""
-                ToolState.Error(error = error, metadata = metadata?.ifEmpty { null })
+                ToolState.Error(
+                    error = error,
+                    metadata = metadata?.ifEmpty { null },
+                    time = ToolState.Error.Time(start = 0L, end = endMs),
+                )
             }
             SseEvent.MessagePartUpdated(
                 Part.Tool(

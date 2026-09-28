@@ -25,12 +25,13 @@ private const val TAG = "DshHistoryFolder"
  * 2. **chunk 族**：assistant/chunk 单块行 + seq0 打包行（reasoning-chunks /
  *    text-chunks / tool-call-chunks，checkpoint-policy 批量块）——一律不进历史 fold，
  *    整装文本由 assistant/message 承载（历史尾页由整装主导，§1.7）；
- * 3. **活事件行**（{type, seq, time, data}）：经 mapper 分派。
+ * 3. **活事件行**（{type, seq, time, data}）：经 mapper 分派，词汇表按会话头
+ *    `version` 择取（[DshEventVocabulary.ofSessionFormatVersion]——#391 切片7）。
  *
  * lastSeq = 全部行（含打包行 seq0——服务端视角已应用水位）的最大 seq；漏计打包行
  * 会让 DshReconciler 对以打包行收尾的会话误判缺口 → 回填死循环。
  *
- * 拒绝重建判据（§5）：[DshFoldResult.unknownUnignorable] 非空 = 折叠中遇到未建模的
+ * 拒绝重建判据（§5）：[DshFoldResult.structuralViolations] 非空 = 折叠中遇到未建模的
  * 事件类型（可能携带转录语义）——调用方应放弃本次重建而非展示残缺历史。
  */
 object DshHistoryFolder {
@@ -44,9 +45,12 @@ object DshHistoryFolder {
      */
     fun fold(events: List<JsonObject>, sessionId: String? = null): DshFoldResult {
         var resolvedSessionId = sessionId ?: ""
+        // #391 切片7：会话格式版本从 session 头行择取按代事件词汇表（缺省走
+        // CURRENT——容错优先，未知版本不拒绝重建）。
+        var formatVersion: Long? = null
         var lastSeq = 0L
         val sseEvents = mutableListOf<SseEvent>()
-        val unknownUnignorable = mutableListOf<String>()
+        val structuralViolations = mutableListOf<String>()
         for (row in events) {
             val entry = row.obj("event") ?: row
             val type = entry.str("type") ?: continue
@@ -54,20 +58,27 @@ object DshHistoryFolder {
             val rowSeq = entry.long("seq") ?: entry.long("seq0")
             if (rowSeq != null && rowSeq > lastSeq) lastSeq = rowSeq
             when {
-                // header 行：会话元信息，非事件
-                type == "session" -> resolvedSessionId = sessionId ?: (entry.str("id") ?: resolvedSessionId)
+                // header 行：会话元信息，非事件（version = 会话格式版本）
+                type == "session" -> {
+                    resolvedSessionId = sessionId ?: (entry.str("id") ?: resolvedSessionId)
+                    formatVersion = entry.long("version") ?: formatVersion
+                }
                 // chunk 族（单块行）：流式保真专用，不进历史 fold
                 type == "assistant/chunk" -> Unit
                 // checkpoint 打包行（按 key 区分信封二态：seq0 存在 = 批量块）
                 entry.containsKey("seq0") -> Unit
-                else -> DshEventMapper.mapSessionEvent(resolvedSessionId, entry).forEach { mapped ->
+                else -> DshEventMapper.mapSessionEvent(
+                    resolvedSessionId,
+                    entry,
+                    DshEventVocabulary.ofSessionFormatVersion(formatVersion),
+                ).forEach { mapped ->
                     when (mapped) {
                         is DshMappedEvent.Sse -> sseEvents += mapped.event
                         // 历史行不产生订阅信号（那是 WS 帧面专属）
                         is DshMappedEvent.Subscribed -> Unit
                         is DshMappedEvent.Ignored ->
-                            if (mapped.reason == DshIgnoreReason.UNKNOWN_UNIGNORABLE) {
-                                unknownUnignorable += type
+                            if (mapped.reason == DshIgnoreReason.STRUCTURAL_VIOLATION) {
+                                structuralViolations += type
                             }
                     }
                 }
@@ -76,7 +87,7 @@ object DshHistoryFolder {
         return DshFoldResult(
             sessionId = resolvedSessionId,
             sseEvents = sseEvents,
-            unknownUnignorable = unknownUnignorable,
+            structuralViolations = structuralViolations,
             lastSeq = lastSeq,
         )
     }
@@ -107,14 +118,16 @@ object DshHistoryFolder {
 /**
  * 折叠产物：SseEvent 序列（保序）+ 拒绝重建判据 + 已应用水位 + 会话 id。
  *
- * [refusedRebuild] 为 true 时调用方不得用 [sseEvents] 重建（历史含未建模事件类型，
- * 展示将残缺——§5 fold 安全规则）；[lastSeq] 仍可安全上报（水位与事件语义无关）。
+ * [refusedRebuild] 为 true 时调用方不得用 [sseEvents] 重建——**仅结构性违约**才拒绝；
+ * 当前映射层唯一实发射点 = user/message 的 surfaceOp.replace 区间越界（end < start）。
+ * 未知词汇已由映射层具名降级（#391 切片7 容错优先），不再导致整页空白。
+ * [lastSeq] 仍可安全上报（水位与事件语义无关）。
  */
 data class DshFoldResult(
     val sessionId: String,
     val sseEvents: List<SseEvent>,
-    val unknownUnignorable: List<String>,
+    val structuralViolations: List<String>,
     val lastSeq: Long,
 ) {
-    val refusedRebuild: Boolean get() = unknownUnignorable.isNotEmpty()
+    val refusedRebuild: Boolean get() = structuralViolations.isNotEmpty()
 }

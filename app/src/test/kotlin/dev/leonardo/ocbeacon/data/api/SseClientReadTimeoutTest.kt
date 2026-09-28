@@ -61,6 +61,20 @@ class SseClientReadTimeoutTest {
 
     // ============ SseReadTimeoutTracker ============
 
+    // ============ #448（2026-09-27）：冷却剩余时间——UI 倒计时数据源 ============
+
+    @Test
+    fun `tracker reports positive cooldown remaining after enterCooldown`() {
+        val tracker = SseReadTimeoutTracker(maxConsecutiveTimeouts = 2, cooldownDurationMs = 300_000L)
+        assertEquals(0L, tracker.cooldownRemainingMs())
+        tracker.recordTimeout()
+        tracker.recordTimeout()
+        tracker.enterCooldown()
+        // 冷却排程（#409 倒计时）需要真实剩余量——进入后 >0 且不超过时长
+        assertTrue(tracker.cooldownRemainingMs() > 0L)
+        assertTrue(tracker.cooldownRemainingMs() <= 300_000L)
+    }
+
     @Test
     fun `tracker starts with zero consecutive timeouts`() {
         val tracker = SseReadTimeoutTracker(maxConsecutiveTimeouts = 5, cooldownDurationMs = 300_000L)

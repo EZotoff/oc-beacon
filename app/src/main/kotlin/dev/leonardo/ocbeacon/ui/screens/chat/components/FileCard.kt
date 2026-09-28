@@ -22,9 +22,11 @@ import androidx.compose.ui.unit.dp
 import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.domain.model.Part
 import dev.leonardo.ocbeacon.ui.components.AmoledSurface
+import dev.leonardo.ocbeacon.ui.components.CardStandardBorder
 import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 @Composable
 internal fun FileCard(file: Part.File) {
@@ -43,12 +45,13 @@ internal fun FileCardFallback(file: Part.File) {
         isAmoledDark = isAmoledTheme(),
         normalColor = MaterialTheme.colorScheme.surface,
         normalTonalElevation = 1.dp,
-        shape = ShapeTokens.smallMedium,
+        // 2026-09-17：卡片层标准描边（普通主题也需要，与扁平正文分离）
+        normalBorder = CardStandardBorder,        shape = ShapeTokens.smallMedium,
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = SpacingTokens.MD.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(SpacingTokens.SM.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(

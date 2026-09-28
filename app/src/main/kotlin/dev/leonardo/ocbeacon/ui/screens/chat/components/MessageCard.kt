@@ -12,7 +12,6 @@ enum class MessageCardRole { USER, ASSISTANT, SYNTHETIC }
 internal fun MessageCard(
     role: MessageCardRole,
     currentMessage: ChatMessage,
-    isQueued: Boolean = false,
     renderableTurn: RenderableTurn? = null,
     onViewSubSession: ((String) -> Unit)? = null,
     onOpenFile: ((String) -> Unit)? = null,
@@ -37,23 +36,36 @@ internal fun MessageCard(
     /** #234：事件卡统一展开表（屏幕级，#227 模式）——synthetic 卡与 assistant
      *  turn 内防御性 RenderItem.SyntheticNotice 渲染共用同一记忆。 */
     eventExpandedStates: MutableMap<String, Boolean>,
-    /** #243 连续同内容去重：本卡代表的被抑制重复数（0=无）。 */
-    eventDupCount: Int = 0,
+    /**
+     * #310②：本消息当前反馈快照（null = 未评）。仅 DSH 且已完结
+     * 时非 null 回调伴随出现脚部 👍/👎 动作位。
+     */
+    messageFeedback: dev.leonardo.ocbeacon.domain.model.MessageFeedbackItem? = null,
+    onRateMessage: ((dev.leonardo.ocbeacon.domain.model.MessageFeedbackRating) -> Unit)? = null,
+    /** 2026-09-12 扁平化：第 N 轮编号（server 优先）。 */
+    turnNumber: dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.TurnNumber? = null,
+    /** 2026-09-12 扁平化：「从此轮分支」尾部动作。 */
+    onForkFromTurn: (() -> Unit)? = null,
+    /** 2026-09-12 扁平化：删除消息（能力位就绪才传入）。 */
+    onDeleteMessage: (() -> Unit)? = null,
+    /** 2026-09-12 扁平化：行模型能力位（尾部字段/动作门控单源）。 */
+    caps: dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.RowCapabilities? = null,
+    /** #422 历史懒加载:大组拆条目时尾片跳过 StepGroup 渲染。 */
+    skipStepGroupItem: Boolean = false,
 ) {
     when (role) {
         MessageCardRole.USER -> MessageCardUser(
             currentMessage = currentMessage,
-            isQueued = isQueued,
             onRevert = onRevert,
             onCopyText = onCopyText,
             isAmoled = isAmoled,
+            onDeleteMessage = onDeleteMessage,
         )
         MessageCardRole.SYNTHETIC -> SyntheticNotificationCard(
             currentMessage = currentMessage,
             onViewSubSession = onViewSubSession,
             onLocateTask = onLocateTask,
             eventExpandedStates = eventExpandedStates,
-            dupCount = eventDupCount,
         )
         MessageCardRole.ASSISTANT -> MessageCardAssistant(
             renderableTurn = renderableTurn ?: error("renderableTurn is required for ASSISTANT role"),
@@ -72,6 +84,13 @@ internal fun MessageCard(
             onQuestionReject = onQuestionReject,
             questionAnswersCache = questionAnswersCache,
             eventExpandedStates = eventExpandedStates,
+            messageFeedback = messageFeedback,
+            onRateMessage = onRateMessage,
+            turnNumber = turnNumber,
+            onForkFromTurn = onForkFromTurn,
+            onDeleteMessage = onDeleteMessage,
+            caps = caps,
+            skipStepGroupItem = skipStepGroupItem,
         )
     }
 }

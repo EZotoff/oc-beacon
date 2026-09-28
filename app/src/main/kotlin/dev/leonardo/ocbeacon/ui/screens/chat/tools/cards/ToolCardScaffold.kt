@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
@@ -25,14 +27,25 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import dev.leonardo.ocbeacon.ui.screens.chat.components.CardExpandEnterTransition
+import dev.leonardo.ocbeacon.ui.screens.chat.components.occupyBottomGap
+import dev.leonardo.ocbeacon.ui.screens.chat.components.CardExpandReveal
 import dev.leonardo.ocbeacon.ui.screens.chat.components.CardExpandExitTransition
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import dev.leonardo.ocbeacon.ui.theme.LocalChatDensity
+import dev.leonardo.ocbeacon.ui.theme.typography
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -44,13 +57,17 @@ import androidx.compose.ui.res.stringResource
 import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.util.copyToClipboard
 import dev.leonardo.ocbeacon.ui.components.AmoledSurface
+import dev.leonardo.ocbeacon.ui.components.CardStandardBorder
 import dev.leonardo.ocbeacon.ui.components.indicators.PulsingDotsIndicator
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalHapticFeedbackEnabled
+import dev.leonardo.ocbeacon.ui.screens.chat.util.formatDuration
 import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
 import dev.leonardo.ocbeacon.ui.screens.chat.util.performHaptic
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 /**
  * #137（D2-L50）：聊天内复制反馈通道——上层（ChatMessageList）注入 Snackbar
@@ -80,6 +97,9 @@ val LocalCopyFeedback = androidx.compose.runtime.staticCompositionLocalOf<(() ->
  *   AMOLED 下仍为纯黑 + 边框。用于任务类卡片的状态底色语义
  *  （发起=蓝 / 完成=绿 / 失败=红，2026-08-11 用户要求）。
  */
+/** 标题行前导图标尺寸(dp)——竖线锚位由此派生(见展开区 Box)。 */
+private val LEADING_ICON_SIZE = 16.dp
+
 @Composable
 internal fun ToolCardScaffold(
     icon: ImageVector,
@@ -92,10 +112,20 @@ internal fun ToolCardScaffold(
     isAmoled: Boolean,
     onToggleExpand: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * #349：标题行点击覆盖槽——非 null 时本体点击执行它（如 subagent 卡直达
+     * 子会话）而非展开；调用方需自带展开替代入口（chevron）。null=默认契约
+     * （#215 批2：本体点击=唯一展开入口）。
+     */
+    onCardClick: (() -> Unit)? = null,
     rightSideExtras: @Composable (RowScope.() -> Unit)? = null,
     trailingExtras: @Composable (RowScope.() -> Unit)? = null,
     titleContent: (@Composable RowScope.() -> Unit)? = null,
     containerColor: Color = MaterialTheme.colorScheme.surface,
+    /** #453 累积计时锚（调用发起时刻）——isRunning 且 >0 时行尾走动计时。 */
+    runningStartMs: Long? = null,
+    /** #453 终态冻结时长——非 running 且 >0 时行尾静态显示。 */
+    completedDurationMs: Long? = null,
     expandedContent: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -110,13 +140,36 @@ internal fun ToolCardScaffold(
 
     AmoledSurface(
         isAmoledDark = isAmoled,
-        normalColor = containerColor,
+        // 2026-09-20 单行形态裁决(用户:全面 DSH 化,问题/权限/通知类除外)——
+        // 工具卡去容器:透明底/无描边/零 elevation,标题行「图标+类型·摘要」
+        // 平铺于消息流(DSH web 实证:行式日志流;opencode session-ui 同构)。
+        // 16 卡经本 scaffold 一次收口;状态色由 iconTint/title 语义承担。
+        normalColor = Color.Transparent,
         shape = ShapeTokens.smallMedium,
-        normalTonalElevation = 1.dp,
+        normalBorder = null,
+        normalTonalElevation = 0.dp,
         // 2026-08-30 用户裁决：撤销展开补偿（TC-REVEAL 接线退役）
+        // #432(用户裁决:上下间距一致):occupyBottomGap 移除——底部收缩 8dp 的
+        // 前提是「卡背景溢出占位绘制」,透明卡形态下背景不存在,收缩只剩
+        // 上下不对称。恢复对称占位。
         modifier = modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(4.dp)) {
+        // 2026-09-20 间距统一裁决:垂直 4→2dp(与 ReasoningBlock 同步——卡↔正文
+        // 空白收敛,卡族互相对齐保持)。
+        // #455(2026-09-27 用户报告「卡片上下边距变高且不统一」像素定罪):
+        // 卡为透明无背景形态,容器垂直 padding 不提供任何视觉边界,只在
+        // spacedBy(8dp) 之上叠加 12dp 卡间节奏(vs 摘要行↔卡 8dp)——两档混杂
+        // 的根源。垂直 padding 归零:全部相邻节奏统一为 8dp。
+        Column(
+            modifier = Modifier.padding(
+                // #432(用户反馈):水平缩进归零——原 XS(4dp) 使卡片比正文多缩一档,
+                // 「正文与卡片没对齐」根源;卡族与正文现在同缘(垂直 padding 不变)。
+                start = 0.dp,
+                end = 0.dp,
+                top = 0.dp,
+                bottom = 0.dp,
+            ),
+        ) {
             // 标题行
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -130,9 +183,9 @@ internal fun ToolCardScaffold(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .weight(1f)
-                            .clickable(enabled = hasContent) {
+                            .clickable(enabled = hasContent || onCardClick != null) {
                                 performHaptic(hapticView, hapticOn)
-                                onToggleExpand()
+                                onCardClick?.invoke() ?: onToggleExpand()
                             }
                     ) {
                         titleContent(this)
@@ -143,9 +196,9 @@ internal fun ToolCardScaffold(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .weight(1f)
-                            .clickable(enabled = hasContent) {
+                            .clickable(enabled = hasContent || onCardClick != null) {
                                 performHaptic(hapticView, hapticOn)
-                                onToggleExpand()
+                                onCardClick?.invoke() ?: onToggleExpand()
                             }
                     ) {
                         Icon(
@@ -156,7 +209,11 @@ internal fun ToolCardScaffold(
                         )
                         Text(
                             text = title,
-                            style = MaterialTheme.typography.labelMedium,
+                            // #432(用户裁决):标题=正文字号+Medium(层级靠字重;跟随 ChatDensity)
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontSize = LocalChatDensity.current.typography.bodyFontSize,
+                                fontWeight = FontWeight.Medium,
+                            ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
@@ -167,7 +224,7 @@ internal fun ToolCardScaffold(
                 if (isRunning) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp)
                     ) {
                         rightSideExtras?.invoke(this)
                         PulsingDotsIndicator(
@@ -179,7 +236,7 @@ internal fun ToolCardScaffold(
                 } else if (hasContent) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp)
                     ) {
                         // 1. 左侧额外内容（diff 变更指示器）
                         rightSideExtras?.invoke(this)
@@ -214,18 +271,91 @@ internal fun ToolCardScaffold(
                         // IconButton；统一交互契约后该入口整体不再需要）
                     }
                 }
+                // #453：累积计时行尾固定区（SpaceBetween 右槽，与思考卡时长同构）
+                // ——不随左侧标题/摘要宽度变化推移，消除流式横向跳动。
+                // 数据判定（非 isRunning 参数）：终态时长>0 → 冻结；否则锚>0 →
+                // 走动（Pending/Running 均算未完结——DSH tool/call 的 Pending 带
+                // 锚也走动）；都无 → 不渲染（不伪造时长）。
+                if (runningStartMs != null || completedDurationMs != null) {
+                    Spacer(modifier = Modifier.width(SpacingTokens.XS.dp))
+                }
+                ToolElapsedText(
+                    runningStartMs = runningStartMs,
+                    completedDurationMs = completedDurationMs,
+                )
             }
 
             // 展开的内容（2026-08-30 用户裁决：统一顶边垂直揭幕，见 CardExpandTransitions.kt）
-            AnimatedVisibility(
+            CardExpandReveal(
                 visible = expanded && hasContent,
-                enter = CardExpandEnterTransition,
-                exit = CardExpandExitTransition,
             ) {
-                expandedContent()
+                // 2026-09-20 单行形态:展开区左竖线层级(Roo 式 border-l,零背景)——
+                // 修饰必须在 Reveal content 内部(#420 硬地板教训:外层固定
+                // padding 会成为末帧塌陷的落地硬面)。竖线随 fraction 同步揭示。
+                val guideColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = AlphaTokens.FAINT)
+                Box(
+                    modifier = Modifier
+                        // 2026-09-20 居中修正:竖线与图标同在 Column 内容区(同一起点
+                        // x=0),图标中心=LEADING_ICON_SIZE/2=8dp;线宽 2dp → 锚位
+                        // =中心−1dp=7dp。公式化绑定:图标尺寸变更自动跟随。
+                        .padding(start = LEADING_ICON_SIZE / 2 - 1.dp)
+                        // 竖线画在 Box 左缘(x=1dp 处,2dp 宽)
+                        .drawBehind {
+                            drawRect(
+                                color = guideColor,
+                                topLeft = Offset(1.dp.toPx(), 0f),
+                                size = Size(2.dp.toPx(), size.height),
+                            )
+                        }
+                        // 2026-09-20 用户反馈修:竖线→内容之间补缩进——原实现内容
+                        // 紧贴竖线(视觉粘连);Roo border-l 语义=竖线后留白(pl-4)
+                        .padding(start = SpacingTokens.SM.dp),
+                ) {
+                    expandedContent()
+                }
             }
         }
     }
+}
+
+/**
+ * #453：工具卡累积计时文本——数据判定（不依赖 isRunning 参数）：
+ *
+ * - 终态冻结时长 >0 → 静态显示；
+ * - 否则锚（start）>0 → 100ms tick 走动计时（Pending/Running 均算未完结——
+ *   DSH tool/call 的 Pending 带锚也走动）；重组范围仅限本组件（独立 state，
+ *   与思考卡 ReasoningBlock 同节奏）；
+ * - 都无 → 不渲染（不伪造时长——思考卡 #263 同原则）。
+ */
+@Composable
+private fun ToolElapsedText(
+    runningStartMs: Long?,
+    completedDurationMs: Long?,
+) {
+    if (completedDurationMs != null && completedDurationMs > 0) {
+        Text(
+            text = formatDuration(completedDurationMs),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
+            maxLines = 1,
+        )
+        return
+    }
+    val start = runningStartMs?.takeIf { it > 0 } ?: return
+    val elapsed = remember { mutableLongStateOf(0L) }
+    LaunchedEffect(start) {
+        while (true) {
+            // 下限钳制 0——服务器/设备钟域偏差不显示负数
+            elapsed.longValue = (System.currentTimeMillis() - start).coerceAtLeast(0L)
+            delay(100L)
+        }
+    }
+    Text(
+        text = formatDuration(elapsed.longValue),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.FAINT),
+        maxLines = 1,
+    )
 }
 
 /**

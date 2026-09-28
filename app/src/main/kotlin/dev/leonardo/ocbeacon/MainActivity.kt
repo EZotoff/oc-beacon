@@ -81,6 +81,18 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var fileRepository: dev.leonardo.ocbeacon.domain.repository.FileRepository
+
+    // #317：DSH 0.1.2 token 交换（debug_token 注入通道 + E2E 用）
+    @Inject
+    lateinit var dshConnectionRegistry: dev.leonardo.ocbeacon.data.api.dsh.DshConnectionRegistry
+
+    // #391 切片5：界面插槽注册表（组合局部提供，通用屏幕只读注册表）
+    @Inject
+    lateinit var serverUiSlotRegistry: dev.leonardo.ocbeacon.ui.extension.ServerUiSlotRegistry
+
+    // #391 切片9：条目动作注册表（统一贡献注册表的条目级部分）
+    @Inject
+    lateinit var serverActionRegistry: dev.leonardo.ocbeacon.ui.extension.ServerActionRegistry
     
     /**
      * 用于通知点击产生的 deep-link 事件的 SharedFlow。
@@ -109,6 +121,14 @@ class MainActivity : ComponentActivity() {
      */
     private val _sharedImagesFlow = MutableSharedFlow<List<Uri>>(replay = 1)
     val sharedImagesFlow = _sharedImagesFlow.asSharedFlow()
+
+    /**
+     * #325②：DSH 配对深链事件（ocbeacon://pair）——NavGraph 订阅并预填
+     * 服务器添加对话框（token 已在此后台交换，见 [handlePairDeepLink]）。
+     * replay=1 保证冷启动（NavGraph 尚未收集）时不丢失。
+     */
+    private val _pairRequestFlow = MutableSharedFlow<dev.leonardo.ocbeacon.data.api.dsh.DshPairPayload>(replay = 1)
+    val pairRequestFlow = _pairRequestFlow.asSharedFlow()
 
     /** 通过 attachBaseContext 为本 Activity 实例应用的语言代码。 */
     private var appliedLanguage: String = ""
@@ -172,6 +192,8 @@ class MainActivity : ComponentActivity() {
         handleDebugProfileIntent(intent)
         // 处理启动 Activity 的 Supervisor 通知点击
         handleSupervisorIntent(intent)
+        // #325②：DSH 配对深链（ocbeacon://pair）——全 flavor 可用
+        handlePairDeepLink(intent)
 
         // 2026-08-20 竞态取证埋点（debug_race extra；release 也生效——概率 bug
         // 需在用户日常环境复现取证，故不设 BuildConfig.DEBUG 门）
@@ -230,7 +252,11 @@ class MainActivity : ComponentActivity() {
                 // 全局禁用 Stretch overscroll 拉伸效果（Android 12+ 默认）。
                 // 拉伸动画会拦截输入导致"拉伸中无法反向滑动"的卡手体感（2026-08-10 真机实证）。
                 // 提供 null = 无 overscroll 效果（官方支持：LocalOverscrollFactory 为 null 时返回 null）。
-                CompositionLocalProvider(LocalOverscrollFactory provides null) {
+                CompositionLocalProvider(
+                    LocalOverscrollFactory provides null,
+                    dev.leonardo.ocbeacon.ui.extension.LocalServerUiSlots provides serverUiSlotRegistry,
+                    dev.leonardo.ocbeacon.ui.extension.LocalServerActions provides serverActionRegistry,
+                ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -244,6 +270,7 @@ class MainActivity : ComponentActivity() {
                             debugChannelFlow = _debugChannelNavFlow,
                             supervisorNavFlow = _supervisorNavFlow,
                             sharedImagesFlow = sharedImagesFlow,
+                            pairRequestFlow = _pairRequestFlow,
                             settingsRepository = settingsRepository,
                             serverRepository = serverRepository,
                             sessionRepository = sessionRepository,
@@ -282,6 +309,8 @@ class MainActivity : ComponentActivity() {
         handleDebugProfileIntent(intent)
         // 当 Activity 已在运行时处理 Supervisor 通知点击
         handleSupervisorIntent(intent)
+        // #325②：DSH 配对深链（ocbeacon://pair）
+        handlePairDeepLink(intent)
     }
     
     private fun handleSessionIntent(intent: Intent?) {
@@ -372,6 +401,43 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * #325②：DSH 首次配对深链（ACTION_VIEW，ocbeacon://pair?url=…&token=…）。
+     *
+     * 全 flavor 可用（beta/stable 无调试通道，这是普通用户的首次配对路径）。
+     * 解析经 [dev.leonardo.ocbeacon.data.api.dsh.DshPairingParser]（纯函数，
+     * 单测覆盖）；命中后：① 发射 [pairRequestFlow] 供 UI 预填添加对话框；
+     * ② 后台 token 交换（cookie 落 registry——DataStore 持久化、authority
+     * 绑定），用户保存条目并连接时探测直接命中 cookie。交换失败或用户改了
+     * URL → TokenNeeded 横幅手动粘贴（#317 现状通道）兜底。
+     *
+     * 安全边界：深链只**预填表单**，不自动保存/连接——保存仍需用户点确认；
+     * 恶意深链最多把对话框填成攻击者地址，与用户手输同面。
+     */
+    private fun handlePairDeepLink(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val data = intent.dataString ?: return
+        // 只认自家 scheme（其他 VIEW 深链未来另归他处，不进配对面）
+        if (!data.startsWith("ocbeacon://")) return
+        when (val result = dev.leonardo.ocbeacon.data.api.dsh.DshPairingParser.parsePairUriDetailed(data)) {
+            is dev.leonardo.ocbeacon.data.api.dsh.PairUriParseResult.Ok -> {
+                val payload = result.payload
+                AppLogger.i(TAG, "Pair deep-link received: " + payload.baseUrl)
+                _pairRequestFlow.tryEmit(payload)
+                lifecycleScope.launch {
+                    val ok = dshConnectionRegistry.exchangeToken(payload.baseUrl, payload.token)
+                    AppLogger.i(TAG, "pair token exchange for " + payload.baseUrl + ": " + if (ok) "ok" else "rejected")
+                }
+            }
+            is dev.leonardo.ocbeacon.data.api.dsh.PairUriParseResult.Rejected -> {
+                // #325 修复（E1 教训）：截断/畸形深链原先静默返回、零日志可查——
+                // 现在记原因（只记 host 与长度，绝不记 query/token——token 是 RCE 等价物）。
+                val host = data.removePrefix("ocbeacon://").substringBefore('?')
+                AppLogger.w(TAG, "Pair deep-link rejected: " + result.reason + " (host=" + host + ", len=" + data.length + ")")
+            }
+        }
+    }
+
+    /**
      * #132 调试通道：外部参数一键直达（仅 debug 构建）。
      *
      * 用法（完整参数方式，任意服务器无需改代码）：
@@ -388,15 +454,56 @@ class MainActivity : ComponentActivity() {
         // 此前仅 debug 构建可入，全新 release 安装无法配置服务器）；
         // beta/stable 仍禁用调试通道。
         if (!BuildConfig.DEBUG && BuildConfig.FLAVOR != "dev") return
+        // #305 注入实验（仅 debug 构建）：--ez debug_simulate_timeout true [--ez debug_background true]
+        // 前台模式直接转发；后台模式先 moveTaskToBack 再延迟触发——模拟挂机时
+        // onTimeout 到达（app 在后台），实证 2s 后台重启是否被 FGS 启动限制拦截。
+        if (intent?.getBooleanExtra("debug_simulate_timeout", false) == true) {
+            if (!BuildConfig.DEBUG) return
+            val toBackground = intent.getBooleanExtra("debug_background", false)
+            AppLogger.w(TAG, "[DEBUG-inject] simulate_timeout requested (background=$toBackground)")
+            val fire: () -> Unit = {
+                try {
+                    startForegroundService(
+                        android.content.Intent(this, dev.leonardo.ocbeacon.service.OpenCodeConnectionService::class.java)
+                            .setAction(dev.leonardo.ocbeacon.service.OpenCodeConnectionService.ACTION_SIMULATE_FGS_TIMEOUT)
+                    )
+                } catch (e: Exception) {
+                    AppLogger.e(TAG, "[DEBUG-inject] startForegroundService failed", e)
+                }
+            }
+            if (toBackground) {
+                moveTaskToBack(true)
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(fire, 1500L)
+            } else {
+                fire()
+            }
+            return
+        }
         val url = intent?.getStringExtra("debug_url") ?: return
         val profile = DebugProfile(
             id = "ext-" + url.hashCode().toString(16),
             label = intent.getStringExtra("debug_name") ?: "Debug External",
             url = url,
             username = intent.getStringExtra("debug_username") ?: "opencode",
-            password = intent.getStringExtra("debug_password") ?: ""
+            password = intent.getStringExtra("debug_password") ?: "",
+            // #319：DSH 靶机 E2E——新建条目需显式指定类型（探测不推断 DSH，
+            // 默认 OpenCode 会走 SSE 404 循环）；未指定 null 保留既有语义。
+            serverType = when (intent.getStringExtra("debug_server_type")) {
+                "dsh" -> dev.leonardo.ocbeacon.domain.model.ServerType.Dsh
+                "opencode" -> dev.leonardo.ocbeacon.domain.model.ServerType.OpenCode
+                else -> null
+            },
         )
         AppLogger.i(TAG, "Debug channel requested via extra: " + profile.id + " (" + profile.url + ")")
+        // #317（2026-09-04）：DSH 0.1.2 launch token 注入——探测 TokenNeeded 时
+        // 连接循环挂起等 cookie，此处交换与挂起双向汇合（先后序无关）。
+        val debugToken = intent.getStringExtra("debug_token")
+        if (debugToken != null) {
+            lifecycleScope.launch {
+                val ok = dshConnectionRegistry.exchangeToken(url, debugToken)
+                AppLogger.i(TAG, "debug_token exchange for " + url + ": " + if (ok) "ok" else "rejected")
+            }
+        }
         activateDebugProfile(profile)
     }
 
@@ -409,7 +516,14 @@ class MainActivity : ComponentActivity() {
             try {
                 val existing = serverRepository.getServersFlow().first()
                     .firstOrNull {
-                        ServerConfig.sameBackend(it.url, it.username, profile.url, profile.username)
+                        // #325④：类型化判定——DSH↔DSH 忽略 username（配对/调试通道
+                        // username 漂移不再裂条目）；profile 类型未指定时按既有条目
+                        // 类型解析（幂等复用语义不变）。
+                        val resolvedType = profile.serverType ?: it.serverType
+                        ServerConfig.sameBackend(
+                            it.serverType, it.url, it.username,
+                            resolvedType, profile.url, profile.username,
+                        )
                     }
                 val serverId: String
                 if (existing != null) {
@@ -421,7 +535,9 @@ class MainActivity : ComponentActivity() {
                             name = profile.label,
                             url = profile.url.trimEnd('/'),
                             username = profile.username,
-                            password = profile.password.ifEmpty { existing.password }
+                            password = profile.password.ifEmpty { existing.password },
+                            // #319：显式 debug_server_type 时覆写（类型错配修正通道）
+                            serverType = profile.serverType ?: existing.serverType,
                             // autoConnect 不在此处写——统一由下方 promoteDebugBackend
                             // 作为系统管理位维护（#251）。
                         )
@@ -435,6 +551,8 @@ class MainActivity : ComponentActivity() {
                             username = profile.username,
                             password = profile.password,
                             name = profile.label,
+                            serverType = profile.serverType
+                                ?: dev.leonardo.ocbeacon.domain.model.ServerType.OpenCode, // #319：debug_server_type extra
                             // autoConnect 由下方 promoteDebugBackend 统一写（#251）。
                         )
                     )
@@ -453,6 +571,19 @@ class MainActivity : ComponentActivity() {
                 val refreshed = serverRepository.getServer(serverId)
                 if (refreshed != null) {
                     serverRepository.testConnection(refreshed).getOrNull()
+                }
+                // #319（sweep 竞态修复）：冷启 FGS sweep 可能已用旧配置（serverType
+                // 改写前）连上本后端——Coordinator 同 id 幂等会跳过本次 connect，
+                // 旧 OpenCode 循环继续 SSE 404。connect 前补发断连（#253 同款，
+                // 未连接时 no-op），迫使后续连接用新配置重建循环。
+                try {
+                    val sweepDisconnect = Intent(this@MainActivity, OpenCodeConnectionService::class.java).apply {
+                        action = OpenCodeConnectionService.ACTION_DISCONNECT
+                        putExtra("server_id", serverId)
+                    }
+                    startService(sweepDisconnect)
+                } catch (e: Exception) {
+                    AppLogger.d(TAG, "Debug channel: pre-connect sweep disconnect noop: " + e.message)
                 }
                 val serviceIntent = Intent(this@MainActivity, OpenCodeConnectionService::class.java).apply {
                     putExtra("server_id", serverId)
