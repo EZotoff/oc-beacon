@@ -117,3 +117,9 @@ tap 前后 screencap 对(pxA/pxB)+分带位移相关分析(±90px 搜索):
 - 二度定罪(复测 v=0 仍跳底):子 fling 逐帧走嵌套协议,到边后每帧剩余经 onPostScroll 泄漏父(VPT 逐帧 -8px 实证);正解=onPreFling 标记 fling 窗口,期间 onPostScroll 全额吞没+onPostFling 吞残速,drag 泄漏放行(滑到底继续滑=滚视口的期望行为)
 - 复测:S2b 泄漏归零((7,720) 稳),S3/S4 残余 215px=drag 期合法泄漏,不再拉底
 - 单测绿;ReasoningBlock 内容盒 nestedScroll 拦截(NestedScrollConnection 三方法)
+
+### #474 五轮补:fling 泄漏拦截上提 item 级通用守卫(2026-09-29 02:2x)
+
+- 盘点:消息流 item 内 21 处卡内滚动容器(思考内容/Bash/Read/Edit/Write/Search/WebFetch/Task/Shell/Skill/Question/Event/Injection/Compaction/Diff 等)同暴露 fling 泄漏场景
+- 上提:CardFlingLeakGuard.kt——Modifier.cardFlingLeakGuard() 挂 ChatMessageList 消息 item Box(2526 行区),一个拦截点覆盖 item 内全部卡内滚动容器(含未来卡型);ReasoningBlock 局部拦截移除(单一来源)
+- 复测等效:S2a/S2b (7,720) 稳定(fling 泄漏吞没),S3/S4 (7,492) 不拉底(drag 合法泄漏保留);单测绿
