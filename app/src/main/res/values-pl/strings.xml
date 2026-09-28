@@ -263,6 +263,8 @@
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">tokenów/s</string>
     <string name="chat_msg_tail_summary">%1$d kroków · %2$d narzędzi</string>
+
+    <string name="chat_step_label">Krok %1$d</string>
     <string name="a11y_message_detail">Szczegóły wiadomości</string>
     <string name="chat_stats_session_title">Statystyki sesji</string>
     <string name="chat_stats_summary">%1$d tur · %2$d kroków · %3$s LLM · %4$s narzędzi</string>

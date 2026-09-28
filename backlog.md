@@ -178,6 +178,7 @@
 
 - [ ] **#463 step 间分割线+Step x 序号(密集 React 轮次导航)** `chat`
   - 用户提案(2026-09-29):React 过程密集且模型无文字反馈时,思考+执行卡重复铺屏难定位——turn 内每个 step 之间加分割线并标注 Step x(当前轮次第 x 步);涉 i18n 15 语言
+  - 2026-09-29 交付(用户提案原样落地):turn 内 step 边界分割线+Step x 步序标注——①数据:RenderItem.StepGroup 增 stepStarts(每 step=消息边界,#422 既有语义的首组索引),装配层 computeRenderableTurn 记录;②判定:stepDividerBefore 纯函数(第 k>=2 个 step 首组前插,首 step/组内/单 step 一律 null),TDD 4 例;③UI:StepDivider 组件(双 HorizontalDivider 夹 labelSmall 步序标签,FAINT 透明度,与卡族低视觉噪音一致);④接线两态:流式平铺分支(groups.forEachIndexed)+StepGroupCard 小组直渲染分支(逐组 ChunkAssistantItems 化——每步边界前插线);窗口化大组分支暂不插(切片跨 step 边界,记为后续项);⑤i18n:chat_step_label 15 语言全量(i18n-check PASSED 918keys×14lang)。验证:全量单测绿;真机(CARD-452B 恰为 40+ step 密集会话)视口渲染「第 40 步」「第 41 步」分割线(dump 枚举实证),截屏 /tmp/s463.png。待用户手感验收(密集轮次导航体验)。
 
 - [ ] **#459 V2 2.0.18 消费侧 14 端点漂移清单（health/question|form request/pty shells/share/rename/service stop 等 404）** `regression,v2,data`
   - app 调用面 45 点中 14 点在 2.0.18 openapi 缺失（全 404 实证）；真机主链路不受影响（探测器/PATCH session 等降级路径实证），但 question/form 轮询兜底、pty shells、share、service/stop 在 2.0.18 下不可用。详见回归报告 §1.2/缺陷 D2

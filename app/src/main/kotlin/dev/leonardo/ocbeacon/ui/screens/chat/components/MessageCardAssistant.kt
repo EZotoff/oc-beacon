@@ -432,7 +432,10 @@ internal fun MessageCardAssistant(
                         if (skipStepGroupItem) {
                             // 大组展开态:内容已拆为独立 LazyItem(见 buildChatEntries)
                         } else if (isStreaming) {
-                            item.groups.forEach { g ->
+                            item.groups.forEachIndexed { gi, g ->
+                                // #463:step 边界(消息边界)插分割线+步序
+                                dev.leonardo.ocbeacon.ui.screens.chat.tools.stepDividerBefore(gi, item.stepStarts)
+                                    ?.let { ord -> StepDivider(ord) }
                                 val sp = (g as? PartGroup.Single)?.part
                                 if (sp != null) {
                                     key(sp.id) {
@@ -1303,6 +1306,36 @@ internal fun StepGroupFoldRow(
 }
 
 /**
+ * #463(2026-09-29 用户提案):turn 内 step 边界分割线——React 密集轮次
+ * (思考+执行卡重复铺屏且无文字反馈)的步间导航。线+「Step x」序号
+ * (消息边界=step 边界,#422 既有语义);首 step 不插(turn 开始处)。
+ */
+@Composable
+private fun StepDivider(stepOrdinal: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        HorizontalDivider(
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = AlphaTokens.FAINT),
+        )
+        Text(
+            text = stringResource(R.string.chat_step_label, stepOrdinal),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AlphaTokens.FAINT),
+        )
+        HorizontalDivider(
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = AlphaTokens.FAINT),
+        )
+    }
+}
+
+/**
  * #422 step 过程组卡——**#430(2026-09-24 用户裁决)过程卡片退役**:折叠行与
  * CardExpandReveal 包裹撤除,过程内容(思考/工具/文本 parts)默认全展示。
  * 流式 turn 的平铺路径(见 AssistantMessageCard 分支)语义不变;大组仍走
@@ -1398,18 +1431,23 @@ private fun StepGroupCard(
                         ),
                     )
                 } else if (!stepNeedsSlicing) {
-                ChunkAssistantItems(
-                    items = step.groups.map { RenderItem.GroupedParts(it) },
-                    textColor = textColor,
-                    isAmoled = isAmoled,
-                    onViewSubSession = onViewSubSession,
-                    onOpenFile = onOpenFile,
-                    onLocateTask = onLocateTask,
-                    eventExpandedStates = eventExpandedStates,
-                    renderableTurn = renderableTurn,
-                    compact = compact,
-                    readinessRegistry = readinessRegistry,
-                )
+                // #463:小组直渲染——step 边界(消息边界)插分割线+步序
+                step.groups.forEachIndexed { gi, g ->
+                    dev.leonardo.ocbeacon.ui.screens.chat.tools.stepDividerBefore(gi, step.stepStarts)
+                        ?.let { ord -> StepDivider(ord) }
+                    ChunkAssistantItems(
+                        items = listOf(RenderItem.GroupedParts(g)),
+                        textColor = textColor,
+                        isAmoled = isAmoled,
+                        onViewSubSession = onViewSubSession,
+                        onOpenFile = onOpenFile,
+                        onLocateTask = onLocateTask,
+                        eventExpandedStates = eventExpandedStates,
+                        renderableTurn = renderableTurn,
+                        compact = compact,
+                        readinessRegistry = readinessRegistry,
+                    )
+                }
                 } else {
                 // #427 P3:大组切片+窗口化——组合成本与「视口±1 屏」成正比、
                 // 与内容总高无关(展开 ε 组合/收起弃树都只付窗口内的钱);片高

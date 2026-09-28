@@ -95,6 +95,8 @@ sealed class RenderItem {
         val groups: List<PartGroup>,
         val toolCount: Int,
         val textCount: Int,
+        /** #463:每个 step(消息边界)首组索引(升序,首元素通常 0)——分割线判定用。 */
+        val stepStarts: List<Int> = emptyList(),
     ) : RenderItem()
 }
 
@@ -138,6 +140,17 @@ internal fun toolDedupKey(part: Part.Tool): String? {
 
 private fun RenderItem.singleTool(): Part.Tool? =
     (this as? RenderItem.GroupedParts)?.group?.let { g -> g as? PartGroup.Single }?.part as? Part.Tool
+
+/**
+ * #463:step 边界分割线判定(纯函数,可单测)——第 k≥2 个 step 的首组前插线
+ * 并标序号 k(1-based);首 step/组内/边界外一律 null。step 边界=消息边界
+ * (#422 既有语义:V2/DSH step.finish 落一条消息)。
+ */
+internal fun stepDividerBefore(groupIndex: Int, stepStarts: List<Int>): Int? {
+    if (groupIndex <= 0) return null
+    val pos = stepStarts.indexOf(groupIndex)
+    return if (pos > 0) pos + 1 else null
+}
 
 /**
  * 折叠回合内连续同键 tool 卡：首张保留为 [RenderItem.RepeatingTool]（×N），
@@ -197,6 +210,8 @@ fun computeRenderableTurn(
     // #422 二轮:turn 级折叠累积器(全部非最后消息并入一个 StepGroup)
     var pendingStepMsgId: String? = null
     val pendingStepGroups = mutableListOf<PartGroup>()
+    // #463:每 step(消息)首组索引——StepGroup 分割线序号判定用
+    val pendingStepStarts = mutableListOf<Int>()
     var pendingToolCount = 0
     var pendingTextCount = 0
     for ((msgIndex, msg) in ordered.withIndex()) {
@@ -218,6 +233,7 @@ fun computeRenderableTurn(
         val isLastStep = msgIndex == ordered.lastIndex
         if (!isLastStep && msgParts.isNotEmpty()) {
             if (pendingStepMsgId == null) pendingStepMsgId = msg.message.id
+            if (groups.isNotEmpty()) pendingStepStarts.add(pendingStepGroups.size)
             pendingStepGroups.addAll(groups)
             pendingToolCount += msgParts.count { it is Part.Tool }
             pendingTextCount += msgParts.count { it is Part.Text }
@@ -229,10 +245,12 @@ fun computeRenderableTurn(
                         groups = pendingStepGroups.toList(),
                         toolCount = pendingToolCount,
                         textCount = pendingTextCount,
+                        stepStarts = pendingStepStarts.toList(),
                     ),
                 )
                 pendingStepMsgId = null
                 pendingStepGroups.clear()
+                pendingStepStarts.clear()
                 pendingToolCount = 0
                 pendingTextCount = 0
             }
