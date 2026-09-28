@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#464**（2026-09-28 #463 step 间分割线+Step x 序号(密集 R）。
+**编号**：全局递增，不回收。下一编号：**#465**（2026-09-28 #464 UI 暖态下列表/卡片点击偶发失效(冷启可靠)）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。
 
@@ -177,10 +177,14 @@
 
 ## P2 — 优化与锦上添花
 
+- [ ] **#464 UI 暖态下列表/卡片点击偶发失效(冷启可靠)** `chat-ui`
+  - 2026-09-29 #461/#462 取证副产物:force-stop 冷启后输入 tap 可靠命中(会话行/卡标题),同一 app 暖运行数分钟后点击同坐标零效果(无日志无 UI 变化,vibrator 反馈存在=命中可点击元素但未触发业务);两次独立取证会话复现,冷启后恢复。疑点:点击消费被某 overlay/焦点态拦截或状态门;影响面=自动化测试可靠性,人工使用未报告。待真机复现窗定罪(diagnosing-bugs 流程),暂无用户主诉不阻塞。
+
 - [ ] **#463 step 间分割线+Step x 序号(密集 React 轮次导航)** `chat`
   - 用户提案(2026-09-29):React 过程密集且模型无文字反馈时,思考+执行卡重复铺屏难定位——turn 内每个 step 之间加分割线并标注 Step x(当前轮次第 x 步);涉 i18n 15 语言
   - 2026-09-29 交付(用户提案原样落地):turn 内 step 边界分割线+Step x 步序标注——①数据:RenderItem.StepGroup 增 stepStarts(每 step=消息边界,#422 既有语义的首组索引),装配层 computeRenderableTurn 记录;②判定:stepDividerBefore 纯函数(第 k>=2 个 step 首组前插,首 step/组内/单 step 一律 null),TDD 4 例;③UI:StepDivider 组件(双 HorizontalDivider 夹 labelSmall 步序标签,FAINT 透明度,与卡族低视觉噪音一致);④接线两态:流式平铺分支(groups.forEachIndexed)+StepGroupCard 小组直渲染分支(逐组 ChunkAssistantItems 化——每步边界前插线);窗口化大组分支暂不插(切片跨 step 边界,记为后续项);⑤i18n:chat_step_label 15 语言全量(i18n-check PASSED 918keys×14lang)。验证:全量单测绿;真机(CARD-452B 恰为 40+ step 密集会话)视口渲染「第 40 步」「第 41 步」分割线(dump 枚举实证),截屏 /tmp/s463.png。待用户手感验收(密集轮次导航体验)。
   - 2026-09-29 补齐:窗口化大组分支分割线落地(原记后续项)——stepFirstGroupIds(step 首组 part id→序号,remember(groups,stepStarts))按身份匹配:片内组与全局索引因 splitHeavyTextPart 展开错位,身份匹配精确;split 派生段(#sgN)不在 map=正确不插(段属组内中段);Context 组无单一 part id=罕见边界不插。片内改逐组渲染(ChunkAssistantItems 纯 for 分发器零间距回归,与直渲染分支同构)。至此 #463 三分支全覆盖(流式平铺/小组直渲染/大组窗口化)。验证:全量单测绿;真机冷启 CARD-452B 复验「第 40/41 步」渲染+零 crash(logcat FATAL=0)。
+  - 2026-09-29 流式验证闭环:v1 实测单 step turn(一次消息 3 个 tool call,3 张完成卡)无分割线=首 step 不插语义正确;多 step 场景 CARD-452B 第 40/41 步实证在前。正反两面验证完毕,#463 仪器可断言部分全部收口,余 V6 真手指手感(密集 React 轮次导航体验)待用户验收。同批登记 #465 暖态点击失效现象(#461/#462 取证副产物,自动化可靠性域,无用户主诉不阻塞)。
 
 - [ ] **#459 V2 2.0.18 消费侧 14 端点漂移清单（health/question|form request/pty shells/share/rename/service stop 等 404）** `regression,v2,data`
   - app 调用面 45 点中 14 点在 2.0.18 openapi 缺失（全 404 实证）；真机主链路不受影响（探测器/PATCH session 等降级路径实证），但 question/form 轮询兜底、pty shells、share、service/stop 在 2.0.18 下不可用。详见回归报告 §1.2/缺陷 D2
