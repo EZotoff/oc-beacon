@@ -102,6 +102,21 @@ class DshRemoteMuxEngine(
      */
     private val silenceWatchdog = DshSilenceWatchdog()
 
+    /**
+     * #441-A2（2026-09-28）：streaming 期望入口——由 SseConnectionManager collect
+     * SessionStateService.activityFlow（任一会话 activity 非空=期望帧流）经
+     * orchestrator 转发至此。激活哨兵判死门（A1 交付的待命态在此通电）。
+     */
+    fun onStreamingChanged(active: Boolean) {
+        silenceWatchdog.onStreamingChanged(active)
+    }
+
+    /**
+     * #441-A2：follow 逻辑流结束（End/StreamError）处理器——当前代 muxLoop 装载
+     * （清理 followed 幂等集，使事件驱动的补开/#333 聚焦请求可重开该会话流）。
+     */
+    @Volatile private var followEndedHandler: ((String) -> Unit)? = null
+
     /** 帧到达喂哨兵（任意帧=通道活着）。包装于 start 的 onFrame 回调。 */
     fun start(onFrameRaw: (method: String, payload: JsonObject, rpcId: String) -> Unit) {
         val onFrame: (String, JsonObject, String) -> Unit = { m, p, r ->
@@ -150,6 +165,7 @@ class DshRemoteMuxEngine(
         generation = null
         watchdogJob?.cancel()
         watchdogJob = null
+        followEndedHandler = null
         silenceWatchdog.onStreamingChanged(false)
         state.value = DshWsConnectionState.Disconnected
         pendingWaterfalls.clear()
@@ -210,6 +226,12 @@ class DshRemoteMuxEngine(
                     AppLogger.d(TAG, "动态 follow 发送失败（连接已断？）: " + target.sessionId)
                 }
             }
+        }
+        // #441-A2：本代 follow 结束处理——followed 清幂等集（End/StreamError 后
+        // 事件驱动补开/聚焦请求不再被去重拦截；不自动立即重开——End=会话正常
+        // 消亡，立即重开会再 End 成风暴，重开时机交给服务器事件）。
+        followEndedHandler = { sid ->
+            followed.remove(sid)
         }
         // #333：本代聚焦开流入口（与 onSessionActive 同款异步解析，resolve 失败静默放弃）
         focusFollowOpener = { sid ->
@@ -323,9 +345,16 @@ class DshRemoteMuxEngine(
         }
         when (frame) {
             is DshMuxCodec.Item -> syn.onItem(frame.streamId, frame.value, pendingWaterfalls)
-            is DshMuxCodec.StreamError ->
+            is DshMuxCodec.StreamError -> {
                 AppLogger.w(TAG, "流错误 streamId=" + frame.streamId + ": " + frame.error.toString().take(160))
-            is DshMuxCodec.End -> Unit // 逻辑流结束（follow 会话消亡等）——无需动作
+                // #441-A2：错误终局的 follow 流同样清幂等集（与 End 同治——
+                // 原实现两分支都无动作，followed 残留 → 本连接代内该会话永久静默）
+                onFollowStreamClosed(frame.streamId)
+            }
+            // #441-A2：follow 流 End（会话消亡等）→ 清 followed 幂等集——
+            // 原「Unit 无需动作」注释是 #441 定罪的缺口：幂等集残留使事件驱动
+            // 补开（#319 onSessionActive）与聚焦请求（#333）全部被去重拦截。
+            is DshMuxCodec.End -> onFollowStreamClosed(frame.streamId)
         }
     }
 
@@ -339,6 +368,14 @@ class DshRemoteMuxEngine(
 
     private fun followStreamId(sessionId: String): String = FOLLOW_PREFIX + sessionId
 
+    /** follow 流结束分发：streamId 反解会话 id（非 follow 流忽略），交当前代 handler。 */
+    private fun onFollowStreamClosed(streamId: String) {
+        followSessionIdOf(streamId)?.let { sid ->
+            followEndedHandler?.invoke(sid)
+            AppLogger.i(TAG, "follow 流结束——幂等集已清，可事件驱动重开: " + sid)
+        }
+    }
+
     private companion object {
         const val EVENTS_STREAM = "evt"
         const val CONTROL_STREAM = "ctl"
@@ -350,6 +387,13 @@ class DshRemoteMuxEngine(
         const val WORKSPACE_ENDPOINT = "workspace/follow"
     }
 }
+
+/**
+ * #441-A2：follow 流 streamId → 会话 id 反解（纯函数可测）。
+ * 非 follow 流（evt/ctl/wsp 等）返回 null（不参与结束清理）。
+ */
+internal fun followSessionIdOf(streamId: String): String? =
+    if (streamId.startsWith("f:")) streamId.removePrefix("f:") else null
 
 /**
  * mux 下行帧编解码（journal §2.4：item/error/end 三型）。

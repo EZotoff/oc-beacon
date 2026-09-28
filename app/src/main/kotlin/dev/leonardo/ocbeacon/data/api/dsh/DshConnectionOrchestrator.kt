@@ -26,6 +26,12 @@ private const val TAG = "DshConnOrch"
  * #276：DSH 传输只能走 WS（§1.6-1，GET 拦 426）且纯下行——上行全部走 HTTP。
  */
 interface DshFrameSource {
+    /**
+     * #441-A2（2026-09-28）：streaming 期望钩子——SseConnectionManager collect
+     * FSM activityFlow 后对登记帧源转发。default no-op（legacy 引擎无哨兵）；
+     * 协议路由帧源覆写转发给 mux 引擎的静默哨兵（判死门通电）。
+     */
+    fun onStreamingChanged(active: Boolean) {}
     val connectionState: StateFlow<DshWsConnectionState>
     fun start(baseUrl: String, onFrame: (method: String, payload: JsonObject, rpcId: String) -> Unit)
     fun stop()
@@ -194,6 +200,11 @@ private class DshProtocolRoutingFrameSource(
                 it.start(baseUrl, onFrame)
             }
         }
+    }
+
+    /** #441-A2：streaming 期望转发（SseConnectionManager → 当前 mux 引擎的哨兵）。 */
+    override fun onStreamingChanged(active: Boolean) {
+        mux?.onStreamingChanged(active)
     }
 
     override fun stop() {

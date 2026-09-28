@@ -125,6 +125,19 @@ class SseConnectionManager @Inject constructor(
     private val dshFrameSources = ConcurrentHashMap<String, dev.leonardo.ocbeacon.data.api.dsh.DshFrameSource>()
 
     init {
+        // #441-A2（2026-09-28）：streaming 期望 → DSH 静默哨兵。单一真相源
+        // （SessionStateService.activityFlow——任一会话 activity 非空=Busy 派生
+        // =期望帧流）经 orchestrator 转发到当前 mux 引擎，激活 A1 待命态的
+        // 判死门。distinctUntilChanged 防抖；collect 在连接管理器生命周期。
+        scope.launch {
+            sessionStateRepository.activityFlow
+                .map { m -> m.values.any { it != null } }
+                .distinctUntilChanged()
+                .collect { active ->
+                    // 对全部登记的 DSH 帧源转发（协议路由源→mux 哨兵；legacy no-op）
+                    dshFrameSources.values.forEach { it.onStreamingChanged(active) }
+                }
+        }
         // 2026-08-15（research/06 P0）：接线 durable.seq gap 检测——服务器每事件
         // seq 严格递增（core/event.ts:294）；连接代内 gap = 事件丢失（非断连，
         // 如订阅队列溢出丢弃）→ 记录 gapDetected（L3/观测层消费；后续可接
