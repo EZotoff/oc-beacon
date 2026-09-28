@@ -111,6 +111,20 @@ internal object StreamingScrollHold {
 internal const val BIG_RELEASE_CH = 200
 internal const val BIG_RELEASE_MIN_INTERVAL_MS = 200L
 
+/**
+ * #461(2026-09-29):流式 pilot 准入契约(纯函数,单测锚)——pilot 仅服务真流式。
+ *
+ * 静态文本(历史/完结)一律 [asyncParse]=true 走 #428 分层解析:
+ * StreamingMarkdownState 初始空、靠 LaunchedEffect 逐帧 append 填充,静态文本
+ * 误入后在 CardExpandReveal ε/展开窗内与 settle 竞态 → H=0 僵尸态(真机三方
+ * 定罪:settle H=0×3 / dump 无内容节点 / 像素 8dp 单档)。
+ */
+internal fun streamingPilotEligible(
+    hasOverrideState: Boolean,
+    asyncParse: Boolean,
+    isUser: Boolean,
+): Boolean = !hasOverrideState && !asyncParse && !isUser
+
 internal object JankHoldGate {
     val enabled: Boolean by lazy {
         try {

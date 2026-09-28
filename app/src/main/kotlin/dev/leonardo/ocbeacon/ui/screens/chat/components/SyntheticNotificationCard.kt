@@ -151,6 +151,8 @@ internal fun SyntheticNotificationCard(
                     markdown = out,
                     textColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     isUser = false,
+                    // #461 同款防御:展开区静态 output
+                    asyncParse = true,
                 )
             }
         },

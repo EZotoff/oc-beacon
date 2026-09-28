@@ -598,7 +598,9 @@ internal fun MarkdownContent(
     // 归一化让位（冲突①裁决）：流中 append 原始 delta，完结由上方 preParsedState
     // 分支的既有归一化+分片路径接管，跳变由高度补偿吸收（V6 验证项）。
     // 回退 = flavor 的 STREAMING_MD_PILOT 置 false。
-    if (overrideState == null && !asyncParse && StreamingMarkdownPilot.enabled && !isUser) {
+    // #461：准入收为 streamingPilotEligible 纯函数——静态文本(asyncParse=true)
+    // 不得误入(空 state 靠逐帧 append 填充,ε 窗竞态 → H=0 僵尸展开态)。
+    if (streamingPilotEligible(overrideState != null, asyncParse, isUser) && StreamingMarkdownPilot.enabled) {
         // #437：pilotState.state 只收 SafePrefixGate 放行的定案内容；
         // 扣留尾部（heldTail）超龄后由降亮区呈现（锁高裁剪+呼吸光标，
         // 高度流=低频量子，与 #435 引擎配对兼容）。回退 = STABLE_REVEAL_PILOT

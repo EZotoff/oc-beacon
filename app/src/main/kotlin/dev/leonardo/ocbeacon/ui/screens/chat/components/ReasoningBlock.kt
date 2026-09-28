@@ -344,7 +344,14 @@ internal fun ReasoningBlock(
                                     markdown = text,
                                     textColor = textColor.copy(alpha = AlphaTokens.MUTED),
                                     isUser = false,
-                                    customFontSize = "small"
+                                    customFontSize = "small",
+                                    // #461 根修(2026-09-29):历史思考文本不得走流式 pilot——
+                                    // StreamingMarkdownState 初始空靠逐帧 append 填充,在
+                                    // CardExpandReveal ε/展开窗内与 settle 竞态 → 600ms 内
+                                    // 未落地 → H=0 僵尸态(展开集完成但 0 高,toggle 永无视觉;
+                                    // 真机三方定罪:settle H=0×3/dump 无内容节点/像素 8dp 单档)。
+                                    // 与正文 PartContent 同语义:流式走 pilot,历史走 #428 分层。
+                                    asyncParse = !isStreaming,
                                 )
                             }
                         }

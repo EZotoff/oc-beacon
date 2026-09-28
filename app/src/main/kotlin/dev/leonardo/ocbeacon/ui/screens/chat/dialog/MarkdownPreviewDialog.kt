@@ -136,7 +136,9 @@ internal fun MarkdownPreviewDialog(
                                     MarkdownContent(
                                         markdown = markdown,
                                         textColor = MaterialTheme.colorScheme.onSurface,
-                                        isUser = false
+                                        isUser = false,
+                                        // #461 同款防御:预览对话框静态全文(常超长,异步路径本就正确)
+                                        asyncParse = true
                                     )
                                 }
                             }

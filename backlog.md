@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#461**（2026-09-28 #460 V1 服务端三处顽固缺陷实测（find 超时/项）。
+**编号**：全局递增，不回收。下一编号：**#464**（2026-09-28 #463 step 间分割线+Step x 序号(密集 R）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。
 
@@ -66,12 +66,12 @@
 
 ## P1 — 核心功能需求
 
-- [~] **#452 新会话首条消息发送后不上屏：播种消息数据就绪但渲染门等到首个 SSE 事件** `chat` `render`
-  - 真机取证：[send-seed] +0.4s 数据层已有（msgs=2、Room upsert n=2），列表像素空白至 ~+3.5s（首个 SSE 事件+~1.5s），用户气泡从不单独出现（总与助手骨架一起上屏）。
-  - 免费服务首事件延迟大时窗口拉长到 10-90s（用户 17:21 实测 turn 89s）——完全解释「第一条消息没上屏」与重进后长时间空白观感。
-  - 重进复现（空闲/流式中途）均无空白：缓存即时+REST 0.4-1.5s；replaceSessionMessages 已有空列表守卫；loading 仅在消息也为空时清空——数据层无嫌疑，嫌疑在 displayItems→LazyColumn 之间的渲染管线（readiness/turn 重建/会话状态门）。
-  - 取证数据：/tmp/statbar/logcat-send.txt + shot-*.png + dots-*.png；修复需专门插桩批次（state→displayItems→chatEntries→像素 四点计时）。
-  - 2026-09-27 深夜独立复验 PASS：API 路径 user 纯增量独立 ENTRIES n=1（+43ms，修复前 n=1 从不出现）；app 内发送路径气泡 ≤31.3s 帧上屏（shot-452b-3）。详见 journal 2026-09-27-v2「#452 独立复验」。旁观察：本环境走 V1 发送无本地播种（#447 同源）；[452-display] 门控流式期未完全生效（log 卫生）。
+- [ ] **#462 多卡展开态收起其一仍导致用户视角高度变化** `scroll`
+  - 用户报告(2026-09-29):展开≥2 张内容卡后收起其中一张,视口锚定仍漂移;要求根因分析+根修(收起配对在多卡展开态的语义缺口)
+
+- [ ] **#461 部分思考卡片无法打开** `chat-ui`
+  - 用户报告(2026-09-29):有的思考卡点击展开无反应;范围/触发条件待取证(疑与 #425 prewarm 队列化改动或 fraction 状态相关,需真机定罪)
+  - 2026-09-29 根修交付:根因三方定罪(日志 settle H=0 三次复现/dump 展开区无内容节点/像素级判读标题行与下卡仅 8dp 单档间距)+DB 排除数据侧(277 条 reasoning 文本全非空 81-3103 字符,无不稳定结构开头)——ReasoningBlock 等静态调用点未传 asyncParse(默认 false),MarkdownContent pilot 分支仅判 !isUser,历史思考文本误入流式路径:StreamingMarkdownState 初始空靠 LaunchedEffect 逐帧 append 填充,在 CardExpandReveal ε/展开窗内与 settle 竞态,600ms 内未落地即 H=0 僵尸态(展开集 f=1.000 完成但 0 高,toggle 永无视觉)。修:①准入收为 streamingPilotEligible 纯函数并接线 :601;②六个静态调用点补 asyncParse(ReasoningBlock=!isStreaming 与正文同语义;CompactionCard/SyntheticNotificationCard/Search/Task/PreviewDialog=true,同根因宿主一并接线)。TDD:StreamingPilotEligibilityTest 4 例红转绿(静态不入/流式入/覆写旁路/用户侧不入)+全量单测绿。真机复验:CARD-452B 点击思考卡内容即渲染(dump 出现内容文本节点;修复前同位置三次复现零节点)。暖态列表点击偶发失效为独立未解现象(冷启流程可靠,不阻塞本卡)。
 
 - [~] **#447 opencode server 2.0.16+ 移除 /api/health 导致 app V2 探测永久失效** `network` `compat`
   - 2.0.16+ 实测移除 GET /api/health(鉴权通过仍 404)→ApiVersionDetector V2 探测只认该端点返回 null；tryV1 探 /global/health 收 SPA HTML 被 content-type 防御拦截→双探皆空 UNKNOWN
@@ -86,6 +86,7 @@
   - 2026-09-28 方案A 子项一(静默哨兵)交付:DshSilenceWatchdog(纯逻辑,虚拟时钟,7例TDD)+引擎接线(帧喂食/监控协程15s/判死→close走既有退避重连)。两轮真机实证收敛出关键结论:期望源在引擎层不可用——常开=空闲110s周期重连循环(follow后无帧);挂follow open=fire-and-forget无回执必判死;respond走HTTP独立通道与WS帧流无关。正确源=ChatUiState streaming(SseConnectionManager层onStreamingChanged接线),与follow End自愈状态机同批(A2)。当前态:哨兵待命(帧喂食在,判死门常关=零误杀,210s+空闲观察0判死,连接Online authed)——A2接线即激活
   - 2026-09-28 方案A 子项二(A2)交付:①streaming 期望三跳接线——SessionStateService.activityFlow(任一会话 activity 非空)→SseConnectionManager collect(distinctUntilChanged)→dshFrameSources 转发(DshFrameSource 接口新增 default 钩子,协议路由源覆写→mux 哨兵)——A1 待命态判死门通电;②follow End/StreamError 自愈——原 End 分支 Unit 无动作(定罪点)改为清 followed 幂等集(followSessionIdOf 纯函数反解,3例TDD),事件驱动补开(#319)/聚焦请求(#333)不再被去重拦截;不自动立即重开(End=正常消亡,防风暴)。验证:10例测试绿+全量单测绿+真机空闲0判死+等待期FSM未Busy时门关自洽(链路行为分析闭环)。trip 正例留待 #441 真实场景(不可按需构造)
   - 2026-09-28 方案A 子项三(A3 网络切换 kick)交付:①NetworkMonitor 增 NetworkIdentity(handle=Network.getNetworkHandle 稳定句柄+主传输)与 networkIdentity StateFlow——onCapabilitiesChanged(validated)更新身份,onLost 仅当前身份网络清空;回调工厂提取 createCallback() internal 可测缝(纯提取重构生产行为零变化,绕开单测 android stub:NetworkRequest.Builder.addCapability 返回null)。②OpenCodeConnectionService 增 networkSwitchKickJob:identity 流 drop(1)+debounce 2s(切换竞速防抖)+distinctUntilChanged→reconnectAll;onDestroy 与 recoveryJob 同步 cancel。③SseConnectionManager 死注入清理:networkMonitor 构造参数删除(kick 统一 Service 层;调研§5.3'接线或删除'取删除)。TDD:NetworkMonitorIdentityTest 4例(validated追踪/同态切换identity变化且NetworkState恒Available盲区前提自证/仅当前网络lost才清/unvalidated不成为身份)全绿+全量单测绿。真机自动验证不可行:WiFi切换/飞行模式都断无线adb(serial即WiFi adb),同A1哨兵trip正例先例留真实场景——用户日常网络切换后 logcat 搜 'Network identity switched' 应见 kick。
+  - 2026-09-29 用户裁决:A3 网络切换 kick 真机暂不可测(会断无线adb)→待观察:或由 agent 侧模拟测(ConnectivityManager 双网络回调仿真不可行,系统层注入无门;可做=USB adb 有线连接下 svc wifi 切换——serial 走有线时不受影响,待执行)。3 周观察窗(至 2026-10-19):无反馈即关闭待观察标记。
 
 - [ ] **#438 流式突发路径收尾：gate 时间限速与配对 set 保 key** `streaming` `scroll` `#437`
   - 真机 R9 实证两残差：①catch-up 期 gate 按 400ch/48ms 释放而 measure 滞后聚合（442ms 聚 7 批=单 note d=6236）；②大额配对 set 走 requestPositionAndForgetLastKnownKey 核销锚 key，突发期新 item 插入+重排后 LazyList 按字面 index 重锚（LEAP -7562 视觉大跳）
@@ -173,6 +174,9 @@
 
 ## P2 — 优化与锦上添花
 
+- [ ] **#463 step 间分割线+Step x 序号(密集 React 轮次导航)** `chat`
+  - 用户提案(2026-09-29):React 过程密集且模型无文字反馈时,思考+执行卡重复铺屏难定位——turn 内每个 step 之间加分割线并标注 Step x(当前轮次第 x 步);涉 i18n 15 语言
+
 - [ ] **#459 V2 2.0.18 消费侧 14 端点漂移清单（health/question|form request/pty shells/share/rename/service stop 等 404）** `regression,v2,data`
   - app 调用面 45 点中 14 点在 2.0.18 openapi 缺失（全 404 实证）；真机主链路不受影响（探测器/PATCH session 等降级路径实证），但 question/form 轮询兜底、pty shells、share、service/stop 在 2.0.18 下不可用。详见回归报告 §1.2/缺陷 D2
 
@@ -182,10 +186,7 @@
 - [~] **#457 displayItems 单 key 值缓存三处遗留洞(#452 同款:SnapshotStateList 实例键自反恒等)** `chat,render,bug`
   - #452 深审(issue452-followup-audit.md)全仓扫描:ChatMessageList.kt:595 turnOrdinalByMsgId(中危——台账轮次号翻页后永不更新/错位,违背自身设计注释)、:599 displayItemMessageIds(低危 V1 去重)、:602 v1CompactionSummaryInList(低危)——均 displayItems 单 key 值缓存无兜底;修法照抄 size-key 或改 derivedStateOf;另建议补 androidTest Compose 层回归测试防 key 改回实例引用(骨架已在审计报告)
   - 2026-09-28 已修:三处(ChatMessageList.kt turnOrdinalByMsgId/displayItemMessageIds/v1CompactionSummaryInList)remember(displayItems) 实例键自反恒真 → displayItems.size 键(#452 同款修法,快照读建立失效依赖+值比较);注释已标机制。验证:全量单测绿;行为级androidTest(Compose层)仍缺(与#452深审建议同池)
-
-- [~] **#456 Single part后零高提问槽位吃spacedBy双倍间距:卡↔正文16dp vs 卡↔卡8dp** `chat-ui,render,bug`
-  - 根因:MessageCardAssistant GroupedParts(Single)分支无条件渲染CardExpandReveal(visible恒false)——零高AnimatedVisibility仍是Column(spacedBy)直接子项,两侧各计一档spacing→每个Single part后双倍间距(真机定罪:卡↔正文44/43px=16dp vs 组内卡间24-27px=8dp)。修复:effectiveAnchorId!=null才渲染槽位(无提问历史零节点)。#389三轮c『0高度不占spacedBy』注释是误解。残差:提问exit后槽位零高常驻待动画完成回调
-  - 验证:compile✓全量单测✓真机复测(完结会话思考卡→正文dump差19px≈8dp单档,修复前同构43px=16dp);真机装包2026-09-28 00:06
+  - 2026-09-29 用户裁决:先留着待观察,3 周窗(至 2026-10-19)无反馈(轮次号错乱/去重失败类怪象)即关闭。防御性修复无可直接观察面,日常无异常视为通过。
 
 - [~] **#455 统计栏视觉微调：间距对齐 user 侧 + agent 徽标边框化** `uiux` `chat`
   - assistant 正文→统计栏间距原 SM 8dp（compact XS 4dp），user 气泡外置统计栏 4dp（compact 2dp）——两侧不一致（2026-09-27 用户报告）
@@ -211,11 +212,6 @@
   - P1-P3 已实现并真机取证(f2bcb12e/a1b3ce8f/3759317a)：切片器+片高账本+窗口化宿主，引擎契约零改动
   - 实测：暖展开269ms/收起772ms(20k单体片)/冷展开3118ms/小组227-249ms；铁律DRAW探针topY=644逐帧恒定
   - 差距：多片窗切换无真机数据(造数失败,免费模型连败)；P3b预热错峰未做；P4未立项——详见 journal 2026-09-23 节
-
-- [ ] **#425 预热错峰:滚动停止后多卡同帧预热风暴** `perf` `render`
-  - 实测 Skipped 53 帧(~880ms 空闲停顿):多张折叠卡同一空闲窗并发 ε 组合
-  - 方案:PreRenderCoordinator 队列化,一卡一窗串行预热
-  - 2026-09-28 队列化交付(方案A,issue424-425调研§5):PreRenderCoordinator 增 withPrewarmGrant 授权原语——Mutex FIFO 互斥(任意时刻至多1卡ε组合在途,持约者取消/异常 withLock finally 必释放防死锁)+授权门等 episode 平息(批次十三b让位环语义上提,250ms×8有界超时弃窗返回null)+槽间隔32ms(排队唤醒同帧双组合防御);CardExpandReveal prewarm effect 接线(delay到期→申请授权,执行前全量复查 visible/isScrollInProgress/animating/fraction;clock.animating 从持约等待改执行前即弃——animating期几乎总伴随全局租约,授权门已在等,不占队空转)。TDD:PreRenderCoordinatorTest +5例全绿+全量单测绿。真机(09:10:38,CARD-452B会话):14卡预热全串行,相邻[PRD-warm]间隔59-82ms(≥32ms槽间隔,≥3.5帧@60Hz),零同帧双卡零crash——修复前同帧齐发实测Skipped 53帧。R-B(单卡长块)不复发不启动方案B。真手指体感(静止后偶发一顿是否消失)出V6清单待用户验收。
 
 - [ ] **#424 步组内容后台解析预取池(L0)** `perf` `render`
   - 用户提案:守护线程池(如2线程)后台预取 Markdown 解析——Compose 组合/测量是主线程铁律不可搬,但解析(最重CPU段)可并行;卡片可见即预取解析模型,ε 组合直接命中缓存

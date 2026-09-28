@@ -187,6 +187,8 @@ internal fun CompactionNoticeCard(
                             ),
                             isUser = false,
                             customFontSize = "small",
+                            // #461 同款防御:压缩卡 body 为静态文本(折叠展开区内,同 ε 窗竞态面)
+                            asyncParse = true,
                         )
                     }
                 }
