@@ -98,11 +98,12 @@ internal class StepGroupHeightLedger private constructor(
 /**
  * #437 验收十三轮：进程级片高账本店。
  *
- * 原载体 rememberSaveable("sg_ledger_"+msgId) 在 key(item.msgId) 子树重建或
- * 流式平铺↔折叠组分支互换时整本蒸发（saveable 只跨进程死亡恢复，不跨分支
- * 互换）→ 冷账本 → Σ 桩缺失 + 多帧重测爬升（真机 ScrollDiag RESIZE
- * 4958→774→5648 塌缩-弹开实证，2026-09-26 真机日志）。店以 msgId 为键进程
- * 存活，LRU 上限防膨胀；条目回收/组重派生/分支互换全存活。进程死亡回冷一次
+ * 原载体 rememberSaveable("sg_ledger_"+msgId) 在 key(item.msgId) 子树重建时
+ * 整本蒸发（saveable 只跨进程死亡恢复，不跨子树重建）→ 冷账本 → 多帧重测
+ * 爬升（真机 ScrollDiag RESIZE 4958→774→5648 塌缩-弹开实证，2026-09-26 真机
+ * 日志;时为流式平铺↔折叠组互换期,清理批次后互换已灭,子树重建场景仍存）。
+ * 店以 msgId 为键进程存活，LRU 上限防膨胀；条目回收/组重派生全存活。进程死
+ * 亡回冷一次
  * ——冷路径本就正确（整体组合测量），仅多一次屏外测量。
  */
 internal object StepGroupLedgerStore {

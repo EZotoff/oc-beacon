@@ -215,7 +215,8 @@ fun computeRenderableTurn(
 
     // 单次遍历：过滤 + 分组 + 分隔线 + synthetic 卡片
     val renderItems = mutableListOf<RenderItem>()
-    // #422 二轮:turn 级折叠累积器(全部非最后消息并入一个 StepGroup)
+    // #422 二轮→清理批次:turn 级分组累积器(全部非最后消息并入一个
+    // StepGroup;折叠形态已退役,分组语义保留——承载 step 边界/分割线)
     var pendingStepMsgId: String? = null
     val pendingStepGroups = mutableListOf<PartGroup>()
     // #463:每 step(消息)首组索引——StepGroup 分割线序号判定用
@@ -237,10 +238,9 @@ fun computeRenderableTurn(
         }
         val msgParts = filterRenderableParts(msg.parts)
         val groups = groupContextParts(msgParts)
-        // #422 二轮(用户裁决:整个 turn 收成一个,非每 step 一个):非最后消息
-        // 的内容累积到 turn 级待折叠组,最后消息(最终回答)前统一 flush 为单个
-        // StepGroup;流式豁免在渲染层(LocalInStreamingTurn)——装配与流式解耦,
-        // turn 完结后重组装配即自动折叠(DSH 同款时机)。
+        // #422 二轮(用户裁决:整个 turn 收成一个,非每 step 一个)→清理批次:
+        // 非最后消息累积到 turn 级分组,最后消息(最终回答)前统一 flush 为单个
+        // StepGroup;装配与流式解耦,渲染统一树恒平铺(折叠形态已退役)。
         val isLastStep = msgIndex == ordered.lastIndex
         if (!isLastStep && msgParts.isNotEmpty()) {
             if (pendingStepMsgId == null) pendingStepMsgId = msg.message.id

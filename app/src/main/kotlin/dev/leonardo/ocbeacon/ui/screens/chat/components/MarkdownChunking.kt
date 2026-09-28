@@ -327,7 +327,7 @@ internal fun buildChatEntries(
         }
         val plan = if (!msg.isUser && !isStreamingTurn && turnKey !in recentStreamedTurnKeys) {
             val turnMsgs = turnGroups[rawIndex] ?: listOf(msg)
-            // #422:多消息轮次(含 StepGroup 折叠组)不走 MdChunkPlan 分片——
+            // #422:多消息轮次(含 StepGroup 分组,统一树平铺)不走 MdChunkPlan 分片——
             // Chunk 条目按 part 直渲染,绕过 turn renderable(折叠组行与末消息
             // 内容双丢失,巨型中间消息平铺)。防御性抑制(协调器侧已不产);
             // 巨型末消息由 Stage B 分段接管(SG 保持独立 item)。
