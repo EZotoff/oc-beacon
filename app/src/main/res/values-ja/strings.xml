@@ -257,8 +257,6 @@
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">トークン/秒</string>
     <string name="chat_msg_tail_summary">%1$d ステップ · %2$d ツール</string>
-
-    <string name="chat_step_label">ステップ %1$d</string>
     <string name="a11y_message_detail">メッセージの詳細</string>
     <string name="chat_stats_session_title">セッション統計</string>
     <string name="chat_stats_summary">ターン %1$d · %2$d ステップ · %3$s LLM · %4$s ツール</string>

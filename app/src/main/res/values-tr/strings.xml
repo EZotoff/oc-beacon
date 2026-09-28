@@ -257,8 +257,6 @@
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">token/s</string>
     <string name="chat_msg_tail_summary">%1$d adım · %2$d araç</string>
-
-    <string name="chat_step_label">Adım %1$d</string>
     <string name="a11y_message_detail">Mesaj ayrıntıları</string>
     <string name="chat_stats_session_title">Oturum istatistikleri</string>
     <string name="chat_stats_summary">%1$d tur · %2$d adım · %3$s LLM · %4$s araç</string>

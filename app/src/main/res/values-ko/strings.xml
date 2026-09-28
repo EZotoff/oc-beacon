@@ -257,8 +257,6 @@
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">토큰/초</string>
     <string name="chat_msg_tail_summary">%1$d단계 · %2$d개 도구</string>
-
-    <string name="chat_step_label">단계 %1$d</string>
     <string name="a11y_message_detail">메시지 세부정보</string>
     <string name="chat_stats_session_title">세션 통계</string>
     <string name="chat_stats_summary">턴 %1$d · %2$d단계 · %3$s LLM · %4$s개 도구</string>

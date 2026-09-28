@@ -1306,33 +1306,18 @@ internal fun StepGroupFoldRow(
 }
 
 /**
- * #463(2026-09-29 用户提案):turn 内 step 边界分割线——React 密集轮次
- * (思考+执行卡重复铺屏且无文字反馈)的步间导航。线+「Step x」序号
- * (消息边界=step 边界,#422 既有语义);首 step 不插(turn 开始处)。
+ * #463(2026-09-29 用户提案→二轮简化):turn 内 step 边界分割线——React 密集
+ * 轮次的步间视觉分隔。用户裁决(验收二轮):不要「第 x 步」序号,只留简单
+ * 分割线(消息边界=step 边界,#422 既有语义);首 step 不插(turn 开始处)。
  */
 @Composable
 private fun StepDivider(stepOrdinal: Int) {
-    Row(
+    HorizontalDivider(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        HorizontalDivider(
-            modifier = Modifier.weight(1f),
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = AlphaTokens.FAINT),
-        )
-        Text(
-            text = stringResource(R.string.chat_step_label, stepOrdinal),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AlphaTokens.FAINT),
-        )
-        HorizontalDivider(
-            modifier = Modifier.weight(1f),
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = AlphaTokens.FAINT),
-        )
-    }
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = AlphaTokens.FAINT),
+    )
 }
 
 /**

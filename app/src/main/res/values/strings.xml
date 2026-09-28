@@ -243,8 +243,6 @@
     <string name="chat_message_deleted">Message deleted</string>
     <string name="chat_message_delete_failed">Failed to delete message</string>
     <string name="chat_msg_tail_summary">%1$d steps · %2$d tools</string>
- <!-- #463:turn 内 step 边界分割线标签(React 密集轮次导航,用户提案 2026-09-29) -->
- <string name="chat_step_label">Step %1$d</string>
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">tokens/s</string>
     <!-- 2026-09-12 消息层扁平化 批3：统计弹窗（sessionStats + 逐轮明细） -->
