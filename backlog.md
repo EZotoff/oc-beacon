@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#473**（2026-09-28 #472 流式markdown已闭合行内构造即时放行——含）。
+**编号**：全局递增，不回收。下一编号：**#474**（2026-09-28 #473 调试探针族清扫——历代 campaign 遗留）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。
 
@@ -65,10 +65,6 @@
   - 00:07 fling中tap思考卡后,列表对任意方向滑动零响应(MIUIInput事件送达,无ANR,CPU~20%)。force-stop重启/重装(install -r保留数据)均不恢复;pm clear后现场丢失无法复验。嫌疑:某持久化状态(expanded集合/DataStore)触发测量/布局死循环或滚动消费悬挂。复现路径已记录在案,待重建环境后优先定位。
 
 ## P1 — 核心功能需求
-
-- [~] **#472 流式markdown已闭合行内构造即时放行——含标记段落不再憋到段落末一口气** `sse` `render` `streaming`
-  - 用户主诉:斜体等标记行整段扣留到空行毕业才一次性放行(一口气吐出超多内容,斜体最显眼)。根因:SafePrefixGate 行扫描对含 ACTIVE_MARKERS 的行整行 break 扣留,已闭合构造也被扣到段落末。方案:inlineSafeCut 侧翼感知扫描器(与 markdown-jvm 0.7.9 的 canOpen/canClose 判定逐字一致),已闭合 emphasis/code/strikethrough+纯文字尾巴按纯文字同节奏增量放行;未闭合仍零输出(2026-09-25 用户裁决);[]!|#|>|$$|☐☑✅ 硬停维持现状。backlog:322(#441 后续行级定案指示)的落地。
-  - 注:本卡编号 472 与历史 commit 措辞「#472 完结换装(pilotTerminalHold)」无关联——该子项挂 #471② 从未占卡号。
 
 - [ ] **#470 流式高度配对收缩缺口:帽不回改空白残留+ledger收缩不配对视口落** `scroll,chat`
   - 2026-09-30 调研 P3 定罪:①帽轨 reserveReleasePlan 对 trueHeight<=reserved 恒 null(帽单调只增,ScrollCompensation.kt:338)——流式内容回缩(表格列放宽/setext 前重排)时 item 保持旧高=空白残留,直到换流式项 reset;②ledger 轨 note 对 d<0 只 rebase 不配对(:157)——压缩卡/工具横幅回缩时上方内容下坠无补偿。修复需高度引擎域专项设计(帽回改与『已上屏永不回改』既有裁决冲突,需用户裁断语义:回缩时同步缩帽+视口跟随 vs 维持空白)。
@@ -301,6 +297,9 @@
   - 待用户真机观感验收
 
 ## P3 — 观察与低价值改进
+
+- [ ] **#473 调试探针族清扫——历代 campaign 遗留 DEBUG 打点归档** `chore`
+  - grep \\\[DEBUG- 盘点:CardExpandReveal(#420-427/466)/ChatMessageList+MessageCardAssistant(hflick/jk)/SafeFlingBehavior(flng)/ChatScrollController(drift)/rbexp 等几十处打点,均 BuildConfig.DEBUG 门控、release 零影响,但污染调试 logcat(472 闪烁定罪时曾混入噪音)。逐族清理+保留关键结构注释;涉及文件多有编辑协议约束,单独批次执行。
 
 - [ ] **#467 V1 外部注入轮次(POST /session/{id}/message)app 不实时渲染** `sse,v1,data`
   - 2026-09-30 #463 流式验证副产物:服务端 POST 触发的完整轮次(glm-5.3-flash 3 step,响应 JSON 正常返回)app 打开态全程未渲染——新 user 消息与 assistant 流式内容均未出现(视口停中部非贴底排除法+dump 底部仍为旧 turn 实证)。疑 app SSE 订阅/事件处理与「app 自发 prompt」绑定(SessionStateService idle 态过滤外部 message.part 事件?)或 SSE 连接已静默断(#441-B 探针可判:death-snapshot lastEventAgoMs)。影响面:仅外部注入轮次,用户正常发送路径不受影响。待复现窗+探针日志定罪。

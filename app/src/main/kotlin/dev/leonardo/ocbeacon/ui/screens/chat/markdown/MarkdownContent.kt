@@ -620,19 +620,6 @@ internal fun MarkdownContent(
     var pilotEverRendered by remember { androidx.compose.runtime.mutableStateOf(false) }
     val holdPilotTerminal = StreamingMarkdownPilot.enabled &&
         pilotTerminalHold(pilotEverRendered, asyncTerminalPending)
-    // [DEBUG-472] hold 判定链探针:翻转时打点(取 markdown 尾 12 字定位实例)
-    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-        val probeKey = markdown.takeLast(12)
-        androidx.compose.runtime.LaunchedEffect(pilotEverRendered, asyncTerminalReady, holdPilotTerminal, asyncTerminal != null) {
-            dev.leonardo.ocbeacon.logging.AppLogger.d(
-                "MD472",
-                "hold ever=" + pilotEverRendered + " asyncHas=" + (asyncTerminal != null) +
-                    " ready=" + asyncTerminalReady + " hold=" + holdPilotTerminal +
-                    " asyncParse=" + asyncParse + " len=" + markdown.length +
-                    " ov=" + (overrideState != null) + " tail=" + probeKey,
-            )
-        }
-    }
     if (streamingPilotEligible(overrideState != null, asyncParse, isUser) && StreamingMarkdownPilot.enabled ||
         holdPilotTerminal
     ) {
