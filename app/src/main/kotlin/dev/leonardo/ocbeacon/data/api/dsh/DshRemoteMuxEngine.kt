@@ -93,14 +93,53 @@ class DshRemoteMuxEngine(
     /** 当前代活跃 socket（动态 follow 补开用；断开置 null；按代更替覆写）。 */
     @Volatile private var activeSocket: okhttp3.WebSocket? = null
 
-    fun start(onFrame: (method: String, payload: JsonObject, rpcId: String) -> Unit) {
+    /**
+     * #441 方案A 子项一（2026-09-28）：应用层静默哨兵——DSH 线面无 V1/V2 的
+     * 40s 心跳读超时对应物，WS 假活（TCP 在、帧流死）时输出期间渲染永久静默。
+     * 接线语义（防误杀折中）：**连接后曾收到至少一帧 ∧ 静默超阈值 → 判死**，
+     * 主动 close 当前 socket → 走既有断开处理（退避重连 + followed 清账 +
+     * 兜底重订阅）。误杀成本（一次 1-2s 重连）≪ 漏杀成本（永久静默直至重启）。
+     */
+    private val silenceWatchdog = DshSilenceWatchdog()
+
+    /** 帧到达喂哨兵（任意帧=通道活着）。包装于 start 的 onFrame 回调。 */
+    fun start(onFrameRaw: (method: String, payload: JsonObject, rpcId: String) -> Unit) {
+        val onFrame: (String, JsonObject, String) -> Unit = { m, p, r ->
+            silenceWatchdog.onFrame()
+            onFrameRaw(m, p, r)
+        }
         synchronized(this) {
             stopLocked()
             generationId++
             val id = generationId
+            silenceWatchdog.reset()
+            // #441 A2 待接线：期望源两轮真机实证均不可用（常开=空闲 110s 周期重连
+            // 循环；onRequestSent 挂 follow open=fire-and-forget 无回执帧必判死；
+            // respond 走 HTTP 独立通道与 WS 帧流无关）。正确源=ChatUiState streaming
+            // （SseConnectionManager 层 onStreamingChanged 接线），与 follow End
+            // 自愈状态机同批落地。当前哨兵待命（帧喂食在，判死门常关=零误杀）。
+            silenceWatchdog.onStreamingChanged(false)
             generation = scope.launch { muxLoop(id, onFrame) }
+            // 监控协程：15s 粒度轮询判死（独立于 muxLoop 的挂起等待）
+            watchdogJob = scope.launch {
+                while (true) { // cancel 时 delay 抛 CancellationException 自然退出
+                    kotlinx.coroutines.delay(15_000)
+                    if (silenceWatchdog.shouldForceReconnect()) {
+                        AppLogger.w(
+                            TAG,
+                            "silence-watchdog trip: forcing reconnect (frame silence > " +
+                                DshSilenceWatchdog.DEFAULT_TIMEOUT_MS + "ms)",
+                        )
+                        silenceWatchdog.reset()
+                        // close 触发 listener.onClosed/onFailure → muxLoop 当前代退出 → 退避重连
+                        activeSocket?.close(1000, "silence-watchdog")
+                    }
+                }
+            }
         }
     }
+
+    private var watchdogJob: kotlinx.coroutines.Job? = null
 
     fun stop() {
         synchronized(this) { stopLocked() }
@@ -109,6 +148,9 @@ class DshRemoteMuxEngine(
     private fun stopLocked() {
         generation?.cancel()
         generation = null
+        watchdogJob?.cancel()
+        watchdogJob = null
+        silenceWatchdog.onStreamingChanged(false)
         state.value = DshWsConnectionState.Disconnected
         pendingWaterfalls.clear()
         focusFollowOpener = null
