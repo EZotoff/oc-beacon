@@ -1397,10 +1397,14 @@ internal fun CardExpandReveal(
         }
     }
 
+    // 冷组合抬底数据源:finalHCache(rememberSaveable)跨回收存活,-1=无缓存
+    // (抬底条件 floor>measured 自然失效)。remember(finalHCache) 稳定引用,
+    // lambda 闭包读 state=布局相订阅,缓存更新自动失效重测。
+    val floorProvider = remember(finalHCache) { { finalHCache.value } }
     Box(
         modifier = modifier
             .clipToBounds()
-            .cardExpandGeometry(clock)
+            .cardExpandGeometry(clock, floorProvider)
             .onPlaced {
                 // #423 批次四:布局相写入。真机取证(09-22):onGloballyPositioned 实测
                 // 在绘制期才派发——晚于 pre-draw,FLUSH 修正器在增长落地帧只能读到陈旧值
@@ -1697,6 +1701,7 @@ private suspend fun settleUntilContentStable(clock: CardExpandClock) {
  */
 private class CardExpandGeometryNode(
     var clock: CardExpandClock,
+    var floorProvider: () -> Int = { 0 },
 ) : Modifier.Node(), LayoutModifierNode {
 
     private var cachedPlaceable: Placeable? = null
@@ -1747,7 +1752,27 @@ private class CardExpandGeometryNode(
                 cachedWidth = width
             }
         }
-        val report = clock.onMeasure(placeable.height)
+        // 冷组合抬底(回收跳变根修,2026-09-28 真机录屏定罪):展开态卡滚离视口
+        // →LazyList 回收→重组合(clock/measureCount 归零),asyncParse/内容组合的
+        // 高度迟到落地发生在用户滚回手势中(inProgress)——steady 按位置优先权
+        // 弃配,+H 裸顶视口(录屏 t=9.4s 反向-24/连跳+75 帧实证)。finalHCache
+        // (rememberSaveable)跨回收存活:冷首测(measureCount≤2)以已知终高占位,
+        // 迟到内容落地时高度已正确=零增量零弃配;陈旧 floor(内容变矮)由 count>2
+        // 真测接管,差值走 steady 正常配对。animating 期不抬(episode 独占)。
+        val floorH = if (clock.measureCount <= 2 && clock.fraction >= 1f && !clock.animating) {
+            floorProvider()
+        } else {
+            0
+        }
+        val effH = if (floorH > placeable.height) floorH else placeable.height
+        if (BuildConfig.DEBUG && effH != placeable.height) {
+            AppLogger.d(
+                "CardExpand",
+                "[DEBUG-FLOOR] cold-floor effH=" + effH + " measured=" + placeable.height +
+                    " count=" + clock.measureCount,
+            )
+        }
+        val report = clock.onMeasure(effH)
         // #430:稳态记账(measure 相;基线/rebase 协议见 CardExpandClock)——
         // episode 窗口外的任何 report 变化(分批表格逐组/asyncParse/图片)入账,
         // pre-draw flush 相派发配对位移。
@@ -1775,18 +1800,22 @@ private class CardExpandGeometryNode(
  */
 private class CardExpandGeometryElement(
     private val clock: CardExpandClock,
+    private val floorProvider: () -> Int,
 ) : ModifierNodeElement<CardExpandGeometryNode>() {
-    override fun create(): CardExpandGeometryNode = CardExpandGeometryNode(clock)
+    override fun create(): CardExpandGeometryNode = CardExpandGeometryNode(clock, floorProvider)
 
     override fun update(node: CardExpandGeometryNode) {
         node.clock = clock
+        node.floorProvider = floorProvider
     }
 
     override fun equals(other: Any?): Boolean =
-        other is CardExpandGeometryElement && other.clock === clock
+        other is CardExpandGeometryElement && other.clock === clock &&
+            other.floorProvider === floorProvider
 
-    override fun hashCode(): Int = System.identityHashCode(clock)
+    override fun hashCode(): Int =
+        System.identityHashCode(clock) * 31 + System.identityHashCode(floorProvider)
 }
 
-private fun Modifier.cardExpandGeometry(clock: CardExpandClock): Modifier =
-    this.then(CardExpandGeometryElement(clock))
+private fun Modifier.cardExpandGeometry(clock: CardExpandClock, floorProvider: () -> Int): Modifier =
+    this.then(CardExpandGeometryElement(clock, floorProvider))
