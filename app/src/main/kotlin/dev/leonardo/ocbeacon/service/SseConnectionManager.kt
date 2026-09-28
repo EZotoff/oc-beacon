@@ -2,7 +2,6 @@ package dev.leonardo.ocbeacon.service
 
 import java.util.concurrent.ConcurrentHashMap
 import dev.leonardo.ocbeacon.BuildConfig
-import dev.leonardo.ocbeacon.data.api.NetworkMonitor
 import dev.leonardo.ocbeacon.data.api.SseClient
 import dev.leonardo.ocbeacon.data.api.SseReadTimeoutTracker
 import dev.leonardo.ocbeacon.data.api.dsh.DshConnectionOrchestrator
@@ -81,7 +80,6 @@ class SseConnectionManager @Inject constructor(
     private val sseClientV2: dev.leonardo.ocbeacon.data.api.v2.SseClientV2,
     private val eventDispatcher: EventDispatcher,
     private val settingsRepository: SettingsRepository,
-    private val networkMonitor: NetworkMonitor,
     private val sessionStateRepository: SessionStateService,
     // #276 步骤⑤：DSH 分支——双 WS 纯下行 + 对账编排（设计 §1.6/§2.3）
     private val dshConnectionOrchestrator: DshConnectionOrchestrator,

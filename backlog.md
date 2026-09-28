@@ -85,6 +85,7 @@
   - 毒害流式测试通道（多轮'队列 stall'误诊实为此）；也是生产可用性缺陷。
   - 2026-09-28 方案A 子项一(静默哨兵)交付:DshSilenceWatchdog(纯逻辑,虚拟时钟,7例TDD)+引擎接线(帧喂食/监控协程15s/判死→close走既有退避重连)。两轮真机实证收敛出关键结论:期望源在引擎层不可用——常开=空闲110s周期重连循环(follow后无帧);挂follow open=fire-and-forget无回执必判死;respond走HTTP独立通道与WS帧流无关。正确源=ChatUiState streaming(SseConnectionManager层onStreamingChanged接线),与follow End自愈状态机同批(A2)。当前态:哨兵待命(帧喂食在,判死门常关=零误杀,210s+空闲观察0判死,连接Online authed)——A2接线即激活
   - 2026-09-28 方案A 子项二(A2)交付:①streaming 期望三跳接线——SessionStateService.activityFlow(任一会话 activity 非空)→SseConnectionManager collect(distinctUntilChanged)→dshFrameSources 转发(DshFrameSource 接口新增 default 钩子,协议路由源覆写→mux 哨兵)——A1 待命态判死门通电;②follow End/StreamError 自愈——原 End 分支 Unit 无动作(定罪点)改为清 followed 幂等集(followSessionIdOf 纯函数反解,3例TDD),事件驱动补开(#319)/聚焦请求(#333)不再被去重拦截;不自动立即重开(End=正常消亡,防风暴)。验证:10例测试绿+全量单测绿+真机空闲0判死+等待期FSM未Busy时门关自洽(链路行为分析闭环)。trip 正例留待 #441 真实场景(不可按需构造)
+  - 2026-09-28 方案A 子项三(A3 网络切换 kick)交付:①NetworkMonitor 增 NetworkIdentity(handle=Network.getNetworkHandle 稳定句柄+主传输)与 networkIdentity StateFlow——onCapabilitiesChanged(validated)更新身份,onLost 仅当前身份网络清空;回调工厂提取 createCallback() internal 可测缝(纯提取重构生产行为零变化,绕开单测 android stub:NetworkRequest.Builder.addCapability 返回null)。②OpenCodeConnectionService 增 networkSwitchKickJob:identity 流 drop(1)+debounce 2s(切换竞速防抖)+distinctUntilChanged→reconnectAll;onDestroy 与 recoveryJob 同步 cancel。③SseConnectionManager 死注入清理:networkMonitor 构造参数删除(kick 统一 Service 层;调研§5.3'接线或删除'取删除)。TDD:NetworkMonitorIdentityTest 4例(validated追踪/同态切换identity变化且NetworkState恒Available盲区前提自证/仅当前网络lost才清/unvalidated不成为身份)全绿+全量单测绿。真机自动验证不可行:WiFi切换/飞行模式都断无线adb(serial即WiFi adb),同A1哨兵trip正例先例留真实场景——用户日常网络切换后 logcat 搜 'Network identity switched' 应见 kick。
 
 - [ ] **#438 流式突发路径收尾：gate 时间限速与配对 set 保 key** `streaming` `scroll` `#437`
   - 真机 R9 实证两残差：①catch-up 期 gate 按 400ch/48ms 释放而 measure 滞后聚合（442ms 聚 7 批=单 note d=6236）；②大额配对 set 走 requestPositionAndForgetLastKnownKey 核销锚 key，突发期新 item 插入+重排后 LazyList 按字面 index 重锚（LEAP -7562 视觉大跳）
@@ -214,10 +215,12 @@
 - [ ] **#425 预热错峰:滚动停止后多卡同帧预热风暴** `perf` `render`
   - 实测 Skipped 53 帧(~880ms 空闲停顿):多张折叠卡同一空闲窗并发 ε 组合
   - 方案:PreRenderCoordinator 队列化,一卡一窗串行预热
+  - 2026-09-28 队列化交付(方案A,issue424-425调研§5):PreRenderCoordinator 增 withPrewarmGrant 授权原语——Mutex FIFO 互斥(任意时刻至多1卡ε组合在途,持约者取消/异常 withLock finally 必释放防死锁)+授权门等 episode 平息(批次十三b让位环语义上提,250ms×8有界超时弃窗返回null)+槽间隔32ms(排队唤醒同帧双组合防御);CardExpandReveal prewarm effect 接线(delay到期→申请授权,执行前全量复查 visible/isScrollInProgress/animating/fraction;clock.animating 从持约等待改执行前即弃——animating期几乎总伴随全局租约,授权门已在等,不占队空转)。TDD:PreRenderCoordinatorTest +5例全绿+全量单测绿。真机(09:10:38,CARD-452B会话):14卡预热全串行,相邻[PRD-warm]间隔59-82ms(≥32ms槽间隔,≥3.5帧@60Hz),零同帧双卡零crash——修复前同帧齐发实测Skipped 53帧。R-B(单卡长块)不复发不启动方案B。真手指体感(静止后偶发一顿是否消失)出V6清单待用户验收。
 
 - [ ] **#424 步组内容后台解析预取池(L0)** `perf` `render`
   - 用户提案:守护线程池(如2线程)后台预取 Markdown 解析——Compose 组合/测量是主线程铁律不可搬,但解析(最重CPU段)可并行;卡片可见即预取解析模型,ε 组合直接命中缓存
   - 依赖:与 CardExpandReveal PREWARM 衔接(解析预热→组合预热两层)
+  - 2026-09-28 勘误(依 issue424-425 深度调研§6.2):字面提案重复建设——解析预取早已后台化(RenderReadiness.kt:121-127 flowOn(Default))+消息/part级窗口化(RenderSupplyCoordinator ±20条LRU48);主链路'步组卡可见→预取→ε组合命中缓存'已随 #430 过程卡片退役(7d5cd5fc)消失。真实残余缺口=R-C synthetic盲区:切片段(#sgN)组合期派生不进数据模型,驱动端(RenderSupplyCoordinator:329)与消费端(MessageCardAssistant:338/:813)双端排除永远拿不到registry预热;2200预算>2048异步阈值使多数段带Loading首帧。范围改写为R-C并与 #431 方案一第3条合并执行(两卡改同一行避免重复动:三处synthetic排除+StepGroupSlicing.kt:19预算;推荐降预算对齐变体2200→2048使合成段全落#428同步路径构造上消灭Loading首帧零新机制;取舍需真机标定同步1-3ms×窗内段数滚动帧叠加)。若用户裁决不再需要步组解析预取语义可直接关账并入#431。
 
 - [~] **#422 step 自动折叠:turn 内非最后 step 折叠为计数行(DSH 同款时机)** `ui` `chat`
   - 用户裁决(2026-09-20):每 turn 最后 step(最终回答)恒展开,之前 step 自动折叠计数行;流式恒平铺,完结生效

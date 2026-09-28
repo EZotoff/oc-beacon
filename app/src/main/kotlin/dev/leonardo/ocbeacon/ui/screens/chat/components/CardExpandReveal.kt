@@ -1030,27 +1030,29 @@ internal fun CardExpandReveal(
     // 预热不 dispatch、不动滚动位;滚动中/已展开/流式降级分支不参与。
     // 20k px 级怪物组的预热组合仍是一帧长块(空闲期付账);拆块正解=L3
     // AST 切片(backlog)。
+    // #425 队列化(2026-09-28):原 per-card 裸并发(各卡共用同一静止时钟,
+    // 滚动停止后同帧齐发 ε 组合,实测 Skipped 53 帧 ≈880ms)→ 协调器
+    // withPrewarmGrant 串行授权:任意时刻至多 1 卡在途;批次十三b episode
+    // 让位环语义上提进授权门(250ms×8 有界,超时弃窗);新增槽间隔防排队
+    // 唤醒同帧接续。本卡动画态(clock.animating)从「持约等待」改为执行前
+    // 复查即弃——animating 期几乎总伴随全局租约,授权门已在等,不占队空转。
     LaunchedEffect(visible, listState) {
         if (visible || listState == null) return@LaunchedEffect
         // #427 竞态修复:资格谓词拦截——账本暖的切片组跳过预热(见参数文档)
         if (prewarmEligible?.invoke() == false) return@LaunchedEffect
         kotlinx.coroutines.delay(PREWARM_IDLE_MS)
         if (visible || listState.isScrollInProgress) return@LaunchedEffect
-        // 批次十三b:集进行中让位(真机定案:收起集 4s 爬行期,1.2s 前触发的
-        // 预热照常开跑=帧饥饿共犯);有界等待集结束(≤2s),仍未结束则放弃本窗。
-        var waits = 0
-        while ((clock.animating || PreRenderCoordinator.hasActiveTransactions) && waits < 8) {
-            kotlinx.coroutines.delay(250)
-            waits++
-            if (visible) return@LaunchedEffect
-        }
-        if (clock.animating || PreRenderCoordinator.hasActiveTransactions) return@LaunchedEffect
-        if (clock.fraction > WARMUP_FRACTION) return@LaunchedEffect
-        clock.warmup()
-        settleUntilContentStable(clock)
-        clock.lastMeasuredH.takeIf { it > 0 }?.let { storeFinalH(it) }
-        if (BuildConfig.DEBUG) {
-            AppLogger.d("CardExpand", "[PRD-warm] H=" + clock.lastMeasuredH)
+        PreRenderCoordinator.withPrewarmGrant {
+            // 排队/门等/槽间隔期间状态可能已变:执行前全量复查前置
+            if (visible || listState.isScrollInProgress) return@withPrewarmGrant
+            if (clock.animating) return@withPrewarmGrant
+            if (clock.fraction > WARMUP_FRACTION) return@withPrewarmGrant
+            clock.warmup()
+            settleUntilContentStable(clock)
+            clock.lastMeasuredH.takeIf { it > 0 }?.let { storeFinalH(it) }
+            if (BuildConfig.DEBUG) {
+                AppLogger.d("CardExpand", "[PRD-warm] H=" + clock.lastMeasuredH)
+            }
         }
     }
 

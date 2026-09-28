@@ -5,6 +5,9 @@ import android.view.ViewTreeObserver
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import java.lang.ref.WeakReference
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * FLUSH 相任务(#423 批次二,spec §2/K1):绘制前单点排干。
@@ -79,6 +82,50 @@ object PreRenderCoordinator {
             return block()
         } finally {
             backing.intValue = backing.intValue - 1
+        }
+    }
+
+    // ===== #425 预热队列:串行授权原语(2026-09-28,issue424-425 调研方案 A) =====
+    //
+    // 结构性根因(journal 2026-09-22 定罪,Skipped 53 帧 ≈880ms):空闲预热是
+    // per-card LaunchedEffect 裸并发——各卡共用同一 1200ms 静止时钟,滚动停止
+    // 后同帧齐发 ε 组合;既有让位环只等 episode,卡间无互斥。此原语把「一卡
+    // 一窗串行」上提为协调器职责:任意时刻至多 1 个预热授权在途。
+
+    /** 授权门轮询节奏(ms)——CardExpandReveal 批次十三b 让位环同源。 */
+    internal const val PREWARM_EPISODE_POLL_MS = 250L
+
+    /** episode 平息有界等待上限(轮):8×250ms=2s,超时放弃本窗(原语义保留)。 */
+    internal const val PREWARM_EPISODE_MAX_WAITS = 8
+
+    /** 相邻预热槽最小间隔(ms):A 完成→B 开始至少隔 ≈2 帧@60Hz,防排队唤醒同帧双组合。 */
+    internal const val PREWARM_SLOT_GAP_MS = 32L
+
+    private val prewarmMutex = Mutex()
+
+    /**
+     * #425 预热授权:排队 → episode 平息门(有界) → 槽间隔 → 执行 [block]。
+     *
+     * - **互斥**:任意时刻至多 1 个授权在途(Mutex FIFO)——多卡同帧预热风暴
+     *   从构造上消失;持约者取消/异常由 withLock finally 必释放(对齐租约
+     *   泄漏教训,防队列死锁)。
+     * - **episode 冻结**:授权前等 [hasActiveTransactions] 平息(原 per-card
+     *   让位环 :1041-1047 语义上提,等待语义不变:250ms×8 有界,超时弃窗)。
+     * - **放弃语义**:episode 超时未平息 → 返回 null 且不执行 [block](本窗
+     *   放弃,不占队等待);调用方对 null 无需动作。
+     */
+    suspend fun <T> withPrewarmGrant(block: suspend () -> T): T? {
+        prewarmMutex.withLock {
+            var waits = 0
+            while (hasActiveTransactions && waits < PREWARM_EPISODE_MAX_WAITS) {
+                delay(PREWARM_EPISODE_POLL_MS)
+                waits++
+            }
+            if (hasActiveTransactions) return null
+            // 槽间隔:与上一槽完成时刻拉开 ≥1 帧;间隔期新集开跑则再让一次。
+            delay(PREWARM_SLOT_GAP_MS)
+            if (hasActiveTransactions) return null
+            return block()
         }
     }
 

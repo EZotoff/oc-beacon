@@ -102,7 +102,6 @@ class SseConnectionManagerTest {
             sseClientV2 = mockk(relaxed = true),
             eventDispatcher = mockk(relaxed = true),
             settingsRepository = settingsRepository,
-            networkMonitor = mockk(relaxed = true),
             sessionStateRepository = mockk(relaxed = true),
             // #276：DSH 分支依赖（本测试仅走 SSE 路径——relaxed mock 不触发）
             dshConnectionOrchestrator = mockk(relaxed = true),
@@ -191,7 +190,6 @@ class SseConnectionManagerTest {
             sseClientV2 = mockk(relaxed = true),
             eventDispatcher = mockk(relaxed = true),
             settingsRepository = settingsRepository,
-            networkMonitor = mockk(relaxed = true),
             sessionStateRepository = mockk(relaxed = true),
             // #276：DSH 分支依赖（本测试仅走 SSE 路径——relaxed mock 不触发）
             dshConnectionOrchestrator = mockk(relaxed = true),
@@ -264,7 +262,6 @@ class SseConnectionManagerTest {
             sseClientV2 = sseClientV2,
             eventDispatcher = dispatcher,
             settingsRepository = settingsRepository,
-            networkMonitor = mockk(relaxed = true),
             sessionStateRepository = mockk(relaxed = true),
             dshConnectionOrchestrator = mockk(relaxed = true),
             dshFrameSourceFactory = mockk(relaxed = true),
@@ -305,7 +302,6 @@ class SseConnectionManagerTest {
             settingsRepository = mockk<SettingsRepository>(relaxed = true).also {
                 every { it.reconnectMode() } returns flowOf("normal")
             },
-            networkMonitor = mockk(relaxed = true),
             sessionStateRepository = mockk(relaxed = true),
             dshConnectionOrchestrator = mockk(relaxed = true),
             dshFrameSourceFactory = mockk(relaxed = true),
@@ -360,7 +356,6 @@ class SseConnectionManagerTest {
             sseClientV2 = sseClientV2,
             eventDispatcher = mockk(relaxed = true),
             settingsRepository = settingsRepository,
-            networkMonitor = mockk(relaxed = true),
             sessionStateRepository = mockk(relaxed = true),
             dshConnectionOrchestrator = mockk(relaxed = true),
             dshFrameSourceFactory = mockk(relaxed = true),

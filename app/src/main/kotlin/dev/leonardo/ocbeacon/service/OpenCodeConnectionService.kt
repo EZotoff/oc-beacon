@@ -29,6 +29,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import dev.leonardo.ocbeacon.util.applyAppLanguage
@@ -151,6 +152,9 @@ class OpenCodeConnectionService : Service() {
 
     private var connectionStateNotificationJob: Job? = null
     private var networkRecoveryJob: Job? = null
+
+    /** #441-A3:同态网络切换 kick job(identity 流变化→reconnectAll)。 */
+    private var networkSwitchKickJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
     /** #133（D2-L26）：wake lock 周期续期协程（release 时取消）。 */
     private var wakeLockRenewJob: Job? = null
@@ -214,6 +218,28 @@ class OpenCodeConnectionService : Service() {
                 .collect { state ->
                     if (state == NetworkState.Available && lifecycleCoordinator.activeServerIds.value.isNotEmpty()) {
                         AppLogger.i(TAG, "Network recovered, reconnecting ${lifecycleCoordinator.activeServerIds.value.size} server(s)")
+                        connectionManager.reconnectAll()
+                    }
+                }
+        }
+        // #441-A3(2026-09-28):同态网络切换 kick——Available→Available(WiFi 换 AP/
+        // 路由迁移)在 NetworkState 四态上零信号(上方恢复通道 distinctUntilChanged
+        // 恒等过滤),长连接半开只能等传输层 ping 超时。identity 流(netId 句柄+
+        // 主传输)值变化=网络环境变化:防抖 2s(切换竞速期反复横跳)+跳过首值
+        // (StateFlow 重放当前值是现状不是变化)后 kick 重连。
+        networkSwitchKickJob = serviceScope.launch {
+            networkMonitor.networkIdentity
+                .drop(1)
+                .debounce(2_000L)
+                .distinctUntilChanged()
+                .collect { identity ->
+                    if (identity != null && lifecycleCoordinator.activeServerIds.value.isNotEmpty()) {
+                        AppLogger.i(
+                            TAG,
+                            "Network identity switched (handle=" + identity.handle +
+                                " transport=" + identity.transport + "), kicking reconnect" +
+                                " for " + lifecycleCoordinator.activeServerIds.value.size + " server(s)",
+                        )
                         connectionManager.reconnectAll()
                     }
                 }
@@ -340,6 +366,8 @@ class OpenCodeConnectionService : Service() {
         // 确保顺序：恢复 job 停止 → 连接停止 → 作用域取消。
         networkRecoveryJob?.cancel()
         networkRecoveryJob = null
+        networkSwitchKickJob?.cancel()
+        networkSwitchKickJob = null
         networkMonitor.stopMonitoring()
         // #170：经协调器统一断开（registry + 四路清理单点）——
         // 与 Service 销毁语义一致（单例 registry 不残留已销毁会话）。
