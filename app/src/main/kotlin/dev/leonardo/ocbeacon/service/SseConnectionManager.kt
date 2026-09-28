@@ -116,6 +116,12 @@ class SseConnectionManager @Inject constructor(
     private val dshSeqTrackers = ConcurrentHashMap<String, DshSessionSeqTracker>()
 
     /**
+     * #441-B 死亡现场探针(一期,2026-09-29 用户裁决):每服务器最后事件到达
+     * 时间戳——退避重连时计算「最后帧距今」,定罪「静默型死亡 vs 事件型断连」。
+     */
+    private val lastEventAtMs = ConcurrentHashMap<String, Long>()
+
+    /**
      * #333：每服务器 DSH 帧源登记——聚焦 follow 请求（窗口外会话进 ChatRoute 的
      * 开流兜底）路由用。runDshEventLoop 创建即登记（重连整体替换，旧源随
      * orchestrator.run 的 finally 自 stop）；stopConnection/stopAllConnections 清理。
@@ -618,6 +624,8 @@ class SseConnectionManager @Inject constructor(
                                 eventDispatcher.backfillActiveForServer(server.id)
                             }
                             tracker.recordSuccess()
+                            // #441-B 探针:最后帧时间戳(死亡现场快照原料)
+                            lastEventAtMs[server.id] = System.currentTimeMillis()
                             // 分发到 EventDispatcher 以更新状态
                             eventDispatcher.processEvent(event, server.id)
                             // 路由给调用方进行通知处理
@@ -828,6 +836,18 @@ class SseConnectionManager @Inject constructor(
     // 未来若统一，此处应改为组合 RetryPolicy 配置 + ApiError.isTransient 分类。
     /** #409：登记退避排程（UI 倒计时数据源）并返回本次延迟。 */
     private suspend fun backoffWithSchedule(serverId: String, attempt: Int): Long {
+        // #441-B 死亡现场快照(一期):退避重连必经点——最后帧距今(静默型死亡的
+        // 直接证据:巨大值=连接活着但无事件=哨兵域;小值=事件流活跃中断=传输断)
+        // + 退避序号。完整版(电池优化状态/网络 identity/断连异常栈)二期接入。
+        runCatching {
+            val last = lastEventAtMs[serverId]
+            val ago = last?.let { System.currentTimeMillis() - it } ?: -1L
+            AppLogger.i(
+                TAG,
+                "death-snapshot server=" + serverId.takeLast(8) + " attempt=" + attempt +
+                    " lastEventAgoMs=" + ago,
+            )
+        }
         val delayMs = calculateBackoff(attempt)
         _reconnectAt.update { it + (serverId to System.currentTimeMillis() + delayMs) }
         return delayMs
