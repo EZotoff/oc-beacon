@@ -30,6 +30,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.unit.Velocity
 import dev.leonardo.ocbeacon.ui.theme.LocalChatDensity
 import dev.leonardo.ocbeacon.ui.theme.typography
 import androidx.compose.material.icons.Icons
@@ -322,11 +325,24 @@ internal fun ReasoningBlock(
                         // 240.dp 与多数工具卡片展开态的实际视觉高度一致。
                         val reasoningScrollState = rememberScrollState()
                         // clipToBounds：同 #234 二轮防御——滚动容器默认不裁剪溢出绘制
+                        // fling 制动速度吞没(2026-09-29 五轮真机定罪):手指触碰打断
+                        // 内容 fling 时,剩余速度经 nestedScroll onPostFling 转移父
+                        // LazyList(reverseLayout 下符号=朝底猛拉)——实测 -1480px/s
+                        // 一帧 LEAP 7→0 拉到对话流最底(用户「触碰卡片视口即跳底」
+                        // 主诉)。制动手势的意图是"停"而非"转移惯性给列表",边界
+                        // 全额消费剩余 fling;位移泄漏(onPostScroll)不拦——卡内
+                        // 滑到底继续滑=滚视口是期望的嵌套行为。
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(max = 240.dp)
                                 .clipToBounds()
+                                .nestedScroll(object : NestedScrollConnection {
+                                    override suspend fun onPostFling(
+                                        consumed: Velocity,
+                                        available: Velocity,
+                                    ): Velocity = available
+                                })
                                 .verticalScroll(reasoningScrollState)
                         ) {
                             // 2026-08-16（部分复制）：SelectionContainer 包裹内容——
