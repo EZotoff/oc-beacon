@@ -32,3 +32,11 @@
 - 读历史:锚移出增长源后(idx 7→11→14)零派发零扰动,视口冻结(idx=14 off=200 恒定)
 - 判据修正教训:logcat 判决 grep 必须匹配 'SGR-435 (pid): pair' 带进程号形态,模式漏写导致前期计数假零
 - 三构型+16单测+铁律文档同步=完整证据链;两卡转待用户最终验收
+
+## 已完结卡片迁入（2026-09-28）
+
+### **#436 服务器断开后无法自动重连——SSE断连横幅持续2秒后重试不恢复需重启app** `sse,session,bug`
+  - 实测(2026-09-25 04:52):DSH web 服务器重启后,app横幅服务器已断开正在重连2秒后重试持续超过1分钟不恢复,需force-stop重启才重连(token未变,服务器健康)。用户指令本轮加入修复。嫌疑:DshWsEventClient/Orchestrator重连退避或401处理;测试向量:adb reverse移除重加tcp3080模拟断连,不触碰真服务器
+  - token持久化自愈+探针分类已装机;活体取证:传输级断连恢复本就正常(隧道恢复4s重连);LAN 403=服务端trust fence需--trusted-host;V6:用户重启dsh-web验证自愈
+  - 三级自愈实证+token持久化落盘;LAN 403=服务端trust fence;终态:待用户验收
+  - 迁入依据：用户验收通过(2026-09-28 20:33):4199 服务 stop 10s→restart,app 断连横幅自动重连自愈,全程未重启 app。仪器链:SSE stream error 20:31:39.189(与服务停止同帧,EOF)→重试 attempt#1 20:31:40.206(断后1s)+transport failure kick→服务恢复 20:31:51.4 后自动回连(listMessages 200 OK/SSE fresh 21ms/正常收发);用户体感双确认:重连上了+可正常收发消息（backlog.sh migrate 2026-09-28）

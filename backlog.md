@@ -53,11 +53,6 @@
 
 ## P0 — 主流程阻塞
 
-- [~] **#436 服务器断开后无法自动重连——SSE断连横幅持续2秒后重试不恢复需重启app** `sse,session,bug`
-  - 实测(2026-09-25 04:52):DSH web 服务器重启后,app横幅服务器已断开正在重连2秒后重试持续超过1分钟不恢复,需force-stop重启才重连(token未变,服务器健康)。用户指令本轮加入修复。嫌疑:DshWsEventClient/Orchestrator重连退避或401处理;测试向量:adb reverse移除重加tcp3080模拟断连,不触碰真服务器
-  - token持久化自愈+探针分类已装机;活体取证:传输级断连恢复本就正常(隧道恢复4s重连);LAN 403=服务端trust fence需--trusted-host;V6:用户重启dsh-web验证自愈
-  - 三级自愈实证+token持久化落盘;LAN 403=服务端trust fence;终态:待用户验收
-
 - [ ] **#434 #432 根因定罪:贴底构型收起镜像dispatch 0消费→上方内容裸下移H px** `chat-ui,bug`
   - 连接态(DSH)实测+录屏双证:贴底(fii=0,fiso=0)收起时镜像dispatch -H在新侧无空间,consumed=0(paired-shift日志实锤),塌缩无补偿→上方旧内容裸下移H涌入视口(录屏帧94→101判读确认'顶部露出更早段落',542px)。中位构型dispatch可消费故守恒(矩阵1-6全绿)。用户流式场景常处贴底=高频触发。修法:consumed==0且贴底时换向dispatch +H(旧侧有空间,补偿上方内容下移;不露底空白——露的是旧内容)。候选实现:PairedDispatch加方向fallback;需真机验证方向+防双发。
 
@@ -73,7 +68,7 @@
   - 2026-09-30 高度稳定性系统调研(docs/research/streaming-height-stability-audit.md)P0 定罪:①MeasureCache/rows/NaturalWidthsLru 键含整条消息全文,流式每 append 失效重建→新宽单元格改变全表列宽,已上屏行重换行(双向跳变,MarkdownTable.kt:189/361-414);②>20 行表格 stagedLimit=remember(content,tableNode){1} 每 append 重置→塌回 8 行再逐帧重建循环(MarkdownTable.kt:101/226-232/765-770);③containerWidth 首拍 0→120dp cap 夹窄,次拍放宽回缩(MarkdownTable.kt:250/258/390-414)。修复方向:表格内 remember 键改表格自身文本/node 深比较+BoxWithConstraints 首拍内联宽。触发面:流式中任何表格输出(密集轮次常见)。
 
 
-- [ ] **#462 多卡展开态收起其一仍导致用户视角高度变化** `scroll`
+- [~] **#462 多卡展开态收起其一仍导致用户视角高度变化** `scroll`
   - 用户报告(2026-09-29):展开≥2 张内容卡后收起其中一张,视口锚定仍漂移;要求根因分析+根修(收起配对在多卡展开态的语义缺口)
   - 2026-09-29 根修交付:根因=收起用「本卡展开前绝对快照」恢复视口(requestScrollToItemNoCancel(episodeAnchorItem/Offset))——仅在集间无其他位移时正确;多卡展开态 V=Pa+H_A+H_B,收起 A 绝对恢复 Pa 偏差 −H_B(视口多退 B 的展开量)=「收起其一视角跳变」。数学定罪+既有真机日志证实模型(展开配对后 fiso+=H、快照恢复=−H,#427 终局日志 4103↔3909)。修:resolveCollapseAnchor 纯函数(增量镜像语义:目标=当前视口−episodeShiftConsumedPx,单卡与旧绝对恢复数学同值,多卡保其他卡净位移;跨界经可见 item 高链折算,链不足返 null)——收起路径接线(绝对快照退役,取消路径 cancel-anchor-restore 保留原撤销语义不动);anchorKnown=false 回退既有 dispatch 镜像。TDD:ResolveCollapseAnchorTest 5 例(零消费不变/单卡镜像/多卡保他卡/跨界折算/链不足 null)+全量单测绿。真机复验(冷启流程,双开思考卡→收起其一,像素对比):修复前同流程 rows400-600 有 24732px 内容位移(视口跳变),修复后中段内容带(200-2200)完全静止、仅收起卡自身局部变化 794px——收起不再拖动视口。
 
@@ -95,7 +90,7 @@
   - 2026-09-29 A3 实测尝试结论:真机双 adb 通道均无线(WiFi 直连+mDNS 无线调试),无 USB 有线 serial——切换 WiFi 必断 adb,agent 侧物理不可达(需用户插 USB 线或提供第二 AP 凭据后 agent 可代测)。按观察窗处理(至 2026-10-19 无反馈关闭)。
   - 2026-09-29 B 定罪探针一期交付(用户裁决'相当于探针埋点吗?可以做'):lastEventAtMs 每服务器最后事件时间戳表(SSE 事件入口打点)+backoffWithSchedule 快照日志(death-snapshot server/attempt/lastEventAgoMs——退避重连必经点)。判读法:巨大 lastEventAgoMs=连接活着但长期无事件=静默型死亡(哨兵域,上游为服务端/半开);小值=事件流活跃中断=传输断(上游为网络/系统杀)。完整版二期(电池优化状态/网络 identity/断连异常栈)待一期数据回流后按需接入。同批:#463 V1 兼容调研结论——DB 实证三服务器均'每 step 一条消息'(assistantMsgs≈reasoningParts),现有消息边界装配已全兼容,无需改动;用户看不到分割线=完结 turn 折叠为计数行(#422 语义),展开后可见。
 
-- [ ] **#438 流式突发路径收尾：gate 时间限速与配对 set 保 key** `streaming` `scroll` `#437`
+- [~] **#438 流式突发路径收尾：gate 时间限速与配对 set 保 key** `streaming` `scroll` `#437`
   - 真机 R9 实证两残差：①catch-up 期 gate 按 400ch/48ms 释放而 measure 滞后聚合（442ms 聚 7 批=单 note d=6236）；②大额配对 set 走 requestPositionAndForgetLastKnownKey 核销锚 key，突发期新 item 插入+重排后 LazyList 按字面 index 重锚（LEAP -7562 视觉大跳）
   - 修法方向：gate 释放按壁钟限速（与到达解耦）；配对 set 后在同帧重建 lastKnownKey 或改用保 key 的定位通道
   - 证据：docs/journal/2026-09-25-437-streaming-md-stable-reveal.md 验收十轮；/tmp/t9_log.txt /tmp/f9 帧
