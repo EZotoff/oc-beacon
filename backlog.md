@@ -72,8 +72,6 @@
 - [ ] **#469 流式表格高度抖动三连:键含全文致列宽重排+stagedLimit塌回+两拍收敛** `chat,markdown,scroll`
   - 2026-09-30 高度稳定性系统调研(docs/research/streaming-height-stability-audit.md)P0 定罪:①MeasureCache/rows/NaturalWidthsLru 键含整条消息全文,流式每 append 失效重建→新宽单元格改变全表列宽,已上屏行重换行(双向跳变,MarkdownTable.kt:189/361-414);②>20 行表格 stagedLimit=remember(content,tableNode){1} 每 append 重置→塌回 8 行再逐帧重建循环(MarkdownTable.kt:101/226-232/765-770);③containerWidth 首拍 0→120dp cap 夹窄,次拍放宽回缩(MarkdownTable.kt:250/258/390-414)。修复方向:表格内 remember 键改表格自身文本/node 深比较+BoxWithConstraints 首拍内联宽。触发面:流式中任何表格输出(密集轮次常见)。
 
-- [ ] **#468 流式表格高度抖动三连:键含全文致列宽重排+stagedLimit塌回+两拍收敛** `chat,markdown,scroll`
-  - 2026-09-30 高度稳定性系统调研(docs/research/streaming-height-stability-audit.md)P0 定罪:①MeasureCache/rows/NaturalWidthsLru 键含整条消息全文,流式每 append 失效重建→新宽单元格改变全表列宽,已上屏行重换行(双向跳变,MarkdownTable.kt:189/361-414);②>20 行表格 stagedLimit=remember(content,tableNode){1} 每 append 重置→塌回 8 行再逐帧重建循环(MarkdownTable.kt:101/226-232/765-770);③containerWidth 首拍 0→120dp cap 夹窄,次拍放宽回缩(MarkdownTable.kt:250/258/390-414)。修复方向:表格内 remember 键改表格自身文本/node 深比较+BoxWithConstraints 首拍内联宽。触发面:流式中任何表格输出(密集轮次常见)。
 
 - [ ] **#466 展开方向:贴底免派发向上推旧内容,用户要向下推新内容(与 #432 裁决反向)** `chat-ui`
   - 2026-09-29 用户验收 B 反馈:展开后前面内容被往上推,期望后续内容往下推。取证:贴底态(fii=0)展开命中 #432 免派发分支(bottom-pinned expand skip-dispatch H=62),布局向上扩展——截图对比中上部 24547-56029px 位移/底部不动=机制实锤。与 #432 当时裁决(贴底护底部,修展开跳转主诉)方向相反——需用户拷问裁断场景边界(主动展开 vs 流式跟随)后定向修复。
