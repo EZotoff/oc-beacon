@@ -51,8 +51,9 @@ class SafePrefixGateTest {
     }
 
     @Test
-    fun `标记回退到标记首现前`() {
-        assertEquals(5, rel("text\n*bold* more"))
+    fun `标记行闭合构造整行放行`() {
+        // #472：*bold* 闭合即定案——文字直出到快照尾（原整行扣到空行毕业）
+        assertEquals(16, rel("text\n*bold* more"))
     }
 
     @Test
@@ -63,8 +64,8 @@ class SafePrefixGateTest {
     @Test
     fun `有序列表项逐行放行_裁决441修订`() {
         // #441 用户裁决修订：有序列表项行级定案逐行放行（原整块扣留语义废止）
-        // intro 行放行 + 两条完整列表项行放行 = 全量
-        assertEquals(15, rel("intro\n1. first\n2. second"))
+        // #472：未完尾行 "2. second" 无行内构造，扫描器直出 = 全量
+        assertEquals(24, rel("intro\n1. first\n2. second"))
     }
 
     @Test
@@ -128,7 +129,9 @@ class SafePrefixGateTest {
             released = r
             r
         }
-        assertEquals(listOf(5, 19, 19, 19, 51), releases)
+        // #472：**te 悬空扣在 ** 前（19→22 放出 "this is a "）；**test** 闭合
+        // 即放行整行（22→34）；完结空行毕业收尾（51）
+        assertEquals(listOf(5, 19, 22, 34, 51), releases)
     }
 
     @Test
@@ -161,13 +164,16 @@ class SafePrefixGateTest {
     }
 
     @Test
-    fun `tasklist字符扣留`() {
-        assertEquals(0, SafePrefixGate.releaseLength("- ☐ task one\n", 0))
+    fun `tasklist字符起扣留前缀放行`() {
+        // #472：☐ 前的 "- " 列表标记放行（空列表项先现），☐ 起扣留等空行
+        // 毕业——完结归一化变换面不提前揭示
+        assertEquals(2, SafePrefixGate.releaseLength("- ☐ task one\n", 0))
     }
 
     @Test
-    fun `数学块双美元扣留`() {
-        assertEquals(0, SafePrefixGate.releaseLength("formula \$\$x^2\$\$ next", 0))
+    fun `数学块双美元起扣留前缀放行`() {
+        // #472：$$ 前纯文字放行，$$ 起扣留（完结数学变换面）
+        assertEquals(8, SafePrefixGate.releaseLength("formula \$\$x^2\$\$ next", 0))
     }
 
     @Test
@@ -193,12 +199,33 @@ class SafePrefixGateTest {
 
     @Test
     fun `行续段不作表头判定`() {
-        assertEquals(3, rel("abc | a |\n|---|\n| 1 |\n", 3))
+        // #472：竖线前纯文字 "c " 直出（管道后扣留）；管道到达前的纯文字
+        // 段落→表头闪烁为预存在类（管道未到不可知），不因本修复扩大
+        assertEquals(4, rel("abc | a |\n|---|\n| 1 |\n", 3))
     }
 
     @Test
     fun `行续段纯文字继续直出`() {
         assertEquals(7, rel("abc def", 3))
+    }
+
+    // ============ #472：行内闭合构造即时放行（InlineSpanSafety 接线） ============
+
+    @Test
+    fun `标记行行中截断后续行继续放行`() {
+        // 首行闭合构造全放；次行 "d " 放出、悬空 * 扣住
+        assertEquals(10, rel("a *b* c\nd *e"))
+    }
+
+    @Test
+    fun `完整引用行含闭合构造放行`() {
+        assertEquals(8, rel("> *a* b\n"))
+    }
+
+    @Test
+    fun `完整引用行未闭合构造帽住`() {
+        // '>' 内容前缀起扫：引用标记+空格+a+空格放出，悬空 * 扣住
+        assertEquals(4, rel("> a *unclosed\n"))
     }
 
     // ===== #441 markdown 稳态粒度：表格正文跨批逐行 / * 无序列表项逐行 =====
@@ -230,15 +257,16 @@ class SafePrefixGateTest {
     }
 
     @Test
-    fun `星号无序列表未完行扣留等行完整`() {
-        // 半行列表项（无 \n）：不放（行未完整——续接内容未定）
-        assertEquals(0, rel("* 未完成项"))
+    fun `星号列表未完行流式放行`() {
+        // #472：'* ' 标记星非侧翼=字面定案，未完行按行内安全扫描直出——
+        // 与 '- item' 纯文字路径粒度对齐（原整行扣到行完整）
+        assertEquals(6, rel("* 未完成项"))
     }
 
     @Test
-    fun `星号强调开头行仍扣留`() {
-        // '*bold' 无空格 = 强调构造开始——跨行闭合会重释义，扣留
-        assertEquals(0, rel("*bold 开头\nmore*\n"))
+    fun `星号强调跨行闭合放行`() {
+        // #472：软换行同段——* 开、more* 闭，配对即放行（原扣到空行毕业）
+        assertEquals(15, rel("*bold 开头\nmore*\n"))
     }
 
     @Test

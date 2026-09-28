@@ -36,7 +36,7 @@ internal object SafePrefixGate {
      * 重释义已上屏内容）。☐/☑/✅（#437 阶段 C）：normalizeTaskListMarkers 完结
      * 变换字符——流中字面放行会在完结时替换为 GFM 任务列表，扣留等空行闭合。
      */
-        private const val ACTIVE_MARKERS = "*_~#>|[]!`☐☑✅"
+        private const val ACTIVE_MARKERS = "*_~#>|[]!`\\☐☑✅"
 
     /** CommonMark 有序列表起始标记的最多位数。 */
     private const val ORDERED_LIST_MAX_DIGITS = 9
@@ -152,24 +152,48 @@ internal object SafePrefixGate {
                 // 本行块类型），完整行整行放行（半行扣留：续接内容未定）。'*' 后非空格
                 // （强调构造开头）不进本分支，维持扣留。
                 lineStartReal && complete && isStarBulletItemLine(line) -> {
-                    if (nl + 1 - allowed > budgetLeft) break
-                    allowed = nl + 1
-                    j = nl + 1
+                    // #472：行级定案 + 行内安全帽——未闭合构造起扣（修复列表行
+                    // 悬空 opener 先放后重排的既有缺口；'* ' 标记星后随空白=
+                    // 非侧翼，扫描器天然放行）
+                    val target = minOf(nl + 1, InlineSpanSafety.safeCut(snapshot, j))
+                    if (target <= allowed || target - allowed > budgetLeft) break
+                    allowed = target
+                    j = target
                 }
                 // #441 粒度扩展：引用块行——行级定案（引用行本身不被后续行重释义；
                 // 懒延续行（无 > 前缀）仍走扣留分支等空行毕业）。
                 lineStartReal && complete && isBlockQuoteLine(line) -> {
-                    if (nl + 1 - allowed > budgetLeft) break
-                    allowed = nl + 1
-                    j = nl + 1
+                    // #472：行内安全帽从内容前缀起扫（'>' 本身是扫描器硬停符）
+                    val target = minOf(
+                        nl + 1,
+                        InlineSpanSafety.safeCut(snapshot, j + blockMarkerPrefixEnd(line)),
+                    )
+                    if (target <= allowed || target - allowed > budgetLeft) break
+                    allowed = target
+                    j = target
                 }
                 // #441 粒度扩展：ATX 标题行（#{1,6}+空格/行尾）——完整行定案。
                 lineStartReal && complete && isAtxHeadingLine(line) -> {
-                    if (nl + 1 - allowed > budgetLeft) break
-                    allowed = nl + 1
-                    j = nl + 1
+                    // #472：行内安全帽从内容前缀起扫（'#' 本身是扫描器硬停符）
+                    val target = minOf(
+                        nl + 1,
+                        InlineSpanSafety.safeCut(snapshot, j + atxMarkerPrefixEnd(line)),
+                    )
+                    if (target <= allowed || target - allowed > budgetLeft) break
+                    allowed = target
+                    j = target
                 }
-                else -> break // 含活动标记的行：整行扣留等闭合（毕业/EOF flush）
+                else -> {
+                    // #472：已闭合行内构造即时放行——InlineSpanSafety 给出安全
+                    // 前缀（可行中截断，预算内推进）；扣留点起维持旧语义（空行
+                    // 毕业/完结 EOF flush 整体接管，一字不丢）
+                    val target = InlineSpanSafety.safeCut(snapshot, j)
+                    if (target <= allowed) break
+                    val adv = minOf(target - allowed, budgetLeft)
+                    allowed += adv
+                    j = allowed
+                    if (j >= snapshot.length) break
+                }
             }
         }
         // #438①：放行量总上限（含第一级空行毕业——原不受批预算约束）。
@@ -333,7 +357,27 @@ internal object SafePrefixGate {
         return inFence
     }
 
-    /** 行内含活动标记（未闭合内联构造风险）、双美元（完结数学变换）或行首有序列表起始。单美元是普通文字。 */
+    /** #472：引用行块标记前缀长（≤3 缩进 + '>' 串 + 至多一空格）——行内扫描起点。 */
+    private fun blockMarkerPrefixEnd(line: String): Int {
+        var i = 0
+        var indent = 0
+        while (i < line.length && indent < 4 && (line[i] == ' ' || line[i] == '\t')) { i++; indent++ }
+        while (i < line.length && line[i] == '>') i++
+        if (i < line.length && (line[i] == ' ' || line[i] == '\t')) i++
+        return i
+    }
+
+    /** #472：ATX 行块标记前缀长（≤3 缩进 + '#' 串 + 至多一空格）。 */
+    private fun atxMarkerPrefixEnd(line: String): Int {
+        var i = 0
+        var indent = 0
+        while (i < line.length && indent < 4 && (line[i] == ' ' || line[i] == '\t')) { i++; indent++ }
+        while (i < line.length && line[i] == '#') i++
+        if (i < line.length && (line[i] == ' ' || line[i] == '\t')) i++
+        return i
+    }
+
+    /** 行内含活动标记（未闭合内联构造风险；#472 增补 ''——转义/escaped-backtick 重释义面）、双美元（完结数学变换）或行首有序列表起始。单美元是普通文字。 */
     private fun lineHasActiveMarker(line: String): Boolean {
         for (k in line.indices) {
             val c = line[k]
