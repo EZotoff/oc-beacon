@@ -805,15 +805,18 @@ internal fun CardExpandReveal(
                         val anchorFiso = listState.firstVisibleItemScrollOffset
                         val anchored =
                             listState.layoutInfo.visibleItemsInfo.isNotEmpty()
-                        // 贴底全域豁免(fii==0,2026-09-28 二轮用户验收定罪):反射
-                        // (0,fiso+H) 把视口滚离底部 H——锚定区(用户正阅读的最新
+                        // 贴底全域豁免(2026-09-28 二轮用户验收定罪+三轮推广):反射
+                        // (fii,fiso+H) 把视口滚离底部 H——锚定区(用户正阅读的最新
                         // 内容)整体下拖 H=用户主诉「点击时视口内容往下拖动」,
-                        // 偶发性=是否处于贴底/近底态点卡(轰炸 E4-E8 fii=0 ×5 复现
-                        // 该路径)。锚定底部语义:(0,fiso) 在 item0 增长时天然稳定
-                        // ——增长向上扩展,卡及下方纹丝不动,上方让位。零位移指令,
-                        // 收起镜像同步记零(bottomAnchoredExpand,塌缩向上收无需
-                        // 滚动配对)。半贴底 offset>0 同域(#432 注释留口的本义)。
-                        val bottomAnchored = anchorFii == 0
+                        // 偶发性=点卡时锚落在贴底带哪个 item。豁免域=fii==0 ∨
+                        // fii item 零尺寸(占位/分隔 item,真机 items=0:0|1:0|..6:0
+                        // 实证)——零尺寸 item 必不宿主可展开卡,卡恒在其上方 item,
+                        // 增长不触及锚 item → 锚定 (fii,fiso) 天然稳定(增长向上
+                        // 扩展,卡及下方纹丝不动,上方让位)。零位移指令,收起镜像
+                        // 同步记零(bottomAnchoredExpand);半贴底 offset>0 同域。
+                        val anchorItemSize = listState.layoutInfo.visibleItemsInfo
+                            .firstOrNull { it.index == anchorFii }?.size ?: 0
+                        val bottomAnchored = anchorFii == 0 || anchorItemSize == 0
                         clock.bottomAnchoredExpand = bottomAnchored
                         if (anchored && !bottomAnchored) {
                             dev.leonardo.ocbeacon.ui.screens.chat.components.LazyListReflection
