@@ -42,3 +42,19 @@
   - buildChatEntries StepGroupHead/Body 发射机+sliceStepGroupBodies+SGB 探针+LARGE_STEP_GROUP_WEIGHT 常量已休眠
   - 2026-09-28 已随 #422 清理批次执行完毕(acf7d4ba):裂变发射机/StepGroupHead-Body/skipStepGroupItem/相关常量与注释全删,grep 复扫清零——本卡可关闭
   - 迁入依据：已随 #422 清理批次执行完毕(acf7d4ba):裂变发射机/StepGroupHead-Body 条目族/skipStepGroupItem 参数链/相关常量全删,grep 复扫代码引用清零（backlog.sh migrate 2026-09-28）
+
+#474 2026-09-28 真机定罪与验证证据
+
+## 定罪链
+- Bug A(收起零回退): t4 复现——展开 aZU0bdlc(H=194,fii=7 fiso=2986→3180 配对✓)→滚离5屏→LazyList回收→滚回→收起: close-anchor-request fii=7 fiso=2314 (mirror consumed=0) 原位零回退+RESIZE -194 无配对 = clock(remember)账本随回收丢失, resolveCollapseAnchor c<=0 短路原位
+- Bug B(滚回裸顶): 同域 22:46:44 steady-report d=+720 rep=720 inProgress=true → steady 按位置优先权弃配 → RESIZE +720 无滚动配对; 录屏逐帧(降采样3x ±75px 搜索): t=9.4-9.6s 反向 -24/-18px + 连跳 +75/+75/+63px 帧(residual 28-30 vs 正常帧 4-10)
+- 修复: ①mirrorConsumed = episodeShiftConsumedPx.takeIf{>0} ?: rep(稳态恒等,反射/dispatch 两收起路径统一) ②CardExpandGeometryNode 冷首测(measureCount≤2 ∧ fraction≥1 ∧ !animating)以 finalHCache 终高占位(DEBUG-FLOOR)
+
+## 修复后验证(真机 dev 1790602346 + 926983ac + 01e4ba2b)
+- Bug A: close-anchor-request fii=11 fiso=686 (mirror consumed=720 ledger=0 rep=720) → 1406-720=686 精确回退✓
+- Bug B: [DEBUG-FLOOR] cold-floor effH=720 measured=0 count=1 ×2(两次回收)且零 steady-report 弃配✓
+- 矩阵: mid-list ±H 精确 / 大卡 731↔1451 / 全行扫描开关 ×N / 五连点零异常 / 多卡同展收起其一 fiso 恒守恒 686 / 流式中点击(toggle 3eysGTHa=true)帽协议配对无裸跳✓
+- 单测: CardExpand/CollapseAnchor/PairedDispatch 全绿
+
+## 关联
+- #467 SSE 断连实证补充: 22:35 essay 轮与 23:15 inject4 两次注入服务端 200 完成但 app 零渲染日志(SGR 无新行), 重启 app 恢复——外部注入不渲染 = #441 SSE 随机断连, 用户自发消息路径不受影响
