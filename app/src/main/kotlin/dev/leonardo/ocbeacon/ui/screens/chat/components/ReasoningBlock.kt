@@ -325,23 +325,38 @@ internal fun ReasoningBlock(
                         // 240.dp 与多数工具卡片展开态的实际视觉高度一致。
                         val reasoningScrollState = rememberScrollState()
                         // clipToBounds：同 #234 二轮防御——滚动容器默认不裁剪溢出绘制
-                        // fling 制动速度吞没(2026-09-29 五轮真机定罪):手指触碰打断
-                        // 内容 fling 时,剩余速度经 nestedScroll onPostFling 转移父
-                        // LazyList(reverseLayout 下符号=朝底猛拉)——实测 -1480px/s
-                        // 一帧 LEAP 7→0 拉到对话流最底(用户「触碰卡片视口即跳底」
-                        // 主诉)。制动手势的意图是"停"而非"转移惯性给列表",边界
-                        // 全额消费剩余 fling;位移泄漏(onPostScroll)不拦——卡内
-                        // 滑到底继续滑=滚视口是期望的嵌套行为。
+                        // 内容 fling 到边泄漏吞没(2026-09-29 五轮两度真机定罪):
+                        // 子 scrollable 的 fling 逐帧走嵌套协议——内容到顶/底后
+                        // 每帧剩余经 onPostScroll 泄漏父 LazyList(reverseLayout 下
+                        // 符号=朝底),VPT 实测逐帧 -8px 惯性滚+残速 onPostFling
+                        // -1480px/s 一帧 LEAP 7→0 拉到对话流最底(用户「触碰卡片
+                        // 视口即跳底」主诉;首修只吞 onPostFling 复测仍跳=逐帧
+                        // 泄漏通道)。drag 期间放行(手指按住滑到底继续滑=滚视口
+                        // 是期望嵌套行为)——以 onPreFling 标记 fling 窗口区分。
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(max = 240.dp)
                                 .clipToBounds()
                                 .nestedScroll(object : NestedScrollConnection {
+                                    private var flingActive = false
+                                    override suspend fun onPreFling(available: Velocity): Velocity {
+                                        flingActive = true
+                                        return Velocity.Zero
+                                    }
+                                    override fun onPostScroll(
+                                        consumed: androidx.compose.ui.geometry.Offset,
+                                        available: androidx.compose.ui.geometry.Offset,
+                                        source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
+                                    ): androidx.compose.ui.geometry.Offset =
+                                        if (flingActive) available else androidx.compose.ui.geometry.Offset.Zero
                                     override suspend fun onPostFling(
                                         consumed: Velocity,
                                         available: Velocity,
-                                    ): Velocity = available
+                                    ): Velocity {
+                                        flingActive = false
+                                        return available
+                                    }
                                 })
                                 .verticalScroll(reasoningScrollState)
                         ) {
