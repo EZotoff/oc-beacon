@@ -398,13 +398,6 @@ internal class CardExpandClock(initialFraction: Float) {
     var programmaticShift = false
 
     /**
-     * 贴底域展开标记(2026-09-28 二轮):展开集发起时 fii==0——零位移指令
-     * (锚定底部语义:增长向上扩展,锚定区稳定)。收起镜像据此记零回退
-     * (塌缩向上收,同样零滚动配对);防 rep 兜底把零位移展开误回退 −H。
-     */
-    var bottomAnchoredExpand = false
-
-    /**
      * #423 批次四b:本集几何目标分数(plain)。FLUSH 修正器的灭钉门控——
      * 坐标静止计数稳定前,分数必须已到位(settle/warmup 期报告恒 ε,不得灭钉;
      * 否则 driveTo 增长到来时修正器已离场 = 顶开帧直接上屏)。
@@ -805,25 +798,29 @@ internal fun CardExpandReveal(
                         val anchorFiso = listState.firstVisibleItemScrollOffset
                         val anchored =
                             listState.layoutInfo.visibleItemsInfo.isNotEmpty()
-                        // 贴底全域豁免(2026-09-28 二轮用户验收定罪+三轮推广):反射
-                        // (fii,fiso+H) 把视口滚离底部 H——锚定区(用户正阅读的最新
-                        // 内容)整体下拖 H=用户主诉「点击时视口内容往下拖动」,
-                        // 偶发性=点卡时锚落在贴底带哪个 item。豁免域=fii==0 ∨
-                        // fii item 零尺寸(占位/分隔 item,真机 items=0:0|1:0|..6:0
-                        // 实证)——零尺寸 item 必不宿主可展开卡,卡恒在其上方 item,
-                        // 增长不触及锚 item → 锚定 (fii,fiso) 天然稳定(增长向上
-                        // 扩展,卡及下方纹丝不动,上方让位)。零位移指令,收起镜像
-                        // 同步记零(bottomAnchoredExpand);半贴底 offset>0 同域。
-                        val anchorItemSize = listState.layoutInfo.visibleItemsInfo
-                            .firstOrNull { it.index == anchorFii }?.size ?: 0
-                        val bottomAnchored = anchorFii == 0 || anchorItemSize == 0
-                        clock.bottomAnchoredExpand = bottomAnchored
-                        if (anchored && !bottomAnchored) {
+                        // 2026-09-29 用户裁决终向:展开=「卡与上方纹丝不动,内容
+                        // 向下扩展推走下方」——全域统一反射 (fii, fiso+H)(视口下移
+                        // H 与布局增长抵消:上方净零、卡钉住、下方下移 H)。二轮
+                        // 「锚定底部零位移」(上方让位=向上扩展)被用户否决,撤销。
+                        // 真正的偶发跳变源=半贴底 fiso+H 超界(见下方归一)。
+                        if (anchored) {
+                            // 超界防御(2026-09-29 定罪 v1 偶发):fii==0 时 fiso+H
+                            // 超过 item0 可滚范围→反射超范围 offset 的框架归一
+                            // 不受控=偶发视口跳变。预先沿可见 item 链向新端折算
+                            // 到合法 (item,offset)——数学等价(绝对滚动位不变)。
+                            val rawTarget = anchorFiso + H
+                            val norm = normalizeExpandAnchor(
+                                listState.layoutInfo.visibleItemsInfo
+                                    .filter { it.index <= anchorFii }
+                                    .sortedByDescending { it.index }
+                                    .map { it.index to it.size },
+                                rawTarget,
+                            )
                             dev.leonardo.ocbeacon.ui.screens.chat.components.LazyListReflection
                                 .requestScrollToItemNoCancel(
                                     listState,
-                                    anchorFii,
-                                    anchorFiso + H,
+                                    norm.first,
+                                    norm.second,
                                 )
                             clock.episodeShiftConsumedPx = H.toFloat()
                             if (BuildConfig.DEBUG) {
@@ -831,18 +828,8 @@ internal fun CardExpandReveal(
                                     "CardExpand",
                                     "[DEBUG-466] expand-anchor fii=" + anchorFii +
                                         " fiso=" + anchorFiso + " +H=" + H +
+                                        (if (norm.first != anchorFii) " norm->" + norm.first + ":" + norm.second else "") +
                                         " pinned=" + wasPinnedToBottom,
-                                )
-                            }
-                        } else if (anchored) {
-                            // 贴底域:零位移(锚定自动稳定);账本记零=收起零回退
-                            clock.episodeShiftConsumedPx = 0f
-                            if (BuildConfig.DEBUG) {
-                                AppLogger.d(
-                                    "CardExpand",
-                                    "[DEBUG-466] expand-anchor-bottom fii=" + anchorFii +
-                                        " fiso=" + anchorFiso + " +H=" + H +
-                                        " (anchored, zero-shift)",
                                 )
                             }
                         }
@@ -853,10 +840,9 @@ internal fun CardExpandReveal(
                             clock.driveTo(1f)
                         }
                         clock.tweening = false
-                        if (!anchored && !bottomAnchored) {
+                        if (!anchored) {
                             // fallback:布局未就绪(无可见条目)退 dispatch 旧路径
                             // (#427 残差重试)——增长已先行,内部测量见终高。
-                            // 贴底域同样豁免(锚定语义不依赖位移指令)。
                             clock.episodeShiftConsumedPx =
                                 applyPairedPreRenderShift(listState, H.toFloat())
                         }
@@ -866,13 +852,7 @@ internal fun CardExpandReveal(
                     // #430(修正):欠账 rebase——残量=目标−实消费(transient 0 消费
                     // 的配对义务不丢);基线锚定目标,幕布期增量(report>ledger)逐帧
                     // 记账。steadyHold 放行:增长落地帧 flush 同帧补派,上顶不上屏。
-                    // 贴底域豁免:零位移语义无配对义务,plain rebase(挂 H 欠账会被
-                    // flush 逐帧补派=锚定区被推移,违背豁免本意)。
-                    if (clock.bottomAnchoredExpand) {
-                        clock.steadyRebase()
-                    } else {
-                        clock.steadyRebaseAfterEpisodeDispatch(H, clock.episodeShiftConsumedPx)
-                    }
+                    clock.steadyRebaseAfterEpisodeDispatch(H, clock.episodeShiftConsumedPx)
                     clock.steadyHold = false
                     // 离底解跟随(真机定案:预移后 atBot=false 而 autoOn=true,
                     // 仲裁器集后把整个列表拽回底=「其他元素移动」主诉):
@@ -956,13 +936,8 @@ internal fun CardExpandReveal(
                     // 恒=当前上报高度 rep(稳态 fraction=1 时 rep==账本:展开反射记
                     // H,steady 补派双写同步),账本缺失时以 rep 兜底,数学与账本路径
                     // 严格同值;两条收起路径(反射锚点/dispatch 镜像)统一取用。
-                    // 贴底域展开(零位移)的收起=零回退:塌缩向上收,锚定区稳定,
-                    // rep 兜底不适用(会误回退 −H 把视口拉向旧端=反向过冲)。
-                    val mirrorConsumed = if (clock.bottomAnchoredExpand) {
-                        0f
-                    } else {
+                    val mirrorConsumed =
                         clock.episodeShiftConsumedPx.takeIf { it > 0f } ?: rep.toFloat()
-                    }
                     val collapseAnchor = if (!clock.userScrollCancelled) {
                         val vis = listState.layoutInfo.visibleItemsInfo
                         resolveCollapseAnchor(
@@ -1635,14 +1610,34 @@ private fun dispatchClosedLoop(
 }
 
 /**
- * #432 贴底免派发判定(纯函数可单测):贴底全域=最新 item 锚定(fii==0)。
- * 此构型布局把高度变化向上扩展——header 与底部内容(锚定区)天然屏位不变,
- * dispatch 反而把视口推离贴底(「展开跳转到其他地方」/「点击时内容往下拖」)。
- * 2026-09-28 二轮放宽:fii==0 但 offset>0 的半贴底域一并启用——真机用户
- * 验收定罪反射 (0,fiso+H) 把锚定区下拖 H(偶发主诉),锚定底部语义在半贴底
- * 同样数学成立(可见卡恒在锚定线上方,增长向上扩展,锚定 (0,fiso) 稳定)。
+ * #432 贴底免派发判定(纯函数可单测):严格贴底=最新 item 锚定(fii==0 ∧ offset==0)。
+ * 此构型布局把塌高向上扩展——header 与底部内容天然屏位不变,steady 迟到增长
+ * 的 dispatch 反而把视口推离贴底。fii==0 但 offset>0 的半贴底域不启用
+ * (2026-09-29 四轮用户裁决:展开=向下扩展+上方不动,半贴底同走反射归一路径)。
  */
-internal fun bottomPinnedExpandSkip(fii: Int, fiso: Int): Boolean = fii == 0
+internal fun bottomPinnedExpandSkip(fii: Int, fiso: Int): Boolean = fii == 0 && fiso == 0
+
+/**
+ * 展开反射目标归一(2026-09-29 四轮,纯函数可单测):半贴底 fii==0 时
+ * fiso+H 超过 item0 可滚范围 → 反射超范围 offset 的框架归一不受控=偶发
+ * 视口跳变(v1 残留定罪)。沿可见 item 链向新端(idx 递减)折算到合法
+ * (item,offset)——数学等价(绝对滚动位不变)。零尺寸占位 item 直接穿过
+ * (高度 0,offset 语义无损);链尽(已到 item0 仍超)clamp 到列表端。
+ *
+ * @param itemsNewward 自 anchorFii 起向新端递减的 (index,height) 链
+ */
+internal fun normalizeExpandAnchor(
+    itemsNewward: List<Pair<Int, Int>>,
+    rawTarget: Int,
+): Pair<Int, Int> {
+    var off = rawTarget
+    for ((idx, h) in itemsNewward) {
+        if (h > 0 && off < h) return idx to off
+        off -= h.coerceAtLeast(0)
+    }
+    val last = itemsNewward.lastOrNull()
+    return (last?.first ?: 0) to off.coerceAtLeast(0)
+}
 
 /**
  * #462(2026-09-29):收起锚点解析——增量镜像语义(纯函数可单测)。
