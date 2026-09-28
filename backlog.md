@@ -64,6 +64,7 @@
 - [ ] **#474 展开收起跳变双根修:回收账本丢失+滚回迟到增长** `bug,ui`
   - 卡展开后滚离视口被回收→重组合 clock 账本归零→收起镜像 consumed=0 短路原位=零回退,-H 塌缩全额漏成视口跳变(真机 t4 定罪:close-anchor consumed=0+RESIZE-194 无配对);修=塌缩量恒等于 rep,账本缺失以 rep 兜底,反射/dispatch 两路径统一
   - 滚回重组合时展开卡 asyncParse 高度迟到落地发生在手势中(inProgress),steady 按位置优先权弃配,+H 裸顶视口(录屏 t=9.4s 反向-24px+连跳+75px 帧实证);修=finalHCache 跨回收存活,冷首测(measureCount≤2)以已知终高占位(DEBUG-FLOOR),迟到内容落地高度已正确=零增量零弃配
+  - 二轮(2026-09-29):用户复验偶发「点击时往下拖」——贴底域反射(fiso+H)拖走锚定区;fii==0 全域豁免零位移+收起零回退,三重判据+五轮循环收口
 
 - [ ] **#470 流式高度配对收缩缺口:帽不回改空白残留+ledger收缩不配对视口落** `scroll,chat`
   - 2026-09-30 调研 P3 定罪:①帽轨 reserveReleasePlan 对 trueHeight<=reserved 恒 null(帽单调只增,ScrollCompensation.kt:338)——流式内容回缩(表格列放宽/setext 前重排)时 item 保持旧高=空白残留,直到换流式项 reset;②ledger 轨 note 对 d<0 只 rebase 不配对(:157)——压缩卡/工具横幅回缩时上方内容下坠无补偿。修复需高度引擎域专项设计(帽回改与『已上屏永不回改』既有裁决冲突,需用户裁断语义:回缩时同步缩帽+视口跟随 vs 维持空白)。

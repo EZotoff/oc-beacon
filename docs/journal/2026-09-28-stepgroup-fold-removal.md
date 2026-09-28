@@ -88,3 +88,10 @@ tap 前后 screencap 对(pxA/pxB)+分带位移相关分析(±90px 搜索):
 - 严格贴底 (0,0) 展开(todowrite 轮思考卡 H=720,pinned=true 豁免路径): 像素分带——upper residual=0.0 逐像素不动,mid 3.2(卡行摘要),lower -20px(展开内容向下让位);三构型(mid-list/贴底/回收)统一「点击卡及上方纹丝不动」语义
 - TodoListCard(default expanded,首次点击=收起): close-anchor consumed=240 ledger=0 rep=240——**默认展开卡零账本场景 rep 兜底实证**(旧代码此处必零回退跳变=修复顺带修正的隐性 bug);close-post 720-240=480 精确;再展开归位正常
 - 卡型覆盖最终清单: 思考卡(194/259/524/720 四尺寸)/bash 工具卡/TodoListCard/(QuestionCard 同 default-expanded 族同机制)/分割线(非交互)/表格与嵌套列表(非交互渲染已验)
+
+### #474 二轮:贴底域「往下拖」根修(2026-09-29 00:0x)
+
+用户复验反馈:基本正常,偶发「点击思考卡时视口内容往下拖动」。
+- 定罪:现行 expand-anchor 恒走反射 (fii,fiso+H)——贴底/近底态(fii==0)把视口滚离底部 H,锚定区(用户正阅读的最新内容)整体下拖 H;偶发性=点卡时是否处于贴底域(轰炸 E4-E8 fii=0 ×5 复现该路径);#432 注释自留口「fii==0 offset>0 未取证保守不启用」正是此域
+- 修:贴底全域(fii==0,含半贴底)豁免位移——零位移指令+锚定底部语义(增长向上扩展,卡及下方纹丝不动,上方让位);clock.bottomAnchoredExpand 标记,收起镜像零回退(防 rep 兜底反向过冲),steady plain rebase(防欠账补派违背豁免);fallback dispatch 同豁免;BottomPinnedExpandSkipTest 半贴底用例语义更新
+- 验证:①贴底展开 [DEBUG-466] expand-anchor-bottom zero-shift + 像素分带 lower(锚定区) residual=0.0 逐像素不动/upper+70 上移让位 ②贴底收起 mirror consumed=0(rep=720 在场正确不兜底)原位零回退 ③mid-list 回归反射照常 6347+260=6607↔6347 精确 ④五轮贴底循环 fiso 全程 0 零拖动零累积 ⑤单测 43 例绿
