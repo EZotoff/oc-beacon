@@ -191,6 +191,7 @@
 - [ ] **#471 完结瞬间高度跳变族:StepGroup整树互换+>2048字符Loading塌缩+归一化重排** `chat,markdown`
   - 2026-09-30 调研 P2 定罪:①多消息 turn 完结时 StepGroup 流式平铺↔折叠组整树互换(探针注释自认结构性高度跳变源,数千 px 级,冷账本 24dp 桩帧,MessageCardAssistant.kt:428-479);②>2048 字符正文完结切 pilot→async 首帧 Loading≈0 高再 Success 全高(#428 同族 +268px,MarkdownContent.kt:603-715);③完结归一化变换(数学围栏/任务列表/长段空行化)只发生在完结=一次性重排。方向:②pilot 终帧同步换入/缓存预热收益最明确;①依赖 L3 AST 切片既有计划。另:setext 升格(SafePrefixGate 自认缺口)+tight→loose 列表+CRLF 表格三小项随 markdown 批次顺带。
   - 2026-09-30 #472 修(②完结 Loading 塌缩):真机定罪在手——断连重连恢复换装时 RESIZE t_msg_0e641a99a001 h 1105→865(d=-240)→1580(d=+715) 41ms 两连跳(=Loading≈0 高帧→Success 弹回,与正常完结换装同构);另 RESERVE align-flip overflow=-62 佐证帽负溢出。根修:pilotTerminalHold 纯函数(pilot 曾渲染∧async 未就绪→完结帧保持 pilot 终帧)+asyncTerminal 提升固定组合位(条件创建,hold 期与切换后同实例零重解析,collectAsState 响应式解除);残余归一化差由帽配对吸收。TDD 3 例红转绿+全量单测绿;①StepGroup 互换与③归一化重排为残余(量级小于已修,另批)。
+  - 2026-09-30 修复交付(②完结 Loading 塌缩):真机定罪——重连恢复换装时 RESIZE t_msg_0e641a99a001 h 1105→865(d=-240)→1580(d=+715) 41ms 两连跳(=Loading≈0 高帧→Success 弹回,与正常完结换装同构);另 RESERVE align-flip overflow=-62 佐证帽负溢出。根修(12f8214b):pilotTerminalHold 纯函数(pilot 曾渲染∧async 未就绪→完结帧保持 pilot 终帧)+asyncTerminal 提升固定组合位(条件创建,hold 期与切换后同实例零重解析,collectAsState 响应式解除);残余归一化差由帽配对吸收。TDD 3 例红转绿+全量单测绿+装包。①StepGroup 互换与③归一化重排为残余(量级小于已修,另批)。待用户复验:完结一瞬无塌缩弹开。
 
 - [ ] **#465 UI 暖态下点击偶发失效(冷启可靠,间歇性)** `chat-ui`
   - 2026-09-29 #461/#462 取证副产物:force-stop 冷启后输入 tap 可靠命中,暖运行后同坐标偶发零效果(无日志无 UI 变化,vibrator 反馈存在);复现条件未锁定——暖态 35min 点击仍正常(4 条 episode 日志实证),失效为间歇性非持续态。影响面=自动化验证可靠性,无用户主诉不阻塞;再撞上时现场抓 input dispatcher+app 双侧日志。
