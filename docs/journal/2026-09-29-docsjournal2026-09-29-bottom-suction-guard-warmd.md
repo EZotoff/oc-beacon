@@ -1,7 +1,0 @@
-# docs/journal/2026-09-29-bottom-suction-guard-war.md（2026-09-29）
-
-> 状态：进行中
-> 关联：（spec 路径，若有）·（issue 编号，若有）
-> 来源：用户反馈 / grilling / E2E / 顺带发现
-
-<!-- 过程中的取证/验证证据直接写本文件；backlog.md 只留 ≤3 行卡片。 -->
