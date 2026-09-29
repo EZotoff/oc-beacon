@@ -10,6 +10,7 @@ import dev.leonardo.ocbeacon.logging.AppLogger
 import dev.leonardo.ocbeacon.BuildConfig
 import dev.leonardo.ocbeacon.data.api.SseAuthException
 import dev.leonardo.ocbeacon.data.api.SseConnectionException
+import dev.leonardo.ocbeacon.data.api.StreamStallWatchdog
 import dev.leonardo.ocbeacon.domain.model.Message
 import dev.leonardo.ocbeacon.domain.model.SseEvent
 import dev.leonardo.ocbeacon.domain.model.ServerConnection
@@ -136,13 +137,19 @@ class SseClientV2 @Inject constructor(
 
             timeout {
                 // requestTimeout 必须无限（SSE 流不限时长）；socketTimeout 封顶
-                // 响应头等待死区（见 [SSE_SOCKET_TIMEOUT_MS]）——流中由 #108 应用层防护接管。
+                // 响应头等待死区（见 [SSE_SOCKET_TIMEOUT_MS]）——流中 #108 行级 40s
+                // 超时对纯零字节停顿有效（SIGSTOP 实测），StreamStallWatchdog 兜底
+                // 僵尸拆链竞态盲区（journal 2026-09-30-467 §4 矩阵）。
                 requestTimeoutMillis = Long.MAX_VALUE
                 connectTimeoutMillis = 10_000
                 socketTimeoutMillis = socketTimeoutMs
             }
         }
 
+        // #467/#441：看门狗强杀若以取消形态浮出（引擎实现差异），翻译为连接错误——
+        // 否则上层 catch(CancellationException) 会误判「主动取消」而跳过退避梯子。
+        val stalledByWatchdog = java.util.concurrent.atomic.AtomicBoolean(false)
+        try {
         statement.execute { response ->
             val statusCode = response.status.value
             AppLogger.i(TAG, "V2 SSE response: status=$statusCode")
@@ -170,6 +177,26 @@ class SseClientV2 @Inject constructor(
 
             AppLogger.i(TAG, "V2 SSE stream opened, reading events...")
 
+            // #467/#441 流相 stall 看门狗（与 V1 客户端同款，字节级第二道执法）：
+            // 零字节判死窗 = SSE_SOCKET_TIMEOUT_MS（心跳契约 7.5x 余量）。#108 行级 40s
+            // 对纯零字节停顿有效（SIGSTOP 实测）；reverse 僵尸拆链竞态曾一次 4min04s
+            // 零检测挂死（机制未定，§4 矩阵）——本看门狗兜底该盲区（V2 同构风险）。
+            val stallWatchdog = StreamStallWatchdog(
+                stallThresholdMs = SSE_SOCKET_TIMEOUT_MS,
+                onStall = {
+                    stalledByWatchdog.set(true)
+                    AppLogger.w(TAG, "V2 SSE stalled >" + SSE_SOCKET_TIMEOUT_MS + "ms (no bytes) — force-cancelling call (stream watchdog)")
+                    // 双保险（Ktor 3.5.2 HttpResponse 无 cancel 成员）：
+                    // ① 取消 response 自身 Job —— 引擎 cleanup 触发 okhttp call.cancel()，
+                    //    socket 同步关闭，非可取消的原生阻塞读立即解除；
+                    // ② 取消读通道 —— 已挂起的 read 以异常恢复（内存通道/测试环境兜底）。
+                    try { response.coroutineContext[kotlinx.coroutines.Job]?.cancel() } catch (_: Exception) { }
+                    try { channel.cancel(java.io.IOException("stall watchdog force-cancel")) } catch (_: Exception) { }
+                },
+            )
+            kotlinx.coroutines.coroutineScope {
+                val watchdogJob = stallWatchdog.startIn(this)
+                try {
             while (!channel.isClosedForRead) {
                 // #108：阻塞读超时防护——半开 TCP（kill -9/NAT 静默断）下
                 // readSseFrame 内部阻塞读永久挂起（socketTimeout=Long.MAX_VALUE），
@@ -184,6 +211,8 @@ class SseClientV2 @Inject constructor(
                     }
                     break
                 }
+                // 任何帧到达（含空帧/注释心跳行）都是字节存活的证据——看门狗打点
+                stallWatchdog.markProgress()
                 if (frame.isEmpty()) {
                     // 空帧（注释行如 ": heartbeat" 等）也是连接存活的证据
                     lastActivity = System.currentTimeMillis()
@@ -225,8 +254,18 @@ class SseClientV2 @Inject constructor(
                     }
                 }
             }
+                } finally {
+                    watchdogJob.cancel()
+                }
+            }
 
             AppLogger.w(TAG, "V2 SSE stream closed after $eventCount events")
+        }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            if (stalledByWatchdog.get()) {
+                throw SseConnectionException("V2 SSE stream stalled >" + SSE_SOCKET_TIMEOUT_MS + "ms (watchdog force-cancel)")
+            }
+            throw e
         }
     }
 

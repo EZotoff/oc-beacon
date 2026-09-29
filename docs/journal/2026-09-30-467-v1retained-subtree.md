@@ -57,3 +57,26 @@
 **视觉验证缺口（诚实记录）**：/tmp/467s0.png、467s1.png、467s2.png（3.3/3.4/3.5MB，md5 5492468f…/c7a52fc9…/00c66285…）未能判读——本会话路由纯文本（read_image 网关拒绝）、子代理路由同拒、zai 视觉 MCP 401（key 失效，同 bigmodel 双 key 全灭族）、markitdown/playwright 旁路全封。定罪不依赖像素：探针链（[msg]/[flush]/MDPilot）+ REST 终态 + FSM 状态演化三层文本证据已闭环。截图原地保留，zai key 修复后可补视觉背书。
 
 **结论与去向**：#467 定罪完毕——「V1 外部注入不渲染」= 静默死连接无检测的表现型，注入本身与恢复链路均无罪；根因与修法归 #441（P1）域：读循环竞争式超时 + `response.cancel()` 强杀底层 call（或 SSE 专用裸 OkHttp 传输）。待用户裁决修法开工批次。
+
+## §4 修复批次：StreamStallWatchdog 加固落地 + 根因矩阵修正（重要反转）
+
+**代码交付**：新增 `StreamStallWatchdog`（45s 字节级 stall 执法，poll 5s；触发双保险强杀：① response 自身 Job cancel → 引擎 cleanup 关 socket ② channel.cancel(cause) → 挂起读异常恢复）+ CancellationException 翻译防线（防强杀以取消形态浮出时被上层 catch 当主动取消跳过梯子）；V1/V2 双客户端接线，行级 markProgress 打点。单测 4/4（虚拟时钟：阈值单发/持续进展续命/半程静默阈值边界/onStall 异常吞噬）；全量回归 **3698/0/0**。
+
+**E2E 五场景**（修复版真机 04:07-04:22）：
+1. 健康流式：看门狗零误报（心跳 ~6s vs 阈值 45s = 7.5x 余量）
+2. kill-server 干净拆链：EOF 即刻（+0.185s，ClosedByteChannelException←okio EOF）→ 梯子 → Connected 3s → 恢复 19/19 + `[persist] msgs=163`（含断连窗口注入轮 121-160）
+3. reverse --remove ×3：黑洞均未形成（04:11 流式中移除转发存活 98s+ 并全程投递两轮注入；04:19/04:20 空闲移除两轮连接存活，PATCH 探针 0.8s 回证）
+4. **SIGSTOP v1**（确定性零字节无 FIN）：**#108 行级 40s 超时精确触发**（04:15:26 STOP → 04:16:04.164 fire）→ 梯子（连接至冻结端口被 #305 socketTimeout 45s 正确封顶）→ SIGCONT 后 1.4s Connected + 19/19 恢复
+5. 断连窗口注入全链两轮：服务端全量完成（REST 终态）+ 恢复后免重启补齐
+
+**根因矩阵修正（推翻 §2 单一机制论）**：
+
+| 死亡形态 | 字节态 | #108 行级 40s | 实测结果 |
+|---|---|---|---|
+| SIGSTOP 服务冻结 | 零字节无 FIN | ✓ 精确触发 | 秒级检测恢复 |
+| kill-server 干净拆链 | 即刻 EOF | n/a（EOF 先到） | 即刻检测恢复 |
+| reverse 僵尸拆链 | 未观测 | ✗（历史一次） | 4min04s 零检测挂死 |
+
+「OkHttp 桥阻塞读不可取消」不再成立为普适机制——SIGSTOP 证明零字节停顿下 withTimeoutOrNull 正常返回。4min04s 僵尸挂死整夜仅一次（03:33 S1b）、4 次定向复现全部失败 = **adbd 拆链稀有竞态，机制未定**。野生复发判据已备：force-cancelling 日志在=字节级停顿（本看门狗接管）/不在而事件停=事件级丢失（另一形态）。
+
+**交付定位（诚实）**：本批是**加固层**而非已证明根修——五场景零回归、零误报、恢复链三验全绿；但看门狗强杀效果未在真实僵尸模式上得到验证（该模式未再现）。#441 残余方向：①僵尸模式复发时抓包级证据（host lo 抓包需 root，sudo 不可用已排除）或 v1 侧订阅者状态；②若确认为「字节在流而事件选择丢失」，防御应上事件级哨兵（#441-A2 目前 DSH-only，v1 legacy 空缺——SseConnectionManager:141-142）。
