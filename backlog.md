@@ -78,9 +78,6 @@
   - 2026-09-28 深度调研(issue437-research.md,204行):核心根因已由 SafePrefixGate 消灭有二十余轮定量证据;剩余=验收收口+关联残差分卡。R-7 重要发现:beta/stable 双关闭,修复仅 dev 生效(build.gradle.kts:108-118);铁律文档 sse-scroll-stability-iron-laws.md 未收编#437 内容(文档同步缺口);#450 是本卡判据放宽的直接次生回归(教训建议进铁律)
   - 2026-09-29 发掘审计:铁律收编缺口比 R-7 记载更大——sse-scroll-stability-iron-laws.md 止于 2026-09-25 #435,#437 稳定揭示/#438 限速与保 key/#472 行内放行/#474 守卫分通道/#476 GUARD 死区五域铁律全未收编;R-7 收口时应一并补
 
-- [ ] **#432 思考卡收起高度变化/偏移竞态诊断(#432):15轮仪器矩阵未复现主诉,实锤prewarm早熟+滚动锁死** `chat-ui,perf`
-  - 用户主诉收起时高度变化+双向偏移竞态。真机矩阵(3卡型×toggle×连点×交替×录屏逐帧)全部判绿(锚点±4px守恒,塌缩单帧)。实锤:①prewarm集体触发(同秒9卡,H=0/18早熟settle→展开偏移根源,已修2da3b6d0);②滚动死锁(fling+tap后列表锁死,跨install -r持久,pm clear毁现场未定位);③环境:opencode服务器API漂移(SSE返HTML)。待用户提供复现录屏/路径。
-
 ## P2 — 优化与锦上添花
 
 - [ ] **#478 Room 库 837MB 无界增长源待定位——热表修剪+归档在,库文件仍巨** `data` `perf`
@@ -95,16 +92,11 @@
   - 2026-09-30 用户验收通过(②完结 Loading 塌缩):茶文化轮判定链+高度序列双证据——完结帧 hold=true 拦截 Loading(19:00:10.772),144ms 后 async 就绪无缝切换,全程高度差仅 ±24px(归一化微差,一行文字高);对比修复前同场景 -13171/+12824 两连跳。残余:①StepGroup 边界换装(轮次开始/结束各一次 845→1492)与③归一化重排量级小待后续;新发现④SSE retry 恢复场景:重连后内容跳变重组期 pilotEverRendered 丢失(ever true→false 实证)→塌缩 -8575px 仍现,仅断连续传时发生,正常轮次不受影响——随 retry 路径稳定性专项处理。
   - 2026-09-28 ①StepGroup 互换已根灭(#422 清理批次,用户裁决彻底清理):统一渲染树后流式/完结同构,互换不存在——10轮多step POST完结塌缩 10/10→0/10。③归一化重排与④SSE retry pilotEverRendered 丢失仍待处理(与本卡完结族余项同批)
 
-- [ ] **#464 UI 暖态下列表/卡片点击偶发失效(冷启可靠)** `chat-ui`
-  - 2026-09-29 #461/#462 取证副产物:force-stop 冷启后输入 tap 可靠命中(会话行/卡标题),同一 app 暖运行数分钟后点击同坐标零效果(无日志无 UI 变化,vibrator 反馈存在=命中可点击元素但未触发业务);两次独立取证会话复现,冷启后恢复。疑点:点击消费被某 overlay/焦点态拦截或状态门;影响面=自动化测试可靠性,人工使用未报告。待真机复现窗定罪(diagnosing-bugs 流程),暂无用户主诉不阻塞。
-  - 2026-09-29 审计顺带实证:一次拖动送达零响应不再现(见 #465 注记);#477 dump 全盲为坐标类判读新增干扰源——本卡与 #465 高度重复,建议合并为单卡观察项待裁决
-  - 2026-09-29 用户裁决:吸收 #465 合并,本卡为该域唯一观察卡(暖态间歇 input 送达零业务响应;今日一次拖动零响应不再现实证在案;#477 dump 全盲为坐标判读新干扰源)——再撞上即现场抓 input dispatcher+app 双侧日志
+## P3 — 观察与低价值改进
 
-- [ ] **#459 V2 2.0.18 消费侧 14 端点漂移清单（health/question|form request/pty shells/share/rename/service stop 等 404）** `regression,v2,data`
-  - app 调用面 45 点中 14 点在 2.0.18 openapi 缺失（全 404 实证）；真机主链路不受影响（探测器/PATCH session 等降级路径实证），但 question/form 轮询兜底、pty shells、share、service/stop 在 2.0.18 下不可用。详见回归报告 §1.2/缺陷 D2
-
-- [ ] **#458 DSH 0.1.7 错误码税则漂移：39 值点式闭集全面脱节** `regression,dsh,data`
-  - 0.1.7 实发斜杠命名空间码（session/not-found、gateway/arguments-invalid），app DshRpcErrorCode 闭集 isKnown 恒 false 全走 Unknown 兜底（优雅降级成立但分类/文案失准）；/api/respond 已移除改 /result（app 双路已备）。详见 docs/research/2026-09-28-triface-regression-report.md 缺陷 D1/D5
+- [ ] **#439 流式期重组隔离：entries 签名缓存与子卡 skippability 恢复** `streaming` `compose`
+  - 流式批（~14/s）仍使流式 turn + 相邻注入卡条目全量重组（真机 35s 524 次）；渲染像素幂等故非闪烁源，属性能债。
+  - 修复位：ChatMessageList.kt:741 chatEntries 键改结构签名（仿 :283 turnGroups sig-cache）；MarkdownChunking.kt:291-313 ChatEntry 预载 msg/streaming/key；:2448-2487 item lambda 消除 displayItems/turnGroups 直读；:1361-1375/:1772 回调 lambda remember 化。
 
 - [ ] **#442 高度引擎根修二期：R2分片增量化(滑动p90 12ms)+cadence收编+flush深拆+终审待复核项** `perf` `refactor`
   - 终审判定：R1批次已锁 A2 贴底5ms/A1回归/A4全项；滑动p90 19-27 未达12——R2分片(稳定块缓存/尾块单测)是 O(内容)→O(尾块) 唯一路径。
@@ -112,11 +104,16 @@
   - 待复核：ScrollQuiescence单例假设、HeldTail锁高裁剪视觉等价、diffDisplayItemsInto边界、SSE铁律逐条。
   - 2026-09-29 用户裁决:吸收 #445 并入——R2 深水区含流式 markdown 稳定/活跃双容器状态管理方案(append-only+前缀吸收,固化解迁移帧问题);随卡迁入用户观感记录:完结窗会小跳一下(2026-09-27,限速节奏参数 BIG_RELEASE_MIN_INTERVAL_MS 可调,视情况修)
 
-- [ ] **#439 流式期重组隔离：entries 签名缓存与子卡 skippability 恢复** `streaming` `compose`
-  - 流式批（~14/s）仍使流式 turn + 相邻注入卡条目全量重组（真机 35s 524 次）；渲染像素幂等故非闪烁源，属性能债。
-  - 修复位：ChatMessageList.kt:741 chatEntries 键改结构签名（仿 :283 turnGroups sig-cache）；MarkdownChunking.kt:291-313 ChatEntry 预载 msg/streaming/key；:2448-2487 item lambda 消除 displayItems/turnGroups 直读；:1361-1375/:1772 回调 lambda remember 化。
+- [ ] **#458 DSH 0.1.7 错误码税则漂移：39 值点式闭集全面脱节** `regression,dsh,data`
+  - 0.1.7 实发斜杠命名空间码（session/not-found、gateway/arguments-invalid），app DshRpcErrorCode 闭集 isKnown 恒 false 全走 Unknown 兜底（优雅降级成立但分类/文案失准）；/api/respond 已移除改 /result（app 双路已备）。详见 docs/research/2026-09-28-triface-regression-report.md 缺陷 D1/D5
 
-## P3 — 观察与低价值改进
+- [ ] **#459 V2 2.0.18 消费侧 14 端点漂移清单（health/question|form request/pty shells/share/rename/service stop 等 404）** `regression,v2,data`
+  - app 调用面 45 点中 14 点在 2.0.18 openapi 缺失（全 404 实证）；真机主链路不受影响（探测器/PATCH session 等降级路径实证），但 question/form 轮询兜底、pty shells、share、service/stop 在 2.0.18 下不可用。详见回归报告 §1.2/缺陷 D2
+
+- [ ] **#464 UI 暖态下列表/卡片点击偶发失效(冷启可靠)** `chat-ui`
+  - 2026-09-29 #461/#462 取证副产物:force-stop 冷启后输入 tap 可靠命中(会话行/卡标题),同一 app 暖运行数分钟后点击同坐标零效果(无日志无 UI 变化,vibrator 反馈存在=命中可点击元素但未触发业务);两次独立取证会话复现,冷启后恢复。疑点:点击消费被某 overlay/焦点态拦截或状态门;影响面=自动化测试可靠性,人工使用未报告。待真机复现窗定罪(diagnosing-bugs 流程),暂无用户主诉不阻塞。
+  - 2026-09-29 审计顺带实证:一次拖动送达零响应不再现(见 #465 注记);#477 dump 全盲为坐标类判读新增干扰源——本卡与 #465 高度重复,建议合并为单卡观察项待裁决
+  - 2026-09-29 用户裁决:吸收 #465 合并,本卡为该域唯一观察卡(暖态间歇 input 送达零业务响应;今日一次拖动零响应不再现实证在案;#477 dump 全盲为坐标判读新干扰源)——再撞上即现场抓 input dispatcher+app 双侧日志
 
 - [ ] **#482 V2 prompt.files 嵌套契约未经部署版实证(2026-08-16 TODO)** `v2` `data`
   - V2ApiClient:526:嵌套 body 部署版 next-17430 一律 400→线上一直走平铺降级(files 顶层);主干部署后需 E2E 验证 modernBody 分支再收敛双路
@@ -147,15 +144,8 @@
   - 2026-09-28 补充实证:两次注入(22:35/23:15)服务端完成但 app 零渲染(SGR 无新行),重启即恢复;与 #441 SSE 随机断连同根,用户自发消息不受影响
   - 2026-09-29 审计:#477 登记(长文语义零暴露)——本卡「dump 底部仍旧 turn 实证」段以 dump 判读受污染(dump 对该类内容全盲);核心证据(SGR 日志零新行/重启即恢复)不受影响
 
-- [ ] **#460 V1 服务端三处顽固缺陷实测（find 超时/项目外 file 500/share 挂起）+ 参数名勘误（/find 收 pattern）** `regression,v1`
-  - 1.18.32 实测：/find?pattern 可 ReadTimeout；/file 项目外路径 500 UnknownError（非 400/404，差异文档有载）；POST share 挂起不返回；/find 参数名 pattern（文档未载）。详见回归报告缺陷 D3/D4
-
 - [ ] **#454 v1 真机 IME 换行注入后 prompt 未发出** `chat` `device` `v1`
   - 真机 IME keyevent 66 发送路径:消息含注入换行(Run\n\n)时 prompt POST 未发出,乐观气泡悬挂;二次干净发送正常(prompt_async 202)。发送链路疑有 IME 竞态边角,#453 验证时顺带观察,未复现第二次
-
-- [ ] **#444 fling 下滑跳变复发（原 #437 系修复后回归）** `bug`
-  - 用户报告（2026-09-27 R2 开工时）：此前修复过的 fling 下滑跳变再次出现。
-  - 历史修复链供溯源：817607b4 配对 set 键保持(LEAP 重锚)/b54650c3 配对单帧巨额 set 视觉跳变/f09eb29b 流式滚动暂缓。嫌疑：R1-A2 单出口合并后的配对 set 行为变化或键保持通道在新路径的退化。
 
 - [ ] **#443 markdown 稳态粒度扩展：更多大块逐行/逐段放行（引用块/嵌套列表/长段落折行等）** `streaming`
   - 用户裁决（2026-09-26 #441 后续）：表格/列表已逐行；评估引用块(>)、嵌套列表、def list、长代码块行级、setext 标题等大块的行级定案可行性，逐类 TDD 扩展 SafePrefixGate。
