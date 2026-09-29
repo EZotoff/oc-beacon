@@ -85,6 +85,8 @@
   - 2026-09-29 发掘审计真机实测:dev 包 ocbeacon.db=837MB(800M databases,files/shared_prefs/cache 全<1MB)——增长全在库文件
   - 修剪机制其实存在(MessageStore SESSION_MESSAGE_LIMIT+溢出 zstd 归档后 prune)——嫌疑收窄:FTS 索引行(独立于分层,删会话才清)/归档桶常驻库内/SQLite 自由页无 VACUUM 回收/工具输出 provider 缓存
   - 影响面=存储占用与冷启开销;定罪路径:库表体积普查(sqlite dbstat/各表 COUNT+长度和)→对位修复(FTS 随归档清/周期 VACUUM/归档外移文件系统)
+  - 2026-09-29 T-B 普查定罪(844MB 库 dbstat):FTS5 占 778MB/92%——message_fts_content 613MB(181,682 行全文镜像,未用 external-content 表配置)+message_fts_data 162MB(倒排);真实数据仅 ~58MB(cached_parts 22.3+archive_buckets 25.9+cached_messages 3.4+logs 5.9);freelist=0
+  - 复合根因:①FTS5 建表未用 content=外部内容表→全文在库内双份;②FTS 行不随热表修剪(181k 行 vs cached_parts 6.6k 行,冷数据未压缩文本永驻——ContentSearch.kt:70 'prune 不删 FTS 行'设计);③page_size=1024 小页放大 btree/溢出链开销;修向=external-content 重建 FTS+迁移回填(+可选 page_size 4096 需 VACUUM 备份路径)——预计回收 ~613MB,稳态 ~230MB
 
 - [ ] **#471 完结瞬间高度跳变族:StepGroup整树互换+>2048字符Loading塌缩+归一化重排** `chat,markdown`
   - 2026-09-30 调研 P2 定罪:①多消息 turn 完结时 StepGroup 流式平铺↔折叠组整树互换(探针注释自认结构性高度跳变源,数千 px 级,冷账本 24dp 桩帧,MessageCardAssistant.kt:428-479);②>2048 字符正文完结切 pilot→async 首帧 Loading≈0 高再 Success 全高(#428 同族 +268px,MarkdownContent.kt:603-715);③完结归一化变换(数学围栏/任务列表/长段空行化)只发生在完结=一次性重排。方向:②pilot 终帧同步换入/缓存预热收益最明确;①依赖 L3 AST 切片既有计划。另:setext 升格(SafePrefixGate 自认缺口)+tight→loose 列表+CRLF 表格三小项随 markdown 批次顺带。

@@ -290,3 +290,11 @@
 
 ### #444 复验（关闭依据补强）
 - 12 次双向硬 fling：31 例 LEAP 全为连续运动（大 Δ= snapshotFlow 汇聚峰值帧+item 穿越算术+SafeFling 程序尾），零孤立跳变/零方向反转
+
+## T-B 库普查定罪（补录）
+
+- 拉库 844MB 宿主 dbstat：**FTS5 占 778MB(92%)** —— message_fts_content 613MB（181,682 行**全文镜像**）+ message_fts_data 162MB（倒排索引）
+- 真实数据合计 ~58MB：cached_parts 22.3 / archive_buckets 25.9 / cached_messages 3.4 / logs 5.9
+- freelist=0（无空闲页膨胀）；page_size=1024 小页放大开销
+- 复合根因：FTS 未用 external-content（库内双份全文）+ FTS 行不随修剪（181k vs 热表 6.6k，冷数据未压缩永驻）
+- 修向：external-content 重建 FTS+回填（预计回收 ~613MB，稳态 ~230MB）；可选 page_size 4096
