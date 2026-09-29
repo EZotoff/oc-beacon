@@ -6,7 +6,7 @@
 
 **编号**：全局递增，不回收。下一编号：**#483**（2026-09-29 #482 V2 prompt.files 嵌套契约未经部署）。
 
-**操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。
+**操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
 > 编号勘误（2026-08-23 合并时）：terminology 分支先行占用的 #194–#199 与主工作区 #194（FAB）撞号，合并时 terminology 侧六卡顺移 +5 → #200–#205；文档内旧引用已同步改。
 
@@ -123,11 +123,6 @@
 - [ ] **#481 architecture-debt.md 过期两月未刷新——god files 表失真+引擎域未入册** `refactor`
   - 登记册止于 2026-08-07:ChatMessageList 表记 ~674 行,实际经 #42x-#47x 战役已 ~2700+;ChatScrollController/CardExpandReveal/ScrollCompensation 等引擎域新文件未入册
   - 随册并入两测试缺口:分页 androidTest @Ignore(ChatInteractionTest:399,sessionId 空壳致 hasOlderMessages 恒 false,三方案任一可解)+终端 tab 管理无单测(旧表遗留,待复核)
-
-- [~] **#480 backlog-new-batch.sh 误传路径静默产生畸形文件名——加参数防御** `chore`
-  - 2026-09-29 发掘审计:#476 批实害(fa91c578 清理的 mangled 文件即此因):脚本 kebab 化不拒绝含 / 或 .md 的参数,传路径=拼出畸形名而非报错
-  - 修法:参数含 / 或以 .md 结尾即 die 提示只接批次名;3 行改动
-  - 2026-09-29 修复:参数含/或.md结尾即die只接批次名;三例自测过(路径拒/kebab命中/中文兜底);顺手修miui-install.sh serial引号(带空格mDNS名分裂);journal 2026-09-29-477-480-a11y-blind-and-script-guard
 
 - [ ] **#479 SSE 连接期 PARTIAL_WAKE_LOCK 持有策略/电池影响未审计** `sse` `perf`
   - 2026-09-29 发掘审计:dumpsys 实测持锁(OpenCodeRemote::SSEConnection,周期性重取)+日志 WakeLock renewed 每 30s(OpenCodeConnectionService:650 起)——抗 MIUI 杀 socket 的保活设计(#441 域)
