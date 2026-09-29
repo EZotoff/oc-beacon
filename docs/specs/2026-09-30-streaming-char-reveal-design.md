@@ -5,6 +5,7 @@
 > 位置约定：active spec 置于 docs/specs/；实现并验收后移至 docs/archive/specs/ 并更新本行状态
 > 涉及模块：ui/screens/chat/markdown/（StreamingMarkdownPilot / SafePrefixGate / InlineSpanSafety / HeldTailReveal / MarkdownContent）、data/repository/handler/MessageEventHandler、ui/screens/chat/components/ScrollCompensation、theme/Motion、app/build.gradle.kts
 > 关联 backlog：#483
+> 依赖注记（2026-09-30 #471③ 落地后）：SafePrefixGate 的输入已从原文变为**归一化文本**（pilot ingest 前移 normalizeForStreaming）——本 spec 的围栏平衡/表格态状态机语义不变（tex 围栏反而更早平衡），揭示层消费的闸放行文本即归一化文本（终帧=流式帧）。
 > 调研依据：docs/research/2026-09-30-streaming-reveal-animation-patterns.md（业界动效模式）、docs/research/2026-08-30-ai-streaming-render-landscape.md（Android 流式渲染横评）、docs/research/sse-scroll-stability-iron-laws.md（铁律）
 
 ## 1. 概述

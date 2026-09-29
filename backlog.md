@@ -93,6 +93,7 @@
   - 2026-09-30 ④用户裁决 c(降级观察):v1+v2 四场景实测不可复现(331k 行 Loading=0,#472 hold/registry/preParsed 防御栈有效)→④转 watch 复发再战(理论盲区仍在:断连续传+滚出视口弃树+ever=false 重建帧,0 触发);残余③归一化重排(含 09-29 表格轮 -8544/+7236 活证)继续挂本卡待批
   - 2026-09-30 ③归一化重排专项开工:方向=归一化前移到流式 ingest(终帧=流式帧,完结变换幂等化);setext 升格/tight→loose/CRLF 三小项随批评估
   - 2026-09-30 ③归一化重排设计定稿 to spec:docs/specs/2026-09-30-471-3-streaming-normalization-unification-design.md——归一化前移 gate 前流式 ingest(终帧=流式帧)+位置制空行化(cumEnd 行完成即定案)+gate 表格注入退役;实现按 spec §5 三 commit(新会话可执行);可关卡片清单 spec §8(本卡验收后整卡关)
+  - ③实现落地待验收：spec §5 三 commit 完成——A 276d8fbf(纯函数+TDD+性质测试抓出四破口修订:尾$run收口/表格排除数学行/表头待定回退/MarkdownFenceLine 统一围栏) B 9130c83e(pilot ingest 接线+gate 注入退役) C(E2E:held=0→85ms 桥接→Success 直达,无弹跳双帧,flap=0,3716 绿)。E3 以单测+长段档案替代(用户验收保留)。验收清单 spec §9;铁律 9 已收编 iron-laws
 
 ## P3 — 观察与低价值改进
 

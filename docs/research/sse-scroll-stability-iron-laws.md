@@ -149,6 +149,16 @@ val streamingMsgId = remember(rawMessages) {
 
 **位置**：`MessageDataDelegate.kt`（chatMessageCache + `lastCombineSessionId` 切换清理）、`ChatMessageList.kt`（turnGroupsSigRef/jumpTargetsSigRef + miss 分支修正）、`ToolProgressOutputInjector.kt`（changed 标志 + 原引用返回）。
 
+### 铁律 9（#471③，2026-09-30 追加）：流式与完结必须走同一归一化——禁止任何单侧文本变换
+
+**完结瞬间重排跳变族的最后结构性根因**：归一化只在完结发生 = 流式显示文本与完结渲染文本不一致 → 完结换装即一次性重排（真机实证：表格轮 -8544/+7236、纯文本轮 ±24px 残余、#471④ retry 场景 -1330px ③族）。
+
+**规则**：流式 ingest（pilot 包装器入口）与完结渲染（normalizeForRender 全部消费点）必须共用同一归一化核心——normalizeMarkdownCore（CRLF/表格空行/数学降级）→ normalizeForStreaming（pilot）与 normalizeForRender（完结）同序组合，**render == streaming 逐字节不变量入测**（NormalizeSentinelEquivalenceTest）。任何新的文本变换必须同时接入两侧并证明放行单调：回改点落在 SafePrefixGate 扣留区，NormalizationStreamingMonotonicityTest 逐字符增长×gate 放行前缀稳定性性质测试钉死。
+
+**随批四项配套修订**（归一化前移的破口，spec docs/specs/2026-09-30-471-3-streaming-normalization-unification-design.md §3.3 矩阵修订）：gate 尾 `$` run 收口（逐字符凑对）/ 表格三处排除未定案 `$$`、`\[` 行 / 表头行待定三行结构空行毕业回退 / MarkdownFenceLine 统一围栏判定（三变换与 gate 的栏状态分歧——兼修栏内表格插空行、栏内 ```xxx 误闭合两个存量渲染缺陷）。
+
+**位置**：`MarkdownContent.kt`（normalizeMarkdownCore / normalizeForStreaming / splitOversizedParagraphsByPosition）、`StreamingMarkdownPilot.kt`（ingest 前移）、`MarkdownFenceLine.kt`（统一围栏判定）。
+
 ## 3. 回归历史：为什么这个能力"反复出现又消失"
 
 ### 3.1 时间线
