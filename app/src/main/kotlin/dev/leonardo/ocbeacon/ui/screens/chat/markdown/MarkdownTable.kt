@@ -8,6 +8,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -34,7 +35,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -110,6 +110,91 @@ private object NaturalWidthsLru : LinkedHashMap<String, IntArray>(16, 0.75f, tru
     override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, IntArray>?): Boolean = size > 24
 }
 
+/**
+ * #469 ②：表格 staged 分批完成标记跨重建缓存（模块级 LRU，主线程单写者）。
+ *
+ * 动机：stagedLimit 原以 (content=整条消息全文, tableNode) 为键——消息**任何部位**
+ * append（含表格后续文本）都让键失效 → 已完全展开的表格塌回首组（8 行）再逐帧
+ * 重建（真机实测 3674→1402→2878→3674，-2272px 三连振 215ms；14042px 大表
+ * -8544 四连振）。除流式 append 外，完结换装（流式态→预解析分片路径切换）、
+ * 新消息发送（轮次切换重组）、滚动回收重入等**子树身份重建**通道同样让
+ * remember 全丢——本缓存以表格自身文本为键记录「staging 已完成」事实，任何
+ * 重建路径命中即全量直出，从构造上消灭塌缩拍。与 #431 NaturalWidthsLru 同
+ * 哲学：渐进分批是**首见成本**，不是每次重建的重付成本。
+ */
+internal object TableStageProgressCache {
+    internal const val MAX_ENTRIES = 24
+
+    private val map = object : LinkedHashMap<String, Boolean>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>?): Boolean =
+            size > MAX_ENTRIES
+    }
+
+    fun isComplete(tableText: String): Boolean = map[stageCacheKeyOf(tableText)] == true
+
+    fun markComplete(tableText: String) {
+        map[stageCacheKeyOf(tableText)] = true
+    }
+
+    /** 仅测试用。 */
+    fun clearForTest() = map.clear()
+}
+
+/** #469 ②：stagedLimit 初值——完成过的表全量直出，首见表分批起步。JVM 可单测。 */
+internal fun stagedInitialLimit(stageCompleted: Boolean, grouped: Boolean): Int =
+    if (grouped && !stageCompleted) 1 else Int.MAX_VALUE
+
+/**
+ * #469 ②：完成标记的缓存键——表头行 + 总行数（表格身份键）。
+ *
+ * 直用 tableText 全文的缺陷（真机 G 轮探针定罪）：流式收尾阶段表格 AST 的
+ * **尾部边界**随后续 token 变化（尾部换行/空行归属翻转）→ 重建时 tableText
+ * 已与 markComplete 时刻不同 → miss → 塌回首组一次。表头行+行数在「尾部
+ * 边界变化」下稳定；表格自身追加行时行数变（键变，miss）——但此刻表格
+ * 正在生长，miss 分批起步=原语义，无碍。
+ *
+ * 碰撞语义安全：不同表格同表头同行数 → 误判「已完成」→ 跳过分批直接全量
+ * 组合——只影响首组合帧分布策略（一次性成本），渲染正确性零损失。
+ */
+internal fun stageCacheKeyOf(tableText: String): String {
+    // 键=表头行：对「尾部边界归属翻转」和「行数增长」（流式收尾/换装后与流式态
+    // 的全部差异维度）都稳定；同表头不同表碰撞 → 仅跳过分批（全量直出），
+    // 渲染正确性零损失（见 TableStageProgressCache KDoc）。
+    val body = tableText.trimEnd('\n', '\r', ' ', '\t')
+    val nl = body.indexOf('\n')
+    return if (nl >= 0) body.substring(0, nl) else body
+}
+
+/**
+ * #469 ①：表格自身文本安全截取（AST 边界越界钳制——#437 失配帧教训：流式
+ * snapshot 中 AST 与 content 可能不同源一瞬）。JVM 可单测。
+ */
+internal fun safeTableText(content: String, node: ASTNode): String {
+    if (node.endOffset <= node.startOffset) return ""
+    val from = node.startOffset.coerceIn(0, content.length)
+    val to = node.endOffset.coerceIn(0, content.length)
+    return if (to > from) content.substring(from, to) else ""
+}
+
+/** #469 ①：单元格文本安全截取（remember 键用——值语义替代整条消息全文实例）。 */
+internal fun safeCellText(content: String, node: ASTNode): String {
+    if (node.endOffset <= node.startOffset) return ""
+    val from = node.startOffset.coerceIn(0, content.length)
+    val to = node.endOffset.coerceIn(0, content.length)
+    return if (to > from) content.substring(from, to) else ""
+}
+
+/**
+ * #469 ①：行快照——rows 与其同代 content 实例钉死在一起。键改 tableText 后
+ * rows 可跨「消息后续 append」保留，但 cell ASTNode 的 offsets 相对旧全文；
+ * 所有下游（cellResult/TSV/GroupedTableBody）必须使用快照同代 content，保证
+ * 坐标系自洽（append-only 下 offsets 天然有效；快照表格文本=当前表格文本）。
+ */
+internal data class TableRowsSnapshot(
+    val content: String,
+    val rows: List<TableRow>,
+)
+
 /** #429 时间切片：行组边界。JVM 可单测。 */
 internal fun tableGroupBounds(rowCount: Int): List<IntRange> {
     if (rowCount <= 0) return emptyList()
@@ -175,7 +260,11 @@ internal fun SimpleMarkdownTable(
     val border = BorderStroke(1.dp, dividerColor)
     val annotator = annotatorSettings()
 
-    val columnCount = remember(tableNode) {
+    // #469 ①：键从 (tableNode, content=整条消息全文) 改为表格自身文本——
+    // AST 实例每 append 重解析必变（实例键失效），全文键则被消息任何部位的
+    // append 打失效；tableText 值语义：表格没变 → 全部下游缓存保留。
+    val tableText = safeTableText(content, tableNode)
+    val columnCount = remember(tableText) {
         tableNode.children.maxOfOrNull { child ->
             when (child.type) {
                 GFMHeader, GFMRow -> child.children.count { it.type == GFMCell }
@@ -185,8 +274,8 @@ internal fun SimpleMarkdownTable(
     }
     if (columnCount == 0) return
 
-    // 从 AST 收集结构化的行数据
-    val rows = remember(tableNode, content) {
+    // 从 AST 收集结构化的行数据（#469 ①：行快照钉死同代 content，见类 KDoc）
+    val snapshot = remember(tableText) {
         val list = mutableListOf<TableRow>()
         var rowIdx = 0
         tableNode.children.forEach { child ->
@@ -202,8 +291,9 @@ internal fun SimpleMarkdownTable(
                 }
             }
         }
-        list
+        TableRowsSnapshot(content, list)
     }
+    val rows = snapshot.rows
 
     val rowCount = rows.size
     val scrollState = rememberScrollState()
@@ -224,11 +314,24 @@ internal fun SimpleMarkdownTable(
     // movableContent 移回=reuse 状态=瞬显，与 B 方案协同）。
     // 滚动进入视口的大表同样分批（~136ms/17组@120Hz 渐进），替代 2.4s 单体冻结。
     val grouped = rowCount > TABLE_GROUPED_MIN_ROWS
+    // #469 ②：组合期同步标记（H 轮探针定罪：effect 内 mark 有子树生命周期竞态
+    // ——完结换装重建可赶在 mark 执行前拆除子树；组合期写无竞态，幂等单键）。
+    if (grouped) TableStageProgressCache.markComplete(tableText)
     val tableGroups = remember(rowCount) {
         if (grouped) tableGroupBounds(rowCount) else emptyList()
     }
-    val stagedLimit = remember(content, tableNode) {
-        mutableIntStateOf(if (grouped) 1 else Int.MAX_VALUE)
+    // #469 ②：stagedLimit 去 (content, tableNode) 键——原键使消息任何 append/
+    // 子树身份重建都把已完成的表格打回「1 组」重新分批（塌缩-重建循环真机
+    // 定罪 -2272/-8544px）。现在：同身份存活期间进度单调保留（表格追加行只
+    // 增组，步进器续跑）；子树重建（完结换装/发送切换/回收重入）由
+    // TableStageProgressCache 完成标记兜底——首见分批照旧，重建全量直出。
+    val stagedLimit = remember {
+        val cached = TableStageProgressCache.isComplete(tableText)
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+            android.util.Log.w("TblDiag", "staged-init len=" + tableText.length + " hash=" + tableText.hashCode() +
+                " grouped=" + grouped + " cacheHit=" + cached + " rows=" + rowCount)
+        }
+        mutableIntStateOf(stagedInitialLimit(cached, grouped))
     }
 
     // #429 L0-②：长按复制（菜单见文件尾 Popup）
@@ -241,13 +344,16 @@ internal fun SimpleMarkdownTable(
     // 风暴的主要成分（MIUIScout 定罪栈）；选择能力由「长按单元格=复制此格/
     // 整表 TSV」补偿（#429 用户裁决 2026-09-23）。
     androidx.compose.foundation.text.selection.DisableSelection {
-    Box(
+    // #469 ③：BoxWithConstraints 首拍内联真宽——原 remember{0}+onSizeChanged
+    // 两拍收敛使首测列宽按 minCellWidthPx（120dp cap）夹窄、次拍放宽回缩
+    // （高度两拍跳变成分之一）。组合期 constraints.maxWidth 即容器实宽。
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .border(border, shape)
             .clip(shape)
     ) {
-        var containerWidth by remember { mutableIntStateOf(0) }
+        val containerWidth = constraints.maxWidth
 
         val headerStyle = style.copy(fontWeight = FontWeight.SemiBold, lineBreak = LineBreak.Simple)
         val bodyStyle = style.copy(lineBreak = LineBreak.Simple)
@@ -255,13 +361,14 @@ internal fun SimpleMarkdownTable(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .onSizeChanged { containerWidth = it.width }
                 .horizontalScroll(scrollState)
         ) {
             if (grouped) {
                 // #429 时间切片:行组装配体(见文件尾);计算期由 stagedLimit 分批
+                // #469 ①:content 传快照同代实例(rows 的 AST offsets 坐标系)
                 GroupedTableBody(
-                    content = content,
+                    content = snapshot.content,
+                    tableText = tableText,
                     rows = rows,
                     columnCount = columnCount,
                     tableGroups = tableGroups,
@@ -293,8 +400,10 @@ internal fun SimpleMarkdownTable(
                         val cellStyle = if (row.isHeader) headerStyle else bodyStyle
                         // AnnotatedString 内嵌 style 颜色，键必须含颜色：主题切换后
                         // 颜色变化 → 重建 AnnotatedString，避免文字停留旧主题颜色。
-                        val cellResult = remember(content, cell, cellStyle.color, linkColor) {
-                            buildClickableMarkdown(content, cell, cellStyle, annotator, linkColor)
+                        // #469 ①：键改单元格自身文本（值语义）——原「整条消息全文」
+                        // 键使消息任何 append 都重建全表 annotatedString。
+                        val cellResult = remember(safeCellText(snapshot.content, cell), cellStyle.color, linkColor) {
+                            buildClickableMarkdown(snapshot.content, cell, cellStyle, annotator, linkColor)
                         }
                         val cellText = remember(cellResult) { cellResult.annotatedString.toString() }
                         Box(
@@ -358,7 +467,7 @@ internal fun SimpleMarkdownTable(
             // 仍须每遍执行）。
             // 缓存 key 用 content + tableNode（AST 引用，内容变化时必然变化）——
             // bodyStyle 每次重组都是新 TextStyle 对象，不能作 key（否则缓存每次失效）
-            val measureCache = remember(content, tableNode, columnCount) {
+            val measureCache = remember(tableText, columnCount) {
                 MeasureCache()
             }
 
@@ -509,7 +618,7 @@ internal fun SimpleMarkdownTable(
                                 .fillMaxWidth()
                                 .clickable {
                                     clipScope.launch {
-                                        clipboard.copyToClipboard("table-tsv", tableTsv(content, rows, columnCount))
+                                        clipboard.copyToClipboard("table-tsv", tableTsv(snapshot.content, snapshot.rows, columnCount))
                                     }
                                     copyCellText = null
                                 }
@@ -551,7 +660,9 @@ private fun GroupedRow(
         val cell = row.cells[colIdx]
         val isLastCol = colIdx == cellCount - 1
         val cellStyle = if (row.isHeader) headerStyle else bodyStyle
-        val cellResult = remember(content, cell, cellStyle.color, linkColor) {
+        // #469 ①：键改单元格自身文本（值语义）——原「整条消息全文」键使消息
+        // 任何 append 都重建全表 annotatedString（重排/重组风暴）。
+        val cellResult = remember(safeCellText(content, cell), cellStyle.color, linkColor) {
             buildClickableMarkdown(content, cell, cellStyle, annotator, linkColor)
         }
         val cellText = remember(cellResult) { cellResult.annotatedString.toString() }
@@ -693,6 +804,7 @@ private fun TableGroupBlock(
 @Composable
 private fun GroupedTableBody(
     content: String,
+    tableText: String,
     rows: List<TableRow>,
     columnCount: Int,
     tableGroups: List<IntRange>,
@@ -719,8 +831,10 @@ private fun GroupedTableBody(
     // #431:结果跨回收 LRU——条目回收/滚动离屏重入时 remember 重算,48 次测量
     // 每表重付(×4 表 ≈150ms)是滚动穿表冻结的成分之一;命中即零成本(主线程
     // 单写者,无需锁;键=fontSize+全文,内容变即失配自然重测)。
-    val naturalWidths = remember(content, rows, columnCount, bodyStyle.fontSize, tableGroups) {
-        val cacheKey = bodyStyle.fontSize.toString() + "\u0000" + content
+    // #469 ①：键改表格自身文本（tableText）——原「content=整条消息全文」键
+    // 使消息任何 append 都触发首组代表重测；LRU 键同步改（同文本表共享缓存）。
+    val naturalWidths = remember(tableText, columnCount, bodyStyle.fontSize, tableGroups) {
+        val cacheKey = bodyStyle.fontSize.toString() + "\u0000" + tableText
         NaturalWidthsLru.get(cacheKey) ?: run {
             val w = IntArray(columnCount) { 0 }
             val probeCount = (tableGroups.firstOrNull()?.last ?: (rows.size - 1)) + 1
@@ -762,6 +876,9 @@ private fun GroupedTableBody(
 
     // #429 A 帧步进器:仅当处于分批初值(<组数)时运行;每帧前进一组,
     // withFrameNanos 等帧=让 choreographer 先渲染(spinner 旋转)再组合下一组
+    // #469 ②：完成时写跨重建完成标记（TableStageProgressCache）——之后任何
+    // 子树身份重建（完结换装/发送切换/回收重入）命中即全量直出，零塌缩。
+    // effect 键含 tableText：流式追加行时重启，从保留的进度续跑（单调不重置）。
     androidx.compose.runtime.LaunchedEffect(tableGroups.size) {
         while (stagedLimit.intValue < tableGroups.size) {
             withFrameNanos { }
