@@ -5,6 +5,8 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.unit.Velocity
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -48,5 +50,29 @@ class CardFlingLeakGuardTest {
     fun leakDispositionClassification() {
         assertEquals(CardLeakDisposition.ChainNaturally, leakDisposition(NestedScrollSource.UserInput))
         assertEquals(CardLeakDisposition.AbsorbAtEdge, leakDisposition(NestedScrollSource.SideEffect))
+    }
+
+    // ===== #476: 拖拽链传导解除 autoScroll 武装 =====
+
+    @Test
+    fun disarmOnlyForRealUserInput() {
+        assertTrue(shouldDisarmOnChain(NestedScrollSource.UserInput))
+        assertFalse(shouldDisarmOnChain(NestedScrollSource.SideEffect))
+        // Relocate=程序化重定位(bringIntoView),不得当作用户滚动
+        assertFalse(shouldDisarmOnChain(NestedScrollSource.Relocate))
+    }
+
+    @Test
+    fun userDragChainInvokesDisarmHook() {
+        var disarmed = 0
+        val c = cardLeakGuardConnection(onUserChain = { disarmed++ })
+        c.onPostScroll(Offset.Zero, Offset(0f, -40f), NestedScrollSource.UserInput)
+        assertEquals(1, disarmed)
+        // 惯性吸收通道不解除(无外层移动,用户未取得视口)
+        c.onPostScroll(Offset.Zero, Offset(0f, -8f), NestedScrollSource.SideEffect)
+        assertEquals(1, disarmed)
+        // 程序化重定位不解除
+        c.onPostScroll(Offset.Zero, Offset(0f, 30f), NestedScrollSource.Relocate)
+        assertEquals(1, disarmed)
     }
 }

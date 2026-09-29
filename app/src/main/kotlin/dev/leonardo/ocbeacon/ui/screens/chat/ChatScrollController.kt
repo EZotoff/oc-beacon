@@ -221,12 +221,19 @@ internal fun rememberChatScrollController(
                         autoScrollEnabled.value,
                         listState.firstVisibleItemIndex == 0 &&
                             listState.firstVisibleItemScrollOffset < 100,
-                    )
-                }.collectLatest { (scrolling, autoOn, atBottom) ->
+                    ) to (listState.firstVisibleItemScrollOffset >=
+                        AutoScrollArbiter.REANCHOR_MIN_OFF_PX)
+                }.collectLatest { (state, materiallyOff) ->
+                    val (scrolling, autoOn, atBottom) = state
                     // #423 I3:episode 静默窗(settle≤600ms+PhaseB 240ms)远超 250ms 去抖——
                     // 无租约时去抖到期即在动画中段插入重锚。入口+复查双检查(复查点承重)。
                     // #437 验收六轮：流式中守卫静默（防与配对 set 拉锯）。
-                    if (!scrolling && autoOn && !atBottom && !jumpLockActive.value &&
+                    // #476 战区免疫(2026-09-29 用户演示取证):零高横幅带使贴底锚
+                    // idx 双稳(0↔首实项,同物理位 off 不变),微离底(实测 1-110px)
+                    // 的 GUARD 重锚落点不清偿 → ~270ms 自持拉锯=「挪一点被吸到底」。
+                    // 死区:off<120px 不构成「用户离底」;设计针对的异步长高漂移实测
+                    // 190-444px,120 两侧留裕。materiallyOff 入 flow 键保证越阈即发射。
+                    if (!scrolling && autoOn && !atBottom && materiallyOff && !jumpLockActive.value &&
                         !PreRenderCoordinator.hasActiveTransactions &&
                         !streamingActive()
                     ) {
@@ -434,6 +441,10 @@ internal class ForceScrollExecutor(
  * 保证新快照取消未决去抖。
  */
 internal object AutoScrollArbiter {
+    /** #476:GUARD 重锚死区(px)——微离底(零高横幅带 idx 双稳区,实测 1-110px)
+     * 重锚永不清偿只会产出拉锯战;真实异步长高漂移 190-444px。 */
+    const val REANCHOR_MIN_OFF_PX = 120
+
     /** 贴底稳定后再武装 autoScroll。 */
     const val ANCHOR_DEBOUNCE_MS = 250L
 

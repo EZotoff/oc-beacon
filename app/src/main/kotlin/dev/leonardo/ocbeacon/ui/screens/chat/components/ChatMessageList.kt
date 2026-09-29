@@ -2530,7 +2530,9 @@ fun ChatMessageList(
                                 // 拖拽到边→剩余位移协议自然传导外层(同向跟手,零干预);
                                 // 惯性到边→动量就地吸收(逐帧+残速双通道),不传导不注入
                                 // (五轮反转注入致拖拽方向反,已废弃)。
-                                .cardFlingLeakGuard()
+                                // #476:链传导解除 autoScroll 武装(嵌套 dispatch 不置
+                                // isScrollInProgress,不解除则 250ms 后 GUARD 吸回底)。
+                                .cardFlingLeakGuard(onUserChain = onExpandDeparture)
                                 .animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = null),
                         ) {
                             CompositionLocalProvider(
