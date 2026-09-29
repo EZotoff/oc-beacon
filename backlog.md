@@ -89,13 +89,10 @@
   - 2026-09-30 用户验收通过(②完结 Loading 塌缩):茶文化轮判定链+高度序列双证据——完结帧 hold=true 拦截 Loading(19:00:10.772),144ms 后 async 就绪无缝切换,全程高度差仅 ±24px(归一化微差,一行文字高);对比修复前同场景 -13171/+12824 两连跳。残余:①StepGroup 边界换装(轮次开始/结束各一次 845→1492)与③归一化重排量级小待后续;新发现④SSE retry 恢复场景:重连后内容跳变重组期 pilotEverRendered 丢失(ever true→false 实证)→塌缩 -8575px 仍现,仅断连续传时发生,正常轮次不受影响——随 retry 路径稳定性专项处理。
   - 2026-09-28 ①StepGroup 互换已根灭(#422 清理批次,用户裁决彻底清理):统一渲染树后流式/完结同构,互换不存在——10轮多step POST完结塌缩 10/10→0/10。③归一化重排与④SSE retry pilotEverRendered 丢失仍待处理(与本卡完结族余项同批)
 
-- [ ] **#465 UI 暖态下点击偶发失效(冷启可靠,间歇性)** `chat-ui`
-  - 2026-09-29 #461/#462 取证副产物:force-stop 冷启后输入 tap 可靠命中,暖运行后同坐标偶发零效果(无日志无 UI 变化,vibrator 反馈存在);复现条件未锁定——暖态 35min 点击仍正常(4 条 episode 日志实证),失效为间歇性非持续态。影响面=自动化验证可靠性,无用户主诉不阻塞;再撞上时现场抓 input dispatcher+app 双侧日志。
-  - 2026-09-29 审计顺带实证:一次 x=1185 朝历史拖动 input 送达(moveCount=50)但零滚动响应,复测不再现——与本卡「暖态偶发失效」同族;另 #477 dump 全盲可能污染本族卡片以 dump 定坐标的判读
-
 - [ ] **#464 UI 暖态下列表/卡片点击偶发失效(冷启可靠)** `chat-ui`
   - 2026-09-29 #461/#462 取证副产物:force-stop 冷启后输入 tap 可靠命中(会话行/卡标题),同一 app 暖运行数分钟后点击同坐标零效果(无日志无 UI 变化,vibrator 反馈存在=命中可点击元素但未触发业务);两次独立取证会话复现,冷启后恢复。疑点:点击消费被某 overlay/焦点态拦截或状态门;影响面=自动化测试可靠性,人工使用未报告。待真机复现窗定罪(diagnosing-bugs 流程),暂无用户主诉不阻塞。
   - 2026-09-29 审计顺带实证:一次拖动送达零响应不再现(见 #465 注记);#477 dump 全盲为坐标类判读新增干扰源——本卡与 #465 高度重复,建议合并为单卡观察项待裁决
+  - 2026-09-29 用户裁决:吸收 #465 合并,本卡为该域唯一观察卡(暖态间歇 input 送达零业务响应;今日一次拖动零响应不再现实证在案;#477 dump 全盲为坐标判读新干扰源)——再撞上即现场抓 input dispatcher+app 双侧日志
 
 - [ ] **#459 V2 2.0.18 消费侧 14 端点漂移清单（health/question|form request/pty shells/share/rename/service stop 等 404）** `regression,v2,data`
   - app 调用面 45 点中 14 点在 2.0.18 openapi 缺失（全 404 实证）；真机主链路不受影响（探测器/PATCH session 等降级路径实证），但 question/form 轮询兜底、pty shells、share、service/stop 在 2.0.18 下不可用。详见回归报告 §1.2/缺陷 D2
@@ -107,16 +104,11 @@
   - 终审判定：R1批次已锁 A2 贴底5ms/A1回归/A4全项；滑动p90 19-27 未达12——R2分片(稳定块缓存/尾块单测)是 O(内容)→O(尾块) 唯一路径。
   - Medium欠账：cadence结构收编(spec裁决3)、flush八职责深拆(终审S2)、StreamingPairingRule缝退役迁移。
   - 待复核：ScrollQuiescence单例假设、HeldTail锁高裁剪视觉等价、diffDisplayItemsInto边界、SSE铁律逐条。
+  - 2026-09-29 用户裁决:吸收 #445 并入——R2 深水区含流式 markdown 稳定/活跃双容器状态管理方案(append-only+前缀吸收,固化解迁移帧问题);随卡迁入用户观感记录:完结窗会小跳一下(2026-09-27,限速节奏参数 BIG_RELEASE_MIN_INTERVAL_MS 可调,视情况修)
 
 - [ ] **#439 流式期重组隔离：entries 签名缓存与子卡 skippability 恢复** `streaming` `compose`
   - 流式批（~14/s）仍使流式 turn + 相邻注入卡条目全量重组（真机 35s 524 次）；渲染像素幂等故非闪烁源，属性能债。
   - 修复位：ChatMessageList.kt:741 chatEntries 键改结构签名（仿 :283 turnGroups sig-cache）；MarkdownChunking.kt:291-313 ChatEntry 预载 msg/streaming/key；:2448-2487 item lambda 消除 displayItems/turnGroups 直读；:1361-1375/:1772 回调 lambda remember 化。
-
-- [ ] **#424 步组内容后台解析预取池(L0)** `perf` `render`
-  - 用户提案:守护线程池(如2线程)后台预取 Markdown 解析——Compose 组合/测量是主线程铁律不可搬,但解析(最重CPU段)可并行;卡片可见即预取解析模型,ε 组合直接命中缓存
-  - 依赖:与 CardExpandReveal PREWARM 衔接(解析预热→组合预热两层)
-  - 2026-09-28 勘误(依 issue424-425 深度调研§6.2):字面提案重复建设——解析预取早已后台化(RenderReadiness.kt:121-127 flowOn(Default))+消息/part级窗口化(RenderSupplyCoordinator ±20条LRU48);主链路'步组卡可见→预取→ε组合命中缓存'已随 #430 过程卡片退役(7d5cd5fc)消失。真实残余缺口=R-C synthetic盲区:切片段(#sgN)组合期派生不进数据模型,驱动端(RenderSupplyCoordinator:329)与消费端(MessageCardAssistant:338/:813)双端排除永远拿不到registry预热;2200预算>2048异步阈值使多数段带Loading首帧。范围改写为R-C并与 #431 方案一第3条合并执行(两卡改同一行避免重复动:三处synthetic排除+StepGroupSlicing.kt:19预算;推荐降预算对齐变体2200→2048使合成段全落#428同步路径构造上消灭Loading首帧零新机制;取舍需真机标定同步1-3ms×窗内段数滚动帧叠加)。若用户裁决不再需要步组解析预取语义可直接关账并入#431。
-  - 2026-09-29 审计:代码确认预算 2200>2048(StepGroupSlicing.kt:19),synthetic 段仍走 async Loading 首帧——残余=R-C 单项(首次组合一帧,重入由 #428 LRU 缓解);建议关账并入 #431(已关闭,修复主体落地),待用户裁决
 
 ## P3 — 观察与低价值改进
 
@@ -138,13 +130,6 @@
 
 - [ ] **#454 v1 真机 IME 换行注入后 prompt 未发出** `chat` `device` `v1`
   - 真机 IME keyevent 66 发送路径:消息含注入换行(Run\n\n)时 prompt POST 未发出,乐观气泡悬挂;二次干净发送正常(prompt_async 202)。发送链路疑有 IME 竞态边角,#453 验证时顺带观察,未复现第二次
-
-- [~] **#445 R2 测量增量化深水区：流式 markdown 稳定/活跃双容器需换状态管理方案** `perf` `design`
-  - 双容器在 append-only StreamingMarkdownState 约束下存在固化解迁移帧（空白/重叠一帧=闪烁）——需自研 append-only+前缀吸收的渲染状态或库改造；stableTailBoundary 纯函数已备（StableTailBoundaryTest 6 例）。目标：append 成本 O(总内容)→O(尾块)，滑动 p90 冲 12ms。
-  - 取证补充(2026-09-27):完结窗 -67px uniform 步进源=chunk/segment plan 异步就绪节奏(RenderSupplyCoordinator),非 held 帽——帽平滑化参数保留(held 域更细腻)。深水区=plan 就绪节流/合并。
-  - 排除链更新(2026-09-27 R4):完结窗t>10.5s的-67px uniform步进≠item高度变化(RESIZE序列66-68px步进全在流式期内=限速铺开的期望节奏,t>10.5s后零RESIZE)=纯视口滚动注入——嫌疑收窄到完结触底滚动分步(scrollToBottom/GUARD pending)。下一轮:logcat定位完结后的滚动派发源。
-  - 结论修正(2026-09-27 R4终):条带步进帧与RESIZE序列7↔7一一对应(时间轴对齐偏移~3s)——所谓完结切换窗跳变在当前修复栈下已退化为流式尾段限速铺开节奏(66-68px/300-400ms,BIG_RELEASE_MIN_INTERVAL_MS=200 可调)——设计行为非缺陷。旧的EOF一次性大跳已被#438①限速消除(append max 2087→200)。卡片主体收口待用户观感验收;深水区(plan就绪/双容器固化解)维持登记。
-  - 用户验收观感(2026-09-27):完结窗会小跳一下——记录,后续视情况修复(限速节奏参数可调)。
 
 - [ ] **#444 fling 下滑跳变复发（原 #437 系修复后回归）** `bug`
   - 用户报告（2026-09-27 R2 开工时）：此前修复过的 fling 下滑跳变再次出现。
