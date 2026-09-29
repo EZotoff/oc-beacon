@@ -34,31 +34,36 @@ object DatabaseModule {
         Room.databaseBuilder(context, OcBeaconDatabase::class.java, "ocbeacon.db")
             .openHelperFactory(io.requery.android.database.sqlite.RequerySQLiteOpenHelperFactory())
             .addMigrations(Migrations.MIGRATION_1_2, Migrations.MIGRATION_2_3, Migrations.MIGRATION_3_4, Migrations.MIGRATION_4_5, OcBeaconDatabase.MIGRATION_5_6, Migrations.MIGRATION_6_7, OcBeaconDatabase.MIGRATION_7_8, OcBeaconDatabase.MIGRATION_8_9, OcBeaconDatabase.MIGRATION_9_10)
-            // #478③：freelist 阈值 VACUUM——迁移 DROP 778MB FTS 影子表后自由页
-            // 留在库文件内不归还 OS，必须 VACUUM 重写文件才真正回收磁盘；顺带把
-            // page_size 1024→4096（小页放大 btree/溢出链开销，844MB 库 dbstat
-            // 实测）。阈值 64MB：一次性吞下本批迁移释放的 ~778MB；日常 prune 每次
-            // 几 MB，数月才再触发（稳态 ~230MB 库 VACUUM 秒级）。
-            // VACUUM 不能在迁移事务内跑，故挂 onOpen（此时迁移已完成、无并发连接）。
-            // 失败仅告警不阻断：freelist 残留不影响正确性，下次启动重试。
+            // #478③：freelist 阈值 VACUUM 兜底（onOpen，迁移已完成）。
+            // 常态静默：requery 建库 auto_vacuum=FULL（真机实测），DROP/DELETE 的
+            // 页即时归还 OS——迁移释放的 ~800MB 由平台自动回收，无需 VACUUM；
+            // 此回调仅防御非 FULL 库/异常残留（freelist>64MB 时重写文件），
+            // 阈值滤掉日常 prune 的 MB 级波动。失败仅告警不阻断，下次启动重试。
+            //
+            // 取舍记录（2026-09-30 真机实证）：page_size 1024→4096 升级**放弃**——
+            // WAL 下 PRAGMA page_size 静默无效，须临时切 journal_mode=DELETE，
+            // 而 requery 连接池架构下切换永远无法独占库（busy_timeout 8s 仍
+            // code 5 锁死）；external-content 化后稳态库 ~60MB 级，小页开销
+            // 收益仅 ~5MB，不值得 VACUUM INTO+文件替换的破坏性方案。
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onOpen(db: SupportSQLiteDatabase) {
                     try {
+                        // requery execSQL 拒 PRAGMA 语句（真机实测 code 0）——
+                        // PRAGMA/VACUUM 一律走 query()
                         val pageSize = pragmaLong(db, "PRAGMA page_size") ?: return
                         val freePages = pragmaLong(db, "PRAGMA freelist_count") ?: return
                         val freeBytes = pageSize * freePages
                         if (freeBytes < VACUUM_FREE_BYTES_THRESHOLD) return
                         val t0 = System.currentTimeMillis()
                         val beforeBytes = db.path?.let { java.io.File(it).length() } ?: 0L
-                        if (pageSize != 4096L) db.execSQL("PRAGMA page_size = 4096")
-                        db.execSQL("VACUUM")
+                        pragmaQuery(db, "VACUUM")
                         val afterBytes = db.path?.let { java.io.File(it).length() } ?: 0L
                         // android.util.Log：onOpen 阶段 AppLogger 写库会重入
                         android.util.Log.i(
                             "OcBeaconDB",
                             "[478-vacuum] reclaimed: freelist=" + (freeBytes / 1048576) + "MB, file " +
-                                (beforeBytes / 1048576) + "MB→" + (afterBytes / 1048576) + "MB " +
-                                "(page_size " + pageSize + "→4096), " + (System.currentTimeMillis() - t0) + "ms",
+                                (beforeBytes / 1048576) + "MB→" + (afterBytes / 1048576) + "MB, " +
+                                (System.currentTimeMillis() - t0) + "ms",
                         )
                     } catch (e: Exception) {
                         android.util.Log.w("OcBeaconDB", "[478-vacuum] skipped (retry next open): " + e.message)
@@ -71,6 +76,11 @@ object DatabaseModule {
                     } catch (e: Exception) {
                         null
                     }
+
+                /** PRAGMA/VACUUM 统一走 query()（requery execSQL 拒绝）。 */
+                private fun pragmaQuery(db: SupportSQLiteDatabase, sql: String) {
+                    db.query(sql).use { it.moveToFirst() }
+                }
             })
             .build()
 

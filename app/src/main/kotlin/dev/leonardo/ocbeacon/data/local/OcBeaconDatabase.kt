@@ -100,12 +100,14 @@ abstract class OcBeaconDatabase : RoomDatabase() {
                 db.execSQL(MessageFtsSchema.CREATE)
                 MessageFtsSchema.TRIGGERS.forEach(db::execSQL)
                 db.execSQL(MessageFtsSchema.BACKFILL)
+                // external-content 表 COUNT(*)=content 表行数（含 reasoning 等
+                // 非索引行），真实倒排行数以 _docsize 影子表计
                 val newRows = db
-                    .query("SELECT COUNT(*) FROM ${MessageFtsSchema.TABLE}")
+                    .query("SELECT COUNT(*) FROM ${MessageFtsSchema.TABLE}_docsize")
                     .use { if (it.moveToFirst()) it.getLong(0) else 0L }
                 android.util.Log.i(
                     "OcBeaconDB",
-                    "[478-migration] FTS external-content rebuilt: old=$oldRows new=$newRows rows, " +
+                    "[478-migration] FTS external-content rebuilt: old=$oldRows indexed=$newRows rows, " +
                         (android.os.SystemClock.elapsedRealtime() - t0) + "ms",
                 )
             }
