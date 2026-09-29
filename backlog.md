@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#478**（2026-09-29 #477 长文 markdown 块 uiautomato）。
+**编号**：全局递增，不回收。下一编号：**#483**（2026-09-29 #482 V2 prompt.files 嵌套契约未经部署）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。
 
@@ -76,11 +76,17 @@
 - [ ] **#437 流式Markdown稳定揭示渲染——安全前缀两级放行(稳定块+纯段安全后缀),消灭不稳定尾回溯跳变** `sse,render,perf`
   - 根因:不稳定尾先字面排版后回溯重释义=已显示内容高度回溯(真机录屏A-B翻转帧定罪);#435引擎只能配对单调增长。方案:pilot差分与append之间加SafePrefixGate(库与渲染零改动):稳定块+开放段纯文字安全后缀两级放行,尾部扣留超龄进锁高降亮区,完结EOF全量flush。spec:docs/specs/2026-09-25-437-streaming-md-stable-reveal-design.md(阶段A-D+验收矩阵)
   - 2026-09-28 深度调研(issue437-research.md,204行):核心根因已由 SafePrefixGate 消灭有二十余轮定量证据;剩余=验收收口+关联残差分卡。R-7 重要发现:beta/stable 双关闭,修复仅 dev 生效(build.gradle.kts:108-118);铁律文档 sse-scroll-stability-iron-laws.md 未收编#437 内容(文档同步缺口);#450 是本卡判据放宽的直接次生回归(教训建议进铁律)
+  - 2026-09-29 发掘审计:铁律收编缺口比 R-7 记载更大——sse-scroll-stability-iron-laws.md 止于 2026-09-25 #435,#437 稳定揭示/#438 限速与保 key/#472 行内放行/#474 守卫分通道/#476 GUARD 死区五域铁律全未收编;R-7 收口时应一并补
 
 - [ ] **#432 思考卡收起高度变化/偏移竞态诊断(#432):15轮仪器矩阵未复现主诉,实锤prewarm早熟+滚动锁死** `chat-ui,perf`
   - 用户主诉收起时高度变化+双向偏移竞态。真机矩阵(3卡型×toggle×连点×交替×录屏逐帧)全部判绿(锚点±4px守恒,塌缩单帧)。实锤:①prewarm集体触发(同秒9卡,H=0/18早熟settle→展开偏移根源,已修2da3b6d0);②滚动死锁(fling+tap后列表锁死,跨install -r持久,pm clear毁现场未定位);③环境:opencode服务器API漂移(SSE返HTML)。待用户提供复现录屏/路径。
 
 ## P2 — 优化与锦上添花
+
+- [ ] **#478 Room 库 837MB 无界增长源待定位——热表修剪+归档在,库文件仍巨** `data` `perf`
+  - 2026-09-29 发掘审计真机实测:dev 包 ocbeacon.db=837MB(800M databases,files/shared_prefs/cache 全<1MB)——增长全在库文件
+  - 修剪机制其实存在(MessageStore SESSION_MESSAGE_LIMIT+溢出 zstd 归档后 prune)——嫌疑收窄:FTS 索引行(独立于分层,删会话才清)/归档桶常驻库内/SQLite 自由页无 VACUUM 回收/工具输出 provider 缓存
+  - 影响面=存储占用与冷启开销;定罪路径:库表体积普查(sqlite dbstat/各表 COUNT+长度和)→对位修复(FTS 随归档清/周期 VACUUM/归档外移文件系统)
 
 - [ ] **#471 完结瞬间高度跳变族:StepGroup整树互换+>2048字符Loading塌缩+归一化重排** `chat,markdown`
   - 2026-09-30 调研 P2 定罪:①多消息 turn 完结时 StepGroup 流式平铺↔折叠组整树互换(探针注释自认结构性高度跳变源,数千 px 级,冷账本 24dp 桩帧,MessageCardAssistant.kt:428-479);②>2048 字符正文完结切 pilot→async 首帧 Loading≈0 高再 Success 全高(#428 同族 +268px,MarkdownContent.kt:603-715);③完结归一化变换(数学围栏/任务列表/长段空行化)只发生在完结=一次性重排。方向:②pilot 终帧同步换入/缓存预热收益最明确;①依赖 L3 AST 切片既有计划。另:setext 升格(SafePrefixGate 自认缺口)+tight→loose 列表+CRLF 表格三小项随 markdown 批次顺带。
@@ -111,6 +117,22 @@
   - 修复位：ChatMessageList.kt:741 chatEntries 键改结构签名（仿 :283 turnGroups sig-cache）；MarkdownChunking.kt:291-313 ChatEntry 预载 msg/streaming/key；:2448-2487 item lambda 消除 displayItems/turnGroups 直读；:1361-1375/:1772 回调 lambda remember 化。
 
 ## P3 — 观察与低价值改进
+
+- [ ] **#482 V2 prompt.files 嵌套契约未经部署版实证(2026-08-16 TODO)** `v2` `data`
+  - V2ApiClient:526:嵌套 body 部署版 next-17430 一律 400→线上一直走平铺降级(files 顶层);主干部署后需 E2E 验证 modernBody 分支再收敛双路
+  - 验证成本低(一次带附件 prompt E2E+抓帧);与 #459 漂移族相邻但独立(这是契约实证,非端点缺失)
+
+- [ ] **#481 architecture-debt.md 过期两月未刷新——god files 表失真+引擎域未入册** `refactor`
+  - 登记册止于 2026-08-07:ChatMessageList 表记 ~674 行,实际经 #42x-#47x 战役已 ~2700+;ChatScrollController/CardExpandReveal/ScrollCompensation 等引擎域新文件未入册
+  - 随册并入两测试缺口:分页 androidTest @Ignore(ChatInteractionTest:399,sessionId 空壳致 hasOlderMessages 恒 false,三方案任一可解)+终端 tab 管理无单测(旧表遗留,待复核)
+
+- [ ] **#480 backlog-new-batch.sh 误传路径静默产生畸形文件名——加参数防御** `chore`
+  - 2026-09-29 发掘审计:#476 批实害(fa91c578 清理的 mangled 文件即此因):脚本 kebab 化不拒绝含 / 或 .md 的参数,传路径=拼出畸形名而非报错
+  - 修法:参数含 / 或以 .md 结尾即 die 提示只接批次名;3 行改动
+
+- [ ] **#479 SSE 连接期 PARTIAL_WAKE_LOCK 持有策略/电池影响未审计** `sse` `perf`
+  - 2026-09-29 发掘审计:dumpsys 实测持锁(OpenCodeRemote::SSEConnection,周期性重取)+日志 WakeLock renewed 每 30s(OpenCodeConnectionService:650 起)——抗 MIUI 杀 socket 的保活设计(#441 域)
+  - 未审计点:后台期是否释放/持锁时长分布/对电量的真实代价;若后台仍长持=电池债——需 acquire/release 全路径走查+一次耗电基线
 
 - [ ] **#477 长文 markdown 块 uiautomator 语义零暴露——dump 全盲致渲染正常被误判空白** `ui`
   - 2026-09-29 收口审计真机定罪:末轮长文(async parse 路径)可见区 dump 零文本节点(仅 1 个空 text 可点击 TextView h≈1921px),同期旧 turn 正常暴露;vision(三路交叉)+像素双验证内容完整渲染(连续正文/无空白/无圆点)——渲染层无恙,纯语义暴露缺陷
@@ -146,6 +168,7 @@
 - [ ] **#352 长按菜单「取消归档」——wire 层无恢复动词（2026-09-07 用户裁决要求，服务器阻塞）** `dsh` `archive` `ui`
   - 裁决原文:「归档单向契约同删除一样在长按弹出框中增加即可」——用户要求已归档行长按菜单加「取消归档」
   - **前提**：上游 dsh 服务器提供恢复动词——实测证据（2026-09-07 深夜，当前部署源码 dsh-api-workspace-controller typert）：WorkspaceArchiveSessionRequest={sessionId} **add-only**，全 API 面仅 archiveSession 一个归档动词，官方 web 客户端同无恢复入口（SessionRowMenu 2026-09-05 四重取证注释仍有效）；动词就位后：菜单项+RPC+已归档折叠区行刷新一步到位（#351 能力位先例同款）
+  - 2026-09-29 前提重验:dsh 部署版=0.1.7-rc.2(=npm 最新) dist 全仓仍无 unarchive/恢复动词——前提不变,维持 P4
 
 - [ ] **#332 spill 提示行——服务器无结构化信号（工具结果溢出 notice 内嵌纯文本）** `dsh` `sse`
   - **前提**：dsh-spill-policy 全链查实——溢出替换为有界 head/tail 预览+locator 提示全部内嵌工具结果 output 文本,transcript 无 spill 事件（session 事件枚举/types/实现三路 grep 0）;文案模式匹配脆弱（#136 先例:服务器改文案即静默失效）。待服务器暴露结构化字段再实现。→ `docs/research/2026-09-05-audit-309-313.md` #312③ + 实现 agent 取证（暂不可实现）
@@ -156,6 +179,7 @@
   - 方向：run 级聚合器（成员 label/outcome/phase 折叠进阶段卡，参照官方 tool-workflow 装配）；验证=真机 workflow 运行会话卡片分阶段展示
   - **2026-09-01 活体四面包夹（走查 #9 定性）**：events.mux 实况帧（两次 WS tap + 现跑 workflow 对照，仅 tool/code-dispatch* 渲染伴生）、session.history journal（39 页全翻 0 行，fresh run 亦不入）、session/projection（仅 permissions）、session/jobs（仅 bash 后台任务）四面皆无 → app 侧映射链（DshEventMapper:469 + DshMessageAssembler）为休眠代码路径，非缺陷；走查期「18 事件在 a6c4」不复现（疑当时另有来源/版本窗口）。重开丢卡=结构性（无服务器数据源），DSH synthetic 消息零持久化同因
   - **2026-09-02 复验（差距调研独立交叉确认）**：`docs/research/dsh-gap-2026-09-01/` 四路证据（fe 源码/Android 清点/Web 实测/服务端 api-gap）再次确认服务器事件面无 tool-workflow 运行事件——门维持关闭；聚合器设计参照 fe-inventory §2.17 client-ui-workflow-run
+  - 2026-09-29 前提重验:0.1.7-rc.2 dist 仍无 tool-workflow 运行事件——前提不变,维持 P4
 
 - [ ] **#146 OpenCode 官方问题清单（issue/PR 候选）** `upstream`
   - **前提**：上游 anomalyco/opencode 合入变更——需先过用户流程门槛（本地定位官方源码→修复→完整测试含 E2E+交叉验证→人工测试→用户放行才可提交 PR；源码已就位）；2026-09-03 用户裁决长期挂起，上游不提不影响本 app（客户端防御均已落地）
@@ -163,3 +187,4 @@
   - ⑥候选（2026-08-27 八轮实证）：V2 后台 shell 状态恒 completed（exit 7 亦然），失败信号仅正文文本——上游语义退化，客户端已防御性派生
   - **2026-09-02 逐项复现取证完结（journal 258-stage-b §十）**：源码浅克隆 `~/Documents/code/opencode-upstream`@69c172e + Host-4199 live 复验——①②③⑥ HEAD 仍成立（①连 schema 都无 Started；②端点零回溯处理；③400 已类型化 `_tag` 但无降级；⑥exitCode 从不映射 status）；**④上游已修/改版**（空 body 分支 + payload 改 `{messageID?}`，运行版未跟上，app 现发形状已匹配 HEAD）；⑤不变（FR 开放）。PR 候选排序 ③>⑥>①>②
   - → `docs/journal/2026-08-15-chat-flow-bugs.md`
+  - 2026-09-29 前提复核:上游浅克隆 ~/Documents/code/opencode-upstream 已不在本机——重验/提 PR 前需重新浅克隆
