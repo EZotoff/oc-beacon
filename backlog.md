@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#483**（2026-09-29 #482 V2 prompt.files 嵌套契约未经部署）。
+**编号**：全局递增，不回收。下一编号：**#484**（2026-09-30 #483 流式逐字揭示动效：char reveal + 尾）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
@@ -92,8 +92,15 @@
   - 2026-09-28 ①StepGroup 互换已根灭(#422 清理批次,用户裁决彻底清理):统一渲染树后流式/完结同构,互换不存在——10轮多step POST完结塌缩 10/10→0/10。③归一化重排与④SSE retry pilotEverRendered 丢失仍待处理(与本卡完结族余项同批)
   - 2026-09-29 E2E 活证:表格轮完结/换装震荡 -8544/+7236(t_msg 项 14k px)——完结族在真实表格轮的量级实证(此前 #472 验收为纯文本轮 ±24px);表格轮完结路径(归一化+staged 重建+换装叠加)待专项取证
   - 2026-09-30 ④复现确认调研(用户指令:修复前先确认仍存在):静态链仍可达(ever=false 重建帧无防御——pilotTerminalHold 只拦 ever=true);真机 v2 双场景未复现 ever 丢失(实验A服务端重启 reconcile:hold 拦截✓残余-1330归一化差③族/实验B链路断+续生成跳变2523→5144:hold 拦截✓零塌缩+5969正向追平)——v2 backfill partId 稳定组合位不销毁。未验证:v1 message.updated 全量重发路径(bigmodel key 401 失效,16:23 前同 key 尚成功)+弃树重建三联(longcat 免费档限流挂死)。裁决请求 a防御性根修(msgId 级 ever 账本)/b恢复 v1 后补验/c降级 watch——用户已选先走 b:查官方文档重新部署 v1 再测。详见 docs/journal/2026-09-30-471-4-sse-retry-pilot-ever-probe.md
+  - v1 验证完成(裁决数据齐备):bigmodel 双key全灭→免费档 nemotron 重部署;wire 级证伪 full-parts resend(message.updated 恒无 parts,partId 全程稳定,mergeAssistantMeta 只并元数据);真机三轮断连实验 331k 行取证——asyncTerminal Loading 帧=0、hold=true 拦截正例、preParsed 分块复入 Success、底部屏幕实证完整渲染;④ v1+v2 双协议不可复现(#472 后防御栈有效)。裁决请求 c(降级观察,推荐)/a(防御根修 ~30 行)。详 journal 2026-09-30-471-4-v1-verification.md
 
 ## P3 — 观察与低价值改进
+
+- [ ] **#483 流式逐字揭示动效：char reveal + 尾部渐变 + 终端光标（设计定稿）** `streaming` `ui`
+  - 逐字（字形簇）揭示 + 尾部 4 字不透明度阶梯（双驱动 + 0.1s 平滑插值）+ 终端下划线光标（忙常亮/停顿 500/500 硬闪；行尾独行换行、预留整行槽位零跳动）；完结快速全亮 + 光标即移（业界零例外）。
+  - 架构红线：SafePrefixGate→揭示层→StreamingMarkdownState 单动画驱动；光标 overlay 禁 inline content（13ms/frame 血案先例）；自适应速率 max(40字/s, 到达速率) 限简单算术；退后台/中断/停止立即揭示全部。
+  - 范围 Part.Text（排除表格/围栏码块/thinking）；BuildConfig 开关 dev 先行 + debug 属性调参；尾部阶梯业界无先例、可读性真机自证。调研 docs/research/2026-09-30-streaming-reveal-animation-patterns.md
+  - → docs/specs/2026-09-30-streaming-char-reveal-design.md
 
 - [ ] **#439 流式期重组隔离：entries 签名缓存与子卡 skippability 恢复** `streaming` `compose`
   - 流式批（~14/s）仍使流式 turn + 相邻注入卡条目全量重组（真机 35s 524 次）；渲染像素幂等故非闪烁源，属性能债。
