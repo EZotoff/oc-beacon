@@ -14,3 +14,10 @@
 - **链传导解除缺口**:卡内拖拽到边经守卫 drag 通道自然传导外层(嵌套 dispatch)不置外层 isScrollInProgress→autoScroll 不解除→250ms 后 GUARD 把用户刚挪的位置吸回底(用户字面场景)。
 - **修复**(b7ee53ea):①ChatScrollController GUARD 死区 REANCHOR_MIN_OFF_PX=120(materiallyOff 入 snapshotFlow 键);②CardFlingLeakGuard.onUserChain(仅 UserInput)→挂载点接 onExpandDeparture 解除 autoScroll。
 - **验证**:单测 8 用例绿(含 disarm 分类/钩子触发);真机 T1 贴底静止 6s 零 GUARD 重锚(修前~270ms/轮)、T2 卡内链传导后无吸附。待用户验收。
+
+## 已完结卡片迁入（2026-09-29）
+
+### **#476 贴底思考卡上移即吸附跳底(GUARD 重锚拉锯战)** `chat-ui`
+  - 用户演示取证:零高横幅带 idx 双稳+GUARD 无死区→微离底重锚永不清偿~270ms 自持循环;卡内链传导不解除 autoScroll 加剧
+  - 已修(双管):GUARD 死区 120px+链传导 onUserChain 解除武装;单测+真机 T1/T2 PASS,待用户验收
+  - 迁入依据：用户验收通过(2026-09-29「似乎没啥问题了」):贴底思考卡上移不再被吸附。全链路:探针捕获用户演示→根因(零高横幅带 idx 双稳+GUARD 无死区拉锯战+链传导不解除武装)→双管根修(b7ee53ea)→单测 8 用例+真机 T1/T2→用户复测通过（backlog.sh migrate 2026-09-29）
