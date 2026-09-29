@@ -69,6 +69,7 @@
   - 2026-09-29 用户质疑「不是根因修复」分析与回应:三子项分界诚实裁定——A2(follow End 清幂等集)=根修(修「订阅状态不跟随终结事件」的状态机缺陷);A3(网络 identity 流)=根修(修「同态切换零信号」的感知盲区;半开本身是传输层固有特性,应用层只能检测+重连);A1(静默哨兵)=纯自愈,未修「为什么会静默」——其上游根因(电池优化杀 socket/传输半开/服务端行为)未定罪,原调研「先 B 探针后 A 自愈」的顺序被跳过直接做了 A。风险披露:A1+A2 组合存在未验证的误杀通道——streaming 期(门开)若服务端正常长思考>110s 无帧会 trip 误杀(此前真机实证仅覆盖空闲态 0 误杀,长静默流式场景未验)。提案(待用户裁决):B 定罪探针批次——连接死亡现场快照日志(异常时刻:存活时长/最后帧距今/退避计数/电池优化状态/网络 identity 对齐),下次真实断连自动落袋证据→定罪上游→根修;同时标定长思考流式的真实无帧间隔分布,校准 110s 阈值或加 streaming 心跳请求。
   - 2026-09-29 A3 实测尝试结论:真机双 adb 通道均无线(WiFi 直连+mDNS 无线调试),无 USB 有线 serial——切换 WiFi 必断 adb,agent 侧物理不可达(需用户插 USB 线或提供第二 AP 凭据后 agent 可代测)。按观察窗处理(至 2026-10-19 无反馈关闭)。
   - 2026-09-29 B 定罪探针一期交付(用户裁决'相当于探针埋点吗?可以做'):lastEventAtMs 每服务器最后事件时间戳表(SSE 事件入口打点)+backoffWithSchedule 快照日志(death-snapshot server/attempt/lastEventAgoMs——退避重连必经点)。判读法:巨大 lastEventAgoMs=连接活着但长期无事件=静默型死亡(哨兵域,上游为服务端/半开);小值=事件流活跃中断=传输断(上游为网络/系统杀)。完整版二期(电池优化状态/网络 identity/断连异常栈)待一期数据回流后按需接入。同批:#463 V1 兼容调研结论——DB 实证三服务器均'每 step 一条消息'(assistantMsgs≈reasoningParts),现有消息边界装配已全兼容,无需改动;用户看不到分割线=完结 turn 折叠为计数行(#422 语义),展开后可见。
+  - 2026-09-30 #467 定罪副产物=本卡根因闭环:死亡现场 death-snapshot lastEventAgoMs=240737(4min04s 零字节静默,无超时无梯子零行为);SSE read timed out 三日志 11 连接周期 0 触发——#108 withTimeoutOrNull(readByte) 挂起不可取消,Ktor socketTimeout 按设计只管响应头,V1/V2 双裸奔;野外恢复全靠网络回调 churn(r2/r3 各 213/235 次)碰运气。修法:读循环竞争+超时分支 response.cancel() 强杀底层 call(心跳契约服务端已在 ~6s/次);详 journal 2026-09-30-467 §2
 
 - [ ] **#437 流式Markdown稳定揭示渲染——安全前缀两级放行(稳定块+纯段安全后缀),消灭不稳定尾回溯跳变** `sse,render,perf`
   - 根因:不稳定尾先字面排版后回溯重释义=已显示内容高度回溯(真机录屏A-B翻转帧定罪);#435引擎只能配对单调增长。方案:pilot差分与append之间加SafePrefixGate(库与渲染零改动):稳定块+开放段纯文字安全后缀两级放行,尾部扣留超龄进锁高降亮区,完结EOF全量flush。spec:docs/specs/2026-09-25-437-streaming-md-stable-reveal-design.md(阶段A-D+验收矩阵)
@@ -102,6 +103,8 @@
   - 架构红线：SafePrefixGate→揭示层→StreamingMarkdownState 单动画驱动；光标 overlay 禁 inline content（13ms/frame 血案先例）；自适应速率 max(40字/s, 到达速率) 限简单算术；退后台/中断/停止立即揭示全部。
   - 范围 Part.Text（排除表格/围栏码块/thinking）；BuildConfig 开关 dev 先行 + debug 属性调参；尾部阶梯业界无先例、可读性真机自证。调研 docs/research/2026-09-30-streaming-reveal-animation-patterns.md
   - → docs/specs/2026-09-30-streaming-char-reveal-design.md
+  - 影响面评估（2026-09-30）：主代码 7 个=6 改(StreamingMarkdownPilot/HeldTailReveal 中改、MarkdownContent/ClickableMarkdown 小改、Motion/build.gradle.kts 微改)+1 新(揭示层)；测试 2 新+2-3 扩；ChatScreen/批处理/高度引擎/i18n 零触碰；全程限 dev pilot 路径。
+  - 深挖定案（2026-09-30，一次到位确认）：①渐变弃 AnnotatedString span 改绘制层叠加（TextLayoutResult.getBoundingBox+drawBehind 读动画值零重排——span 路线卡壳推档期每帧重建字符串+重排，自踩禁区）；②append 频率硬帽 ≤40/s（tick 25ms 批量多字，防快流 append 风暴）；③离屏销毁 rememberSaveable(revealedCount)+回视口快速追平；多 Part 非活跃 Text Part 快速排空；④行尾光标改溢出绘制（前沿恒为最后节点，下方是卡片空白，零布局操纵零跳动）；⑤排除项检测=delta 流状态机（围栏平衡扫描+表格分隔行入态），零 gate 改动；⑥字形簇 android.icu（minSdk 26 ✓）+单测 seam。承重先例全核实：onTextLayout 钩子在位（MarkdownContent:464）、overlay 模式可复刻（HeldTailReveal:135-187）。spec 已同步修订。
 
 - [ ] **#439 流式期重组隔离：entries 签名缓存与子卡 skippability 恢复** `streaming` `compose`
   - 流式批（~14/s）仍使流式 turn + 相邻注入卡条目全量重组（真机 35s 524 次）；渲染像素幂等故非闪烁源，属性能债。
@@ -143,11 +146,13 @@
 
 - [ ] **#473 调试探针族清扫——历代 campaign 遗留 DEBUG 打点归档** `chore`
   - grep \\\[DEBUG- 盘点:CardExpandReveal(#420-427/466)/ChatMessageList+MessageCardAssistant(hflick/jk)/SafeFlingBehavior(flng)/ChatScrollController(drift)/rbexp 等几十处打点,均 BuildConfig.DEBUG 门控、release 零影响,但污染调试 logcat(472 闪烁定罪时曾混入噪音)。逐族清理+保留关键结构注释;涉及文件多有编辑协议约束,单独批次执行。
+  - 2026-09-30 精化+新增三条方法教训:①「retained-subtree 盲区」实为 A11yDiag 语义=组合事件(内容经 pilot/preParsed state 对象流动时外层组合体跳过),内容级探针 MDPilot/ChunkDiag 一直覆盖,r3 实证 243/38 条——无真盲路径,改判读口径即可;②device 侧 grep 命令文本被 adbd in ShellService 记入 logcat→下轮自匹配假增长,监控必须 pull 到宿主 grep;③设备 nohup logcat 的 pkill -f 自匹配自杀(pkill 按进程名);宿主 nohup 不挺过 run_code 退出
 
 - [ ] **#467 V1 外部注入轮次(POST /session/{id}/message)app 不实时渲染** `sse,v1,data`
   - 2026-09-30 #463 流式验证副产物:服务端 POST 触发的完整轮次(glm-5.3-flash 3 step,响应 JSON 正常返回)app 打开态全程未渲染——新 user 消息与 assistant 流式内容均未出现(视口停中部非贴底排除法+dump 底部仍为旧 turn 实证)。疑 app SSE 订阅/事件处理与「app 自发 prompt」绑定(SessionStateService idle 态过滤外部 message.part 事件?)或 SSE 连接已静默断(#441-B 探针可判:death-snapshot lastEventAgoMs)。影响面:仅外部注入轮次,用户正常发送路径不受影响。待复现窗+探针日志定罪。
   - 2026-09-28 补充实证:两次注入(22:35/23:15)服务端完成但 app 零渲染(SGR 无新行),重启即恢复;与 #441 SSE 随机断连同根,用户自发消息不受影响
   - 2026-09-29 审计:#477 登记(长文语义零暴露)——本卡「dump 底部仍旧 turn 实证」段以 dump 判读受污染(dump 对该类内容全盲);核心证据(SGR 日志零新行/重启即恢复)不受影响
+  - 2026-09-30 定罪完成(journal 2026-09-30-467-v1retained-subtree §2):S0 健康连接注入全链渲染正常——注入本身无罪;S2 kill-server 断连窗口注入→app 零接收→复隧道后 backfill +6 msgs 免重启补渲染(「重启即恢复」已过时);真根=静默死连接 4min04s 无检测(SSE read timed out 全史料 0 触发,#108 withTimeoutOrNull 打不断 OkHttp 通道桥阻塞读),与 #441 同根;修法已设计(读任务vs超时竞争+response.cancel)待裁决
 
 - [ ] **#454 v1 真机 IME 换行注入后 prompt 未发出** `chat` `device` `v1`
   - 真机 IME keyevent 66 发送路径:消息含注入换行(Run\n\n)时 prompt POST 未发出,乐观气泡悬挂;二次干净发送正常(prompt_async 202)。发送链路疑有 IME 竞态边角,#453 验证时顺带观察,未复现第二次
