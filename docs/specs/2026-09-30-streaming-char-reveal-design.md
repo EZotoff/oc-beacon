@@ -1,7 +1,7 @@
 # 流式逐字揭示动效设计（char reveal + 尾部渐变 + 终端光标）
 
 > 日期：2026-09-30
-> 状态：已确认（grilling 十题全定案，2026-09-30 用户逐题裁决），待实现（P3）
+> 状态：**已放弃**（2026-09-30 用户真机观感否决——阶梯式揭示「很难看/突然蹦出来」；单字连续淡入改造途中用户终裁放弃。实现经模拟器 E2E 后随 feature/483-char-reveal 分支删除，复盘与可用结论见 docs/journal/2026-09-30-483.md）
 > 位置约定：active spec 置于 docs/specs/；实现并验收后移至 docs/archive/specs/ 并更新本行状态
 > 涉及模块：ui/screens/chat/markdown/（StreamingMarkdownPilot / SafePrefixGate / InlineSpanSafety / HeldTailReveal / MarkdownContent）、data/repository/handler/MessageEventHandler、ui/screens/chat/components/ScrollCompensation、theme/Motion、app/build.gradle.kts
 > 关联 backlog：#483
