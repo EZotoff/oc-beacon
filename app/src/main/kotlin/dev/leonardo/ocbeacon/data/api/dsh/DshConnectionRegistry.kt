@@ -88,6 +88,21 @@ class DshConnectionRegistry @Inject constructor(
     /** 持久化 cookie 已加载标记（首次访问时从 DataStore 读一次）。 */
     private var persistedLoaded = false
 
+    /**
+     * #441 深究批次（2026-09-30）：prompt 受理回执钩子——DshApiClient.promptAsync
+     * 成功后经 [DshRpcClient.notifyPromptAdmitted] 触发；SseConnectionManager 接线
+     * （authority → 帧源路由），给当前 mux 引擎的静默哨兵播种期望（onRequestSent）。
+     * 覆盖「空闲期 WS 假活 → 用户发言」场景：activityFlow 事件驱动门在此形态
+     * 永不亮（journal 2026-09-30-467 §5 三层不通电定罪），HTTP 受理回执是唯一
+     * 可靠的期望源（服务器受理必发帧——与被否决的 follow-open 无回执形态本质不同）。
+     */
+    @Volatile
+    var onPromptAdmitted: ((authority: String) -> Unit)? = null
+
+    fun notifyPromptAdmitted(authority: String) {
+        onPromptAdmitted?.invoke(authority)
+    }
+
     // ---- 查询面（供 DshRpcClient / WS 客户端同步读取） ----------------------
 
     /** 当前已知线面版本；未探测返回 null（调用方保守按 V011 处理）。 */

@@ -152,6 +152,13 @@ class SseConnectionManager @Inject constructor(
         // #267（spec §3.3）：REST 传输失败上拍接线——共享 HttpClient 拦截器
         // 上报 origin，映射回 serverId 后踢重连（自检式恢复，见 reportTransportFailure）。
         transportFailureTap.reportFailure = ::onTransportFailureByOrigin
+        // #441 深究批次：prompt 受理回执 → DSH 静默哨兵期望播种（authority → 帧源，
+        // 对齐 onTransportFailureByOrigin 的 authority 解析先例）
+        dshConnectionRegistry.onPromptAdmitted = { authority ->
+            connections.entries.firstOrNull { it.value.conn.baseUrl == authority }?.key?.let { serverId ->
+                dshFrameSources[serverId]?.onRequestSent()
+            }
+        }
     }
 
     // ============ #267 连接三态 + 传输失败回灌 ============

@@ -1258,6 +1258,8 @@ class DshApiClient @Inject constructor(
             put("mode", if (steer) "steer" else "queue")
         }
         rpc.call(conn, "session.prompt", payload) { Unit }.getOrElse { e -> throw e }
+        // #441 深究批次：受理成功 → 静默哨兵期望播种（空闲期 WS 假活时唯一判死门通电源）
+        rpc.notifyPromptAdmitted(conn)
         // #356 echo 播种：受理即返回 admission → ChatRepositoryImpl 现有本地播种链
         // 上屏（web PendingSubmissionBubble 对位）；id=pending-<requestId>，
         // 持久 user/message（source=user-rpc.rpcId）到达时 mapper 补发

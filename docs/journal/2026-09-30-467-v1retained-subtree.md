@@ -101,3 +101,20 @@
 **B 线裁定（僵尸模式）**：reverse --remove 僵尸拆链 = adb 测试隧道专属竞态（日常 LAN 直连不经过 reverse 隧道），4 次定向复现失败，机制不再追——测试卫生知识已固化（kill-server=干净 EOF 即刻检测；SIGSTOP=确定性零字节 40s 触发 #108）。野生复发判据已埋（death-snapshot / force-cancelling 日志二分字节级 vs 事件级）。
 
 **C 线裁定（v1 上游订阅者研究）**：放弃——zread MCP 本会话故障；raw 源码 v1.18.32 server/event.ts 仅 schema 层；对客户端侧设计无增量（重连+backfill 已覆盖服务端任何丢订阅行为）。流中途 session.idle 怪象归档为隧道死亡窗口的末批事件，不追。
+
+## §6 dsh 期望播种修复：docker 隔离环境全包交付
+
+**环境（用户裁决「docker 新开一个 dsh」）**：colima VM + node:22-bookworm-slim 容器（dsh-e2e），挂载包副本（~/dsh-e2e/pkg，不触碰 live 安装）+ 隔离 HOME（副本 ~/.dsh，模型配置 glm 系全量可用）+ /ws 工作区；--network host(VM) 绑 3081 + colima 自动端口转发到宿主 loopback → adb reverse tcp:3081 直达。token 每启动随机铸、从容器 stdout 提取；app 侧 \`am start --es debug_server_type dsh --es debug_token\` 一条冷启注入（#317 通道）。发现：dsh web 拒绑 0.0.0.0（上游防 RCE）；colima 只共享家目录（/tmp 挂载失效）。
+
+**修复实现（7 处接线 + 2 单测）**：prompt 受理回执（session.prompt RPC 成功）→ DshRpcClient.notifyPromptAdmitted → registry.onPromptAdmitted 钩子（tap 模式，对齐 transportFailureTap 先例）→ SseConnectionManager authority→serverId 解析（复用 :200 同款）→ 帧源 onRequestSent → mux 引擎 → DshSilenceWatchdog.onRequestSent（期望播种+计窗）。覆盖「空闲期 WS 假活+用户发言」三层不通电缺口（§5 定罪）。哨兵单测 9/9（新增：播种判死/帧到无误杀）；全量回归 **3700/0/0**。
+
+**真机 E2E（容器 dsh，app 0.3.0 devDebug 修复版）**：
+1. **Sanity**：容器建会话（web GUI 驱动）→ app 发 CountFrom1to15 → 轮次完成全渲染（「1 2…15」+思考完毕），哨兵零误杀
+2. **冻结-恢复**（docker pause = cgroup 冻结，完美假活模拟）：发送 CountFrom16to30 → +4s pause → 92s 冻结（p+40s 出现 WS 层事件=ping 超时检测按预期工作）→ unpause → **自动重连 + 轮次完成渲染**（「16…30」在屏）
+3. **播种机制**：单测覆盖（HTTP 回执=服务器必发帧的确证语义）
+
+**诚实边界**：「帧死 WS 活」（gap 的真形态）无法从外部伪造（需服务端路由级死亡），哨兵在该形态的击杀路径仍是单测级证明；pause 形态（传输层死）由 ping 超时 ~40s 兜住并实测恢复。野生复发判据已备：silence-watchdog trip 日志。
+
+**UI 自动化三坑（记 #473 域）**：会话行点击必须点日期区（标题文本节点吞点击）；adb input text 不容空格（%s 转义或无空格文本）；IME 展开时发送键 y 坐标上移（~1616 而非 2393）。
+
+**环境去向**：dsh-e2e 容器保留运行（后续 #441 深究直接用）；live 3080 实例全程零接触。

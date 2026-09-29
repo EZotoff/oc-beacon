@@ -32,6 +32,12 @@ interface DshFrameSource {
      * 协议路由帧源覆写转发给 mux 引擎的静默哨兵（判死门通电）。
      */
     fun onStreamingChanged(active: Boolean) {}
+
+    /**
+     * #441 深究批次（2026-09-30）：prompt 受理回执 → 哨兵期望播种（判死门通电）。
+     * default no-op（legacy 引擎无哨兵）；协议路由帧源转发给 mux 引擎。
+     */
+    fun onRequestSent() {}
     val connectionState: StateFlow<DshWsConnectionState>
     fun start(baseUrl: String, onFrame: (method: String, payload: JsonObject, rpcId: String) -> Unit)
     fun stop()
@@ -205,6 +211,10 @@ private class DshProtocolRoutingFrameSource(
     /** #441-A2：streaming 期望转发（SseConnectionManager → 当前 mux 引擎的哨兵）。 */
     override fun onStreamingChanged(active: Boolean) {
         mux?.onStreamingChanged(active)
+    }
+
+    override fun onRequestSent() {
+        mux?.onRequestSent()
     }
 
     override fun stop() {
