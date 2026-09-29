@@ -2526,11 +2526,11 @@ fun ChatMessageList(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                // 卡内滚动 fling 泄漏守卫(#474 五轮):拦截本 item 内
-                                // 全部卡内滚动容器(思考内容/工具输出等 21 处)的 fling
-                                // 到边泄漏(逐帧 onPostScroll+残速 onPostFling,reverseLayout
-                                // 下朝底猛拉),drag 泄漏放行(滚动链期望行为)。
-                                .cardFlingLeakGuard(listState)
+                                // 卡内滚动嵌套传导守卫(#474 六轮,分通道终裁):
+                                // 拖拽到边→剩余位移协议自然传导外层(同向跟手,零干预);
+                                // 惯性到边→动量就地吸收(逐帧+残速双通道),不传导不注入
+                                // (五轮反转注入致拖拽方向反,已废弃)。
+                                .cardFlingLeakGuard()
                                 .animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = null),
                         ) {
                             CompositionLocalProvider(
