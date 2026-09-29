@@ -42,11 +42,15 @@ internal fun transformMathFallback(content: String): String {
     var fenceMarker: Char? = null
     var minFenceLen = 0
     for (line in lines) {
-        val marker = FenceLineRegex.find(line)?.groupValues?.get(1)
+        // #471③：围栏判定统一至 MarkdownFenceLine（闭栏无 info、反引号栏
+        // info 无反引号——与 SafePrefixGate 同语义；旧宽松判定在栏内
+        // 「```xxx」误闭合 → 栏状态与 gate 分歧 → 已放行栏内前缀被重写）。
+        val openFence = MarkdownFenceLine.open(line)
         when {
             fenceMarker != null -> {
-                // 围栏内（含闭合围栏行）原样；只有同字符且足够长的围栏行能闭合
-                if (marker != null && marker.first() == fenceMarker && marker.length >= minFenceLen) {
+                // 围栏内（含闭合围栏行）原样；只有同字符且足够长的无 info
+                // 围栏行能闭合（CommonMark 闭栏语义）。
+                if (MarkdownFenceLine.closes(line, fenceMarker!!, minFenceLen)) {
                     fenceMarker = null
                     minFenceLen = 0
                 }
@@ -56,15 +60,15 @@ internal fun transformMathFallback(content: String): String {
                 }
                 chunks.add(line)
             }
-            marker != null -> {
+            openFence != null -> {
                 // 开启围栏：先冲刷栏外文本（含数学降级），围栏行本身原样
                 if (run.isNotEmpty()) {
                     chunks.add(transformMathSegments(run.toString()))
                     run.setLength(0)
                 }
                 chunks.add(line)
-                fenceMarker = marker.first()
-                minFenceLen = marker.length
+                fenceMarker = openFence.first
+                minFenceLen = openFence.second
             }
             else -> {
                 if (run.isNotEmpty()) run.append('\n')
@@ -75,9 +79,6 @@ internal fun transformMathFallback(content: String): String {
     if (run.isNotEmpty()) chunks.add(transformMathSegments(run.toString()))
     return chunks.joinToString("\n")
 }
-
-/** 围栏行检测（CommonMark：≤3 空格缩进的 ```/~~~ ≥3 连字符）。 */
-private val FenceLineRegex = Regex("^ {0,3}(`{3,}|~{3,})")
 
 /**
  * 围栏外文本区的数学定界符扫描替换。行内代码 span（反引号 run）原样跳过

@@ -115,13 +115,17 @@ internal object SafePrefixGate {
                 // #441 稳态粒度：表格正文行跨批续放——上批已放内容以表格族行收尾时，
                 // 本批正文行直接整行放行（原逻辑正文行被 isTableHeaderRow 误判为新表头
                 // → 等不存在的分隔行 → 扣留到 EOF = 「表头先出、正文整块最后出」根因）。
+                // #471③：含 $$/\[ 的表行扣留（块级数学跨行配对面，闭合到达时归一化
+                // 会改写本行——完整行≠定案；性质测试 random 轮实证）。
                 lineStartReal && complete && isTableRowLine(line) &&
+                    !hasUndecidedMathOpen(line) &&
                     prevReleasedLineIsTableFamily(snapshot, allowed) -> {
                     if (nl + 1 - allowed > budgetLeft) break
                     allowed = nl + 1
                     j = nl + 1
                 }
-                lineStartReal && complete && isTableHeaderRow(line) -> {
+                lineStartReal && complete && isTableHeaderRow(line) &&
+                    !hasUndecidedMathOpen(line) -> {
                     val sepNl = snapshot.indexOf('\n', nl + 1)
                     val sep = if (sepNl < 0) "" else snapshot.substring(nl + 1, sepNl)
                     if (!(sepNl >= 0 && isTableSeparatorRow(sep))) break // 表未成形：扣留
@@ -131,7 +135,8 @@ internal object SafePrefixGate {
                     while (k < snapshot.length) {
                         val rNl = snapshot.indexOf('\n', k)
                         if (rNl < 0) break
-                        if (!isTableRowLine(snapshot.substring(k, rNl))) break
+                        val rowLine = snapshot.substring(k, rNl)
+                        if (!isTableRowLine(rowLine) || hasUndecidedMathOpen(rowLine)) break
                         if (rNl + 1 - allowed > budgetLeft) break
                         allowed = rNl + 1
                         k = rNl + 1
@@ -201,8 +206,46 @@ internal object SafePrefixGate {
         // wrap 同样踩坑）从构造上排除。
         val budget = allowed - floor
         val capped = if (maxReleaseChars >= budget) allowed else floor + maxReleaseChars
-        return maxOf(floor, capped)
+        // #471③ 数学定界符流式破口收口（spec §3.3 矩阵修订）：$ 逐字符到达时，
+        // 首字符以单美元身份走纯文字直出、次字符以行续段身份再放——跨批凑成
+        // $$ 后闭合字符到达触发归一化改写 = 非前缀（性质测试 math-block
+        // k=21/22 实证）。截点在快照尾且以 $ run 结尾时退过整个 run（下一
+        // 字符可能延长 run 并成对）；截点在快照内部时右邻字符已定案，无需收口。
+        var result = maxOf(floor, capped)
+        if (result == snapshot.length) {
+            while (result > floor && snapshot[result - 1] == '$') result--
+        }
+        // #471③ 表头行待定三行结构回退（spec §3.3 矩阵修订②）：截点前
+        // 紧邻行是表头行、其前紧邻行是文字行（非空、非 | 结尾）时，
+        // 「文字行\n表头\n分隔行」结构待定——分隔行到达时归一化会在
+        // 文字行与表头行间插空行（ensureBlankLineBeforeGfmTables，改写已
+        // 放行前缀——性质测试 random 轮 k=318 实证：空行毕业先放
+        // 「文字\n| a |\n\n」，|---| 后到即插空行）。退到表头行行首：
+        // 该行走表头分支（分隔行到达后整块放行）或 EOF flush，一字不丢。
+        // 正文行虽也匹配 isTableHeaderRow 形态，但其前是 | 行（endsWith
+        // "|"）不触发；归一化已插空行后表头前是空行，同样不触发——自洽。
+        if (result > floor && result > 0 && snapshot[result - 1] == '\n') {
+            val headerLs = snapshot.lastIndexOf('\n', result - 2) + 1
+            val headerLine = snapshot.substring(headerLs, result - 1)
+            if (isTableHeaderRow(headerLine) && headerLs > 0) {
+                val textLe = headerLs - 1
+                val textLs = snapshot.lastIndexOf('\n', textLe - 1) + 1
+                val textLine = snapshot.substring(textLs, textLe)
+                if (textLine.isNotEmpty() && !textLine.endsWith("|")) {
+                    result = maxOf(floor, headerLs)
+                }
+            }
+        }
+        return result
     }
+
+    /**
+     * #471③：行含未定案块级数学开定界符（$$ / \[——transformMathFallback
+     * 跨行配对面，闭合到达前归一化对本行的改写未定案）。完整行 ≠ 定案，
+     * 整行扣留到空行毕业/EOF。\( 行内闭合同行定案，不在此列。
+     */
+    private fun hasUndecidedMathOpen(line: String): Boolean =
+        line.contains("$$") || line.contains("\\[")
 
     // ===== 块级判定辅助（2026-09-26 行扫描二次重写） =====
 

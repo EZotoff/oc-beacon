@@ -109,15 +109,20 @@ private val SINGLE_NEWLINE_REGEX = Regex("(?<!\n)\n(?!\n)")
 private val TABLE_AFTER_TEXT_REGEX = Regex("""([^\n]*[^\n|])\n([ \t]*\|[^\n]*\|)\n([ \t]*\|[-:\s|]+\|)""")
 
 /**
- * 最小化的 Markdown 预处理——让 Mikepenz Handle 原生解析。
- * 仅保留用户消息的换行规范化。
- * 自定义 HTML 检测和表格格式修复已移除，以避免破坏渲染的误报。
+ * 归一化共享核心（#471③ 流式/完结同源铁律的落点，spec
+ * docs/specs/2026-09-30-471-3-streaming-normalization-unification-design.md §3.1）：
+ * CRLF→LF + GFM 表格前空行 + 数学降级。assistant/user 通用，无身份分支——
+ * 三者皆为「放行安全」变换：回改点全部落在 SafePrefixGate 扣留区（双美元
+ * 定界符行/表头行/含反斜杠行皆活动标记行），已放行前缀的字节不因后续
+ * 到达而改变（逐变换矩阵证明见 spec §3.3）。
  */
-internal fun normalizeMarkdown(raw: String, isUser: Boolean): String {
+internal fun normalizeMarkdownCore(raw: String): String {
     // 规范化 Windows 换行符（\r\n → \n）。Windows 上的 opencode server
     // 在 Markdown 文本中返回 \r\n，这可能破坏 GFM 表格解析
     //（\r 可能被当作单元格内容而非行尾）。
-    var result = raw.replace("\r\n", "\n").replace("\r", "\n")
+    // 快路径：无 \r 整串跳过两次 replace（流式热路径 48ms 每批）。
+    var result = if (raw.indexOf('\r') < 0) raw
+    else raw.replace("\r\n", "\n").replace("\r", "\n")
 
     // 确保 GFM 表格前有一个空行。
     // JetBrains markdown 解析器仅在块边界处检测表格；
@@ -125,13 +130,8 @@ internal fun normalizeMarkdown(raw: String, isUser: Boolean): String {
     result = ensureBlankLineBeforeGfmTables(result)
 
     // #312② 数学块降级（方案 C）：成对数学定界符（$$...$$ / \(...\) / \[...\]）
-    // → tex 围栏/行内代码（见 transformMathFallback KDoc——流式取舍同注）。
-    // 置于用户单换行空行化之前：多行公式块的行结构先成围栏、不被打散。
-    result = transformMathFallback(result)
-
-    if (!isUser) return result
-    // 用户消息：单个 \n 在 Markdown 中不换行（软换行）。
-    return result.replace(SINGLE_NEWLINE_REGEX, "\n\n")
+    // → tex 围栏/行内代码（见 transformMathFallback KDoc）。
+    return transformMathFallback(result)
 }
 
 /**
@@ -142,6 +142,13 @@ internal fun normalizeMarkdown(raw: String, isUser: Boolean): String {
  * `|` 字符会被当作字面文本，表格无法渲染。
  *
  * 模式：非表格行 \n |表头| \n |---| → 非表格行 \n\n |表头| \n |---|
+ *
+ * #471③ 围栏意识（spec §3.3 矩阵修订③）：栏内的表格形态是代码字面——
+ * 插入空行会改写代码块内容（完结渲染正确性缺陷），流式下更会改写 gate
+ * 已放行的栏内前缀（性质测试 random 轮 k=318 实证：未闭合围栏行内
+ * 「文字行\n|表头|\n|---|」被插空行）。行级围栏跟踪与
+ * [normalizeTaskListMarkers]/[transformMathFallback] 同模式：只对栏外
+ * 文本区跑正则，栏内行原样。
  */
 internal fun ensureBlankLineBeforeGfmTables(text: String): String {
     // 2026-08-26 流式卡顿根因修复（simpleperf 实证 ICU RegexMatcher 占主线程
@@ -149,20 +156,81 @@ internal fun ensureBlankLineBeforeGfmTables(text: String): String {
     // 模式必然含 '|'（组 2/3 的表格行）——无 '|' 的文本（essay/纯段落常态）
     // 不可能命中，native contains 扫描短路，正则零成本。
     if (!text.contains('|')) return text
-    // 匹配：不以 | 结尾的行，后跟表格表头行（以 | 开头），
-    // 再跟分隔行（仅含 -、:、空格和 | 的 |）。
-    return text.replace(TABLE_AFTER_TEXT_REGEX) { m ->
+    val lines = text.split("\n")
+    val chunks = ArrayList<CharSequence>(lines.size)
+    val run = StringBuilder() // 当前栏外文本区（行粒度，待表格正则）
+    var fenceMarker: Char? = null
+    var minFenceLen = 0
+    for (line in lines) {
+        // #471③：围栏判定统一至 MarkdownFenceLine（与三变换/gate 同语义）
+        val openFence = MarkdownFenceLine.open(line)
+        when {
+            fenceMarker != null -> {
+                // 栏内（含闭合围栏行）原样；仅同字符且足够长的无 info 围栏行能闭合
+                if (MarkdownFenceLine.closes(line, fenceMarker!!, minFenceLen)) {
+                    fenceMarker = null
+                    minFenceLen = 0
+                }
+                if (run.isNotEmpty()) {
+                    chunks.add(insertTableBlankLinesIn(run.toString()))
+                    run.setLength(0)
+                }
+                chunks.add(line)
+            }
+            openFence != null -> {
+                // 开启围栏：先冲刷栏外区，围栏行本身原样
+                if (run.isNotEmpty()) {
+                    chunks.add(insertTableBlankLinesIn(run.toString()))
+                    run.setLength(0)
+                }
+                chunks.add(line)
+                fenceMarker = openFence.first
+                minFenceLen = openFence.second
+            }
+            else -> {
+                if (run.isNotEmpty()) run.append('\n')
+                run.append(line)
+            }
+        }
+    }
+    if (run.isNotEmpty()) chunks.add(insertTableBlankLinesIn(run.toString()))
+    return chunks.joinToString("\n")
+}
+
+/** 栏外文本区的表格前空行插入（[TABLE_AFTER_TEXT_REGEX] 的局部应用）。 */
+private fun insertTableBlankLinesIn(region: String): String =
+    region.replace(TABLE_AFTER_TEXT_REGEX) { m ->
         "${m.groupValues[1]}\n\n${m.groupValues[2]}\n${m.groupValues[3]}"
     }
+
+/**
+ * 渲染归一化（2026-08-13 提取；#471③ 与流式同源重构）：与 MarkdownContent
+ * 渲染完全一致的文本预处理——预解析（parseMarkdownFlow）必须用同一归一化
+ * 结果，否则解析出的 AST 与实际渲染内容不一致（换行差异 → 高度不同
+ * ——实测 214 vs 331）。
+ *
+ * 不变量（NormalizeSentinelEquivalenceTest 钉死）：
+ * normalizeForRender(raw, isUser=false) == normalizeForStreaming(raw) 逐字节。
+ */
+internal fun normalizeForRender(raw: String, isUser: Boolean): String {
+    val marked = normalizeTaskListMarkers(normalizeMarkdownCore(raw))
+    val withUser = if (!isUser) marked else
+        // 用户消息：单个 \n 在 Markdown 中不换行（软换行）。置于 task 标记
+        // 之后：两者皆行锚定操作、可交换（混合 fixture 等价测试）；多行
+        // 公式块的行结构已在共享核心成围栏、不被打散（#312② 原注释迁移）。
+        marked.replace(SINGLE_NEWLINE_REGEX, "\n\n")
+    return splitOversizedParagraphsByPosition(withUser)
 }
 
 /**
- * 渲染归一化（2026-08-13 提取）：与 MarkdownContent 渲染完全一致的文本预处理
- * ——预解析（parseMarkdownFlow）必须用同一归一化结果，否则解析出的 AST 与
- * 实际渲染内容不一致（换行差异 → 高度不同——实测 214 vs 331）。
+ * 流式 ingest 归一化（#471③，pilot 专用，spec §3.1）：与完结渲染同一核心
+ * 同一序——流式显示的文本与完结渲染的文本逐字节一致（终帧=流式帧），
+ * 完结换装从「文本不同→排版重排→跳变」变为「同文本换渲染器→视觉无事
+ * 发生」。放行单调性（已放行前缀不被回改）的逐变换证明见 spec §3.3；
+ * 性质测试 NormalizationStreamingMonotonicityTest 逐字符增长模拟钉死。
  */
-internal fun normalizeForRender(raw: String, isUser: Boolean): String =
-    splitOversizedParagraphs(normalizeTaskListMarkers(normalizeMarkdown(raw, isUser)))
+internal fun normalizeForStreaming(raw: String): String =
+    splitOversizedParagraphsByPosition(normalizeTaskListMarkers(normalizeMarkdownCore(raw)))
 
 // ============ 超长段落空行化（2026-08-20 第二轮滚动卡顿 C-F1） ============
 
@@ -214,49 +282,51 @@ private fun isOrderedListItem(t: String): Boolean {
 }
 
 /**
- * 超长段落空行化：连续普通文本行构成一个候选段；总字符 ≥
- * [SPLIT_PARAGRAPH_THRESHOLD_CHARS] 时段内行间补空行（单换行 → 空行）。
- * 其余内容原样保留。
+ * 超长段落空行化（位置制，#471③ 语义重定义，spec §3.2）：连续普通文本行
+ * run 内，行 j 之后的边界升级为空行 ⟺ cumEnd(j) ≥
+ * [SPLIT_PARAGRAPH_THRESHOLD_CHARS]（cumEnd(j) = run 起点到行 j 换行含的
+ * 累计字符）。
+ *
+ * 与旧全段判定（run 总字符 ≥3000 时全 run 空行化）的差异：3000 字以内的
+ * 头部边界保持单换行、越过 3000 的边界起才升级——效果上 >3000 段落呈现
+ * 「头部一块 + 尾部逐行成块」的稳定接缝。拆分目的（MarkdownChunking
+ * 分片）只需尾部可拆；接缝在流式/完结两侧一致出现 = 不产生跳变
+ * （一致性优先于均匀性）。
+ *
+ * 流式单调性（放行不回改的关键，spec §3.3 末行）：行 j 分类
+ * （isPlainParagraphLine 全部 startsWith 判定）与 cumEnd(j) 在行 j 完成
+ * 时刻即固定 → 边界升级决策单调不翻转 → 对任意截断前缀 S[:k]，本函数
+ * 输出是全量输出 split(S) 的前缀（NormalizationStreamingMonotonicityTest
+ * 性质钉死）。判定绝不等待下一行存在才做——那会把已放行的换行回改成
+ * 空行（非前缀）。
  */
-internal fun splitOversizedParagraphs(text: String): String {
+internal fun splitOversizedParagraphsByPosition(text: String): String {
     if (text.length < SPLIT_PARAGRAPH_THRESHOLD_CHARS) return text
     val lines = text.split("\n")
     val out = StringBuilder(text.length + lines.size)
-    var runStart = -1
-    var runChars = 0
+    var inRun = false        // 当前普通行 run 开放中
+    var cumEnd = 0           // run 起点到上一完成行换行含的累计字符
     var inFence = false
     var i = 0
     while (i <= lines.size) {
         val line = if (i < lines.size) lines[i] else ""
         val isFence = line.trimStart().startsWith("```") || line.trimStart().startsWith("~~~")
-        // 候选段终止条件：空行 / 非普通行 / 围栏边界
+        // 候选段成员条件：非围栏内 / 非围栏边界 / 普通行
         val plain = !inFence && i < lines.size && !isFence && isPlainParagraphLine(line)
         if (plain) {
-            if (runStart < 0) {
-                runStart = i
-                runChars = 0
-            }
-            runChars += line.length + 1
+            // 边界决策（行 i 完成时刻即定案）：run 已开放且到上一行末的
+            // 累计 ≥ 阈值 → 行 i-1 行尾换行已写，补一个 \n 成空行（升级）
+            if (inRun && cumEnd >= SPLIT_PARAGRAPH_THRESHOLD_CHARS) out.append('\n')
+            if (!inRun) { inRun = true; cumEnd = 0 }
+            out.append(line)
+            if (i < lines.size - 1) out.append('\n')
+            cumEnd += line.length + 1
             i++
             continue
         }
-        // 冲刷候选段
-        if (runStart >= 0) {
-            val runEnd = i // 不含
-            if (runChars >= SPLIT_PARAGRAPH_THRESHOLD_CHARS && runEnd - runStart >= 2) {
-                for (j in runStart until runEnd) {
-                    out.append(lines[j])
-                    if (j < runEnd - 1) out.append("\n\n") // 行间空行：独立成块
-                }
-            } else {
-                for (j in runStart until runEnd) {
-                    out.append(lines[j])
-                    if (j < runEnd - 1) out.append('\n')
-                }
-            }
-            runStart = -1
-            runChars = 0
-        }
+        // 非普通行 / 围栏边界 / 空行：关闭 run（决策即时，无冲刷缓冲）
+        inRun = false
+        cumEnd = 0
         if (isFence) inFence = !inFence
         if (i < lines.size) {
             out.append(line)
