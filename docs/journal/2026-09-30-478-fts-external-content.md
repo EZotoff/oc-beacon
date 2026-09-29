@@ -61,3 +61,13 @@
 2. 会话列表搜索：输英文词（如会话里出现过的模型名/代码词）应有命中+高亮摘要
 3. 观察 设置→Diagnostics 或 logcat `OcBeaconDB` tag：[478-migration] 已在 01:08 出现过；[478-vacuum] 常态不应出现
 4. 存储占用：app 信息里数据库体积应 ~1-2MB 级（原来 837MB）
+
+## 已完结卡片迁入（2026-09-30）
+
+### **#478 Room 库 837MB 无界增长源待定位——热表修剪+归档在,库文件仍巨** `data` `perf`
+  - 2026-09-29 发掘审计真机实测:dev 包 ocbeacon.db=837MB(800M databases,files/shared_prefs/cache 全<1MB)——增长全在库文件
+  - 修剪机制其实存在(MessageStore SESSION_MESSAGE_LIMIT+溢出 zstd 归档后 prune)——嫌疑收窄:FTS 索引行(独立于分层,删会话才清)/归档桶常驻库内/SQLite 自由页无 VACUUM 回收/工具输出 provider 缓存
+  - 影响面=存储占用与冷启开销;定罪路径:库表体积普查(sqlite dbstat/各表 COUNT+长度和)→对位修复(FTS 随归档清/周期 VACUUM/归档外移文件系统)
+  - 2026-09-29 T-B 普查定罪(844MB 库 dbstat):FTS5 占 778MB/92%——message_fts_content 613MB(181,682 行全文镜像,未用 external-content 表配置)+message_fts_data 162MB(倒排);真实数据仅 ~58MB(cached_parts 22.3+archive_buckets 25.9+cached_messages 3.4+logs 5.9);freelist=0
+  - 复合根因:①FTS5 建表未用 content=外部内容表→全文在库内双份;②FTS 行不随热表修剪(181k 行 vs cached_parts 6.6k 行,冷数据未压缩文本永驻——ContentSearch.kt:70 'prune 不删 FTS 行'设计);③page_size=1024 小页放大 btree/溢出链开销;修向=external-content 重建 FTS+迁移回填(+可选 page_size 4096 需 VACUUM 备份路径)——预计回收 ~613MB,稳态 ~230MB
+  - 迁入依据：用户真机验收通过 2026-09-30(fb9acfcd 关卡在案,837MB→2.4MB 级);卡面漏迁本次补账（backlog.sh migrate 2026-09-30）

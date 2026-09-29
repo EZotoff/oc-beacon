@@ -118,3 +118,13 @@
 **UI 自动化三坑（记 #473 域）**：会话行点击必须点日期区（标题文本节点吞点击）；adb input text 不容空格（%s 转义或无空格文本）；IME 展开时发送键 y 坐标上移（~1616 而非 2393）。
 
 **环境去向**：dsh-e2e 容器保留运行（后续 #441 深究直接用）；live 3080 实例全程零接触。
+
+## 已完结卡片迁入（2026-09-30）
+
+### **#467 V1 外部注入轮次(POST /session/{id}/message)app 不实时渲染** `sse,v1,data`
+  - 2026-09-30 #463 流式验证副产物:服务端 POST 触发的完整轮次(glm-5.3-flash 3 step,响应 JSON 正常返回)app 打开态全程未渲染——新 user 消息与 assistant 流式内容均未出现(视口停中部非贴底排除法+dump 底部仍为旧 turn 实证)。疑 app SSE 订阅/事件处理与「app 自发 prompt」绑定(SessionStateService idle 态过滤外部 message.part 事件?)或 SSE 连接已静默断(#441-B 探针可判:death-snapshot lastEventAgoMs)。影响面:仅外部注入轮次,用户正常发送路径不受影响。待复现窗+探针日志定罪。
+  - 2026-09-28 补充实证:两次注入(22:35/23:15)服务端完成但 app 零渲染(SGR 无新行),重启即恢复;与 #441 SSE 随机断连同根,用户自发消息不受影响
+  - 2026-09-29 审计:#477 登记(长文语义零暴露)——本卡「dump 底部仍旧 turn 实证」段以 dump 判读受污染(dump 对该类内容全盲);核心证据(SGR 日志零新行/重启即恢复)不受影响
+  - 2026-09-30 定罪完成(journal 2026-09-30-467-v1retained-subtree §2):S0 健康连接注入全链渲染正常——注入本身无罪;S2 kill-server 断连窗口注入→app 零接收→复隧道后 backfill +6 msgs 免重启补渲染(「重启即恢复」已过时);真根=静默死连接 4min04s 无检测(SSE read timed out 全史料 0 触发,#108 withTimeoutOrNull 打不断 OkHttp 通道桥阻塞读),与 #441 同根;修法已设计(读任务vs超时竞争+response.cancel)待裁决
+  - 2026-09-30 修复批次联动:断连窗口注入→恢复免重启补齐 E2E 两验(服务端 REST 全量终态+app msgs=163 落库);S0-S2 定罪结论不变,修复定位=加固层,详 journal §4
+  - 迁入依据：定罪完结:注入无罪(S0 健康连接全链渲染);真根=静默死连接(#441 同根),加固层修复 E2E 已验;残余观察并入 #441 watch 窗(判据 silence-watchdog trip/force-cancelling/death-snapshot)（backlog.sh migrate 2026-09-30）
