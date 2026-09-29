@@ -71,6 +71,7 @@
   - 2026-09-29 B 定罪探针一期交付(用户裁决'相当于探针埋点吗?可以做'):lastEventAtMs 每服务器最后事件时间戳表(SSE 事件入口打点)+backoffWithSchedule 快照日志(death-snapshot server/attempt/lastEventAgoMs——退避重连必经点)。判读法:巨大 lastEventAgoMs=连接活着但长期无事件=静默型死亡(哨兵域,上游为服务端/半开);小值=事件流活跃中断=传输断(上游为网络/系统杀)。完整版二期(电池优化状态/网络 identity/断连异常栈)待一期数据回流后按需接入。同批:#463 V1 兼容调研结论——DB 实证三服务器均'每 step 一条消息'(assistantMsgs≈reasoningParts),现有消息边界装配已全兼容,无需改动;用户看不到分割线=完结 turn 折叠为计数行(#422 语义),展开后可见。
   - 2026-09-30 #467 定罪副产物=本卡根因闭环:死亡现场 death-snapshot lastEventAgoMs=240737(4min04s 零字节静默,无超时无梯子零行为);SSE read timed out 三日志 11 连接周期 0 触发——#108 withTimeoutOrNull(readByte) 挂起不可取消,Ktor socketTimeout 按设计只管响应头,V1/V2 双裸奔;野外恢复全靠网络回调 churn(r2/r3 各 213/235 次)碰运气。修法:读循环竞争+超时分支 response.cancel() 强杀底层 call(心跳契约服务端已在 ~6s/次);详 journal 2026-09-30-467 §2
   - 2026-09-30 修复批次落地(加固定位,commit 见 journal §4):StreamStallWatchdog 字节级 45s 执法+双保险强杀 V1/V2 接线,单测 4/4+全量 3698 绿,E2E 五场景零回归零误报恢复三验;重要反转:SIGSTOP 实证 #108 对纯零字节停顿有效,「读不可取消」论废,4min04s 挂死=adbd 僵尸拆链稀有竞态(4 次复现失败)机制未定;残余:复发抓包级证据+事件级哨兵 v1 legacy 空缺(A2 DSH-only)
+  - 2026-09-30 深究批次(journal §5):dsh 链路审计定罪——A1+A2 哨兵(110s 期望门)覆盖主场景,但「空闲期WS假活→用户发言」变体三层不通电(期望无源/admission 不置忙/FSM TextStarted 从 Idle 不升级)=#467 同构洞;修法方向已备忘(prompt admission HTTP 回执→onRequestSent 播种期望,防风暴语义自洽),待真 dsh 环境验证后实施;僵尸模式裁定=adb 测试专属竞态不再追,SIGSTOP 配方与复发判据已固化
 
 - [ ] **#437 流式Markdown稳定揭示渲染——安全前缀两级放行(稳定块+纯段安全后缀),消灭不稳定尾回溯跳变** `sse,render,perf`
   - 根因:不稳定尾先字面排版后回溯重释义=已显示内容高度回溯(真机录屏A-B翻转帧定罪);#435引擎只能配对单调增长。方案:pilot差分与append之间加SafePrefixGate(库与渲染零改动):稳定块+开放段纯文字安全后缀两级放行,尾部扣留超龄进锁高降亮区,完结EOF全量flush。spec:docs/specs/2026-09-25-437-streaming-md-stable-reveal-design.md(阶段A-D+验收矩阵)
@@ -106,6 +107,7 @@
   - → docs/specs/2026-09-30-streaming-char-reveal-design.md
   - 影响面评估（2026-09-30）：主代码 7 个=6 改(StreamingMarkdownPilot/HeldTailReveal 中改、MarkdownContent/ClickableMarkdown 小改、Motion/build.gradle.kts 微改)+1 新(揭示层)；测试 2 新+2-3 扩；ChatScreen/批处理/高度引擎/i18n 零触碰；全程限 dev pilot 路径。
   - 深挖定案（2026-09-30，一次到位确认）：①渐变弃 AnnotatedString span 改绘制层叠加（TextLayoutResult.getBoundingBox+drawBehind 读动画值零重排——span 路线卡壳推档期每帧重建字符串+重排，自踩禁区）；②append 频率硬帽 ≤40/s（tick 25ms 批量多字，防快流 append 风暴）；③离屏销毁 rememberSaveable(revealedCount)+回视口快速追平；多 Part 非活跃 Text Part 快速排空；④行尾光标改溢出绘制（前沿恒为最后节点，下方是卡片空白，零布局操纵零跳动）；⑤排除项检测=delta 流状态机（围栏平衡扫描+表格分隔行入态），零 gate 改动；⑥字形簇 android.icu（minSdk 26 ✓）+单测 seam。承重先例全核实：onTextLayout 钩子在位（MarkdownContent:464）、overlay 模式可复刻（HeldTailReveal:135-187）。spec 已同步修订。
+  - 看门狗交互审计（2026-09-30，响应用户 d7b3ffd5 提交）：StreamStallWatchdog(#441/#467) 纯传输层（SseClient/V2 接线），与影响面零文件重叠，调研文档无需改；spec 补两条——①传输层 stall≠中断，禁止把连接状态接豁免触发器（维持卡壳呈现等 backfill）；②重放致非前缀重写走 resetKey 重建时揭示进度即时重置为满。
 
 - [ ] **#439 流式期重组隔离：entries 签名缓存与子卡 skippability 恢复** `streaming` `compose`
   - 流式批（~14/s）仍使流式 turn + 相邻注入卡条目全量重组（真机 35s 524 次）；渲染像素幂等故非闪烁源，属性能债。

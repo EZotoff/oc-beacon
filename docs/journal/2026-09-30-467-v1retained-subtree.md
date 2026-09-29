@@ -80,3 +80,24 @@
 「OkHttp 桥阻塞读不可取消」不再成立为普适机制——SIGSTOP 证明零字节停顿下 withTimeoutOrNull 正常返回。4min04s 僵尸挂死整夜仅一次（03:33 S1b）、4 次定向复现全部失败 = **adbd 拆链稀有竞态，机制未定**。野生复发判据已备：force-cancelling 日志在=字节级停顿（本看门狗接管）/不在而事件停=事件级丢失（另一形态）。
 
 **交付定位（诚实）**：本批是**加固层**而非已证明根修——五场景零回归、零误报、恢复链三验全绿；但看门狗强杀效果未在真实僵尸模式上得到验证（该模式未再现）。#441 残余方向：①僵尸模式复发时抓包级证据（host lo 抓包需 root，sudo 不可用已排除）或 v1 侧订阅者状态；②若确认为「字节在流而事件选择丢失」，防御应上事件级哨兵（#441-A2 目前 DSH-only，v1 legacy 空缺——SseConnectionManager:141-142）。
+
+## §5 深究批次：dsh 链路审计（A 线定罪）+ B/C 线裁定
+
+**A 线：dsh 通道防护现状与缺口（设计级定罪，未动代码）**
+
+现状（2026-09-28 A1+A2 已交付）：
+- 传输层：WS ping 25s（TCP/WS 级死亡）
+- 应用层：`DshSilenceWatchdog`（110s 阈值，15s 轮询）——语义「**期望活跃 ∧ 帧静默** → 主动 close socket → 退避重连 + followed 清账 + 兜底重订阅」
+- 期望源：SessionStateService.activityFlow（任一会话 activity 非空）经 SseConnectionManager→orchestrator→mux 三跳接线
+
+**缺口定罪（三层证据，#467 的 dsh 同构）**：「空闲期死亡 → 用户发消息」场景哨兵门不通电：
+1. 期望门无源——activityFlow 由事件驱动；WS 假活（TCP 在、帧流死）时无事件 → activity 永不亮
+2. `ChatRepositoryImpl.promptAsync` 成功后仅播种用户消息（dsh/v2 有 admission；v1 204 无 body 不播种）——**不置 busy**
+3. FSM 证据：`SessionStateService:377 MessageUpdated→TextStarted`，而 `Idle --TextStarted--> Idle [SUSPICIOUS]`（SessionState 不升级、无 activity）
+→ 用户 prompt 走 HTTP 成功（dsh respond 独立通道）→ 服务器开跑 → WS 帧永不达 → 110s 哨兵判死门关闭 → 静默直至传输层 ping 失败/用户动作/重启。#441 主场景（输出期间死亡）有防护（110s+重连+恢复），**此变体无防护**。
+
+**修复方向（设计备忘，待真 dsh 环境验证后再实施）**：prompt admission（HTTP 回执=服务器已受理的确证）→ 哨兵 `onRequestSent()`——期望播种 + 计窗；与 2026-09-28 否决的「follow open fire-and-forget」本质不同：那次无回执必假死，这次有 HTTP 受理回执，服务器必发帧（turn 启动即有 activity 帧）。注意防重连风暴：admission 后若会话秒完结（短轮）帧已到则刷新基准，语义自洽。
+
+**B 线裁定（僵尸模式）**：reverse --remove 僵尸拆链 = adb 测试隧道专属竞态（日常 LAN 直连不经过 reverse 隧道），4 次定向复现失败，机制不再追——测试卫生知识已固化（kill-server=干净 EOF 即刻检测；SIGSTOP=确定性零字节 40s 触发 #108）。野生复发判据已埋（death-snapshot / force-cancelling 日志二分字节级 vs 事件级）。
+
+**C 线裁定（v1 上游订阅者研究）**：放弃——zread MCP 本会话故障；raw 源码 v1.18.32 server/event.ts 仅 schema 层；对客户端侧设计无增量（重连+backfill 已覆盖服务端任何丢订阅行为）。流中途 session.idle 怪象归档为隧道死亡窗口的末批事件，不追。
