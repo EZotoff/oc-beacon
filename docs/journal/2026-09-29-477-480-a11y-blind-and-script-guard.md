@@ -93,3 +93,24 @@
 - **§3.1 滚动/渲染引擎域入册**：#42x-#47x 战役产物 11 文件（ChatScrollController 488 / ScrollCompensation 708 / PreRenderCoordinator 198 / SafeFlingBehavior 132 / CardExpandReveal 1861 / RenderSupplyCoordinator 602 / TurnSegmenting 208 / MarkdownChunking 413 / SafePrefixGate 516 / StreamingMarkdownPilot 318 / HeldTailReveal+Aging 284），标注「改动前必读铁律」。
 - **§4 测试缺口并入**：分页 androidTest @Ignore（pagination_triggersOnScrollUp，sessionId 空壳三解法注释在测试现场）；终端 tab 管理无单测复核仍缺。
 - 卡片 #481 迁移关闭（末代先例之二）。
+
+## 2026-09-30 定罪实验（方案 C）全程与定性翻转（用户裁决 B：降级观察）
+
+### 实验与假设推翻链
+1. **拆段线假设推翻**：DB 取 3585（盲样本）原文——**标准 markdown 段落格式**（9 行 4 空行，5 自然段），SPLIT_PARAGRAPH_THRESHOLD_CHARS=3000 拆段分支根本未触发；993（暴露样本）实为**表格 part**（其"段落"只是表格后 ~100 字符收尾段）——"长段落从未暴露"的前提数据错位。
+2. **Loading→Success 换帧假设（Q）推翻**：「App verification steps」会话 7523 混合 part 同样经历 asyncTerminal Loading→preParsed 换帧（logcat 探针实录），其 >150 chars 段落完整暴露。
+3. **「长文=盲」推翻**：v1 API 注入生成 4077 chars 五段纯散文（rowid 902，会话 ses_f12f31d2），冷启进程组合——**段段完整暴露**（"Every river begins with distance..."等）。
+4. **「路径=盲」推翻**：17-20k 巨型列表 turn（asyncTerminal Success 终态）列表项段落暴露。
+5. **密集 dump 自伤（R2）推翻**：对暴露中的 4077 段落 10 连无间隔 uiautomator dump，复检语义仍完整。
+
+### 今日零盲例 + 新假设 R
+两个会话、十几个 turn、0~20k chars、全渲染路径：**零盲例**。重读昨日定罪屏：21:22 同屏**老表格 turn（21:0x 生成）39 节点暴露 vs 21:35 新生成的 essay 正文盲**——分野=内容创建时刻，非内容属性。
+
+**假设 R（降级为观察定性）**：盲=长跑进程（4h+、多轮 20k 生成、反复滚动、多次装包）的状态性退化——新组合内容语义创建失败、已附着老语义保留。盲的全部取证集中于昨日单一进程晚期（21:22-21:49），与 R 自洽；今日冷启进程完全正常。
+
+**再撞上时的抓取清单**：①logcat a11y/AccessibilityNodeInfo 错误 ②dumpsys meminfo（native 压力）③进程 uptime 与近期操作史 ④同屏新老内容暴露分野验证。A11yDiag 探针（DEBUG-only）留树备用。
+
+### 实验过程副产物
+- **UI 发送通道第三次撞 #464 活体**（tap 发送命中无业务响应，DB 无新 part）→ 改走 **v1 API POST /session/{id}/message 注入通道**（阻塞式，落库可靠）——长文生成类实验的标准通道。
+- 真机滚动注入间歇丢弃 + dump 陈旧墙再现：慢速长拖（duration 1000ms）+ rm 旧 dump + 状态机分步校验（md5 变化才算动）是可靠组合。
+- 探针导航法：A11yDiag len 序列可指示视口 turn（仅跨组合窗时打点）。
