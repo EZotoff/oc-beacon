@@ -93,6 +93,7 @@
   - 2026-09-29 E2E 活证:表格轮完结/换装震荡 -8544/+7236(t_msg 项 14k px)——完结族在真实表格轮的量级实证(此前 #472 验收为纯文本轮 ±24px);表格轮完结路径(归一化+staged 重建+换装叠加)待专项取证
   - 2026-09-30 ④复现确认调研(用户指令:修复前先确认仍存在):静态链仍可达(ever=false 重建帧无防御——pilotTerminalHold 只拦 ever=true);真机 v2 双场景未复现 ever 丢失(实验A服务端重启 reconcile:hold 拦截✓残余-1330归一化差③族/实验B链路断+续生成跳变2523→5144:hold 拦截✓零塌缩+5969正向追平)——v2 backfill partId 稳定组合位不销毁。未验证:v1 message.updated 全量重发路径(bigmodel key 401 失效,16:23 前同 key 尚成功)+弃树重建三联(longcat 免费档限流挂死)。裁决请求 a防御性根修(msgId 级 ever 账本)/b恢复 v1 后补验/c降级 watch——用户已选先走 b:查官方文档重新部署 v1 再测。详见 docs/journal/2026-09-30-471-4-sse-retry-pilot-ever-probe.md
   - v1 验证完成(裁决数据齐备):bigmodel 双key全灭→免费档 nemotron 重部署;wire 级证伪 full-parts resend(message.updated 恒无 parts,partId 全程稳定,mergeAssistantMeta 只并元数据);真机三轮断连实验 331k 行取证——asyncTerminal Loading 帧=0、hold=true 拦截正例、preParsed 分块复入 Success、底部屏幕实证完整渲染;④ v1+v2 双协议不可复现(#472 后防御栈有效)。裁决请求 c(降级观察,推荐)/a(防御根修 ~30 行)。详 journal 2026-09-30-471-4-v1-verification.md
+  - 2026-09-30 ④用户裁决 c(降级观察):v1+v2 四场景实测不可复现(331k 行 Loading=0,#472 hold/registry/preParsed 防御栈有效)→④转 watch 复发再战(理论盲区仍在:断连续传+滚出视口弃树+ever=false 重建帧,0 触发);残余③归一化重排(含 09-29 表格轮 -8544/+7236 活证)继续挂本卡待批
 
 ## P3 — 观察与低价值改进
 
