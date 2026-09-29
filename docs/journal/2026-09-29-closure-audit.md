@@ -268,3 +268,25 @@
 ### **#460 V1 服务端三处顽固缺陷实测（find 超时/项目外 file 500/share 挂起）+ 参数名勘误（/find 收 pattern）** `regression,v1`
   - 1.18.32 实测：/find?pattern 可 ReadTimeout；/file 项目外路径 500 UnknownError（非 400/404，差异文档有载）；POST share 挂起不返回；/find 参数名 pattern（文档未载）。详见回归报告缺陷 D3/D4
   - 迁入依据：2026-09-29 挖掘定性:三缺陷系上游 opencode 1.18.32 服务端事实,已归档回归报告缺陷 D3/D4(/find 收 pattern 勘误随册在案),app 侧无工作项—— informational 记录关闭,如做 V1 兼容专项再立（backlog.sh migrate 2026-09-29）
+
+## E2E 确认轮（2026-09-29 晚）
+
+用户指令：必要的话安排端到端测试确认挖掘定性。三路执行：
+
+### T-A 流式表格活体（#469/#471/#439 活证）
+- 真机发两条 prompt（v1:4199 glm-5.3-flash）触发真实流式表格轮（表格项实测 ≈14090px）
+- **#469 活证**：表格项在发送/完结时点 -8544→-1920→+7236→+3228 巨振（staged 重建/键失效族）；全程视口 **零 LEAP**——引擎配对外层稳定，缺陷确在内容层
+- **#471 活证**：表格轮完结震荡量级 -8544/+7236（此前 #472 验收为纯文本轮 ±24px）——表格轮完结路径待专项
+- **#439 活证**：TextDelta 2877→InjCard 重组 4443（1.5x）；1387→2523（1.8x）
+- #470 帽收缩签名本轮未触发（列放宽刺激未命中 cap 域）——代码级定罪维持,活证留修复批
+- 教训：%s 在 MIUI input text 不解码（改下划线 prompt）；IME 弹出使输入栏坐标上移（重 dump 定位）；发送触底跳 idx15→0 为正常 bottom-follow
+
+### T-C 后台 WakeLock（#479 活证）
+- HOME 退后台 12s：PARTIAL_WAKE_LOCK 'OpenCodeRemote::SSEConnection' 仍持有（ACQ≈2m33s，LONG）；历史 ~9.5min REL+立即续取
+- 判定：后台不释放确认——#479 余量为电量量化+策略裁决
+
+### T-B 库普查（#478）
+- 设备端无 sqlite3 → 拉库至宿主分析（进行中，结论见下节补录）
+
+### #444 复验（关闭依据补强）
+- 12 次双向硬 fling：31 例 LEAP 全为连续运动（大 Δ= snapshotFlow 汇聚峰值帧+item 穿越算术+SafeFling 程序尾），零孤立跳变/零方向反转

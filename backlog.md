@@ -60,6 +60,7 @@
 
 - [ ] **#469 流式表格高度抖动三连:键含全文致列宽重排+stagedLimit塌回+两拍收敛** `chat,markdown,scroll`
   - 2026-09-30 高度稳定性系统调研(docs/research/streaming-height-stability-audit.md)P0 定罪:①MeasureCache/rows/NaturalWidthsLru 键含整条消息全文,流式每 append 失效重建→新宽单元格改变全表列宽,已上屏行重换行(双向跳变,MarkdownTable.kt:189/361-414);②>20 行表格 stagedLimit=remember(content,tableNode){1} 每 append 重置→塌回 8 行再逐帧重建循环(MarkdownTable.kt:101/226-232/765-770);③containerWidth 首拍 0→120dp cap 夹窄,次拍放宽回缩(MarkdownTable.kt:250/258/390-414)。修复方向:表格内 remember 键改表格自身文本/node 深比较+BoxWithConstraints 首拍内联宽。触发面:流式中任何表格输出(密集轮次常见)。
+  - 2026-09-29 E2E 活证(真实 25 行表格轮,glm-5.3-flash):表格项总高≈14k px,发送/完结时点出现 -8544→-1920→+7236→+3228 巨振(staged 重建/键失效族签名 LIVE);全程视口零 LEAP=引擎配对外层稳——问题确在内容层高度重排,与卡内定罪一致;修复基线日志 /tmp/t_table.log /tmp/t_stream.log
 
 
 - [ ] **#441 app SSE 长连接随机断连：输出期间渲染静默（服务端正常）** `bug` `dsh`
@@ -91,12 +92,14 @@
   - 2026-09-30 修复交付(②完结 Loading 塌缩):真机定罪——重连恢复换装时 RESIZE t_msg_0e641a99a001 h 1105→865(d=-240)→1580(d=+715) 41ms 两连跳(=Loading≈0 高帧→Success 弹回,与正常完结换装同构);另 RESERVE align-flip overflow=-62 佐证帽负溢出。根修(12f8214b):pilotTerminalHold 纯函数(pilot 曾渲染∧async 未就绪→完结帧保持 pilot 终帧)+asyncTerminal 提升固定组合位(条件创建,hold 期与切换后同实例零重解析,collectAsState 响应式解除);残余归一化差由帽配对吸收。TDD 3 例红转绿+全量单测绿+装包。①StepGroup 互换与③归一化重排为残余(量级小于已修,另批)。待用户复验:完结一瞬无塌缩弹开。
   - 2026-09-30 用户验收通过(②完结 Loading 塌缩):茶文化轮判定链+高度序列双证据——完结帧 hold=true 拦截 Loading(19:00:10.772),144ms 后 async 就绪无缝切换,全程高度差仅 ±24px(归一化微差,一行文字高);对比修复前同场景 -13171/+12824 两连跳。残余:①StepGroup 边界换装(轮次开始/结束各一次 845→1492)与③归一化重排量级小待后续;新发现④SSE retry 恢复场景:重连后内容跳变重组期 pilotEverRendered 丢失(ever true→false 实证)→塌缩 -8575px 仍现,仅断连续传时发生,正常轮次不受影响——随 retry 路径稳定性专项处理。
   - 2026-09-28 ①StepGroup 互换已根灭(#422 清理批次,用户裁决彻底清理):统一渲染树后流式/完结同构,互换不存在——10轮多step POST完结塌缩 10/10→0/10。③归一化重排与④SSE retry pilotEverRendered 丢失仍待处理(与本卡完结族余项同批)
+  - 2026-09-29 E2E 活证:表格轮完结/换装震荡 -8544/+7236(t_msg 项 14k px)——完结族在真实表格轮的量级实证(此前 #472 验收为纯文本轮 ±24px);表格轮完结路径(归一化+staged 重建+换装叠加)待专项取证
 
 ## P3 — 观察与低价值改进
 
 - [ ] **#439 流式期重组隔离：entries 签名缓存与子卡 skippability 恢复** `streaming` `compose`
   - 流式批（~14/s）仍使流式 turn + 相邻注入卡条目全量重组（真机 35s 524 次）；渲染像素幂等故非闪烁源，属性能债。
   - 修复位：ChatMessageList.kt:741 chatEntries 键改结构签名（仿 :283 turnGroups sig-cache）；MarkdownChunking.kt:291-313 ChatEntry 预载 msg/streaming/key；:2448-2487 item lambda 消除 displayItems/turnGroups 直读；:1361-1375/:1772 回调 lambda remember 化。
+  - 2026-09-29 E2E 活证:单轮流式 TextDelta 2877→InjCard 邻项全量重组 4443(1.5x);另一轮 1387→2523(1.8x)——逐 delta 重组放大实测,修点位与量级依据齐
 
 - [ ] **#442 高度引擎根修二期：R2分片增量化(滑动p90 12ms)+cadence收编+flush深拆+终审待复核项** `perf` `refactor`
   - 终审判定：R1批次已锁 A2 贴底5ms/A1回归/A4全项；滑动p90 19-27 未达12——R2分片(稳定块缓存/尾块单测)是 O(内容)→O(尾块) 唯一路径。
@@ -130,6 +133,7 @@
 - [ ] **#479 SSE 连接期 PARTIAL_WAKE_LOCK 持有策略/电池影响未审计** `sse` `perf`
   - 2026-09-29 发掘审计:dumpsys 实测持锁(OpenCodeRemote::SSEConnection,周期性重取)+日志 WakeLock renewed 每 30s(OpenCodeConnectionService:650 起)——抗 MIUI 杀 socket 的保活设计(#441 域)
   - 未审计点:后台期是否释放/持锁时长分布/对电量的真实代价;若后台仍长持=电池债——需 acquire/release 全路径走查+一次耗电基线
+  - 2026-09-29 E2E 活证:HOME 退后台 12s 后 PARTIAL_WAKE_LOCK 仍持有(dumpsys ACQ≈2m33s LONG;历史模式 ~9.5min REL+立即续取)——后台不释放确认;余下=电量代价量化+策略裁决(后台长置是否转释放靠重连)
 
 - [ ] **#477 长文 markdown 块 uiautomator 语义零暴露——dump 全盲致渲染正常被误判空白** `ui`
   - 2026-09-29 收口审计真机定罪:末轮长文(async parse 路径)可见区 dump 零文本节点(仅 1 个空 text 可点击 TextView h≈1921px),同期旧 turn 正常暴露;vision(三路交叉)+像素双验证内容完整渲染(连续正文/无空白/无圆点)——渲染层无恙,纯语义暴露缺陷
