@@ -124,9 +124,10 @@
   - 登记册止于 2026-08-07:ChatMessageList 表记 ~674 行,实际经 #42x-#47x 战役已 ~2700+;ChatScrollController/CardExpandReveal/ScrollCompensation 等引擎域新文件未入册
   - 随册并入两测试缺口:分页 androidTest @Ignore(ChatInteractionTest:399,sessionId 空壳致 hasOlderMessages 恒 false,三方案任一可解)+终端 tab 管理无单测(旧表遗留,待复核)
 
-- [ ] **#480 backlog-new-batch.sh 误传路径静默产生畸形文件名——加参数防御** `chore`
+- [~] **#480 backlog-new-batch.sh 误传路径静默产生畸形文件名——加参数防御** `chore`
   - 2026-09-29 发掘审计:#476 批实害(fa91c578 清理的 mangled 文件即此因):脚本 kebab 化不拒绝含 / 或 .md 的参数,传路径=拼出畸形名而非报错
   - 修法:参数含 / 或以 .md 结尾即 die 提示只接批次名;3 行改动
+  - 2026-09-29 修复:参数含/或.md结尾即die只接批次名;三例自测过(路径拒/kebab命中/中文兜底);顺手修miui-install.sh serial引号(带空格mDNS名分裂);journal 2026-09-29-477-480-a11y-blind-and-script-guard
 
 - [ ] **#479 SSE 连接期 PARTIAL_WAKE_LOCK 持有策略/电池影响未审计** `sse` `perf`
   - 2026-09-29 发掘审计:dumpsys 实测持锁(OpenCodeRemote::SSEConnection,周期性重取)+日志 WakeLock renewed 每 30s(OpenCodeConnectionService:650 起)——抗 MIUI 杀 socket 的保活设计(#441 域)
@@ -137,6 +138,7 @@
   - 2026-09-29 收口审计真机定罪:末轮长文(async parse 路径)可见区 dump 零文本节点(仅 1 个空 text 可点击 TextView h≈1921px),同期旧 turn 正常暴露;vision(三路交叉)+像素双验证内容完整渲染(连续正文/无空白/无圆点)——渲染层无恙,纯语义暴露缺陷
   - 影响面=自动化验证可靠性+#467 dump 实证段污染(核心 SGR 日志证据不受影响)+a11y;待定位暴露分叉(疑 rememberAsyncMarkdownState 路径)
   - 证据:/tmp/ui_b1.xml(底,盲) vs /tmp/ui_top.xml(顶,正常);#475「近空白/折叠态」原判即此 artifact
+  - 2026-09-29 定罪深化(见journal):分叉=单part纯文本长度(同turn 993暴露/3585盲,表格组件不受影响);渲染三层同构排除(组件/库重载/success槽);超视口单item假设被未分段表格turn(3674px)暴露推翻;最强嫌疑=SPLIT_PARAGRAPH 3000拆段线;androidTest断言已写但被MIUI+idle挂死双阻塞;修复候选A完结即分段/B到达即分段/C拆段线定罪后修normalize/D平台上报——待用户裁决,不盲改
 
 - [ ] **#473 调试探针族清扫——历代 campaign 遗留 DEBUG 打点归档** `chore`
   - grep \\\[DEBUG- 盘点:CardExpandReveal(#420-427/466)/ChatMessageList+MessageCardAssistant(hflick/jk)/SafeFlingBehavior(flng)/ChatScrollController(drift)/rbexp 等几十处打点,均 BuildConfig.DEBUG 门控、release 零影响,但污染调试 logcat(472 闪烁定罪时曾混入噪音)。逐族清理+保留关键结构注释;涉及文件多有编辑协议约束,单独批次执行。

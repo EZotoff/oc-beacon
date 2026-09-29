@@ -564,6 +564,11 @@ internal fun MarkdownContent(
     // 2026-08-13 根本方案：预解析结果存在时直接用 Markdown(state) 重载渲染
     //（无解析等待/loading——内容直接是最终状态）
     if (preParsedState != null) {
+        // #477 探针：分支取证（DEBUG-only）
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+            android.util.Log.w("A11yDiag", "path=preParsed chunked=" + (blockRange != null) +
+                " len=" + markdown.length + " stateType=" + preParsedState.javaClass.simpleName)
+        }
         // 2026-08-20 分片：blockRange 非空时只渲染 [from, to) 区间的顶层块
         //（其余块由同 turn 的相邻 chunk item 渲染——引用式链接在解析期已
         // 写入 referenceLinkHandler，拆开渲染不破坏跨块引用）。
@@ -654,6 +659,11 @@ internal fun MarkdownContent(
                 )
             }
         }
+        // #477 探针：分支取证（DEBUG-only）
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+            android.util.Log.w("A11yDiag", "path=pilot hold=" + holdPilotTerminal +
+                " ready=" + asyncTerminalReady + " len=" + markdown.length)
+        }
         return
     }
 
@@ -692,6 +702,18 @@ internal fun MarkdownContent(
         )
     }
 
+    // #477 探针：分支取证（DEBUG-only）
+    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+        val src = when {
+            overrideState != null -> "override"
+            asyncTerminal != null -> "asyncTerminal"
+            asyncParse && markdown.length > ASYNC_PARSE_MIN_CHARS -> "asyncInline"
+            asyncParse -> "syncSmall"
+            else -> "libStreaming"
+        }
+        android.util.Log.w("A11yDiag", "path=render src=" + src + " len=" + markdown.length +
+            " stateType=" + markdownState.state.value.javaClass.simpleName)
+    }
     Markdown(
         markdownState = markdownState,
         colors = colors,

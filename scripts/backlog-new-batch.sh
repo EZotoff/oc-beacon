@@ -11,6 +11,13 @@ if [ $# -ne 1 ] || [ -z "$1" ]; then
 fi
 
 NAME="$1"
+# #480 参数防御：误传路径（含 / 或以 .md 结尾）会拼出畸形 journal 文件名
+# （实害：#476 批 fa91c578 清理的 mangled 文件即此因）——只接批次名。
+if echo "$NAME" | grep -q '/' || echo "$NAME" | grep -qE '\.md$'; then
+  echo "错误: 参数看起来是路径（含 / 或 .md 结尾）: $NAME" >&2
+  echo "用法: $0 <批次名>（只接批次名，勿传文件路径）" >&2
+  exit 1
+fi
 # kebab 化：小写、空白/下划线转连字符、剔除非 [a-z0-9-]（纯中文退化为 batch）
 KEBAB=$(echo "$NAME" | tr '[:upper:]' '[:lower:]' | tr ' _' '--' | tr -cd 'a-z0-9-' | sed 's/-\{2,\}/-/g; s/^-\+//; s/-\+$//')
 if [ -z "$KEBAB" ] || ! echo "$KEBAB" | grep -q '[a-z0-9]'; then KEBAB="batch"; fi
