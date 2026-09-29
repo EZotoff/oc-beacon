@@ -47,3 +47,13 @@
 - device 侧 grep 的命令文本会被 adbd `in ShellService:` 记入 logcat，下轮 poll 匹配到自身 → 每轮 +1 假增长；监控一律 pull 到宿主再 grep。
 - 设备 nohup logcat 启动行的 pkill -f 模式会自匹配杀掉自己；pkill 只按进程名。
 - 宿主 nohup 后台进程不挺过 run_code 退出；持久抓取用托管后台作业或设备侧落盘。
+
+## §3 服务端真相 + UI 态补证 + 证据缺口记录
+
+**REST 终态核验**（GET /session/{sid}/message，03:41）：三轮全部服务端完整完成——1-40（40 纯数字）/41-80（40 数字）/81-120（40 数字），各含 step-start/reasoning/text/step-finish。B 轮虽在 app 侧只收到 8s 增量，服务端全量完成；C 轮在 app 全盲窗口内完成。注入与流式在服务端零问题。
+
+**UI 态补证（FSM 日志代替像素）**：03:33:43.444-445 `Busy/Streaming --SseStatus--> Idle [force-complete]` + `--SseIdle--> Idle` → **静默全程 UI 显示 Idle + 冻结的半截 B 轮**（无生成指示、无断连条幅）——与 #467 原始观感（底部旧内容/视口停中部/看起来「完成了但被截断」）完全同构。03:33:43.478 L3 探针 `absent from active but SSE fresh (33ms ago) -> keep current status` 是最后一条会话级活性证据。
+
+**视觉验证缺口（诚实记录）**：/tmp/467s0.png、467s1.png、467s2.png（3.3/3.4/3.5MB，md5 5492468f…/c7a52fc9…/00c66285…）未能判读——本会话路由纯文本（read_image 网关拒绝）、子代理路由同拒、zai 视觉 MCP 401（key 失效，同 bigmodel 双 key 全灭族）、markitdown/playwright 旁路全封。定罪不依赖像素：探针链（[msg]/[flush]/MDPilot）+ REST 终态 + FSM 状态演化三层文本证据已闭环。截图原地保留，zai key 修复后可补视觉背书。
+
+**结论与去向**：#467 定罪完毕——「V1 外部注入不渲染」= 静默死连接无检测的表现型，注入本身与恢复链路均无罪；根因与修法归 #441（P1）域：读循环竞争式超时 + `response.cancel()` 强杀底层 call（或 SSE 专用裸 OkHttp 传输）。待用户裁决修法开工批次。
