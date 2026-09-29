@@ -66,15 +66,6 @@
   - 折叠态跨 force-stop 重启持久;turn 头右缘图标点击可解但一次命中难;折叠区滚动时可见文本零变化(近空白占位)
   - 与守卫无关(沟槽直拖同样触发);影响验证可操作性,用户场景可能同样受累
 
-- [ ] **#474 展开收起跳变双根修:回收账本丢失+滚回迟到增长** `bug,ui`
-  - 卡展开后滚离视口被回收→重组合 clock 账本归零→收起镜像 consumed=0 短路原位=零回退,-H 塌缩全额漏成视口跳变(真机 t4 定罪:close-anchor consumed=0+RESIZE-194 无配对);修=塌缩量恒等于 rep,账本缺失以 rep 兜底,反射/dispatch 两路径统一
-  - 滚回重组合时展开卡 asyncParse 高度迟到落地发生在手势中(inProgress),steady 按位置优先权弃配,+H 裸顶视口(录屏 t=9.4s 反向-24px+连跳+75px 帧实证);修=finalHCache 跨回收存活,冷首测(measureCount≤2)以已知终高占位(DEBUG-FLOOR),迟到内容落地高度已正确=零增量零弃配
-  - 二轮(2026-09-29):用户复验偶发「点击时往下拖」——贴底域反射(fiso+H)拖走锚定区;fii==0 全域豁免零位移+收起零回退,三重判据+五轮循环收口
-  - 四轮(2026-09-29):用户否决向上扩展,撤销二/三轮豁免,全域反射+normalizeExpandAnchor 超界归一;贴底 upper residual=0.0 向下扩展,闭环精确,单测 47 绿
-  - 五轮(2026-09-29):卡内fling制动拉底=双通道泄漏(onPostFling残速+onPostScroll逐帧),fling窗口标记吞没+drag放行;复测不再拉底
-  - 五轮终(2026-09-29):用户否决吞没,协议内反转注入(scrollBy 反转传导)——卡内到边惯性按手势意图传导外层,复测 idx 7→8 朝更早内容
-  - 六轮(3468fa03):守卫分通道语义重写——drag 自然传导/fling 双通道边界吸收;单测6用例+lint绿;真机四场景仪器证据(S2a +222px 跟手/S3 absorbed459px+v=0/S4 absorbed541px+v=0 无LEAP);待用户三场景验收
-
 - [ ] **#470 流式高度配对收缩缺口:帽不回改空白残留+ledger收缩不配对视口落** `scroll,chat`
   - 2026-09-30 调研 P3 定罪:①帽轨 reserveReleasePlan 对 trueHeight<=reserved 恒 null(帽单调只增,ScrollCompensation.kt:338)——流式内容回缩(表格列放宽/setext 前重排)时 item 保持旧高=空白残留,直到换流式项 reset;②ledger 轨 note 对 d<0 只 rebase 不配对(:157)——压缩卡/工具横幅回缩时上方内容下坠无补偿。修复需高度引擎域专项设计(帽回改与『已上屏永不回改』既有裁决冲突,需用户裁断语义:回缩时同步缩帽+视口跟随 vs 维持空白)。
 
