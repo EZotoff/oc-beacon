@@ -298,3 +298,19 @@
 - freelist=0（无空闲页膨胀）；page_size=1024 小页放大开销
 - 复合根因：FTS 未用 external-content（库内双份全文）+ FTS 行不随修剪（181k vs 热表 6.6k，冷数据未压缩永驻）
 - 修向：external-content 重建 FTS+回填（预计回收 ~613MB，稳态 ~230MB）；可选 page_size 4096
+
+## #469 表格高度三连根因修复（演示→定位→修复→真机验证闭环）
+
+- 用户指令：演示 #469 问题（亲眼确认巨振）后开工根因修复（可重构/重写，不影响其他功能）
+- 演示准备（真机 v1:4199 glm-5.3-flash 干净会话）：25 国人口表 3674px；发送新消息瞬间 3674→1402→2878→3674（-2272px 三连振 215ms）；用户确认问题存在
+- 三轮探针迭代定罪（TblDiag staged-init/mark 日志）：
+  - 一轮：发送时点巨振消灭（stagedLimit 无键单调化）但完结残余一拍（1960→922）
+  - 二轮（G 轮 22 行表）：markComplete（effect 内）与完结重建存在子树生命周期竞态；完结态 tableText 与流式态不同（尾部边界归属翻转）
+  - 三轮（H 轮）：mark 移组合期后仍 miss——首塌实为跨 grouped 阈值首见分批+完结换装重建叠加
+- 终版修复（commit 92aa5de9，全部收敛于 MarkdownTable.kt）：
+  - ① 键全链改表格自身文本：tableText 值语义（safeTableText 安全截取）+ TableRowsSnapshot 钉死同代 content 坐标系（rows/measureCache/naturalWidths/cellResult/TSV 六处）
+  - ② stagedLimit 去 (content,tableNode) 键（进度单调保留，流式追加行零重置）+ TableStageProgressCache 完成标记（组合期同步写=无竞态，键=表头行身份键吸收尾部边界/行数差异，LRU 24；碰撞语义安全=仅跳过分批，渲染正确性零损失）
+  - ③ containerWidth：remember{0}+onSizeChanged 两拍收敛 → BoxWithConstraints 首拍内联真宽
+- 真机终验（I 轮 27 行表 + 纯文本冒烟）：发送时点/完结时点零塌缩；流式单调生长（+88 族，唯一负拍 -32px=列宽真重排内容驱动）；cacheHit=true 全量直出；零 LEAP；全量单测绿（+13 TableStageCacheTest）
+- 教训入档：①「表格状态被消息全文 append 打扰」类缺陷的通用修法=值语义键+同代快照坐标系；② effect 内写跨重建缓存有子树生命周期竞态，标记类副作用应在组合期同步写；③ 渐进分批策略的正确性兜底=完成标记碰撞仅损帧分布策略
+
