@@ -91,17 +91,10 @@
   - 2026-09-30 ④复现确认调研(用户指令:修复前先确认仍存在):静态链仍可达(ever=false 重建帧无防御——pilotTerminalHold 只拦 ever=true);真机 v2 双场景未复现 ever 丢失(实验A服务端重启 reconcile:hold 拦截✓残余-1330归一化差③族/实验B链路断+续生成跳变2523→5144:hold 拦截✓零塌缩+5969正向追平)——v2 backfill partId 稳定组合位不销毁。未验证:v1 message.updated 全量重发路径(bigmodel key 401 失效,16:23 前同 key 尚成功)+弃树重建三联(longcat 免费档限流挂死)。裁决请求 a防御性根修(msgId 级 ever 账本)/b恢复 v1 后补验/c降级 watch——用户已选先走 b:查官方文档重新部署 v1 再测。详见 docs/journal/2026-09-30-471-4-sse-retry-pilot-ever-probe.md
   - v1 验证完成(裁决数据齐备):bigmodel 双key全灭→免费档 nemotron 重部署;wire 级证伪 full-parts resend(message.updated 恒无 parts,partId 全程稳定,mergeAssistantMeta 只并元数据);真机三轮断连实验 331k 行取证——asyncTerminal Loading 帧=0、hold=true 拦截正例、preParsed 分块复入 Success、底部屏幕实证完整渲染;④ v1+v2 双协议不可复现(#472 后防御栈有效)。裁决请求 c(降级观察,推荐)/a(防御根修 ~30 行)。详 journal 2026-09-30-471-4-v1-verification.md
   - 2026-09-30 ④用户裁决 c(降级观察):v1+v2 四场景实测不可复现(331k 行 Loading=0,#472 hold/registry/preParsed 防御栈有效)→④转 watch 复发再战(理论盲区仍在:断连续传+滚出视口弃树+ever=false 重建帧,0 触发);残余③归一化重排(含 09-29 表格轮 -8544/+7236 活证)继续挂本卡待批
+  - 2026-09-30 ③归一化重排专项开工:方向=归一化前移到流式 ingest(终帧=流式帧,完结变换幂等化);setext 升格/tight→loose/CRLF 三小项随批评估
+  - 2026-09-30 ③归一化重排设计定稿 to spec:docs/specs/2026-09-30-471-3-streaming-normalization-unification-design.md——归一化前移 gate 前流式 ingest(终帧=流式帧)+位置制空行化(cumEnd 行完成即定案)+gate 表格注入退役;实现按 spec §5 三 commit(新会话可执行);可关卡片清单 spec §8(本卡验收后整卡关)
 
 ## P3 — 观察与低价值改进
-
-- [ ] **#483 流式逐字揭示动效：char reveal + 尾部渐变 + 终端光标（设计定稿）** `streaming` `ui`
-  - 逐字（字形簇）揭示 + 尾部 4 字不透明度阶梯（双驱动 + 0.1s 平滑插值）+ 终端下划线光标（忙常亮/停顿 500/500 硬闪；行尾独行换行、预留整行槽位零跳动）；完结快速全亮 + 光标即移（业界零例外）。
-  - 架构红线：SafePrefixGate→揭示层→StreamingMarkdownState 单动画驱动；光标 overlay 禁 inline content（13ms/frame 血案先例）；自适应速率 max(40字/s, 到达速率) 限简单算术；退后台/中断/停止立即揭示全部。
-  - 范围 Part.Text（排除表格/围栏码块/thinking）；BuildConfig 开关 dev 先行 + debug 属性调参；尾部阶梯业界无先例、可读性真机自证。调研 docs/research/2026-09-30-streaming-reveal-animation-patterns.md
-  - → docs/specs/2026-09-30-streaming-char-reveal-design.md
-  - 影响面评估（2026-09-30）：主代码 7 个=6 改(StreamingMarkdownPilot/HeldTailReveal 中改、MarkdownContent/ClickableMarkdown 小改、Motion/build.gradle.kts 微改)+1 新(揭示层)；测试 2 新+2-3 扩；ChatScreen/批处理/高度引擎/i18n 零触碰；全程限 dev pilot 路径。
-  - 深挖定案（2026-09-30，一次到位确认）：①渐变弃 AnnotatedString span 改绘制层叠加（TextLayoutResult.getBoundingBox+drawBehind 读动画值零重排——span 路线卡壳推档期每帧重建字符串+重排，自踩禁区）；②append 频率硬帽 ≤40/s（tick 25ms 批量多字，防快流 append 风暴）；③离屏销毁 rememberSaveable(revealedCount)+回视口快速追平；多 Part 非活跃 Text Part 快速排空；④行尾光标改溢出绘制（前沿恒为最后节点，下方是卡片空白，零布局操纵零跳动）；⑤排除项检测=delta 流状态机（围栏平衡扫描+表格分隔行入态），零 gate 改动；⑥字形簇 android.icu（minSdk 26 ✓）+单测 seam。承重先例全核实：onTextLayout 钩子在位（MarkdownContent:464）、overlay 模式可复刻（HeldTailReveal:135-187）。spec 已同步修订。
-  - 看门狗交互审计（2026-09-30，响应用户 d7b3ffd5 提交）：StreamStallWatchdog(#441/#467) 纯传输层（SseClient/V2 接线），与影响面零文件重叠，调研文档无需改；spec 补两条——①传输层 stall≠中断，禁止把连接状态接豁免触发器（维持卡壳呈现等 backfill）；②重放致非前缀重写走 resetKey 重建时揭示进度即时重置为满。
 
 - [ ] **#439 流式期重组隔离：entries 签名缓存与子卡 skippability 恢复** `streaming` `compose`
   - 流式批（~14/s）仍使流式 turn + 相邻注入卡条目全量重组（真机 35s 524 次）；渲染像素幂等故非闪烁源，属性能债。
