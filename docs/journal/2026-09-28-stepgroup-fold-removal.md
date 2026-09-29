@@ -134,3 +134,16 @@ tap 前后 screencap 对(pxA/pxB)+分带位移相关分析(±90px 搜索):
   4. **协议内反转注入(终)**:onPostScroll/onPostFling 全额吞原始泄漏(上传零)+scope.launch{ listState.scrollBy(-y) } 反转注入(走完整滚动协议/SafeFling/锚定),残速×0.12 距离换算同路注入
 - 终版复测:S2 泄漏 fiso 720→808(增=朝旧端✓),S3 惯性 LEAP idx 7→8(视口朝更早内容传导✓),S4 制动 (8,27) 稳定✓;单测绿
 - 挂载:item 级 cardFlingLeakGuard(listState),覆盖 21 处卡内滚动容器
+
+## 六轮(2026-09-29):卡内滚动泄漏守卫分通道语义重写(3468fa03)
+
+- **用户终裁语义**(本轮对话):卡内滚动到边后——拖拽(drag,手指触摸)沿协议自然传导外层同向滚动;惯性(fling)到边就地吸收,不传导不注入。五轮「反转注入」把拖拽通道一并反转(卡底下滑视口反向上移,用户实测否决),且人为造对向惯性传导,废弃。
+- **实现**(CardFlingLeakGuard.kt 重写):leakDisposition(source)——仅 SideEffect(fling/动画)→AbsorbAtEdge;UserInput(drag)/Wheel/Relocate→ChainNaturally。onPostScroll: Drag 零干预(Offset.Zero 自然上传,方向归一由 LazyList 内部处理,协议天然正确)/SideEffect 返 available 全吞;onPreFling Zero;onPostFling 返 available(残速全吞,零注入)。无 listState/无协程/无 scrollBy,纯声明式。挂载点不变(item 级 Box,覆盖 21 处卡内滚动容器)。
+- **单测**:CardFlingLeakGuardTest 6 用例(拖拽透传/惯性逐帧吸收/残速吸收/preFling 不拦截/分类),连 BottomPinnedExpandSkipTest 全绿;lint 绿。
+- **真机仪器证据**(ses_f19eeb, 7.0s 思考卡, 逐帧判定):
+  - S2a 拖拽链(内容顶+下滑): 卡头 y 1489→增量 +222px 同向跟手(朝历史) PASS
+  - S2b 拖拽链(内容边+上滑): 卡头向最新端移出视口(方向✓)
+  - S3 惯性吸收: logcat FlingLeakGuard "fling leak absorbed framesPx=459 residualV=0px/s" + 外层 SafeFling enter v=0px/s(零动量上传) + 无 LEAP + idx/off 稳定 PASS
+  - S4 制动(用户原始主诉场景): fling 中触碰 → absorbed framesPx=541 residualV=0 + v=0 + 无 LEAP PASS
+- **方向基线修正**(重要勘误):本列表真实语义=手指下滑(y增)=读历史(idx增)、手指上滑=朝最新端;旧经验规则「y减=idx增=朝旧端」系方向记反,本轮以冷重启+单步慢滑+ScrollDiag 日志实证修正。验证脚本一律以日志 idx/off 与卡头位移双重判定。
+- **测试中发现的两处既有怪癖(与守卫无关,沟槽直拖可复现)**:①末轮步骤组折叠('• • • • •')后:折叠态跨重启持久、难展开(turn 头右缘图标可解)、折叠区渲染近乎空白且滚动其间文本无变化;②链传导/LEAP 大幅朝最新端移动后末轮易被折叠,折叠后 7.0s 卡从 dump 消失——已登记 backlog 待查。
