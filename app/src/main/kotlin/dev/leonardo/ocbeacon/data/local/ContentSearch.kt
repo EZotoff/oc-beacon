@@ -36,7 +36,15 @@ object ContentSearchFilterValues {
     const val TIME_RANGE_30D = "30d"
 }
 
-/** FTS5 DDL（unicode61 单字分词——中文短词零依赖方案；版本号留重建路径）。 */
+/**
+ * FTS5 DDL（unicode61 单字分词——中文短词零依赖方案）。
+ *
+ * #478 根修：external-content 表——content=cached_parts，FTS 影子表只存倒排
+ * 索引，原文与列值一律回表读（旧形态 message_fts_content 全文镜像 613MB =
+ * 库 92%，热表修剪/归档机制健全却拦不住库无界增长）。列按名对齐 content 表
+ * （text/sessionId/messageId）；role/partId 不再冗余入索引（role 查询 JOIN
+ * cached_messages 取现值），索引行身份 = cached_parts 物理 rowid。
+ */
 object MessageFtsSchema {
     const val TABLE = "message_fts"
     const val CREATE =
@@ -44,31 +52,55 @@ object MessageFtsSchema {
             "text, " +
             "sessionId UNINDEXED, " +
             "messageId UNINDEXED, " +
-            "partId UNINDEXED, " +
-            "role UNINDEXED, " +
+            "content='cached_parts', " +
+            "content_rowid='rowid', " +
             "tokenize = 'unicode61')"
-}
 
-/** 索引单元：一条 text part 的可检索内容。 */
-data class IndexedTextPart(
-    val partId: String,
-    val messageId: String,
-    val role: String,
-    val text: String,
     /**
-     * #299 续项：该 part 索引前在 cached_parts 已有行（文本变化重索引）——
-     * 仅此类项需要 DELETE 旧行；新 part 无 FTS 行可删（FTS 行只可能跟随
-     * cached_parts 行存在），免 FTS5 虚表全扫（~600ms/次）。
+     * #478：content 表同步触发器（FTS5 external-content 标准模式）。一致性下沉
+     * 到 SQLite 层，覆盖 Room/调用方回调够不着的全部路径——FK CASCADE（prune/
+     * 删会话/消息行 REPLACE 级联）、迁移 DELETE、开机空 part 清扫——根治旧
+     * 手动维护「prune 不删 FTS 行」的孤儿堆积（181,682 行 vs 热表 6.6k）。
+     *
+     * 只挂 INSERT/DELETE，不挂 UPDATE：流式 48ms delta append（UPDATE 路径）
+     * 不重索引——避免长 part 每批按全文重写倒排 + FTS5 段合并风暴；终值由
+     * 下一次快照 REPLACE（upsertParts = DELETE+INSERT，必经触发器）收敛，
+ * 索引更新时机与旧手动维护（仅快照路径调用 indexTextParts）等价。
      */
-    val existing: Boolean = false,
-)
+    val TRIGGERS = listOf(
+        "CREATE TRIGGER IF NOT EXISTS cached_parts_fts_ai AFTER INSERT ON cached_parts " +
+            "WHEN new.type = 'text' BEGIN " +
+            "INSERT INTO `$TABLE`(rowid, text, sessionId, messageId) " +
+            "VALUES (new.rowid, new.text, new.sessionId, new.messageId); END",
+        "CREATE TRIGGER IF NOT EXISTS cached_parts_fts_ad AFTER DELETE ON cached_parts " +
+            "WHEN old.type = 'text' BEGIN " +
+            "INSERT INTO `$TABLE`(`$TABLE`, rowid, text, sessionId, messageId) " +
+            "VALUES ('delete', old.rowid, old.text, old.sessionId, old.messageId); END",
+    )
+
+    /**
+     * #478：建表后一次性回填——与 [TRIGGERS] 的 ai 触发器同形同过滤（只索引
+     * text 行）。**不可用 FTS5 'rebuild' 命令**：rebuild 对 external content
+     * 表全量索引 content 表每一行（含 reasoning 等），与触发器 `WHEN type='text'`
+     * 语义冲突——被误索引的非 text 行此后删除时 ad 触发器不清理（WHEN 不满足），
+     * 倒排孤儿永久残留（宿主 SQLite C10 实证），根因②以新形态复辟。
+     */
+    const val BACKFILL =
+        "INSERT INTO `$TABLE`(rowid, text, sessionId, messageId) " +
+            "SELECT rowid, text, sessionId, messageId FROM cached_parts WHERE type = 'text'"
+}
 
 /**
  * #272：消息内容全文索引（FTS5）+ BM25 检索。
  *
+ * #478 根修后形态：索引表 = external-content（content=cached_parts），同步全部
+ * 由 SQLite 触发器承担（见 [MessageFtsSchema.TRIGGERS]）——本类不再提供手动
+ * 维护入口（旧 indexTextParts/clearSession/deleteMessage 拆除）。行为变化：
+ * - 索引行随热表行同生共死（prune/归档裁剪/CASCADE 删除即清，孤儿不再堆积）；
+ *   旧「prune 不删 FTS 行（冷数据可搜）」设计废止——pruned 内容本就 JOIN
+ *   cached_messages 过滤不可见，可搜性实际未变。
+ * - 流式期索引滞后到下一次快照 REPLACE 收敛（与旧手动维护时机等价）。
  * - 只索引 text part（user/assistant 正文，落库本就不截断）；reasoning/工具输出不入索引（用户裁决）。
- * - 索引行独立于热/冷分层：prune 不删 FTS 行（冷数据可搜）；删会话按 sessionId 清。
- * - 陈旧 FTS 行（消息被单独删除的残余）由查询 JOIN cached_messages 天然过滤，不显示。
  * - 运行时探测 FTS5 可用性：API<30 系统无 FTS5 模块 → available=false，调用方走 LIKE 降级。
  * - 非线程安全内部状态由 [synchronized] 保护；方法为阻塞式，调用方须在 IO 上下文。
  */
@@ -84,23 +116,28 @@ class MessageFtsIndex @Inject constructor(
     /**
      * 幂等建表；返回 FTS5 是否可用（不可用 = 无 fts5 模块，调用方走 LIKE 降级）。
      * #272 V3 勘误：小米 ROM（SDK 36）也可能无 fts5 模块——失败根因必须留日志。
+     *
+     * #478：正常路径表由 MIGRATION_9_10 建好（含过滤回填），此处只做幂等
+     * 保险（CREATE/TRIGGER 均 IF NOT EXISTS）；表确实缺失时（老库未搜索过、
+     * 迁移前首次搜索）建表后立即从 cached_parts text 行回填一次。
+     * 日志走 android.util.Log：本方法可能在 DB 初始化路径上被触发，AppLogger
+     * 持久化写库会重入。
      */
     fun ensureAvailable(): Boolean = synchronized(lock) {
         if (ensured) return true
         if (unavailable) return false
         try {
             val db = database.openHelper.writableDatabase
+            val existed = db
+                .query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '${MessageFtsSchema.TABLE}'")
+                .use { it.moveToFirst() }
             db.execSQL(MessageFtsSchema.CREATE)
+            MessageFtsSchema.TRIGGERS.forEach(db::execSQL)
             ensured = true
-            // 一次性回填：建表时把既有 text part 全量灌入索引（后续增量由写路径维护）。
-            // 仅建表当次执行（表已存在时不触发）；role 经消息表回查。
-            db.execSQL(
-                "INSERT INTO ${MessageFtsSchema.TABLE}(sessionId, messageId, partId, role, text) " +
-                    "SELECT p.sessionId, p.messageId, p.id, " +
-                    "COALESCE((SELECT mm.role FROM cached_messages mm WHERE mm.id = p.messageId), ''), " +
-                    "COALESCE(p.text, '') FROM cached_parts p WHERE p.type = 'text'"
-            )
-            android.util.Log.i("MessageFtsIndex", "FTS5 virtual table ready (backfilled)")
+            if (!existed) {
+                db.execSQL(MessageFtsSchema.BACKFILL)
+                android.util.Log.i("MessageFtsIndex", "[478] FTS5 external-content table created + backfilled")
+            }
             true
         } catch (e: SQLiteException) {
             android.util.Log.w(
@@ -111,57 +148,6 @@ class MessageFtsIndex @Inject constructor(
             unavailable = true
             false
         }
-    }
-
-    /**
-     * 索引一批 text part（upsert 语义：按 partId 先删后插）。
-     * 阻塞式 SQL——调用方必须在 IO 上下文（MessageStore 写路径已在 IO/事务内）。
-     */
-    /**
-     * #299 续项（2026-09-02）：整批单事务——原逐条裸 execSQL 各自 autocommit，
-     * 118 msgs 页（~200 text part）≈ 400 次闪存 fsync 事务 ≈ 20s（真机实测，
-     * RPC 仅 1.9s）；批事务后整页 1 次 fsync。嵌套调用（replaceSessionMessages
-     * 在 Room withTransaction 内调用）走 Android 嵌套事务（savepoint）语义不变。
-     */
-    fun indexTextParts(sessionId: String, items: List<IndexedTextPart>) {
-        if (items.isEmpty() || !ensureAvailable()) return
-        val db = database.openHelper.writableDatabase
-        // 防御性降级：批事务失败（如测试环境 DB 关闭竞态）不外抛——索引是增强，
-        // 与本文件既有降级哲学一致（缺行仅影响可搜性，下次 upsert 幂等补齐）。
-        try {
-            db.beginTransaction()
-            for (item in items) {
-                if (item.existing) {
-                    db.execSQL("DELETE FROM ${MessageFtsSchema.TABLE} WHERE partId = ?", arrayOf(item.partId))
-                }
-                db.execSQL(
-                    "INSERT INTO ${MessageFtsSchema.TABLE}(sessionId, messageId, partId, role, text) VALUES(?, ?, ?, ?, ?)",
-                    arrayOf(sessionId, item.messageId, item.partId, item.role, item.text),
-                )
-            }
-            db.setTransactionSuccessful()
-        } catch (e: android.database.SQLException) {
-            android.util.Log.w("MessageFtsIndex", "batch index failed (degraded): " + e.message)
-        } finally {
-            runCatching { db.endTransaction() }
-        }
-    }
-
-    /** 删会话级联清理（会话删除时与热表/冷存同事务调用）。 */
-    fun clearSession(sessionId: String) {
-        if (!ensureAvailable()) return
-        database.openHelper.writableDatabase
-            .execSQL("DELETE FROM ${MessageFtsSchema.TABLE} WHERE sessionId = ?", arrayOf(sessionId))
-    }
-
-    /** 四层根修（2026-09-09）：单消息级联清理（echo 拆除与热表行删除同事务调用）。 */
-    fun deleteMessage(sessionId: String, messageId: String) {
-        if (!ensureAvailable()) return
-        database.openHelper.writableDatabase
-            .execSQL(
-                "DELETE FROM ${MessageFtsSchema.TABLE} WHERE sessionId = ? AND messageId = ?",
-                arrayOf(sessionId, messageId),
-            )
     }
 
     /**
@@ -184,13 +170,17 @@ class MessageFtsIndex @Inject constructor(
         val where = StringBuilder("WHERE message_fts MATCH ? ")
         val args = mutableListOf(phrase)
         filter.sessionId?.let { where.append("AND message_fts.sessionId = ? "); args.add(it) }
-        filter.role?.let { where.append("AND message_fts.role = ? "); args.add(it) }
+        // #478：role 不再冗余存索引列（external-content 化），过滤改走 JOIN 现值
+        filter.role?.let { where.append("AND mm.role = ? "); args.add(it) }
         filter.timeFrom?.let { where.append("AND mm.created >= ? "); args.add(it.toString()) }
         filter.timeTo?.let { where.append("AND mm.created <= ? "); args.add(it.toString()) }
         args.add(filter.limit.toString())
         where.append("ORDER BY score LIMIT ?")
+        // #478：message_fts.sessionId/messageId 为 external-content 回表列（从
+        // cached_parts 按 rowid 取）；role 同上改 mm.role；snippet 由 FTS5 从
+        // content 表原文生成，bm25 走倒排——查询语义与旧形态一致。
         val sql = (
-            "SELECT message_fts.sessionId, message_fts.messageId, message_fts.role, " +
+            "SELECT message_fts.sessionId, message_fts.messageId, mm.role, " +
             "snippet(message_fts, 0, '[', ']', '…', 16), mm.created, bm25(message_fts) AS score " +
             "FROM message_fts JOIN cached_messages mm ON mm.id = message_fts.messageId " +
             where
