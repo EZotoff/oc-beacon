@@ -2530,7 +2530,7 @@ fun ChatMessageList(
                                 // 全部卡内滚动容器(思考内容/工具输出等 21 处)的 fling
                                 // 到边泄漏(逐帧 onPostScroll+残速 onPostFling,reverseLayout
                                 // 下朝底猛拉),drag 泄漏放行(滚动链期望行为)。
-                                .cardFlingLeakGuard()
+                                .cardFlingLeakGuard(listState)
                                 .animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = null),
                         ) {
                             CompositionLocalProvider(
