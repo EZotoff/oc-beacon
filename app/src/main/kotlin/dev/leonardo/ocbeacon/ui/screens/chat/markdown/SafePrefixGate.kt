@@ -437,53 +437,17 @@ internal object SafePrefixGate {
     internal class ReleaseDecision(val newReleased: Int, val delta: String)
 
     /**
-     * #437 阶段 C：放行决策（含表格粘边空行注入）。
+     * #471③：放行决策（gate 入口已收归一化文本）。
      *
-     * 完结归一化 ensureBlankLineBeforeGfmTables 会在「文字行紧贴表头行」处补
-     * 空行——此处在放行 delta 内做与归一化同判定的增量前移（注入后归一化幂等，
-     * 流中与完结渲染一致）。
-     *
-     * [newReleased] 是快照坐标；[delta] 可能比快照区间多注入的换行——
-     * state.content 与快照长度自此解耦（调用方从不比较二者）。
-     * 2026-09-26：[alreadyReleased] 可能落在纯文字行中（增量直出）——delta 首
-     * 行是行续段，无表头语义，注入判定跳过之。
+     * #437 阶段 C 的「放行 delta 内表格粘边空行注入」退役——归一化前移后
+     * ensureBlankLineBeforeGfmTables 已在 pilot ingest（gate 入口前）对整快照
+     * 插空行，注入恒空转。「state.content 与快照长度解耦」语义随之消失
+     * （delta = 快照区间原文，坐标重新耦合）。
      */
     fun releaseDelta(snapshot: String, alreadyReleased: Int, maxReleaseChars: Int = Int.MAX_VALUE): ReleaseDecision {
         val r = releaseLength(snapshot, alreadyReleased, maxReleaseChars)
         val from = alreadyReleased.coerceIn(0, snapshot.length)
-        val delta = snapshot.substring(from, r)
-        return ReleaseDecision(r, injectTableBlankLines(snapshot, from, delta))
-    }
-
-    /** 放行 delta 内的表格粘边空行注入（判定与 TABLE_AFTER_TEXT_REGEX 同语义）。 */
-    private fun injectTableBlankLines(snapshot: String, from: Int, delta: String): String {
-        if (delta.indexOf('|') < 0 || delta.length < 4) return delta
-        val out = StringBuilder(delta.length + 4)
-        val firstAtLineStart = from == 0 || snapshot[from - 1] == '\n'
-        var lineStart = 0
-        var prevNonEmptyTextLine = false // 前行=非空且非 | 结尾（注入条件）
-        var lineIdx = 0
-        while (lineStart <= delta.length) {
-            val nl = delta.indexOf('\n', lineStart)
-            val lineEnd = if (nl < 0) delta.length else nl
-            val line = delta.substring(lineStart, lineEnd)
-            val atLineStart = lineIdx > 0 || firstAtLineStart
-            if (atLineStart && isTableHeaderRow(line)) {
-                val nextStart = if (nl < 0) -1 else nl + 1
-                val nextNl = if (nextStart < 0) -1 else delta.indexOf('\n', nextStart)
-                val nextEnd = if (nextNl < 0) delta.length else nextNl
-                val sep = if (nextStart < 0) "" else delta.substring(nextStart, nextEnd)
-                val prevIsText = if (lineIdx == 0) prevLineBeforeIsTextRow(snapshot, from) else prevNonEmptyTextLine
-                if (isTableSeparatorRow(sep) && prevIsText) out.append('\n')
-            }
-            if (lineStart >= delta.length) break
-            out.append(line)
-            if (nl >= 0) out.append('\n')
-            prevNonEmptyTextLine = line.isNotEmpty() && !line.endsWith("|")
-            lineIdx++
-            lineStart = lineEnd + 1
-        }
-        return out.toString()
+        return ReleaseDecision(r, snapshot.substring(from, r))
     }
 
     /** 单批放行预算（字符）——纯文字直出的节奏上限与毕业/块铺开的单批量上限。 */
@@ -508,17 +472,6 @@ internal object SafePrefixGate {
             }
         }
         return hasDash
-    }
-
-    /** delta 首行前的快照行（上批末行）是否为文字行（非空、非 | 结尾、存在）。 */
-    private fun prevLineBeforeIsTextRow(snapshot: String, from: Int): Boolean {
-        if (from == 0) return false
-        val prevNl = snapshot.lastIndexOf('\n', from - 2)
-        val lineStart = prevNl + 1
-        val prevEnd = from - 1
-        if (lineStart >= prevEnd) return false
-        val line = snapshot.substring(lineStart, prevEnd.coerceAtMost(snapshot.length))
-        return line.isNotEmpty() && !line.endsWith("|")
     }
 
     /** [i] 是行首且该行是空行（仅空白字符直到换行/结尾）。 */

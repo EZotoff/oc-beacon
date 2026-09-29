@@ -63,9 +63,13 @@ internal class PilotStreamingState(
  *   整体重建状态实例，新实例首跑整串 append（无残留旧内容）。
  * - append 在组合协程（主线程）：与渲染同线程，StringBuilder 无跨线程竞态
  *   （库官方姿势同此；尾部小解析由 48ms flush 节奏摊平）。
- * - delta 未经 normalizeForRender（冲突①裁决）：流中放弃归一化，完结时由
- *   preParsedState 分支的既有归一化+分片路径接管——完结切换即 EOF 全量
- *   flush（扣留内容一字不丢），切换高度差由阶段 C 处理。
+ * - #471③ 归一化前移（冲突①裁决解除，spec §3.4）：快照先经
+ *   normalizeForStreaming（与完结 normalizeForRender 同核心同序、逐字节
+ *   一致），delta 为归一化文本——终帧=流式帧，完结换装不再有归一化
+ *   重排。归一化的四类流式破口（$$ 逐字符凑对/表格行内数学/表头行
+ *   待定三行结构/栏状态分歧）已随本批在 gate 与变换侧修订（性质测试
+ *   NormalizationStreamingMonotonicityTest 钉死）；未预见的非前缀由
+ *   #472 宽限窗 + resetKey 重建兜底（一次重建闪，正确性不破）。
  */
 /**
  * R3 滚动静止单信号源（#437 二十五世轮根修，架构审查 C1）：「滚动期静止」语义
@@ -169,6 +173,14 @@ internal object JankHoldGate {
 
 @Composable
 internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boolean = false): PilotStreamingState {
+    // #471③ 归一化前移（终帧=流式帧，spec §3.4）：快照先归一化再前缀差分——
+    // prev/released/heldTail 坐标皆归一化坐标，heldTail 随之显示归一化文本
+    //（- [ ] 预览、tex 围栏行——WYSIWYG）。流式显示文本与完结渲染逐字节
+    // 一致，完结换装从「文本不同→排版重排→跳变」变为「同文本换渲染器→
+    // 视觉无事发生」。放行单调性（归一化回改点全落 gate 扣留区）由
+    // NormalizationStreamingMonotonicityTest 性质测试钉死；主线程成本由
+    // 各变换哨兵快路径约束（无 | /无任务字符/无数学痕迹时零正则）。
+    val normalized = remember(markdown) { normalizeForStreaming(markdown) }
     var resetKey by remember { mutableIntStateOf(0) }
     var prev by remember { mutableStateOf<String?>(null) }
     // #472:非前缀武装时刻——宽限窗内冻结,超窗才重建
@@ -183,20 +195,20 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
     // #438①：上次大放行（≥BIG_RELEASE_CH）壁钟——大放行间隔限速（与到达解耦）
     var lastBigReleaseAt by remember { mutableLongStateOf(0L) }
     val gate = StreamingMarkdownPilot.stableReveal
-    LaunchedEffect(markdown, state, StreamingScrollHold.holding) {
+    LaunchedEffect(normalized, state, StreamingScrollHold.holding) {
         val p = prev
         // #472 完结桥接期冻结:pilot 终帧即终点——async 在途的新快照(完结
         // sync/part 重组的非前缀串)一律不进 pilot,换装交给终态路径
         if (freeze) return@LaunchedEffect
         // 滚动/惯性中：暂缓增长增量（prev 不动，settle 后整段一次追平=一次重排版）
-        if (StreamingScrollHold.holding && p != null && markdown.length > p.length) {
+        if (StreamingScrollHold.holding && p != null && normalized.length > p.length) {
             return@LaunchedEffect
         }
-        if (p == null || markdown.startsWith(p)) nonPrefixSinceMs = -1L
+        if (p == null || normalized.startsWith(p)) nonPrefixSinceMs = -1L
         when {
             // 首跑（含重建后的新实例）：整串作为初始增量（gate 后定案前缀）
             p == null -> {
-                if (markdown.isNotEmpty()) {
+                if (normalized.isNotEmpty()) {
                     if (gate) {
                         // 2026-09-27 首跑多帧铺开（真机取证：多消息 turn 的后续段
                         // 全量到达无 delta 流，首跑单帧巨量 append 1136-2087ch——
@@ -204,8 +216,8 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                         // + #438① 大放行壁钟限速（与增量分支同语义），视觉节奏由帽
                         // （≤800px 首亮+1600px/500ms 步进）+限速共同接管。
                         var rel = 0
-                        while (rel < markdown.length) {
-                            val d = SafePrefixGate.releaseDelta(markdown, rel, BIG_RELEASE_CH)
+                        while (rel < normalized.length) {
+                            val d = SafePrefixGate.releaseDelta(normalized, rel, BIG_RELEASE_CH)
                             if (d.newReleased <= rel) break // gate 拒绝（扣留中）——后续增量/EOF 接管
                             if (d.newReleased - rel >= BIG_RELEASE_CH) {
                                 val wait = lastBigReleaseAt + BIG_RELEASE_MIN_INTERVAL_MS -
@@ -215,21 +227,21 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                             }
                             if (d.delta.isNotEmpty()) appendAndTrace(state, d.delta)
                             rel = d.newReleased
-                            if (rel < markdown.length) withFrameNanos { }
+                            if (rel < normalized.length) withFrameNanos { }
                         }
                         released = rel
-                        logGate(markdown, 0, released)
+                        logGate(normalized, 0, released)
                     } else {
-                        appendAndTrace(state, markdown)
-                        released = markdown.length
+                        appendAndTrace(state, normalized)
+                        released = normalized.length
                     }
                 }
-                prev = markdown
+                prev = normalized
             }
             // 非前缀（重生成/编辑）：下轮新实例走整串重建；
             // #437 §4 数据层摆动（reconciler vs live 竞态）会高频触发此分支——
             // 风暴抑制：冻结放行与重建（prev 保持旧值，旧串回来无缝恢复）
-            !markdown.startsWith(p) -> {
+            !normalized.startsWith(p) -> {
                 // #472 宽限冻结:瞬时摆动(reconciler 竞态/完结 sync 重组)保树
                 // 保进度,旧串回来无缝续播;超窗仍非前缀才是真重生成
                 val nowMs = android.os.SystemClock.elapsedRealtime()
@@ -252,7 +264,7 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                     resetKey++
                 }
             }
-            markdown.length > p.length -> {
+            normalized.length > p.length -> {
                 if (gate) {
                     // #438①（2026-09-27 壁钟限速）：catch-up/突发到达期 gate 按
                     // 400ch/48ms 释放过快（R9 真机实证 442ms 聚 7 批=单 note
@@ -260,10 +272,10 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                     // （≥[BIG_RELEASE_CH]）间隔下限 [BIG_RELEASE_MIN_INTERVAL_MS]——
                     // 与到达解耦、只约束大批；正常流式小批（<200ch）直通不受影响。
                     val from = released
-                    while (released < markdown.length) {
+                    while (released < normalized.length) {
                         // #438①：每批喂 [BIG_RELEASE_CH]（含空行毕业段——原不受
                         // 批预算约束的漏洞）；批 ≥ 阈值即触发壁钟间隔
-                        val d = SafePrefixGate.releaseDelta(markdown, released, BIG_RELEASE_CH)
+                        val d = SafePrefixGate.releaseDelta(normalized, released, BIG_RELEASE_CH)
                         if (d.newReleased <= released) break
                         if (d.newReleased - released >= BIG_RELEASE_CH) {
                             val wait = lastBigReleaseAt + BIG_RELEASE_MIN_INTERVAL_MS -
@@ -274,17 +286,17 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                         if (d.delta.isNotEmpty()) appendAndTrace(state, d.delta)
                         released = d.newReleased
                     }
-                    logGate(markdown, from, released)
+                    logGate(normalized, from, released)
                 } else {
-                    appendAndTrace(state, markdown.substring(p.length))
-                    released = markdown.length
+                    appendAndTrace(state, normalized.substring(p.length))
+                    released = normalized.length
                 }
-                prev = markdown
+                prev = normalized
             }
-            else -> prev = markdown // 等长：无增量
+            else -> prev = normalized // 等长：无增量
         }
         if (gate && prev != null) {
-            val newHeld = markdown.substring(released.coerceIn(0, markdown.length))
+            val newHeld = normalized.substring(released.coerceIn(0, normalized.length))
             // #446 根修（2026-09-27 真机条带差分定罪）：毕业收缩侧撤销一帧延迟。
             // 旧延迟使 held 收缩落在正文扩张的下一帧——净高单帧回缩，而帽
             // reserved 单调不回改：top 对齐下统计栏/held 缝单帧上跳 Δmoved、

@@ -140,15 +140,17 @@ class SafePrefixGateTest {
     }
 
     @Test
-    fun `表格粘边注入补空行`() {
+    fun `表格粘边 delta 原文无注入`() {
+        // #471③：注入退役——归一化前移后空行插入发生在 pilot ingest（gate
+        // 入口前），releaseDelta 的 delta = 快照区间原文（坐标耦合）。
         val snap = "para\n| a |\n|---|\n| 1 |\n\ntail"
         val d = SafePrefixGate.releaseDelta(snap, 0)
-        assertEquals("para\n\n| a |\n|---|\n| 1 |\n\ntail", d.delta)
+        assertEquals("para\n| a |\n|---|\n| 1 |\n\ntail", d.delta)
         assertEquals(28, d.newReleased)
     }
 
     @Test
-    fun `表格已有空行不注入`() {
+    fun `表格已有空行 delta 原文`() {
         val snap = "para\n\n| a |\n|---|\n\ntail"
         val d = SafePrefixGate.releaseDelta(snap, 0)
         assertEquals("para\n\n| a |\n|---|\n\ntail", d.delta)
@@ -156,7 +158,7 @@ class SafePrefixGateTest {
     }
 
     @Test
-    fun `表格前行为表格延续不注入`() {
+    fun `表格前行为表格延续 delta 原文`() {
         val snap = "| a |\n|---|\n| 1 |\n\ntail"
         val d = SafePrefixGate.releaseDelta(snap, 0)
         assertEquals("| a |\n|---|\n| 1 |\n\ntail", d.delta)
