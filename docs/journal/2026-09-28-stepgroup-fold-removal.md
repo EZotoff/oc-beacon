@@ -123,3 +123,14 @@ tap 前后 screencap 对(pxA/pxB)+分带位移相关分析(±90px 搜索):
 - 盘点:消息流 item 内 21 处卡内滚动容器(思考内容/Bash/Read/Edit/Write/Search/WebFetch/Task/Shell/Skill/Question/Event/Injection/Compaction/Diff 等)同暴露 fling 泄漏场景
 - 上提:CardFlingLeakGuard.kt——Modifier.cardFlingLeakGuard() 挂 ChatMessageList 消息 item Box(2526 行区),一个拦截点覆盖 item 内全部卡内滚动容器(含未来卡型);ReasoningBlock 局部拦截移除(单一来源)
 - 复测等效:S2a/S2b (7,720) 稳定(fling 泄漏吞没),S3/S4 (7,492) 不拉底(drag 合法泄漏保留);单测绿
+
+### #474 五轮终:泄漏符号适配→协议内反转注入(2026-09-29 11:4x)
+
+- 用户否决吞没式(打补丁):期望卡内到边后惯性仍传导外层
+- 三代实现对照:
+  1. 原始(无守卫):泄漏被外层反向消费→上滑到底外层却朝底猛滚(残速-1480一帧拉底)
+  2. 吞没(fling窗口吞):不传导,用户否决
+  3. 负返回值反转(误用协议):负返回=负消费=放大正向传导,复测仍拉底
+  4. **协议内反转注入(终)**:onPostScroll/onPostFling 全额吞原始泄漏(上传零)+scope.launch{ listState.scrollBy(-y) } 反转注入(走完整滚动协议/SafeFling/锚定),残速×0.12 距离换算同路注入
+- 终版复测:S2 泄漏 fiso 720→808(增=朝旧端✓),S3 惯性 LEAP idx 7→8(视口朝更早内容传导✓),S4 制动 (8,27) 稳定✓;单测绿
+- 挂载:item 级 cardFlingLeakGuard(listState),覆盖 21 处卡内滚动容器
