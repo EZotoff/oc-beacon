@@ -120,10 +120,6 @@
   - V2ApiClient:526:嵌套 body 部署版 next-17430 一律 400→线上一直走平铺降级(files 顶层);主干部署后需 E2E 验证 modernBody 分支再收敛双路
   - 验证成本低(一次带附件 prompt E2E+抓帧);与 #459 漂移族相邻但独立(这是契约实证,非端点缺失)
 
-- [ ] **#481 architecture-debt.md 过期两月未刷新——god files 表失真+引擎域未入册** `refactor`
-  - 登记册止于 2026-08-07:ChatMessageList 表记 ~674 行,实际经 #42x-#47x 战役已 ~2700+;ChatScrollController/CardExpandReveal/ScrollCompensation 等引擎域新文件未入册
-  - 随册并入两测试缺口:分页 androidTest @Ignore(ChatInteractionTest:399,sessionId 空壳致 hasOlderMessages 恒 false,三方案任一可解)+终端 tab 管理无单测(旧表遗留,待复核)
-
 - [ ] **#479 SSE 连接期 PARTIAL_WAKE_LOCK 持有策略/电池影响未审计** `sse` `perf`
   - 2026-09-29 发掘审计:dumpsys 实测持锁(OpenCodeRemote::SSEConnection,周期性重取)+日志 WakeLock renewed 每 30s(OpenCodeConnectionService:650 起)——抗 MIUI 杀 socket 的保活设计(#441 域)
   - 未审计点:后台期是否释放/持锁时长分布/对电量的真实代价;若后台仍长持=电池债——需 acquire/release 全路径走查+一次耗电基线

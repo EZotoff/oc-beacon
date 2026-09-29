@@ -79,3 +79,17 @@
 
 - **#480 验收+关卡**：用户看过修复前后对比演示（误传路径拒绝/正常名不误伤/仓库零畸形残留），验收 ok，迁移本 journal。
 - **新定规**：项目工作流脚本类修复（scripts/ 流程脚本等不进 APK 的项目设施）**此后不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例。规则已回写 backlog.md 操作纪律段。
+
+## 已完结卡片迁入（2026-09-30）
+
+### **#481 architecture-debt.md 过期两月未刷新——god files 表失真+引擎域未入册** `refactor`
+  - 登记册止于 2026-08-07:ChatMessageList 表记 ~674 行,实际经 #42x-#47x 战役已 ~2700+;ChatScrollController/CardExpandReveal/ScrollCompensation 等引擎域新文件未入册
+  - 随册并入两测试缺口:分页 androidTest @Ignore(ChatInteractionTest:399,sessionId 空壳致 hasOlderMessages 恒 false,三方案任一可解)+终端 tab 管理无单测(旧表遗留,待复核)
+  - 迁入依据：项目设施类按 2026-09-30 定规直接修不立卡(本卡为已立卡存量按原流程迁移):god files 表 2026-09-30 wc -l 全量复测(ChatMessageList 674→2756 等十文件双列对照)+引擎域 11 文件入册(scroll/渲染供给/流式稳定三域,标注铁律前置)+分页 @Ignore 测试缺口并入 §4（backlog.sh migrate 2026-09-30）
+
+## #481 顺带直修（2026-09-30，项目设施类不立卡定规首批）
+
+- **god files 表刷新**：2026-09-30 wc -l 全量复测，双列对照（08-07 vs 09-30）——ChatMessageList ~674→**2756**、ChatViewModel 493→**1574**、ChatScreen ~770→**1360**、MessageEventHandler 857→**1289**；新入册 DshApiClient 2550 / DshEventMapper 2150 / V2ApiClient 1874 / CardExpandReveal 1861 / MessageCardAssistant 1387；700-984 行段 15 文件点名。
+- **§3.1 滚动/渲染引擎域入册**：#42x-#47x 战役产物 11 文件（ChatScrollController 488 / ScrollCompensation 708 / PreRenderCoordinator 198 / SafeFlingBehavior 132 / CardExpandReveal 1861 / RenderSupplyCoordinator 602 / TurnSegmenting 208 / MarkdownChunking 413 / SafePrefixGate 516 / StreamingMarkdownPilot 318 / HeldTailReveal+Aging 284），标注「改动前必读铁律」。
+- **§4 测试缺口并入**：分页 androidTest @Ignore（pagination_triggersOnScrollUp，sessionId 空壳三解法注释在测试现场）；终端 tab 管理无单测复核仍缺。
+- 卡片 #481 迁移关闭（末代先例之二）。
