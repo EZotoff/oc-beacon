@@ -314,3 +314,11 @@
 - 真机终验（I 轮 27 行表 + 纯文本冒烟）：发送时点/完结时点零塌缩；流式单调生长（+88 族，唯一负拍 -32px=列宽真重排内容驱动）；cacheHit=true 全量直出；零 LEAP；全量单测绿（+13 TableStageCacheTest）
 - 教训入档：①「表格状态被消息全文 append 打扰」类缺陷的通用修法=值语义键+同代快照坐标系；② effect 内写跨重建缓存有子树生命周期竞态，标记类副作用应在组合期同步写；③ 渐进分批策略的正确性兜底=完成标记碰撞仅损帧分布策略
 
+
+## 已完结卡片迁入（2026-09-29）
+
+### **#469 流式表格高度抖动三连:键含全文致列宽重排+stagedLimit塌回+两拍收敛** `chat,markdown,scroll`
+  - 2026-09-30 高度稳定性系统调研(docs/research/streaming-height-stability-audit.md)P0 定罪:①MeasureCache/rows/NaturalWidthsLru 键含整条消息全文,流式每 append 失效重建→新宽单元格改变全表列宽,已上屏行重换行(双向跳变,MarkdownTable.kt:189/361-414);②>20 行表格 stagedLimit=remember(content,tableNode){1} 每 append 重置→塌回 8 行再逐帧重建循环(MarkdownTable.kt:101/226-232/765-770);③containerWidth 首拍 0→120dp cap 夹窄,次拍放宽回缩(MarkdownTable.kt:250/258/390-414)。修复方向:表格内 remember 键改表格自身文本/node 深比较+BoxWithConstraints 首拍内联宽。触发面:流式中任何表格输出(密集轮次常见)。
+  - 2026-09-29 E2E 活证(真实 25 行表格轮,glm-5.3-flash):表格项总高≈14k px,发送/完结时点出现 -8544→-1920→+7236→+3228 巨振(staged 重建/键失效族签名 LIVE);全程视口零 LEAP=引擎配对外层稳——问题确在内容层高度重排,与卡内定罪一致;修复基线日志 /tmp/t_table.log /tmp/t_stream.log
+  - 已实施待验收(2026-09-29):①键全链改表格自身文本(tableText 值语义+行快照钉同代 content 坐标系,rows/measureCache/naturalWidths/cellResult);②stagedLimit 去(content,tableNode)键单调保留+TableStageProgressCache 完成标记(组合期同步写,键=表头行身份键,LRU24)跨重建兜底;③containerWidth 改 BoxWithConstraints 首拍真宽。真机 I 轮(27 行表)实证:发送时点/完结时点零塌缩(修复前 -2272/-8544 巨振),流式单调生长,零 LEAP;单测 +13(TableStageCacheTest),commit 92aa5de9
+  - 迁入依据：用户真机验收 ok（2026-09-29）：发送/完结/流式三时点零塌缩实测通过（backlog.sh migrate 2026-09-29）
