@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#486**（2026-09-30 #485 #485 完结前内容闪灭:REST快照归并保位破）。
+**编号**：全局递增，不回收。下一编号：**#487**（2026-09-30 #486 SSE retry 重建帧 watch（原#47）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
@@ -55,11 +55,6 @@
 
 ## P1 — 核心功能需求
 
-- [~] **#485 #485 完结前内容闪灭:REST快照归并保位破坏有序前提→t_锚点漂移信封→子树换血asyncTerminal Loading** `chat` `data` `bug`
-  - 用户主诉(2026-09-30):轮次完结收尾前内容突然消失~350ms再重现;真机18:31:42定罪链=完结listMessages刷新→mergeSortedMessages『合并行保持existing原位』契约+SSE信封钟与REST持久化created差(~13-50ms)→user行换上REST权威created却留在SSE槽位→列表失序(user冒到agent-switched上方)→computeTurnAnchors的Older侧相邻变信封→t_键翻转(t_0c34→t_0c11)→LazyColumn弃整棵子树(含活asyncTerminal Success态)→全新实例State.Loading≈0高=闪灭;次轮刷新反向行走顺序自愈=键振荡(t_626b↔t_628d)之谜
-  - 根修两层:①MessageMergeEngine.mergeRestSnapshot(REST快照归并后按服务端created稳定重排,SSE_PRIORITY/REST_AUTHORITY两策略接线;APPEND_ONLY种子路径不动);②computeTurnAnchors锚点穿透SYNTHETIC_ENVELOPE_ROLES信封(idle轮界不穿透防跨轮抢键)
-  - TDD:MessageMergeEngineOrderTest 3例(失序复现/双刷新不振荡/user行REST权威created)+TurnGroupAnchorStabilityTest 3例(有序锚user/失序穿透信封/不跨idle界),红转绿;全量单测绿+装包。真机E2E两轮(2053/3761字,均>2048走asyncTerminal):完结刷新PLAN add-1-rem-0(仅idle气泡)零键移除、Loading=0、pilot→hold→Success直达→preParsed、子树从零重测=0;修复前同场景rem2+/add3+Loading×2+d=+5452/+8602。待用户复验:完结一瞬无闪灭
-
 - [ ] **#484 #484 滚动中视口3/4高度坍缩(读历史方向切换触发,非完结族)** `scroll` `chat` `bug`
   - 用户主诉(2026-09-30):滚动阅读历史/方向切换时偶发约3/4视口高度坍缩后回弹;与#471完结族不同(滚动中触发,流式与否待证)
   - 取证进行中:全量logcat持续抓取(/tmp/scroll_bug_hitl2.txt,后台job运行中),复发时用户配合方向切换,判读RESERVE flush reserved=X stuck/ScrollDiag/MDResize负d签名
@@ -91,26 +86,12 @@
 
 ## P2 — 优化与锦上添花
 
-- [ ] **#471 完结瞬间高度跳变族:StepGroup整树互换+>2048字符Loading塌缩+归一化重排** `chat,markdown`
-  - 2026-09-30 调研 P2 定罪:①多消息 turn 完结时 StepGroup 流式平铺↔折叠组整树互换(探针注释自认结构性高度跳变源,数千 px 级,冷账本 24dp 桩帧,MessageCardAssistant.kt:428-479);②>2048 字符正文完结切 pilot→async 首帧 Loading≈0 高再 Success 全高(#428 同族 +268px,MarkdownContent.kt:603-715);③完结归一化变换(数学围栏/任务列表/长段空行化)只发生在完结=一次性重排。方向:②pilot 终帧同步换入/缓存预热收益最明确;①依赖 L3 AST 切片既有计划。另:setext 升格(SafePrefixGate 自认缺口)+tight→loose 列表+CRLF 表格三小项随 markdown 批次顺带。
-  - 2026-09-30 #472 修(②完结 Loading 塌缩):真机定罪在手——断连重连恢复换装时 RESIZE t_msg_0e641a99a001 h 1105→865(d=-240)→1580(d=+715) 41ms 两连跳(=Loading≈0 高帧→Success 弹回,与正常完结换装同构);另 RESERVE align-flip overflow=-62 佐证帽负溢出。根修:pilotTerminalHold 纯函数(pilot 曾渲染∧async 未就绪→完结帧保持 pilot 终帧)+asyncTerminal 提升固定组合位(条件创建,hold 期与切换后同实例零重解析,collectAsState 响应式解除);残余归一化差由帽配对吸收。TDD 3 例红转绿+全量单测绿;①StepGroup 互换与③归一化重排为残余(量级小于已修,另批)。
-  - 2026-09-30 修复交付(②完结 Loading 塌缩):真机定罪——重连恢复换装时 RESIZE t_msg_0e641a99a001 h 1105→865(d=-240)→1580(d=+715) 41ms 两连跳(=Loading≈0 高帧→Success 弹回,与正常完结换装同构);另 RESERVE align-flip overflow=-62 佐证帽负溢出。根修(12f8214b):pilotTerminalHold 纯函数(pilot 曾渲染∧async 未就绪→完结帧保持 pilot 终帧)+asyncTerminal 提升固定组合位(条件创建,hold 期与切换后同实例零重解析,collectAsState 响应式解除);残余归一化差由帽配对吸收。TDD 3 例红转绿+全量单测绿+装包。①StepGroup 互换与③归一化重排为残余(量级小于已修,另批)。待用户复验:完结一瞬无塌缩弹开。
-  - 2026-09-30 用户验收通过(②完结 Loading 塌缩):茶文化轮判定链+高度序列双证据——完结帧 hold=true 拦截 Loading(19:00:10.772),144ms 后 async 就绪无缝切换,全程高度差仅 ±24px(归一化微差,一行文字高);对比修复前同场景 -13171/+12824 两连跳。残余:①StepGroup 边界换装(轮次开始/结束各一次 845→1492)与③归一化重排量级小待后续;新发现④SSE retry 恢复场景:重连后内容跳变重组期 pilotEverRendered 丢失(ever true→false 实证)→塌缩 -8575px 仍现,仅断连续传时发生,正常轮次不受影响——随 retry 路径稳定性专项处理。
-  - 2026-09-28 ①StepGroup 互换已根灭(#422 清理批次,用户裁决彻底清理):统一渲染树后流式/完结同构,互换不存在——10轮多step POST完结塌缩 10/10→0/10。③归一化重排与④SSE retry pilotEverRendered 丢失仍待处理(与本卡完结族余项同批)
-  - 2026-09-29 E2E 活证:表格轮完结/换装震荡 -8544/+7236(t_msg 项 14k px)——完结族在真实表格轮的量级实证(此前 #472 验收为纯文本轮 ±24px);表格轮完结路径(归一化+staged 重建+换装叠加)待专项取证
-  - 2026-09-30 ④复现确认调研(用户指令:修复前先确认仍存在):静态链仍可达(ever=false 重建帧无防御——pilotTerminalHold 只拦 ever=true);真机 v2 双场景未复现 ever 丢失(实验A服务端重启 reconcile:hold 拦截✓残余-1330归一化差③族/实验B链路断+续生成跳变2523→5144:hold 拦截✓零塌缩+5969正向追平)——v2 backfill partId 稳定组合位不销毁。未验证:v1 message.updated 全量重发路径(bigmodel key 401 失效,16:23 前同 key 尚成功)+弃树重建三联(longcat 免费档限流挂死)。裁决请求 a防御性根修(msgId 级 ever 账本)/b恢复 v1 后补验/c降级 watch——用户已选先走 b:查官方文档重新部署 v1 再测。详见 docs/journal/2026-09-30-471-4-sse-retry-pilot-ever-probe.md
-  - v1 验证完成(裁决数据齐备):bigmodel 双key全灭→免费档 nemotron 重部署;wire 级证伪 full-parts resend(message.updated 恒无 parts,partId 全程稳定,mergeAssistantMeta 只并元数据);真机三轮断连实验 331k 行取证——asyncTerminal Loading 帧=0、hold=true 拦截正例、preParsed 分块复入 Success、底部屏幕实证完整渲染;④ v1+v2 双协议不可复现(#472 后防御栈有效)。裁决请求 c(降级观察,推荐)/a(防御根修 ~30 行)。详 journal 2026-09-30-471-4-v1-verification.md
-  - 2026-09-30 ④用户裁决 c(降级观察):v1+v2 四场景实测不可复现(331k 行 Loading=0,#472 hold/registry/preParsed 防御栈有效)→④转 watch 复发再战(理论盲区仍在:断连续传+滚出视口弃树+ever=false 重建帧,0 触发);残余③归一化重排(含 09-29 表格轮 -8544/+7236 活证)继续挂本卡待批
-  - 2026-09-30 ③归一化重排专项开工:方向=归一化前移到流式 ingest(终帧=流式帧,完结变换幂等化);setext 升格/tight→loose/CRLF 三小项随批评估
-  - 2026-09-30 ③归一化重排设计定稿 to spec:docs/specs/2026-09-30-471-3-streaming-normalization-unification-design.md——归一化前移 gate 前流式 ingest(终帧=流式帧)+位置制空行化(cumEnd 行完成即定案)+gate 表格注入退役;实现按 spec §5 三 commit(新会话可执行);可关卡片清单 spec §8(本卡验收后整卡关)
-  - ③实现落地待验收：spec §5 三 commit 完成——A 276d8fbf(纯函数+TDD+性质测试抓出四破口修订:尾$run收口/表格排除数学行/表头待定回退/MarkdownFenceLine 统一围栏) B 9130c83e(pilot ingest 接线+gate 注入退役) C(E2E:held=0→85ms 桥接→Success 直达,无弹跳双帧,flap=0,3716 绿)。E3 以单测+长段档案替代(用户验收保留)。验收清单 spec §9;铁律 9 已收编 iron-laws
-  - ③验收发现第三根因并修复:差分基准错配——prev 存归一化全文快照,$$闭合重写天然非前缀但落扣留区,SMP 误判重生成→静默 resetKey 重建(真机 P1:h 塌缩-1128+从零重铺×2);修复=prev 改放行前缀 normalized.take(released),复现验证重建事件 0/无负向跳。验收探针(MDResize/heldTail/nonPrefix)保留 DEBUG-only
-  - 验收发现(真机)：GFM 任务列表整块毕业（4条一次性吐出）——归一化后 [ 硬停+无任务项行分支致整列表扣到空行毕业；#471③ 归一化前移后原保守理由(☐完结改写)已消失，可行级放行（#441 任务项分支模式）
-  - 追加根修(#471④-a,6011b888)：任务列表逐条放行——v1 行首守卫被真机 E2E 证伪(行续段冻结)，v2 锚定真实行首+未完行渐进；视觉验收待用户
-  - 追加根修(#471④-b)：任务复选框此前渲染字面[x]文本——markdownComponents漏传checkbox参数落基础模块默认（官方demo接m3 Material CheckBox）；已接线+真机a11y验证0字面/119语义节点
-  - 坍缩重建根修四连（2026-09-30 真机定罪）：①归一化 run 哨兵空行吞噬——ensureBlankLineBeforeGfmTables/transformMathFallback 的 run.isNotEmpty() 哨兵把「首行为空行」（闭合围栏后空行）误判 run 未启动→分隔换行被跳过→空行吞噬；流式中 | 首达（快速路径退出）时首次生效→已放行前缀中段非前缀→RESETKEY 重建坍缩+4.4s 限速重铺（三案 13:55/14:13/14:40 同源 divergeAt 皆落围栏后空行）。②gate 表头行中线/未完分隔行/行首空白回退补口——批预算截点越过未来插空行点。③mergePart 流式期前缀一致性守卫——异构快照不再替换 delta 累积，终态权威替换不变。④pilot 重建快速重灌（200ch/200ms→800ch/帧）+rawTail 取证探针。真机终验：同配方 prompt 零 nonPrefix 零重建高度单调；全量单测绿；证据链=wire 抓取回放（WireReplayDivergenceTest）+全前缀扫描（NormalizeDivergenceProbeTest）
-
 ## P3 — 观察与低价值改进
+
+- [ ] **#486 SSE retry 重建帧 watch（原#471④）：断连续传+滚出视口弃树+ever=false 理论盲区，复发再战勿主动开工** `scroll` `chat`
+  - 原 #471④ 用户裁决 c 降级观察（v1+v2 四场景不可复现，331k 行取证 Loading=0，#472 hold/registry/preParsed 防御栈有效）；#471 整卡迁移后观察线独立成卡（spec §8：watch 不关）
+  - 理论盲区：断连续传+滚出视口弃树重建+ever=false 帧（0 触发）；若复发，残余只剩 staged/换装差（-1330px ③族已消失）——spec §8 残余收窄注记
+  - 判读取证：MDResize 负 d / RESETKEY / nonPrefix / rawTail 探针均保留 DEBUG-only（2026-09-30 用户裁决）
 
 - [ ] **#439 流式期重组隔离：entries 签名缓存与子卡 skippability 恢复** `streaming` `compose`
   - 流式批（~14/s）仍使流式 turn + 相邻注入卡条目全量重组（真机 35s 524 次）；渲染像素幂等故非闪烁源，属性能债。
