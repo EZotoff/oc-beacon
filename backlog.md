@@ -107,7 +107,7 @@
 
 ## P3 — 观察与低价值改进
 
-- [ ] **#488 markdown 能力补齐批次：块内HTML隐形+代码语法高亮+真数学渲染+setext stage-2（远期清单正式立卡）** `markdown` `render`
+- [~] **#488 markdown 能力补齐批次：块内HTML隐形+代码语法高亮+真数学渲染+setext stage-2（远期清单正式立卡）** `markdown` `render`
   - 2026-09-30 #487 后续深调定罪三项能力缺口：①块内 HTML 渲染为空（mikepenz v0.45.0 基础+m3 AAR 零 HTML 组件，二进制 grep 实证；整消息 HTML 走 looksLikeHtmlPayload 预览通道但混排块隐形）②代码块无语法高亮（走库默认 code renderer，build.gradle.kts:249 注释明示）③\begin/\[/712321 数学均降级为文本或围栏（transformMathFallback 文本降级 + \begin 无变换字面流）
   - setext stage-2（升格行级定案）维持 accepted-gap 备查（spec 2026-09-30-471-3 §3.6）；此前散落 handoff 未立卡，2026-09-30 正式收编
   - 实现方向：覆写 markdownComponents html 钩子（原文呈现或接预览同款）；高亮评估 league/ prism 类纯 Kotlin 方案（M3 禁引入额外 UI 依赖库红线内评估）；真数学需渲染层 KaTeX 级能力或维持降级+标注
@@ -129,11 +129,6 @@
   - 待复核：ScrollQuiescence单例假设、HeldTail锁高裁剪视觉等价、diffDisplayItemsInto边界、SSE铁律逐条。
   - 2026-09-29 用户裁决:吸收 #445 并入——R2 深水区含流式 markdown 稳定/活跃双容器状态管理方案(append-only+前缀吸收,固化解迁移帧问题);随卡迁入用户观感记录:完结窗会小跳一下(2026-09-27,限速节奏参数 BIG_RELEASE_MIN_INTERVAL_MS 可调,视情况修)
   - 2026-09-30 吸收 #470 域（用户裁决）：帽不回改+ledger 负向不配对两路径随 R2 一并设计（ScrollCompensation.kt:338/:157）；当前实证 4h 重度使用零负向高度事件，不阻塞
-
-- [~] **#458 DSH 0.1.7 错误码税则漂移：39 值点式闭集全面脱节** `regression,dsh,data`
-  - 0.1.7 实发斜杠命名空间码（session/not-found、gateway/arguments-invalid），app DshRpcErrorCode 闭集 isKnown 恒 false 全走 Unknown 兜底（优雅降级成立但分类/文案失准）；/api/respond 已移除改 /result（app 双路已备）。详见 docs/research/2026-09-28-triface-regression-report.md 缺陷 D1/D5
-  - 2026-09-30 0.2.0-rc.2 live 实测（宿主 3080 systemd dsh.service，token 经 journal 提取）：漂移仍存在且范围扩大——①错误码斜杠命名空间依旧（session/not-found、gateway/arguments-invalid、gateway/internal 实证；app 39 值点式闭集 isKnown 恒 false 原样成立）②args 契约重构：typert gateway 描述符强制（session/list 要 _request:{}；session/create|cancel|search|messageFeedback/list 要 request:{...} 包装；commands/execute 裸字段且 images→submittedAttachments 改名）③agentPreset/read|list 端点 404 消失；settings/describe、llm/listProviders、session/list(+_request) 仍通。用户裁决（条件满足）：并入批次一起做；范围升级=错误码闭集+args 形状翻译（DshWireAdapter/协议探测 V020）+端点面清点
-  - 2026-09-30 用户裁决（开工）：DSH 多版本兼容策略=只适配最新 0.2.0，不保 0.1.x 线面（V011/V012 退役，翻译层可直接对齐 V020，无需三协议并存）；分阶段批次开工（#458+#459→#439→#488）
 
 - [ ] **#464 UI 暖态下列表/卡片点击偶发失效(冷启可靠)** `chat-ui`
   - 2026-09-29 #461/#462 取证副产物:force-stop 冷启后输入 tap 可靠命中(会话行/卡标题),同一 app 暖运行数分钟后点击同坐标零效果(无日志无 UI 变化,vibrator 反馈存在=命中可点击元素但未触发业务);两次独立取证会话复现,冷启后恢复。疑点:点击消费被某 overlay/焦点态拦截或状态门;影响面=自动化测试可靠性,人工使用未报告。待真机复现窗定罪(diagnosing-bugs 流程),暂无用户主诉不阻塞。

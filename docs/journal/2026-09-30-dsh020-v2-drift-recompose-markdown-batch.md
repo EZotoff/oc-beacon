@@ -102,3 +102,19 @@ gateway/* 家族 20+（internal/arguments-invalid/bad-request/cancelled/ambiguou
   - 2026-09-29 E2E 活证:单轮流式 TextDelta 2877→InjCard 邻项全量重组 4443(1.5x);另一轮 1387→2523(1.8x)——逐 delta 重组放大实测,修点位与量级依据齐
   - 2026-09-30 阶段二复查（真机仪器）：卡片修点位 2/3 已被前批 R4-B3 收编（ChatEntry 预载+身份编码，2026-09-29 的 4443 活证是其之前数据）；实测 v2.0.19 流式轮 145 批 InjCard 38 次（0.26 次/批 vs 基线 1.5 次/delta）——全量重组放大实质消除；残余链（transcriptCardPlan 每批重算 extras 新实例）收益微小且与冻结前科同域，并入 #442 R2 设计
   - 迁入依据：2026-09-30 用户验收通过（模块 D：仪器面 88 次/轮 vs 基线 4443=1/50、视口外零重组、零负向/零前缀破坏；体感面『其他的没啥问题』）；残余 transcriptCardPlan 每批重算并入 #442 R2（卡内已注记）（backlog.sh migrate 2026-09-30）
+
+## 已完结卡片迁入（2026-10-01）
+
+### **#458 DSH 0.1.7 错误码税则漂移：39 值点式闭集全面脱节** `regression,dsh,data`
+  - 0.1.7 实发斜杠命名空间码（session/not-found、gateway/arguments-invalid），app DshRpcErrorCode 闭集 isKnown 恒 false 全走 Unknown 兜底（优雅降级成立但分类/文案失准）；/api/respond 已移除改 /result（app 双路已备）。详见 docs/research/2026-09-28-triface-regression-report.md 缺陷 D1/D5
+  - 2026-09-30 0.2.0-rc.2 live 实测（宿主 3080 systemd dsh.service，token 经 journal 提取）：漂移仍存在且范围扩大——①错误码斜杠命名空间依旧（session/not-found、gateway/arguments-invalid、gateway/internal 实证；app 39 值点式闭集 isKnown 恒 false 原样成立）②args 契约重构：typert gateway 描述符强制（session/list 要 _request:{}；session/create|cancel|search|messageFeedback/list 要 request:{...} 包装；commands/execute 裸字段且 images→submittedAttachments 改名）③agentPreset/read|list 端点 404 消失；settings/describe、llm/listProviders、session/list(+_request) 仍通。用户裁决（条件满足）：并入批次一起做；范围升级=错误码闭集+args 形状翻译（DshWireAdapter/协议探测 V020）+端点面清点
+  - 2026-09-30 用户裁决（开工）：DSH 多版本兼容策略=只适配最新 0.2.0，不保 0.1.x 线面（V011/V012 退役，翻译层可直接对齐 V020，无需三协议并存）；分阶段批次开工（#458+#459→#439→#488）
+  - 迁入依据：2026-09-30 用户验收通过（模块 A 两轮演示：列表/历史装配/流式回合/模型目录全通过，『#458 ok的』）（backlog.sh migrate 2026-10-01）
+
+## 验收轮（2026-09-30 深夜）与模块 E
+
+**验收迁移**：#458（模块 A 两轮：列表/历史/流式/模型目录）、#459（Bok）、#439（仪器 88 次/轮 vs 基线 4443 + 体感通过）三卡 migrate；#488① 验收记卡（整卡 [~] 等 ②③裁决）。
+
+**演示期立卡三张**（用户体感发现）：#490 单发双消息+持久化（v2 对照锁定 dsh 通道特有）、#491 轮次完成后整体上抬数像素（关联 #442 已有完结观感）、#492 流式贴底起手上滑跳变到统计栏上方（疑 #435/#476 配对切换域；与 #484/#442 三卡同域对照注记）。
+
+**模块 E（beta 流式）**：此前仅到"构建+装机+冒烟"（未配置服务器页），本轮 UI 自动化补完——beta 包连 Host-4199（v1 免密）→ 会话列表 → 新建（oc-beacon 项目）→ "write 3 short sentences about rain" → **流式输出全程正常**（进行中停止按钮/雨景三句渐出/5.6s 完成标注落地，零异常）。#437 journal 挂的「beta 构建首个流式 E2E」验证点以本地 assembleBetaRelease 覆盖（R8 生效+debug 通道关闭）；CI 产物的同款验证留真正发版时例行。
