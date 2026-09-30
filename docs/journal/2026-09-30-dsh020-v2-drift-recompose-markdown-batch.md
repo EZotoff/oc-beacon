@@ -38,3 +38,32 @@ gateway/* 家族 20+（internal/arguments-invalid/bad-request/cancelled/ambiguou
 3. 消失端点的 app 侧消费面清点与降级（agentPreset.list 等 8 个）
 4. DshWsEventClient：events.mux → remote.mux 迁移 + $events 流开启协议
 5. 回程：respond 亡 → $events/result（信封形状待解析）+ userQuestions/answer 评估
+
+## #458 DSH 0.2.0 适配（commit 2 项）
+
+**认知修正（重要）**：侦察初判"0.2.0 全面漂移"过重——DshWireAdapter（V012，0.1.2 时代适配）已承载 session/history→page、单数→复数域（goals/subagents/agentPresets）、host→directoryPicker、llm/providers→listProviders、session/list _request 键、args 四风格（SELF/EMPTY/FLAT/WRAPPED）全部映射；remote.mux 也是 V012 已用通道。**真实漂移面（V012@0.1.x → 0.2.0-rc.2）收窄为**：
+1. 错误码闭集脱节（#458 原定罪主体）：39 点式 → 0.2.0 观测 64 码（gateway 22 + session 15 + subagent 8 + workspace 5 + directory-picker 4【0.1.x directory-* 族继任，坏路径实测】+ agent-preset 4【横杠命名空间，agentPresets/read bogus 实测漏网补齐】+ credential/job/llm/terminal 6）；具名常量收敛为引用集 + 新增 Gateway* 族
+2. commands/execute 字段改名 images→submittedAttachments（两处）
+3. 本地铸码：command-error→gateway/result-invalid（kind!=success 语义标记）、cancelled→gateway/cancelled（userQuestions 回程）
+4. 目录探测信号码：directory-unreadable→directory-picker/unreadable（WorkspaceViewModel demoteToFile）
+5. 消失端点（404 实测）：agentPresets/copy|deletePreset（UI 失败提示降级天然成立）、subagents/list（本地镜像递归软降级已就位）——注记不实现（rc 版可能回归）
+6. V3 词汇表外新帧：workspace/changes（具名降级容错正常，E2E 实测出现）——待词汇表批次收编
+
+教训：KDoc 内 `internal/*-failed` 文字中 `/*` 被解析为块注释开启（DshApiError.kt 曾编译失败）——注释里避免斜杠+星号相邻序列。
+
+**测试**：DshApiErrorTest 期望表重写（64 码独立来源表）；DshEnvelopeTest 闭集数断言+fixture 码值斜杠化；DshApiClientTest submittedAttachments/gateway-result-invalid/gateway-cancelled/agent-preset 横杠码；WorkspaceViewModelTest 信号码。dsh 域+WorkspaceViewModel 558 绿 → 全量 3750 绿。
+
+## #459 V2 2.0.19 重核（commit 8c6853b0）
+
+- openapi.json 需认证（2.0.18 无凭据可访问——新变化）；138 路由 vs 2.0.18 的 115
+- 14 漂移端点 **13 仍缺失**（漂移延续，降级路径维持）；pty/shells 实为已自愈项（V2ApiClient:1839 注释实证路由把 shells 当 ptyID，app 已不用）
+- 适配两 URL：listPendingQuestions GET /api/form/request(404)→GET /api/form（curl 实测 {location,data:[]} 信封 flexibleList 兼容；Form.Info{id,sessionID,title,metadata,fields} 与 toQuestionRequest 消费面**逐字段一致**含 sessionID 大小写）；importSession POST /api/session/import→POST /api/experimental/session/import
+- reply 通道 POST /api/session/{id}/form/{formID}/reply 2.0.19 在（app 已在用）
+- v2 域测试 138 绿
+
+## 真机 E2E（dev 包 @ houji，dsh020-live = 宿主 3080 live 0.2.0-rc.2）
+
+- debug intent 注入（debug_server_type=dsh + debug_token journalctl 提取）：token 交换 ok，**会话列表 10 条完整渲染**（session/list+_request ✓）
+- 点进会话：POST /api/session/page 200，**历史装配+markdown 全渲染**（标题/行内码/任务列表/代码执行卡/链接/模型耗时标注）✓
+- 发送测试消息：**prompt request 包装送达**（AI 开始思考）、流式思考预览回流、工具卡（Run code 3.4s/失败 5ms 红叹号/重试）渲染、骨架自愈（step.started 丢失→seeded skeleton）、flush 批处理（deltas=4）全部正常；零 DshApiError/崩溃
+- 中断回合（ESC）+ force-stop 收尾

@@ -110,14 +110,15 @@
   - 2026-09-29 用户裁决:吸收 #445 并入——R2 深水区含流式 markdown 稳定/活跃双容器状态管理方案(append-only+前缀吸收,固化解迁移帧问题);随卡迁入用户观感记录:完结窗会小跳一下(2026-09-27,限速节奏参数 BIG_RELEASE_MIN_INTERVAL_MS 可调,视情况修)
   - 2026-09-30 吸收 #470 域（用户裁决）：帽不回改+ledger 负向不配对两路径随 R2 一并设计（ScrollCompensation.kt:338/:157）；当前实证 4h 重度使用零负向高度事件，不阻塞
 
-- [ ] **#458 DSH 0.1.7 错误码税则漂移：39 值点式闭集全面脱节** `regression,dsh,data`
+- [~] **#458 DSH 0.1.7 错误码税则漂移：39 值点式闭集全面脱节** `regression,dsh,data`
   - 0.1.7 实发斜杠命名空间码（session/not-found、gateway/arguments-invalid），app DshRpcErrorCode 闭集 isKnown 恒 false 全走 Unknown 兜底（优雅降级成立但分类/文案失准）；/api/respond 已移除改 /result（app 双路已备）。详见 docs/research/2026-09-28-triface-regression-report.md 缺陷 D1/D5
   - 2026-09-30 0.2.0-rc.2 live 实测（宿主 3080 systemd dsh.service，token 经 journal 提取）：漂移仍存在且范围扩大——①错误码斜杠命名空间依旧（session/not-found、gateway/arguments-invalid、gateway/internal 实证；app 39 值点式闭集 isKnown 恒 false 原样成立）②args 契约重构：typert gateway 描述符强制（session/list 要 _request:{}；session/create|cancel|search|messageFeedback/list 要 request:{...} 包装；commands/execute 裸字段且 images→submittedAttachments 改名）③agentPreset/read|list 端点 404 消失；settings/describe、llm/listProviders、session/list(+_request) 仍通。用户裁决（条件满足）：并入批次一起做；范围升级=错误码闭集+args 形状翻译（DshWireAdapter/协议探测 V020）+端点面清点
   - 2026-09-30 用户裁决（开工）：DSH 多版本兼容策略=只适配最新 0.2.0，不保 0.1.x 线面（V011/V012 退役，翻译层可直接对齐 V020，无需三协议并存）；分阶段批次开工（#458+#459→#439→#488）
 
-- [ ] **#459 V2 2.0.18 消费侧 14 端点漂移清单（health/question|form request/pty shells/share/rename/service stop 等 404）** `regression,v2,data`
+- [~] **#459 V2 2.0.18 消费侧 14 端点漂移清单（health/question|form request/pty shells/share/rename/service stop 等 404）** `regression,v2,data`
   - app 调用面 45 点中 14 点在 2.0.18 openapi 缺失（全 404 实证）；真机主链路不受影响（探测器/PATCH session 等降级路径实证），但 question/form 轮询兜底、pty shells、share、service/stop 在 2.0.18 下不可用。详见回归报告 §1.2/缺陷 D2
   - 2026-09-30 #482 实证副产物：部署版已升 v2.0.19（回归报告基于 2.0.18）——开工时漂移清单需对 2.0.19 重核（/api/version、/api/app/version、/api/health 均已实测 404）
+  - 2026-09-30 阶段一B 重核+适配完结：2.0.19 openapi 138 路由（openapi.json 需认证=新变化）对齐 14 漂移点——13 仍缺失（漂移延续，降级路径维持）；两小项适配落地：form 轮询 URL /api/form/request→/api/form（信封与字段逐一对齐实证）、session/import→/api/experimental/session/import；pty/shells 实为已自愈项。v2 域测试 138 绿
 
 - [ ] **#464 UI 暖态下列表/卡片点击偶发失效(冷启可靠)** `chat-ui`
   - 2026-09-29 #461/#462 取证副产物:force-stop 冷启后输入 tap 可靠命中(会话行/卡标题),同一 app 暖运行数分钟后点击同坐标零效果(无日志无 UI 变化,vibrator 反馈存在=命中可点击元素但未触发业务);两次独立取证会话复现,冷启后恢复。疑点:点击消费被某 overlay/焦点态拦截或状态门;影响面=自动化测试可靠性,人工使用未报告。待真机复现窗定罪(diagnosing-bugs 流程),暂无用户主诉不阻塞。
