@@ -1,8 +1,14 @@
 package dev.leonardo.ocbeacon.ui.screens.chat.markdown
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -518,10 +524,11 @@ internal fun MarkdownContent(
         }
     }
 
-    // components 闭包捕获 linkColor/typography/textColor。键必须包含它们：
-    // 主题切换时颜色变化 → 重建闭包 → 内部 AnnotatedString 用新颜色重建，
-    // 否则切换主题后文字颜色停留在旧主题（暗色浅色在亮色背景下"过曝"）。
-    val components = remember(density, isUser, linkListener, linkColor, textColor) {
+    // components 闭包捕获 linkColor/typography/textColor + #488① custom 钩子捕获
+    // codeBlockBg/codeBlockFg/typography.code。键必须包含它们：主题切换时颜色变化
+    // → 重建闭包 → 内部 AnnotatedString 用新颜色重建，否则切换主题后文字颜色停留
+    // 在旧主题（暗色浅色在亮色背景下"过曝"）。
+    val components = remember(density, isUser, linkListener, linkColor, textColor, codeBlockBg, codeBlockFg, typography.code) {
         markdownComponents(
             text = { model ->
                 val settings = annotatorSettings(linkInteractionListener = linkListener)
@@ -633,6 +640,22 @@ internal fun MarkdownContent(
                     node = model.node,
                     style = model.typography.text,
                 )
+            },
+            // #488①：块内 HTML——库对 HTML_BLOCK 零组件（v0.45.0 base+m3 AAR 二进制
+            // grep 实证），custom 默认空 lambda = 整块隐形（内容静默丢失）。覆写：
+            // 等宽代码样式呈现原文（与 code fence 同视觉域），内容可见不丢。
+            // 真 HTML 渲染（WebView 级）属 #488 远期；整消息 HTML 走
+            // looksLikeHtmlPayload 预览通道不受此影响（混排块才进这里）。
+            custom = { elementType, model ->
+                if (elementType == org.intellij.markdown.MarkdownElementTypes.HTML_BLOCK) {
+                    HtmlBlockRaw(
+                        content = model.content,
+                        node = model.node,
+                        style = typography.code,
+                        background = codeBlockBg,
+                        foreground = codeBlockFg,
+                    )
+                }
             },
         )
     }
@@ -1048,4 +1071,40 @@ private fun SafeHeading(
             uriHandler = uriHandler,
         ),
     )
+}
+
+/**
+ * #488①：块内 HTML 原文呈现（custom 钩子 HTML_BLOCK 分支）。
+ *
+ * 区间截取走 runCatching + 边界 clamp（#437 崩溃先例：流式 snapshot 失配帧
+ * node 区间可越界 content 长度）；截取失败回退整 content（宁可多显不丢内容）。
+ */
+@Composable
+private fun HtmlBlockRaw(
+    content: String,
+    node: ASTNode,
+    style: TextStyle,
+    background: Color,
+    foreground: Color,
+) {
+    val raw = remember(content, node) {
+        runCatching {
+            val s = node.startOffset.coerceIn(0, content.length)
+            val e = node.endOffset.coerceIn(s, content.length)
+            content.subSequence(s, e).toString().trimEnd()
+        }.getOrDefault(content)
+    }
+    val scroll = rememberScrollState()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color = background, shape = RoundedCornerShape(6.dp))
+            .horizontalScroll(scroll),
+    ) {
+        Text(
+            text = raw,
+            style = style.copy(color = foreground, fontFamily = FontFamily.Monospace),
+            modifier = Modifier.padding(12.dp),
+        )
+    }
 }

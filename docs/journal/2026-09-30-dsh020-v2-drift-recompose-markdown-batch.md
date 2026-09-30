@@ -67,3 +67,22 @@ gateway/* 家族 20+（internal/arguments-invalid/bad-request/cancelled/ambiguou
 - 点进会话：POST /api/session/page 200，**历史装配+markdown 全渲染**（标题/行内码/任务列表/代码执行卡/链接/模型耗时标注）✓
 - 发送测试消息：**prompt request 包装送达**（AI 开始思考）、流式思考预览回流、工具卡（Run code 3.4s/失败 5ms 红叹号/重试）渲染、骨架自愈（step.started 丢失→seeded skeleton）、flush 批处理（deltas=4）全部正常；零 DshApiError/崩溃
 - 中断回合（ESC）+ force-stop 收尾
+
+## 阶段二 #439 重组放大复查（真机仪器实测）
+
+**背景核对**：卡片四修点位中的预载项（ChatEntry.Turn isUser/isStreaming 构建时编码 + item lambda 不再捕获 displayItems/turnGroups/streamingMsgId，MarkdownChunking.kt:179-187 R4-B3 注释）**已在前批落地**；2026-09-29 的活证（单轮流式 TextDelta 2877 → InjCard 邻项 4443 次，1.5x）是 R4-B3 之前的数据。
+
+**复查实测**（dev 包 @ houji，v2019-check v2.0.19 新会话，600 字散文流式轮 ~22s）：
+- 流式批（SGR）145 批；InjCard 注入卡重组 **38 次**（22:40:49×2 发送时刻 / 22:40:55-59×28 流式期 / 22:41:01×6 / 22:41:19×2 完成时刻）
+- 邻项重组率 **0.26 次/批**（历史基线 1.5 次/delta）——两个数量级下降，全量重组放大**实质已消除**；剩余 38 次为正常布局位移/状态重组（注入卡紧邻流式 turn）
+- 回合渲染正常（散文全文完整、22.0s 完成、自动标题生效）
+
+**残余失效链分析**（不动刀依据）：transcriptCardPlan（ChatMessageList.kt:1353 remember(chatEntries, displayItems, ...)）每流式批重算 → extras Map 新实例 → item 捕获失效——是剩余 38 次的来源。修法（ref-cache/结构签名化）与 #452 空白列表、回归 37d9a6ac 冻结两次前科同域，收益仅 38→个位数/轮，**并入 #442 高度引擎二期 R2 与「稳定/活跃双容器 append-only+前缀吸收」同批设计**（与 #470 并入 #442 同构裁决）。
+
+同批 v2 E2E 副产物：#459 主链路真机验证（prompt POST /api/session/.../prompt 200、流式 SSE 全程、回合完成渲染、自动标题）。
+
+## 阶段三 #488 分项处置
+
+**①块内 HTML 原文呈现（已落地+E2E）**：mikepenz v0.45.0 对 HTML_BLOCK 零组件（javap 实证 MarkdownComponents 无 html 钩子；HTML_BLOCK ElementType 在 org.intellij.markdown.MarkdownElementTypes 非 GFM），分派走 custom(IElementType, model) 兜底（默认空=整块隐形根因）。覆写 custom：HTML_BLOCK → HtmlBlockRaw（等宽代码样式 + codeBlockBg/Fg 主题令牌 + 横向滚动 + 区间 clamp 截取防 #437 流式失配越界，失败回退整 content 宁多显不丢）；components remember 键补 codeBlockBg/codeBlockFg/typography.code。真机 E2E（v2 会话让 AI 产 div 块+正常句）：HTML 块原文完整可见、后续句子正常渲染——修复前该块整块隐形。
+**④setext stage-2**：卡片原文即「维持 accepted-gap 备查」——无实现需求。技术论证补档：setext 不破坏前缀不变量（gate 放行文本追加式，=== 到达仅渲染层样式翻转 paragraph→heading=视觉闪变）；stage-2 唯一安全解=段落尾行扣留到下一行首可见，实质收窄全部纯文字增量直出节奏，收益（低频 setext 闪变）不抵代价（每段慢一行）。
+**②③方案文档**（docs/research/2026-09-30-488-syntax-math-options.md，带两裁决点）：②推荐接官方 multiplatform-markdown-renderer-code:0.45.0（同版本线，引擎 dev.snipme:highlights 纯 Kotlin KMM 非 UI 库——不违红线；17 语言+增量缓存+sync/async）；备选 B 自写 top-5 lexer 零依赖。③推荐维持降级+着色/标注升级（方案 c）；WebView+KaTeX 混排割裂不推荐，KMM 数学排版生态未成熟。
