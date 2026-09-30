@@ -39,6 +39,10 @@ internal fun transformMathFallback(content: String): String {
     val lines = content.split('\n')
     val chunks = ArrayList<CharSequence>(lines.size)
     val run = StringBuilder() // 当前围栏外文本区（行粒度，待数学扫描）
+    // 2026-09-30 坍缩重建根修（同 ensureBlankLineBeforeGfmTables）：行哨兵
+    // 改显式计数——首行为空行（闭合围栏后）时 run=="" 被误判未启动 → 跳过
+    // 分隔换行符 → 空行吞噬 → 流式非前缀改写（pilot RESETKEY 重建坍缩）。
+    var runLines = 0
     var fenceMarker: Char? = null
     var minFenceLen = 0
     for (line in lines) {
@@ -54,29 +58,32 @@ internal fun transformMathFallback(content: String): String {
                     fenceMarker = null
                     minFenceLen = 0
                 }
-                if (run.isNotEmpty()) {
+                if (runLines > 0) {
                     chunks.add(transformMathSegments(run.toString()))
                     run.setLength(0)
+                    runLines = 0
                 }
                 chunks.add(line)
             }
             openFence != null -> {
                 // 开启围栏：先冲刷栏外文本（含数学降级），围栏行本身原样
-                if (run.isNotEmpty()) {
+                if (runLines > 0) {
                     chunks.add(transformMathSegments(run.toString()))
                     run.setLength(0)
+                    runLines = 0
                 }
                 chunks.add(line)
                 fenceMarker = openFence.first
                 minFenceLen = openFence.second
             }
             else -> {
-                if (run.isNotEmpty()) run.append('\n')
+                if (runLines > 0) run.append('\n')
                 run.append(line)
+                runLines++
             }
         }
     }
-    if (run.isNotEmpty()) chunks.add(transformMathSegments(run.toString()))
+    if (runLines > 0) chunks.add(transformMathSegments(run.toString()))
     return chunks.joinToString("\n")
 }
 

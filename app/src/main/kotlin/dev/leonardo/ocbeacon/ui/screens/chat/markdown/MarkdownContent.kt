@@ -159,6 +159,12 @@ internal fun ensureBlankLineBeforeGfmTables(text: String): String {
     val lines = text.split("\n")
     val chunks = ArrayList<CharSequence>(lines.size)
     val run = StringBuilder() // 当前栏外文本区（行粒度，待表格正则）
+    // 2026-09-30 坍缩重建根修：行哨兵改显式计数——原 run.isNotEmpty() 把
+    // 「首行为空行」（闭合围栏后空行 append 后 run 仍 == ""）误判为 run 未
+    // 启动，下一行跳过分隔换行符 → 空行被静默吞噬；流式中 | 首次到达时该
+    // 吞噬首次生效 → 已放行前缀中段非前缀改写 → pilot RESETKEY 重建坍缩
+    //（真机三案 13:55/14:13/14:40 定罪，divergeAt 全落围栏闭合后空行处）。
+    var runLines = 0
     var fenceMarker: Char? = null
     var minFenceLen = 0
     for (line in lines) {
@@ -171,29 +177,32 @@ internal fun ensureBlankLineBeforeGfmTables(text: String): String {
                     fenceMarker = null
                     minFenceLen = 0
                 }
-                if (run.isNotEmpty()) {
+                if (runLines > 0) {
                     chunks.add(insertTableBlankLinesIn(run.toString()))
                     run.setLength(0)
+                    runLines = 0
                 }
                 chunks.add(line)
             }
             openFence != null -> {
                 // 开启围栏：先冲刷栏外区，围栏行本身原样
-                if (run.isNotEmpty()) {
+                if (runLines > 0) {
                     chunks.add(insertTableBlankLinesIn(run.toString()))
                     run.setLength(0)
+                    runLines = 0
                 }
                 chunks.add(line)
                 fenceMarker = openFence.first
                 minFenceLen = openFence.second
             }
             else -> {
-                if (run.isNotEmpty()) run.append('\n')
+                if (runLines > 0) run.append('\n')
                 run.append(line)
+                runLines++
             }
         }
     }
-    if (run.isNotEmpty()) chunks.add(insertTableBlankLinesIn(run.toString()))
+    if (runLines > 0) chunks.add(insertTableBlankLinesIn(run.toString()))
     return chunks.joinToString("\n")
 }
 
