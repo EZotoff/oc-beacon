@@ -95,6 +95,8 @@
   - 2026-09-30 ③归一化重排设计定稿 to spec:docs/specs/2026-09-30-471-3-streaming-normalization-unification-design.md——归一化前移 gate 前流式 ingest(终帧=流式帧)+位置制空行化(cumEnd 行完成即定案)+gate 表格注入退役;实现按 spec §5 三 commit(新会话可执行);可关卡片清单 spec §8(本卡验收后整卡关)
   - ③实现落地待验收：spec §5 三 commit 完成——A 276d8fbf(纯函数+TDD+性质测试抓出四破口修订:尾$run收口/表格排除数学行/表头待定回退/MarkdownFenceLine 统一围栏) B 9130c83e(pilot ingest 接线+gate 注入退役) C(E2E:held=0→85ms 桥接→Success 直达,无弹跳双帧,flap=0,3716 绿)。E3 以单测+长段档案替代(用户验收保留)。验收清单 spec §9;铁律 9 已收编 iron-laws
   - ③验收发现第三根因并修复:差分基准错配——prev 存归一化全文快照,$$闭合重写天然非前缀但落扣留区,SMP 误判重生成→静默 resetKey 重建(真机 P1:h 塌缩-1128+从零重铺×2);修复=prev 改放行前缀 normalized.take(released),复现验证重建事件 0/无负向跳。验收探针(MDResize/heldTail/nonPrefix)保留 DEBUG-only
+  - 验收发现(真机)：GFM 任务列表整块毕业（4条一次性吐出）——归一化后 [ 硬停+无任务项行分支致整列表扣到空行毕业；#471③ 归一化前移后原保守理由(☐完结改写)已消失，可行级放行（#441 任务项分支模式）
+  - 追加根修(#471④-a,6011b888)：任务列表逐条放行——v1 行首守卫被真机 E2E 证伪(行续段冻结)，v2 锚定真实行首+未完行渐进；视觉验收待用户
 
 ## P3 — 观察与低价值改进
 
