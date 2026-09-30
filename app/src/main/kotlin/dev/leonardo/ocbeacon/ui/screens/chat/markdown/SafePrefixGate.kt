@@ -271,6 +271,34 @@ internal object SafePrefixGate {
                 }
             }
         }
+        // 2026-09-30 坍缩重建根修补口（14:58 真机定罪）：批预算把截点落在表头行
+        // **行中**（result 非行首、非行尾）时，上方回退以 snapshot[result-1]=='\n'
+        // 为前提漏检本形态——纯文字分支视表头行为无标记文本整行/增量直出，已
+        // 放行前缀越过未来插空行点（ensureBlankLineBeforeGfmTables 在表头行行
+        // 首前插入）→ 分隔行到达即非前缀改写 → RESETKEY 重建坍缩。补口：截点
+        // 所在行（到行尾/快照尾）为表头行形态、或截点前行内仅空白（表头缩进未定案
+        // ——行首空白不放行视觉零代价）时，回退到该行行首。
+        if (result > floor && snapshot[result - 1] != '\n') {
+            val ls = snapshot.lastIndexOf('\n', result - 1) + 1
+            if (ls in floor until result) {
+                val le = snapshot.indexOf('\n', ls).let { if (it < 0) snapshot.length else it }
+                val lineComplete = le < snapshot.length
+                val fullLine = snapshot.substring(ls, le)
+                val beforeCut = snapshot.substring(ls, result)
+                val headerShaped = fullLine.isNotEmpty() && isTableHeaderRow(fullLine)
+                val onlySpacesBeforeCut =
+                    beforeCut.isNotEmpty() && beforeCut.all { it == ' ' || it == '\t' }
+                when {
+                    headerShaped || onlySpacesBeforeCut -> result = maxOf(floor, ls)
+                    // 截点落在**未完分隔行**内（分隔行无换行=三行结构未定案，插空行
+                    // 将落在表头行前，而放行已含整条表头行）——级联回退到表头行行首。
+                    !lineComplete && isTableSeparatorRow(fullLine) && ls - 1 > floor -> {
+                        val hLs = snapshot.lastIndexOf('\n', ls - 2) + 1
+                        result = maxOf(floor, hLs)
+                    }
+                }
+            }
+        }
         return result
     }
 
