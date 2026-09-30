@@ -131,3 +131,11 @@ v1 到 v2（真机 E2E 证伪驱动）：
   - 验证成本低(一次带附件 prompt E2E+抓帧);与 #459 漂移族相邻但独立(这是契约实证,非端点缺失)
   - 2026-09-30 实证收口（部署版 v2.0.19，systemd 常驻 4096）：①嵌套 body {prompt:{text,files}} → 400 Missing key ["text"]（服务端 zod schema 仍要求顶层 text，嵌套包裹仍不被接受）②平铺 body {text,files:[{uri:data:...;base64,name}]} → 200，payload.files 回显 {data,mime,source:inline,name}；一次性会话已 DELETE 204。结论：双路收敛不可行，平铺降级路径在 v2.0.19 仍为部署版唯一有效契约，modernBody 分支保留待未来主干部署
   - 迁入依据：实证完成：v2.0.19 部署版嵌套 400/平铺 200，保持双路不收敛，零代码改动（curl 直打 4096，测试会话已清理）（backlog.sh migrate 2026-09-30）
+
+### **#479 SSE 连接期 PARTIAL_WAKE_LOCK 持有策略/电池影响未审计** `sse` `perf`
+  - 2026-09-29 发掘审计:dumpsys 实测持锁(OpenCodeRemote::SSEConnection,周期性重取)+日志 WakeLock renewed 每 30s(OpenCodeConnectionService:650 起)——抗 MIUI 杀 socket 的保活设计(#441 域)
+  - 未审计点:后台期是否释放/持锁时长分布/对电量的真实代价;若后台仍长持=电池债——需 acquire/release 全路径走查+一次耗电基线
+  - 2026-09-29 E2E 活证:HOME 退后台 12s 后 PARTIAL_WAKE_LOCK 仍持有(dumpsys ACQ≈2m33s LONG;历史模式 ~9.5min REL+立即续取)——后台不释放确认;余下=电量代价量化+策略裁决(后台长置是否转释放靠重连)
+  - 2026-09-30 审计批次一（代码走查+活体实证）：①路径——acquire=onLifecycleChanged 非空集（首连），release=onLastServerDisconnected(:413)+onDestroy；HOLD=10min 超时兜底（#133 加固，进程死亡自愈）+续期协程；②续期间隔实测 9m30s（19:51:28→20:00:58 renewed，与 10min-30s 精确吻合，卡片原「每30s」为边距误记）；③后台不释放=设计使然（#441 抗 MIUI 杀 socket），MIUI batterystats 以 longwake 记账（时间线实证 +6m02/+7m02/-15m32/+16m32）；④低危发现：续期循环 isHeld→release→acquire 与 releaseWakeLock 非原子，理论竞态可在释放后重取，10min 超时兜底自愈。待办：电量 A/B 基线（重置 batterystats+定时读数）+策略裁决：维持现状 vs 后台空闲期释放靠重连+watchdog 兜底（省电但 #441 复发风险）vs 仅 streaming 活跃期持锁
+  - 2026-09-30 用户裁决 A（维持现状）：后台长持锁保留——#441 抗 MIUI 杀 socket 的保活价值优先于电池代价；电量 A/B 基线随之降为可选观察（不再阻塞）；续期竞态维持 10min 超时自愈兜底不修
+  - 迁入依据：审计完成+用户裁决A维持现状：路径走查+9m30s续期实测+longwake记账+竞态发现（超时兜底）；零代码改动（backlog.sh migrate 2026-09-30）
