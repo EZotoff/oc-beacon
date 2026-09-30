@@ -88,10 +88,26 @@ adb -s e69a99d8 logcat -d -v time | grep ScrollDiag
 
 | 日志 | 含义 | 判读 |
 |------|------|------|
-| LEAP idx A->B off X->Y inProgress= | 首可见项位置两次发射间跳变 | dOff >350 或 dIdx>1 = 疑似程序化瞬移；对照 inProgress 区分手势中/停稳后 |
+| LEAP idx A->B px= off X->Y inProgress= | 首可见项位置两次发射间跳变（W 级=真跳变：dOff 或穿越像素 >350） | 2026-10-01 起含 px=（穿越 items 实际像素）；**LEAP-Z = D 级**，dIdx 大但 px 小=穿零高横幅的良性跳（勿再误判） |
 | gesture=true/false idx= off= | 滚动手势起止 + 当时位置 | fling 起 ~150ms 内 false = fling 被杀（主线程阻塞或 requestScrollToItem 取消） |
 | RESIZE key= h A->B (d=±N) | item 组合后高度变化 | 长回复 d>+1000 = markdown 渐进测量（异步解析迟到）→ 必然触发锚点修正瞬移 |
 | COMP-MSG / COMP-TOOL fire delta= | 高度补偿触发 | 流式外的触发 = 补偿泄漏到非流式场景 |
+| VPT fii= fiso= d= ip= anchor= asize= | 帧级视口轨迹（无阈值逐变化；2026-10-01 起含 asize=锚 item 尺寸） | asize=0 ⇒ 锚是零高横幅，fiso 无实际意义 |
+| SGR-435 release capd= led= set(...) / (nodis target-fii=) | 帽/账本释放计算 | **nodis=未派发**（total=0，旧版恒打 set(fii=7) 是穿零高横幅的幻影目标——已修正）；真派发时 set() 与 LRef 行成对出现 |
+| LRef set idx= off= key= | 引擎反射滚动唯一出口的派发审计（含 set-fallback） | SGR-GATE bottom-follow 与 LRef 全静默却视口动了 ⇒ 位移非引擎所为 |
+
+### 2.4.1 广域检测网（2026-10-01 #492 批次立网）
+
+动机：两例无触摸「完美平移滑移」（-40/-26px）在 fii/fiso/RESIZE/MDResize 全静默下发生——既有探针存在结构性盲区。新网按「位移的几何来源」全覆盖（全 DEBUG-only，`grep -E "SilentShift|ItemH|ItemP|LBox|TurnFin|LRef|LEAP"`）：
+
+| Tag | 覆盖的盲区 | 判读 |
+|-----|-----------|------|
+| SilentShift key= y A->B d= fiso= h= | **静默滑移检测器**（600ms 增长静默窗门控，物理跟随/配对跟踪不报）：item 根 y 变化而 fiso+高度双冻结 ⇒ 位移来自本 item 之外 | 出现即意味着他处插拔/重排/父布局推移；与 LBox/ItemH/ItemP 对照定位元凶（2026-10-01 已捕容器 +132px 家族与 -96/-56 无名跳变各一例） |
+| ItemH key= h A->B (d=) | 横幅臂高度变化（此前 RESIZE 只盖 turn 臂；横幅在 reverseLayout 底部=低于锚，揭示/收起整体推移消息内容） | d 与 SilentShift 的 d 同量级即定罪 |
+| ItemP enter/leave key= | 条目存在性账本（条件横幅出现/消失、chunk 裂变、分页加载）——低于锚的插拔不动 fiso，唯一签名即存在性 | leave+enter 相邻=重排；对齐 SilentShift 时刻 |
+| LBox y= h= | 列表容器自身位置/尺寸（父布局：顶栏/状态条推移列表） | y 变而列表内一切静默=父布局元凶 |
+| TurnFin key= t= | 流式→完结翻转帧标记 | #491 完结换装定罪起点：与 RESIZE/MDResize/SilentShift 后续帧对照 |
+| MDResize card= h= d=（既有） | 整卡（含统计行）高度变化 | **注意 grep 大小写**：MDResize 不匹配 `RESIZE` 模式（2026-10-01 踩坑实录） |
 
 配套客观手段：
 - 逐帧视频分析：screenrecord（等录完再 pull，提前 pull 会得到无 moov 的废文件）→ ffmpeg 抽帧 → 模板匹配算帧间位移（/tmp/frames2.py 可复用）→ 检测位移不连续（同向暴增/反转/停稳后突跳）

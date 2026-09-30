@@ -562,11 +562,19 @@ internal fun streamingGrowFlushTask(
             }
         }
         if (BuildConfig.DEBUG && (total != 0f || writtenReserve)) {
+            // [#492 检测网 2026-10-01] total==0 时下方 guard 不派发滚动——旧日志恒打印
+            // set(fii=7,fiso=0)（resolvePairedTarget 穿零高横幅落到的幻影目标）曾误导
+            // 两轮定罪；nodis 标记后判读可直接区分「算了没派」与「真派发」。
+            val setPart = if (total != 0f) {
+                "set(fii=" + targetFii + ",fiso=" + targetFiso + ")"
+            } else {
+                "(nodis target-fii=" + targetFii + ")"
+            }
             AppLogger.d(
                 "SGR-435",
                 "release t=" + android.os.SystemClock.elapsedRealtime() +
                     " capd=" + (pendingPlan?.delta ?: 0) + " led=" + ledgerTotal.toInt() +
-                    " set(fii=" + targetFii + ",fiso=" + targetFiso + ")" +
+                    " " + setPart +
                     " h->" + (if (writtenReserve) reserve?.trueHeight.toString() else "-"),
             )
         }
@@ -696,6 +704,16 @@ internal object LazyListReflection {
                 }
                 @Suppress("UNCHECKED_CAST")
                 (p.invalidatorField.get(state) as MutableState<Unit>).value = Unit
+                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                    // [#492 检测网 2026-10-01] 反射通道派发审计：此处为引擎滚动的
+                    // 唯一反射出口——凡真派发必留痕，与 SGR-435 release 行对照可辨
+                    // 「日志声称派发 vs 实际派发」的歧义。
+                    AppLogger.d(
+                        "LRef",
+                        "set idx=" + index + " off=" + scrollOffset +
+                            " key=" + (key?.toString()?.take(20) ?: "null"),
+                    )
+                }
                 return
             } catch (t: Throwable) {
                 // IllegalAccessException / IllegalArgumentException / ClassCastException 等
@@ -703,6 +721,9 @@ internal object LazyListReflection {
             }
         }
         // 降级:官方 API。语义差异 = 通过 scroll{} 互斥锁取消 fling,可接受。
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+            AppLogger.d("LRef", "set-fallback idx=" + index + " off=" + scrollOffset)
+        }
         state.requestScrollToItem(index, scrollOffset)
     }
 }

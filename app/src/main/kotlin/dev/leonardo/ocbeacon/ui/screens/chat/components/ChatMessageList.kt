@@ -202,6 +202,9 @@ private fun BannerReveal(
     onExpandDeparture: () -> Unit,
     streamingActive: Boolean,
     visible: Boolean,
+    /** [#492 检测网] 横幅身份（传出实高探针日志用）——revealed 高度在 CardExpandReveal
+     *  层（动画），内层内容 Box 探针量不到；空串=不探。 */
+    diagKey: String = "",
     content: @Composable () -> Unit,
 ) {
     CompositionLocalProvider(
@@ -209,7 +212,52 @@ private fun BannerReveal(
         LocalCardExpandDeparture provides onExpandDeparture,
         LocalInStreamingTurn provides streamingActive,
     ) {
-        CardExpandReveal(visible = visible) { content() }
+        Box(
+            modifier = if (BuildConfig.DEBUG && diagKey.isNotEmpty()) {
+                Modifier.bannerHeightDiag(diagKey)
+            } else Modifier
+        ) {
+            CardExpandReveal(visible = visible) { content() }
+        }
+    }
+}
+
+// [#492 检测网] 增长时钟：任意 turn item 高度变化（RESIZE）打点；SilentShift 据此
+// 区分「物理跟随」（流式增长推送内容，伴随 RESIZE 批次）与「真静默滑移」
+// （无任何高度事件的位移——2026-10-01 两例 -40/-26px 家族）。
+internal object GrowthClock {
+    @Volatile var lastAt = 0L
+}
+
+// [#492 广域检测网 2026-10-01] item 存在性账本（DEBUG-only）：进场/离场各一条。
+// 动机：低于锚的条目插拔（条件横幅出现/消失、chunk 裂变、分页）会位移锚内容
+// 而 fii/fiso 纹丝不动——此前所有探针都看不见，唯一签名即存在性变化。
+@Composable
+private fun ItemPresenceDiag(itemKey: Any) {
+    if (BuildConfig.DEBUG) {
+        DisposableEffect(itemKey) {
+            AppLogger.d("ItemP", "enter key=" + itemKey.toString().take(28))
+            onDispose { AppLogger.d("ItemP", "leave key=" + itemKey.toString().take(28)) }
+        }
+    }
+}
+
+// [#492 广域检测网 2026-10-01] 横幅臂高度变化探针（DEBUG-only）。动机：横幅在
+// reverseLayout 底部（低于锚），揭示/收起重排会整体推移消息内容而 fiso 冻结——
+// 2026-10-01 两例 -40/-26px 无触摸滑移的头号几何候选；此前 RESIZE 只盖 turn 臂。
+@Composable
+private fun Modifier.bannerHeightDiag(itemKey: String): Modifier {
+    if (!BuildConfig.DEBUG) return this
+    val last = remember { mutableStateOf(-1) }
+    return this.onSizeChanged { s ->
+        if (last.value >= 0 && s.height != last.value) {
+            AppLogger.w(
+                "ItemH",
+                "key=" + itemKey.take(24) + " h " + last.value + "->" + s.height +
+                    " (d=" + (s.height - last.value) + ")",
+            )
+        }
+        last.value = s.height
     }
 }
 
@@ -922,12 +970,21 @@ fun ChatMessageList(
                         val dIdx = idx - lastIdx
                         val dOff = off - lastOff
                         if (kotlin.math.abs(dIdx) > 1 || kotlin.math.abs(dOff) > 350) {
-                            AppLogger.w(
-                                "ScrollDiag",
-                                "LEAP idx " + lastIdx + "->" + idx + " (dIdx=" + dIdx + ") off " +
-                                    lastOff + "->" + off + " (dOff=" + dOff + ") inProgress=" +
-                                    listState.isScrollInProgress + " total=" + listState.layoutInfo.totalItemsCount
-                            )
+                            // [#492 检测网 2026-10-01] px=穿越 items 实际像素（零高横幅
+                            // 使 dIdx 大而视觉零变化——LEAP-Z 降 D 级，真跳变（px 或 dOff
+                            // >350）保持 W 级；判读勿再被 dIdx=7 噪声误导）。
+                            val lo = minOf(lastIdx, idx)
+                            val hi = maxOf(lastIdx, idx)
+                            var crossedPx = 0
+                            listState.layoutInfo.visibleItemsInfo.forEach { v ->
+                                if (v.index > lo && v.index <= hi) crossedPx += v.size
+                            }
+                            val severe = kotlin.math.abs(dOff) > 350 || crossedPx > 350
+                            val leapMsg = (if (severe) "LEAP " else "LEAP-Z ") + "idx " + lastIdx + "->" + idx +
+                                " (dIdx=" + dIdx + ") px=" + crossedPx + " off " +
+                                lastOff + "->" + off + " (dOff=" + dOff + ") inProgress=" +
+                                listState.isScrollInProgress + " total=" + listState.layoutInfo.totalItemsCount
+                            if (severe) AppLogger.w("ScrollDiag", leapMsg) else AppLogger.d("ScrollDiag", leapMsg)
                         }
                     }
                     lastIdx = idx
@@ -961,13 +1018,14 @@ fun ChatMessageList(
                 )
             }.collect { (fii, fiso, ip) ->
                 if (fii != vptFii || fiso != vptFiso || ip != vptIp) {
-                    val anchorKey = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.key
+                    val anchorInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull()
                     AppLogger.d(
                         "VPT",
                         "t=" + android.os.SystemClock.elapsedRealtime() +
                             " fii=" + fii + " fiso=" + fiso +
                             " d=" + (if (vptFiso >= 0) fiso - vptFiso else 0) +
-                            " ip=" + ip + " anchor=" + (anchorKey?.toString()?.take(14) ?: "null") +
+                            " ip=" + ip + " anchor=" + (anchorInfo?.key?.toString()?.take(14) ?: "null") +
+                            " asize=" + (anchorInfo?.size ?: -1) +
                             " pend=" + streamingLedger.hasPending
                     )
                     vptFii = fii
@@ -1680,6 +1738,12 @@ fun ChatMessageList(
                         // 临时诊断（ScrollDiag，DEBUG-only）：item 初次测量后的高度变化
                         //（渐进测量/异步重排检测——跳变根因取证）
                         val diagLastSize = remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+                        // [#492 广域检测网 2026-10-01] 静默滑移检测器：item 根 y 变化而
+                        // fiso 与高度双冻结 ⇒ 位移来自本 item 之外（同列表他处插拔/重排）
+                        // ——fii/fiso/RESIZE/MDResize 对此全盲（2026-10-01 两例 -40/-26px
+                        // 完美平移滑移零仪器事件）。滚动（fiso 变）与流式增长（高度变）
+                        // 天然被排除，零噪声。
+                        val silentDiagLast = remember { intArrayOf(Int.MIN_VALUE, Int.MIN_VALUE, Int.MIN_VALUE) }
                         // [VDRAW] Turn 臂绘制相位探针（DSH 流式尾 t_dsh-* 走此分支）
                         // [R4 探针注入化] 同上
                         val vdrawTurnDedup = remember { intArrayOf(-1, -1) }
@@ -1701,6 +1765,7 @@ fun ChatMessageList(
                                 if (BuildConfig.DEBUG) {
                                     val prev = diagLastSize.value
                                     if (prev != androidx.compose.ui.unit.IntSize.Zero && s.height != prev.height) {
+                                        GrowthClock.lastAt = android.os.SystemClock.elapsedRealtime()
                                         AppLogger.w(
                                             "ScrollDiag",
                                             "RESIZE t=" + android.os.SystemClock.elapsedRealtime() +
@@ -1711,6 +1776,29 @@ fun ChatMessageList(
                                     }
                                 }
                                 diagLastSize.value = s
+                            }
+                            .onGloballyPositioned { pos ->
+                                if (BuildConfig.DEBUG) {
+                                    val y = pos.positionInRoot().y.toInt()
+                                    val h = pos.size.height
+                                    val fiso = listState.firstVisibleItemScrollOffset
+                                    val last = silentDiagLast
+                                    val now = android.os.SystemClock.elapsedRealtime()
+                                    // 增长静默窗（600ms）：物理跟随（流式增长推送内容，
+                                    // 必伴随 RESIZE 打点）不报——只报无任何高度事件的位移。
+                                    if (last[0] != Int.MIN_VALUE && y != last[0] &&
+                                        fiso == last[1] && h == last[2] &&
+                                        now - GrowthClock.lastAt > 600
+                                    ) {
+                                        AppLogger.w(
+                                            "SilentShift",
+                                            "key=" + itemKey.take(18) + " y " + last[0] + "->" + y +
+                                                " (d=" + (y - last[0]) + ") fiso=" + fiso + " h=" + h +
+                                                " t=" + now,
+                                        )
+                                    }
+                                    last[0] = y; last[1] = fiso; last[2] = h
+                                }
                             }
                             .drawBehind {
                                 if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
@@ -2205,12 +2293,29 @@ fun ChatMessageList(
                         }
                     }
                     
+                // [#492 广域检测网 2026-10-01] LBox：列表容器自身位置/尺寸探针——
+                // 父布局（顶栏/状态条）推移列表时内容整体滑移而 item/滚动探针全静默。
+                val lboxDiagLast = remember { intArrayOf(Int.MIN_VALUE, Int.MIN_VALUE) }
                 LazyColumn(
                     state = listState,
                     // 2026-08-20 滚动稳定性：限速 fling——每帧 ≤ 视口高/8，
                     // 高速段不再冲入未组合区（与渲染供给协调器配合，见上方）
                     flingBehavior = rememberSafeFlingBehavior(listState),
                     modifier = Modifier.fillMaxSize()
+                        .onGloballyPositioned { pos ->
+                            if (BuildConfig.DEBUG) {
+                                val y = pos.positionInRoot().y.toInt()
+                                if (y != lboxDiagLast[0] || pos.size.height != lboxDiagLast[1]) {
+                                    AppLogger.d(
+                                        "LBox",
+                                        "y=" + y + " h=" + pos.size.height +
+                                            " t=" + android.os.SystemClock.elapsedRealtime(),
+                                    )
+                                    lboxDiagLast[0] = y
+                                    lboxDiagLast[1] = pos.size.height
+                                }
+                            }
+                        }
                         // #149：唯一 testTag——ChatScreen 树中有 2 个 scrollable 节点
                         //（消息列表 + 底部输入栏），androidTest 的 hasScrollAction()
                         // 匹配多节点导致 touch 注入失败
@@ -2259,7 +2364,8 @@ fun ChatMessageList(
                     ) {
                         dshJobs.forEach { job ->
                             item(key = "dsh_job_" + job.id) {
-                                Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                                if (BuildConfig.DEBUG) ItemPresenceDiag("dsh_job_" + job.id)
+                                Box(modifier = Modifier.bannerHeightDiag("dsh_job_" + job.id).padding(bottom = messageSpacing)) {
                                     pinnedJobsSlotRegistry.Render(
                                         slot = ServerUiSlot.CHAT_MESSAGE_LIST,
                                         caps = serverCapabilities,
@@ -2277,13 +2383,15 @@ fun ChatMessageList(
                     // 能力位兜底门控）——#420 B 类:恒驻声明+原地揭示(撤销发生在
                     // turn 间隙=非流式,CardExpandReveal 激活;流式时降级裸 AV)
                     item(key = "revert_banner") {
+                        if (BuildConfig.DEBUG) ItemPresenceDiag("revert_banner")
                         BannerReveal(
                             listState = listState,
                             onExpandDeparture = onExpandDeparture,
                             streamingActive = turnActive,
                             visible = revertSupported && sessionMeta.revert != null,
+                             diagKey = "revert_banner",
                         ) {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            Box(modifier = Modifier.bannerHeightDiag("revert_banner").padding(bottom = messageSpacing)) {
                             RevertBanner(onRedo = {
                                 viewModel.redoMessage { ok ->
                                     coroutineScope.launch {
@@ -2310,7 +2418,8 @@ fun ChatMessageList(
                     )
                     if (tailCompaction != null) {
                         item(key = "compaction_banner") {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            if (BuildConfig.DEBUG) ItemPresenceDiag("compaction_banner")
+                            Box(modifier = Modifier.bannerHeightDiag("compaction_banner").padding(bottom = messageSpacing)) {
                                 // #221/#222：展开区流式增长——延迟揭示真·渲染前补偿
                                 // （尾部兜底路径，挂载点原位）；#227 展开键语义在 spec。
                                 CompactionDividerSlot(
@@ -2335,13 +2444,15 @@ fun ChatMessageList(
                     // Retry 横幅 —— 会话处于 Retry 状态时显示（#420 B 类恒驻+原地揭示）
                     val retryStatus = sessionMeta.sessionStatus
                     item(key = "retry_banner") {
+                        if (BuildConfig.DEBUG) ItemPresenceDiag("retry_banner")
                         BannerReveal(
                             listState = listState,
                             onExpandDeparture = onExpandDeparture,
                             streamingActive = turnActive,
                             visible = retryStatus is SessionStatus.Retry,
+                             diagKey = "retry_banner",
                         ) {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            Box(modifier = Modifier.bannerHeightDiag("retry_banner").padding(bottom = messageSpacing)) {
                             if (retryStatus is SessionStatus.Retry) {
                                 RetryBanner(retryStatus)
                             }
@@ -2353,14 +2464,16 @@ fun ChatMessageList(
                     // 本轮输出达上限被截断；继续=再发一条 "continue" prompt（无专用
                     // 端点，Web 同款语义）；新一轮 turn/start（Busy）自动清卡。
                     item(key = "turn_max_tokens") {
+                        if (BuildConfig.DEBUG) ItemPresenceDiag("turn_max_tokens")
                         // #420 B 类恒驻+原地揭示:turn 截断通知出现于 turn 终态(非流式)
                         BannerReveal(
                             listState = listState,
                             onExpandDeparture = onExpandDeparture,
                             streamingActive = turnActive,
                             visible = turnMaxTokens != null,
+                             diagKey = "turn_max_tokens",
                         ) {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            Box(modifier = Modifier.bannerHeightDiag("turn_max_tokens").padding(bottom = messageSpacing)) {
                                 TurnMaxTokensCard(
                                     onContinue = { viewModel.sendMessage("continue") },
                                 )
@@ -2374,7 +2487,8 @@ fun ChatMessageList(
                     // reverseLayout=true：先声明 = 视觉底部 -> 错误行钉在消息流尾部。
                     sessionErrorRowItems(sessionErrorRows).forEach { (key, error) ->
                         item(key = key) {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            if (BuildConfig.DEBUG) ItemPresenceDiag(key)
+                            Box(modifier = Modifier.bannerHeightDiag(key).padding(bottom = messageSpacing)) {
                                 SessionErrorCard(error = error)
                             }
                         }
@@ -2385,13 +2499,15 @@ fun ChatMessageList(
                     // COMP-TOOL 管流式增长,互不打架);turn 结束消失→非流式
                     // CardExpandReveal 激活→原地收起+同帧补偿(旧实现裸移除跳变)
                     item(key = "tool_progress") {
+                        if (BuildConfig.DEBUG) ItemPresenceDiag("tool_progress")
                         BannerReveal(
                             listState = listState,
                             onExpandDeparture = onExpandDeparture,
                             streamingActive = turnActive,
                             visible = activeTools.isNotEmpty(),
+                             diagKey = "tool_progress",
                         ) {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            Box(modifier = Modifier.bannerHeightDiag("tool_progress").padding(bottom = messageSpacing)) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -2412,13 +2528,15 @@ fun ChatMessageList(
 
                     // 步骤进度指示器（#420 B 类恒驻+原地揭示,消失路径同上）
                     item(key = "step_progress") {
+                        if (BuildConfig.DEBUG) ItemPresenceDiag("step_progress")
                         BannerReveal(
                             listState = listState,
                             onExpandDeparture = onExpandDeparture,
                             streamingActive = turnActive,
                             visible = currentStep != null,
+                             diagKey = "step_progress",
                         ) {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            Box(modifier = Modifier.bannerHeightDiag("step_progress").padding(bottom = messageSpacing)) {
                             if (currentStep != null) {
                                 StepProgressIndicator(stepInfo = currentStep)
                             }
@@ -2431,15 +2549,17 @@ fun ChatMessageList(
                     // 复用同一 item),到达/离开经 CardExpandReveal;turn 后下发的
                     // 问题(非流式)由此激活补偿,流式内到达降级裸 AV
                     item(key = "question_pending") {
+                        if (BuildConfig.DEBUG) ItemPresenceDiag("question_pending")
                         val question = unembeddedQuestions.firstOrNull()
                         BannerReveal(
                             listState = listState,
                             onExpandDeparture = onExpandDeparture,
                             streamingActive = turnActive,
                             visible = question != null,
+                             diagKey = "question_pending",
                         ) {
                             if (question != null) {
-                                Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                                Box(modifier = Modifier.bannerHeightDiag("question_pending").padding(bottom = messageSpacing)) {
                                 QuestionCard(
                                     question = question,
                                     positionLabel = if (unembeddedQuestions.size > 1) "1/${unembeddedQuestions.size}" else null,
@@ -2459,15 +2579,17 @@ fun ChatMessageList(
 
                     // 待处理权限 —— 一次显示一个（最旧优先）——#420 B 类同上
                     item(key = "perm_pending") {
+                        if (BuildConfig.DEBUG) ItemPresenceDiag("perm_pending")
                         val permission = interaction.pendingPermissions.firstOrNull()
                         BannerReveal(
                             listState = listState,
                             onExpandDeparture = onExpandDeparture,
                             streamingActive = turnActive,
                             visible = permission != null,
+                             diagKey = "perm_pending",
                         ) {
                             if (permission != null) {
-                                Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                                Box(modifier = Modifier.bannerHeightDiag("perm_pending").padding(bottom = messageSpacing)) {
                                 PermissionCard(
                                     permission = permission,
                                     positionLabel = if (interaction.pendingPermissions.size > 1) "1/${interaction.pendingPermissions.size}" else null,
@@ -2523,6 +2645,20 @@ fun ChatMessageList(
                         // displayItems/turnGroups/streamingMsgId（每 flush 新实例捕获替换
                         // = 全部可见 item 每 flush 重组的根因之一）。
                         val entryStreaming = entry is ChatEntry.Turn && entry.isStreaming
+                        // [#492 广域检测网 2026-10-01] 条目存在性账本（chunk 裂变/重排
+                        // 直接签名）+ TurnFin 流式→完结翻转帧标记（#491 完结换装定罪起点）。
+                        if (BuildConfig.DEBUG) {
+                            ItemPresenceDiag(entry.key)
+                            val prevStreaming = remember { mutableStateOf(false) }
+                            if (prevStreaming.value && !entryStreaming) {
+                                AppLogger.i(
+                                    "TurnFin",
+                                    "key=" + entry.key.toString().take(24) +
+                                        " t=" + android.os.SystemClock.elapsedRealtime(),
+                                )
+                            }
+                            prevStreaming.value = entryStreaming
+                        }
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -2559,6 +2695,7 @@ fun ChatMessageList(
                     // 自新向旧向上排列，与消息流时序方向一致）。
                     transcriptTrailingCards.asReversed().forEach { card ->
                         item(key = card.planKey) {
+                            if (BuildConfig.DEBUG) ItemPresenceDiag(card.planKey)
                             renderTranscriptCardItem(card, spacingBelow = true)
                         }
                     }
@@ -2566,7 +2703,8 @@ fun ChatMessageList(
                     // 分页加载指示器 —— 抓取更旧消息时出现在视觉顶部（reverseLayout）
                     if (messageState.isLoadingOlder) {
                         item(key = "loading_older") {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            if (BuildConfig.DEBUG) ItemPresenceDiag("loading_older")
+                            Box(modifier = Modifier.bannerHeightDiag("loading_older").padding(bottom = messageSpacing)) {
                             Box(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = SpacingTokens.MD.dp),
                                 contentAlignment = Alignment.Center
