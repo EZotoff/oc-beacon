@@ -74,8 +74,58 @@ class SafePrefixGateTest {
     }
 
     @Test
-    fun `代码围栏开标记整段扣留`() {
-        assertEquals(0, rel("```kotlin\nval x = 1\n"))
+    fun `代码围栏开行完整即放_487裁决B`() {
+        // #487：开放围栏行级放行——开行完整即放（渲染器按 CommonMark 将未闭合
+        // 围栏延伸至前缀尾渲染为增长代码块，探针实证），内部完整行整放。
+        assertEquals(20, rel("```kotlin\nval x = 1\n"))
+    }
+
+    @Test
+    fun `开放围栏未完尾行增量直出`() {
+        // 未完行（无换行）按纯文字增量放——代码字面=最终，真 token 级
+        val s = "text\n```kotlin\nval x = 1\nval y = 2"
+        assertEquals(s.length, rel(s))
+    }
+
+    @Test
+    fun `未完开行扣留等完整`() {
+        // 半行闭栏误判块态 + 语言标注未定：未完开行不进围栏语义
+        assertEquals(0, rel("```kot"))
+        assertEquals(5, rel("text\n``"))
+    }
+
+    @Test
+    fun `闭栏形完整行即放即闭_后续正文回普通语义`() {
+        assertEquals(34, rel("```kotlin\nval x = 1\n```\nplain tail"))
+    }
+
+    @Test
+    fun `闭栏后未闭合行内构造仍扣留`() {
+        val s = "```\ncode\n```\n**uncl"
+        assertTrue(rel(s) < s.length)
+    }
+
+    @Test
+    fun `四反引号围栏内三反引号行不闭栏_预算续放`() {
+        // 预算截断后第二批续放：fenceOpenAt 恢复开栏 (`,4)，内部 ``` 行按
+        // 开栏长度感知判定为内容（长度盲判定会把 ``**tail 当栏外行内构造扣留）
+        val s = "````\ninner\n```\n**tail"
+        val first = SafePrefixGate.releaseLength(s, 0, 8)
+        assertTrue(first in 1 until s.length)
+        val second = SafePrefixGate.releaseLength(s, first)
+        assertEquals(s.length, second)
+    }
+
+    @Test
+    fun `波浪线围栏同语义`() {
+        val s = "~~~\ncode here\n"
+        assertEquals(s.length, rel(s))
+    }
+
+    @Test
+    fun `列表内围栏行级放行`() {
+        val s = "- item\n  ```\n  code line"
+        assertEquals(s.length, rel(s))
     }
 
     @Test
@@ -105,8 +155,10 @@ class SafePrefixGateTest {
     }
 
     @Test
-    fun `未闭合围栏整块扣留含内容行`() {
-        assertEquals(5, rel("text\n```kotlin\nval x = 1\nval y = 2"))
+    fun `未闭合围栏行级放行含内容行_487`() {
+        // 旧「整块扣留」语义废止：未闭合围栏开行+内部行即时放行；
+        // 闭合后同样全量（两态收敛为同一路径）
+        assertEquals(34, rel("text\n```kotlin\nval x = 1\nval y = 2"))
         assertEquals(39, rel("text\n```kotlin\nval x = 1\nval y = 2\n```\n"))
     }
 

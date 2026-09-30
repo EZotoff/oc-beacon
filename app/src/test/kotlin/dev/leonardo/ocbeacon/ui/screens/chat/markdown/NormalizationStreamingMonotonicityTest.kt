@@ -149,6 +149,25 @@ class NormalizationStreamingMonotonicityTest {
     }
 
     @Test
+    fun `fenced code volatile interior monotonic_487`() {
+        // #487 开放围栏行级放行后块内内容流中即上屏：围栏内含标记/表形行/
+        // $$/内层``` 的归一化不得改写已放行前缀（栏内字面 + MarkdownFenceLine
+        // 栏态协调的性质级保证）。四反引号外栏 + 内层三反引号行同时覆盖
+        // 开栏长度感知闭栏判定。
+        val fixture = (
+            "前文。\n\n" +
+                "````kotlin\n" +
+                "val s = \"**not bold**\"\n" +
+                "| col | shaped |\n" +
+                "inner ``` backticks in line\n" +
+                "money ${'$'}${'$'} signs \\[ bracket\n" +
+                "````\n" +
+                "后文段落。\n"
+            )
+        assertMonotonic("fence-volatile", fixture, step = 1)
+    }
+
+    @Test
     fun `setext heading shape monotonic`() {
         // setext 升格为 accepted-gap（gate :29-30）——本测试只验证归一化
         // 不引入非前缀（===/--- 行无归一化变换）。
