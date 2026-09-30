@@ -56,8 +56,16 @@ internal object MessageMergeEngine {
                 // incoming.text 含完整文本且 end!=0。保守策略：
                 // incoming 带 end 时间戳（ended/REST 语义）→ 覆盖；
                 // 纯 started/delta 路径（无 end）→ 保留更长者（流式保护）。
+                // —— 2026-09-30 H1 守卫修订（坍缩重建根修，13:55 真机定罪）：
+                // 「保留更长者」在流式期放行了**更长但异构**的快照（服务器侧
+                // 空行折叠使同一 part 出现两套字节表示）→ 整体替换 delta 累积
+                // → pilot nonPrefix（divergeAt=396）→ RESETKEY 整树重建 →
+                // 卡片 5741→3249 坍缩 + 200ch/200ms 限速重灌 4.4s。流式期
+                // delta 累积是真相源：仅**前缀一致**（incoming ⊇ existing，
+                // REST 领先快进原语义）才替换；分歧快照保 existing，流末
+                // text.ended 权威全量替换收敛（isTerminal 分支不受影响）。
                 val isTerminal = (incoming.time?.end ?: 0L) != 0L
-                val merged = if (isTerminal || incoming.text.length >= existing.text.length) incoming else existing
+                val merged = if (isTerminal || incoming.text.startsWith(existing.text)) incoming else existing
                 // #266 身份回填：合并结果保留 existing 的派生 id（流式身份跨
                 // 完结稳定）——#246 锚点、Room 行键（upsertParts 只 REPLACE 不
                 // 删缺席行，改名即产孤儿行）、未来一切 partId 键控逻辑不再站在
@@ -73,7 +81,10 @@ internal object MessageMergeEngine {
                         ?: (incoming.time?.end ?: existing.time?.end) ?: 0L,
                     end = incoming.time?.end ?: existing.time?.end
                 )
-                val merged = if (incoming.text.length >= existing.text.length) incoming else existing
+                // 2026-09-30 H1 守卫（同 Text 分支）：流式期前缀一致才替换，
+                // 终态（reasoning.ended 权威全量）恒覆盖——与 #266 ended 语义对齐。
+                val isTerminal = (incoming.time?.end ?: 0L) != 0L
+                val merged = if (isTerminal || incoming.text.startsWith(existing.text)) incoming else existing
                 // #266 身份回填（语义同 Text 分支）
                 val id = existing.id.ifBlank { incoming.id }
                 if (merged.id == id) merged.copy(time = time)

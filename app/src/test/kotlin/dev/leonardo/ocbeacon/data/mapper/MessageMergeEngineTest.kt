@@ -422,6 +422,52 @@ class MessageMergeEngineTest {
         assertEquals(3000L, error.time!!.end)
     }
 
+    // ============ 流式期前缀一致性守卫（坍缩重建根修 H1，2026-09-30 真机定罪） ============
+    //
+    // 13:55 事件：delta 累积（prevLen=495，围栏后带空行的列表前缀）与流中
+    // 权威快照（542ch，divergeAt=396 处空行被服务器侧折叠——更长但异构）在
+    // 48ms 批间分歧 → 旧 longer-wins 整体替换 → pilot nonPrefix（300ms 宽限后
+    // 仍分歧）→ RESETKEY 整树重建 → 卡片 5741→3249 坍缩 + 200ch/200ms 限速
+    // 重灌 4.4s（用户主诉「整个回答坍缩并重建」）。守卫：流式期（incoming
+    // 无 end）delta 累积是真相源——仅前缀一致（快照 ⊇ 累积，REST 领先场景）
+    // 才允许快进替换；分歧快照保 existing，终态 text.ended 权威替换不受影响。
+
+    @Test
+    fun `mergePart streaming diverging snapshot does not replace delta accumulation`() {
+        val existing = text("p1", text = "代码\n\n\n**列表中包含引用：**\n- 项目 A")
+        val incoming = text("p1", text = "代码\n\n**列表中包含引用：**\n- 项目 A\n  | 属性 | 值 |")
+        val out = MessageMergeEngine.mergePart(existing, incoming) as Part.Text
+        assertEquals("流式期分歧快照不得替换 delta 累积", existing.text, out.text)
+    }
+
+    @Test
+    fun `mergePart streaming prefix-consistent snapshot still fast-forwards`() {
+        val existing = text("p1", text = "你好")
+        val incoming = text("p1", text = "你好世界")
+        val out = MessageMergeEngine.mergePart(existing, incoming) as Part.Text
+        assertEquals("REST 领先原语义保留：前缀一致更长快照照常快进", "你好世界", out.text)
+    }
+
+    @Test
+    fun `mergePart terminal full-text replace unaffected by streaming guard`() {
+        val existing = text("p1", text = "退化复读的内容被服务器截断……")
+        val incoming = Part.Text(
+            id = "p1", sessionId = "s1", messageId = "m1",
+            text = "权威全文 914 字符。",
+            time = Part.Text.Time(start = 0, end = 123L),
+        )
+        val out = MessageMergeEngine.mergePart(existing, incoming) as Part.Text
+        assertEquals("text.ended 权威全量替换不受守卫影响", "权威全文 914 字符。", out.text)
+    }
+
+    @Test
+    fun `mergePart streaming diverging snapshot for reasoning keeps existing too`() {
+        val existing = reasoning("r1", text = "思路A\n\n继续")
+        val incoming = reasoning("r1", text = "思路A\n继续思考且更长更长更长更长")
+        val out = MessageMergeEngine.mergePart(existing, incoming) as Part.Reasoning
+        assertEquals("reasoning 同守卫对称", existing.text, out.text)
+    }
+
     /** 双侧都无锚（历史落库数据）→ 不伪造，保持 incoming 原样。 */
     @Test
     fun `mergePart tool no anchors anywhere keeps incoming as is`() {
