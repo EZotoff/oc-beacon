@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -224,10 +225,20 @@ internal fun MessageCardAssistant(
     var qEntered by rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     LaunchedEffect(Unit) { qEntered = true }
 
+    // #471③ 验收探针（DEBUG-only）：整卡高度序列——闪烁/跳变帧与 gate
+    // 大放行、heldTail 毕业交接、完结换装的对齐分析用；零行为变化。
+    var probeLastH by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     MessageBubble(
             alignEnd = false,
             containerColor = Color.Transparent,
             flat = true,
+            modifier = Modifier.onSizeChanged { s ->
+                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG && s.height != probeLastH) {
+                    android.util.Log.w("MDResize", "card=" + currentMessage.message.id.takeLast(12) +
+                        " h=" + s.height + " d=" + (s.height - probeLastH))
+                    probeLastH = s.height
+                }
+            },
             tailExtra = {
                 // #410：尾部单点（主路径与分片/分段共用；产出行流式完结门控在内部）
                 AssistantTurnTail(

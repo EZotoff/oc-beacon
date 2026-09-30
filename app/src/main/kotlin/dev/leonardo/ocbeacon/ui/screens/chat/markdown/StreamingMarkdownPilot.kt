@@ -182,6 +182,13 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
     // 各变换哨兵快路径约束（无 | /无任务字符/无数学痕迹时零正则）。
     val normalized = remember(markdown) { normalizeForStreaming(markdown) }
     var resetKey by remember { mutableIntStateOf(0) }
+    // #471③ 差分基准修正：prev 存「放行前缀」（normalized.take(released)）
+    // 而非全文快照——归一化闭合重写（$$→tex 围栏等）天然使全文对 prev
+    // 非前缀，但重写点全部落在 gate 扣留区（released 之后），放行前缀跨
+    // 快照稳定（NormalizationStreamingMonotonicityTest 性质）。以全文为基准
+    // 会把合法的扣留区重写误判为「重生成」→ 300ms 宽限后 resetKey 整树
+    // 静默重建（真机 P1 复现：divergeAt=146 prev=[$$ new=[tex 围栏 →
+    // 卡高塌缩 -1128px + pilot 从零重铺）。
     var prev by remember { mutableStateOf<String?>(null) }
     // #472:非前缀武装时刻——宽限窗内冻结,超窗才重建
     var nonPrefixSinceMs by remember { mutableLongStateOf(-1L) }
@@ -236,7 +243,7 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                         released = normalized.length
                     }
                 }
-                prev = normalized
+                prev = normalized.take(released) // 放行前缀（#471③ 差分基准）
             }
             // 非前缀（重生成/编辑）：下轮新实例走整串重建；
             // #437 §4 数据层摆动（reconciler vs live 竞态）会高频触发此分支——
@@ -245,6 +252,23 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                 // #472 宽限冻结:瞬时摆动(reconciler 竞态/完结 sync 重组)保树
                 // 保进度,旧串回来无缝续播;超窗仍非前缀才是真重生成
                 val nowMs = android.os.SystemClock.elapsedRealtime()
+                // #471③ 验收探针（DEBUG-only）：非前缀事件取证——武装时刻与
+                // 重建时刻此前静默（仅风暴打 flap），单次重建无日志=定位盲区
+                //（真机 P1 复现：h=1304→176 塌缩+pilot 从零重铺=resetKey 静默重建）。
+                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                    val p0 = p
+                    if (p0 != null) {
+                        var i = 0
+                        val lim = minOf(p0.length, normalized.length)
+                        while (i < lim && p0[i] == normalized[i]) i++
+                        val ctxA = p0.substring(i.coerceAtMost(p0.length), (i + 16).coerceAtMost(p0.length))
+                        val ctxB = normalized.substring(i.coerceAtMost(normalized.length), (i + 16).coerceAtMost(normalized.length))
+                        AppLogger.w("MDPilot", "nonPrefix " +
+                            (if (nonPrefixSinceMs < 0L) "armed" else "hold") +
+                            " prevLen=" + p0.length + " newLen=" + normalized.length +
+                            " divergeAt=" + i + " prevCtx=[" + ctxA + "] newCtx=[" + ctxB + "]")
+                    }
+                }
                 if (nonPrefixSinceMs < 0L) nonPrefixSinceMs = nowMs
                 if (!nonPrefixRebuildDue(nonPrefixSinceMs, nowMs)) {
                     return@LaunchedEffect
@@ -258,6 +282,10 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                     }
                     held.value = ""
                 } else {
+                    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                        AppLogger.w("MDPilot", "RESETKEY rebuild — nonPrefix survived grace window" +
+                            " prevLen=" + (p?.length ?: -1) + " newLen=" + normalized.length)
+                    }
                     prev = null
                     released = 0
                     held.value = ""
@@ -291,9 +319,9 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                     appendAndTrace(state, normalized.substring(p.length))
                     released = normalized.length
                 }
-                prev = normalized
+                prev = normalized.take(released) // 放行前缀（#471③ 差分基准）
             }
-            else -> prev = normalized // 等长：无增量
+            else -> prev = normalized.take(released) // 等长：无增量（#471③ 基准统一）
         }
         if (gate && prev != null) {
             val newHeld = normalized.substring(released.coerceIn(0, normalized.length))
@@ -305,6 +333,14 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
             // 对齐 MDPgate 毕业窗 ±50ms）。同帧收缩后，延迟原本要防的「净高
             // 先减一帧触达列表」由帽协议承接——增量当帧被帽裁掉，flush 单出口
             // 只放行净增长（trueHeight−reserved），列表永不见负增量。
+            // #471③ 验收探针（DEBUG-only）：heldTail 长度变化（毕业交接时刻）
+            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG && newHeld.length != held.value.length) {
+                AppLogger.i(
+                    "MDPilot",
+                    "held size " + held.value.length + " -> " + newHeld.length +
+                        " (released=" + released + ")",
+                )
+            }
             held.value = newHeld
         }
     }

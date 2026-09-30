@@ -94,6 +94,7 @@
   - 2026-09-30 ③归一化重排专项开工:方向=归一化前移到流式 ingest(终帧=流式帧,完结变换幂等化);setext 升格/tight→loose/CRLF 三小项随批评估
   - 2026-09-30 ③归一化重排设计定稿 to spec:docs/specs/2026-09-30-471-3-streaming-normalization-unification-design.md——归一化前移 gate 前流式 ingest(终帧=流式帧)+位置制空行化(cumEnd 行完成即定案)+gate 表格注入退役;实现按 spec §5 三 commit(新会话可执行);可关卡片清单 spec §8(本卡验收后整卡关)
   - ③实现落地待验收：spec §5 三 commit 完成——A 276d8fbf(纯函数+TDD+性质测试抓出四破口修订:尾$run收口/表格排除数学行/表头待定回退/MarkdownFenceLine 统一围栏) B 9130c83e(pilot ingest 接线+gate 注入退役) C(E2E:held=0→85ms 桥接→Success 直达,无弹跳双帧,flap=0,3716 绿)。E3 以单测+长段档案替代(用户验收保留)。验收清单 spec §9;铁律 9 已收编 iron-laws
+  - ③验收发现第三根因并修复:差分基准错配——prev 存归一化全文快照,$$闭合重写天然非前缀但落扣留区,SMP 误判重生成→静默 resetKey 重建(真机 P1:h 塌缩-1128+从零重铺×2);修复=prev 改放行前缀 normalized.take(released),复现验证重建事件 0/无负向跳。验收探针(MDResize/heldTail/nonPrefix)保留 DEBUG-only
 
 ## P3 — 观察与低价值改进
 
