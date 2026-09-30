@@ -615,6 +615,16 @@ internal fun MarkdownContent(
             heading4 = { model -> SafeHeading(model, typography.h4, linkListener, linkColor, uriHandler) },
             heading5 = { model -> SafeHeading(model, typography.h5, linkListener, linkColor, uriHandler) },
             heading6 = { model -> SafeHeading(model, typography.h6, linkListener, linkColor, uriHandler) },
+            // #471④-b：任务列表复选框——m3 Material Checkbox（官方 demo 同款装配）。
+            // 此前未覆写 → 基础模块默认 checkedIndicator 渲染字面 "[x] "/"[ ] " 等宽
+            // 文本（用户验收否决形态：要求真 markdown 复选框而非文字）。
+            checkbox = { model ->
+                com.mikepenz.markdown.m3.elements.MarkdownCheckBox(
+                    content = model.content,
+                    node = model.node,
+                    style = model.typography.text,
+                )
+            },
         )
     }
 
