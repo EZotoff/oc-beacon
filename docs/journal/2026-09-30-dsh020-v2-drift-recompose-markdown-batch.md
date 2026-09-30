@@ -118,3 +118,7 @@ gateway/* 家族 20+（internal/arguments-invalid/bad-request/cancelled/ambiguou
 **演示期立卡三张**（用户体感发现）：#490 单发双消息+持久化（v2 对照锁定 dsh 通道特有）、#491 轮次完成后整体上抬数像素（关联 #442 已有完结观感）、#492 流式贴底起手上滑跳变到统计栏上方（疑 #435/#476 配对切换域；与 #484/#442 三卡同域对照注记）。
 
 **模块 E（beta 流式）**：此前仅到"构建+装机+冒烟"（未配置服务器页），本轮 UI 自动化补完——beta 包连 Host-4199（v1 免密）→ 会话列表 → 新建（oc-beacon 项目）→ "write 3 short sentences about rain" → **流式输出全程正常**（进行中停止按钮/雨景三句渐出/5.6s 完成标注落地，零异常）。#437 journal 挂的「beta 构建首个流式 E2E」验证点以本地 assembleBetaRelease 覆盖（R8 生效+debug 通道关闭）；CI 产物的同款验证留真正发版时例行。
+
+## 模块 E 用户验收（2026-10-01）
+
+用户确认 beta 流式演示通过（「刚刚演示的E也没问题」）——#437 journal 挂的「beta 构建首个流式 E2E」验证点正式闭环（本地 assembleBetaRelease 口径；CI 产物留发版例行）。演示模块 A-E 全部验收通过，批次收官。
