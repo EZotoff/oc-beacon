@@ -979,3 +979,9 @@ IP 漂移对策；dsh-pair.sh 支持 DSH_PAIR_SERIAL 参数化传名）。
 
 - compileBetaDebugKotlin 绿 + 全量单测 3742/0 失败 + R8 静态核查：proguard 对 mikepenz/intellij markdown 全家 keep（proguard-rules.pro:38-40），pilot/gate/inline 三类无自定义反射面（唯一 Class.forName=平台类 android.os.SystemProperties，R8 透明）
 - 残余：beta/stable **release** 构建开 R8，flag 翻 true 后 pilot 路径首次进入 R8 常量折叠保留面——运行时 smoke 未做（发版红线：version.properties 未 bump 禁 assemble beta/stable）。**下次 beta 发版首轮 E2E 必须覆盖一轮流式输出**；回退通道=flavor flag 置 false
+
+## 放行后验证补充（2026-09-30 20:30，用户授权本地不发布构建）
+
+- assembleBetaRelease BUILD SUCCESSFUL（3m32s，R8 全程无 keep 报错）；mapping.txt 实证 pilot 家族保留（StreamingMarkdownPilot/SafePrefixGate/InlineSpanSafety/StreamingGrowLedger/MarkdownContent 共 3384 处引用，rememberPilotStreamingMarkdownState 完整映射）
+- 装机冒烟：install Success（release keystore 签名，与 CI 同源）→ 冷启 → 进程存活、FATAL=0、UI 正常（中文本地化/MD3/空状态引导页/电池横幅，vision 判读无渲染异常）
+- 残余收窄：唯一未覆盖=beta 包内一轮真实流式输出（需 UI 手工配置服务器，debug 通道 beta 禁用）——beta 包已留在真机（dev.leonardo.ocbeacon.beta，adb reverse tcp:4096 已通），用户指配一轮即完成闭环；下轮 CI 发版 E2E 同样覆盖
