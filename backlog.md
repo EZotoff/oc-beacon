@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#484**（2026-09-30 #483 流式逐字揭示动效：char reveal + 尾）。
+**编号**：全局递增，不回收。下一编号：**#486**（2026-09-30 #485 #485 完结前内容闪灭:REST快照归并保位破）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
@@ -54,6 +54,16 @@
 ## P0 — 主流程阻塞
 
 ## P1 — 核心功能需求
+
+- [~] **#485 #485 完结前内容闪灭:REST快照归并保位破坏有序前提→t_锚点漂移信封→子树换血asyncTerminal Loading** `chat` `data` `bug`
+  - 用户主诉(2026-09-30):轮次完结收尾前内容突然消失~350ms再重现;真机18:31:42定罪链=完结listMessages刷新→mergeSortedMessages『合并行保持existing原位』契约+SSE信封钟与REST持久化created差(~13-50ms)→user行换上REST权威created却留在SSE槽位→列表失序(user冒到agent-switched上方)→computeTurnAnchors的Older侧相邻变信封→t_键翻转(t_0c34→t_0c11)→LazyColumn弃整棵子树(含活asyncTerminal Success态)→全新实例State.Loading≈0高=闪灭;次轮刷新反向行走顺序自愈=键振荡(t_626b↔t_628d)之谜
+  - 根修两层:①MessageMergeEngine.mergeRestSnapshot(REST快照归并后按服务端created稳定重排,SSE_PRIORITY/REST_AUTHORITY两策略接线;APPEND_ONLY种子路径不动);②computeTurnAnchors锚点穿透SYNTHETIC_ENVELOPE_ROLES信封(idle轮界不穿透防跨轮抢键)
+  - TDD:MessageMergeEngineOrderTest 3例(失序复现/双刷新不振荡/user行REST权威created)+TurnGroupAnchorStabilityTest 3例(有序锚user/失序穿透信封/不跨idle界),红转绿;全量单测绿+装包。真机E2E两轮(2053/3761字,均>2048走asyncTerminal):完结刷新PLAN add-1-rem-0(仅idle气泡)零键移除、Loading=0、pilot→hold→Success直达→preParsed、子树从零重测=0;修复前同场景rem2+/add3+Loading×2+d=+5452/+8602。待用户复验:完结一瞬无闪灭
+
+- [ ] **#484 #484 滚动中视口3/4高度坍缩(读历史方向切换触发,非完结族)** `scroll` `chat` `bug`
+  - 用户主诉(2026-09-30):滚动阅读历史/方向切换时偶发约3/4视口高度坍缩后回弹;与#471完结族不同(滚动中触发,流式与否待证)
+  - 取证进行中:全量logcat持续抓取(/tmp/scroll_bug_hitl2.txt,后台job运行中),复发时用户配合方向切换,判读RESERVE flush reserved=X stuck/ScrollDiag/MDResize负d签名
+  - 疑似与#470帽不回改/ledger收缩不配对同域,签名定罪后裁决并入或独立修复
 
 - [ ] **#470 流式高度配对收缩缺口:帽不回改空白残留+ledger收缩不配对视口落** `scroll,chat`
   - 2026-09-30 调研 P3 定罪:①帽轨 reserveReleasePlan 对 trueHeight<=reserved 恒 null(帽单调只增,ScrollCompensation.kt:338)——流式内容回缩(表格列放宽/setext 前重排)时 item 保持旧高=空白残留,直到换流式项 reset;②ledger 轨 note 对 d<0 只 rebase 不配对(:157)——压缩卡/工具横幅回缩时上方内容下坠无补偿。修复需高度引擎域专项设计(帽回改与『已上屏永不回改』既有裁决冲突,需用户裁断语义:回缩时同步缩帽+视口跟随 vs 维持空白)。

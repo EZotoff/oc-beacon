@@ -1055,7 +1055,10 @@ class MessageEventHandler @Inject constructor(
         _messages.update { current ->
             val existing = current[sessionId] ?: emptyList()
             // O(n+m) 两路归并替代 O((n+m) log(n+m)) 全量排序（见 mergeSortedMessages 前提）
-            val merged = mergeSortedMessages(existing, incomingSorted) { sse, inc ->
+            // #485：REST 快照归并后按服务端 created 重排（mergeRestSnapshot）——
+            // 保位契约在「user 行 created 被 REST 权威前跳」时破坏有序前提，
+            // t_ 键漂到信封 → 子树换血 → asyncTerminal Loading≈0 闪灭。
+            val merged = MessageMergeEngine.mergeRestSnapshot(existing, incomingSorted) { sse, inc ->
                 MessageMergeEngine.mergeMessageMeta(sse, inc)
             }
             val assistantBeforeById = HashMap<String, Message.Assistant>(existing.size)
@@ -1106,7 +1109,7 @@ class MessageEventHandler @Inject constructor(
             // tokens 抹掉 → lastContextTokens=0 → 顶部导航栏 context 指示器消失。
             // Assistant 改字段级合并（mergeAssistantMeta：incoming 非空字段权威、
             // 空字段保留 existing）——REST 权威语义不变，元数据不再丢失。
-            val merged = mergeSortedMessages(existing, incomingSorted) { e, inc ->
+            val merged = MessageMergeEngine.mergeRestSnapshot(existing, incomingSorted) { e, inc ->
                 if (e is Message.Assistant && inc is Message.Assistant) {
                     MessageMergeEngine.mergeAssistantMeta(e, inc)
                 } else if (e is Message.User && inc is Message.User) {

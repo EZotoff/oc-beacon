@@ -542,6 +542,27 @@ internal object MessageMergeEngine {
     }
 
     /**
+     * #485：REST 快照归并入口（SSE_PRIORITY / REST_AUTHORITY 策略共用）。
+     *
+     * 背景（真机 2026-09-30 18:31:42 定罪）：V2 SSE 把消息 created 写成信封/
+     * 客户端钟（V2SseMapper），流式期内存行比 REST 权威 created 早 0.5-1s；
+     * [mergeSortedMessages] 契约「合并行保持 existing 原位」——user 行内容被
+     * REST 权威替换（created 前跳）却留在 SSE 时期槽位 → 输出列表失序 →
+     * computeTurnAnchors 的 Older 侧相邻错位（t_ 键漂到 agent-switched 信封）
+     * → LazyColumn 弃整棵子树 → asyncTerminal 全新实例 Loading≈0 高 =
+     * 「完结前内容闪灭重现」。故 REST 快照归并后必须按服务端 created 重排。
+     */
+    fun mergeRestSnapshot(
+        existing: List<Message>,
+        incomingSorted: List<Message>,
+        merge: (existingMsg: Message, incomingMsg: Message) -> Message,
+    ): List<Message> = mergeSortedMessages(existing, incomingSorted, merge)
+        // 稳定重排到服务端真相序：mergeSortedMessages 保位契约在「合并行 created
+        // 被 REST 权威前跳」时破坏有序前提（见上）——REST 快照频率低（轮次完结/
+        // 手动刷新），O(n log n) 一次可承受；二次刷新起列表已序，零移动。
+        .sortedBy { it.time.created }
+
+    /**
      * 合并消息的 SSE 和 REST 版本。
      * SSE 对内容更新（流式传输），但 REST 可能有 SSE 尚未投递的完成信息。
      *
