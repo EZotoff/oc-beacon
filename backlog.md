@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#490**（2026-09-30 #489 FileViewer 语法高亮 span 多染一）。
+**编号**：全局递增，不回收。下一编号：**#493**（2026-09-30 #492 流式期贴底起手上滑跳变——不跟手直接跳到统计栏上）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
@@ -55,6 +55,18 @@
 
 ## P1 — 核心功能需求
 
+- [ ] **#492 流式期贴底起手上滑跳变——不跟手直接跳到统计栏上方** `scroll` `chat` `streaming`
+  - 用户主诉（2026-09-30 模块 D 体感验收时发现）：流式输出过程中从贴底状态向上滑动，视口直接跳到统计栏上方，而非像正常消息滚动那样与手指位移一致地连续上移；非流式期滚动正常
+  - 疑点域：流式贴底跟随→读历史的手势接管切换路径（#435『锚即意图』贴底免派发/锚上移进入增长源才配对的切换时刻）、#476 GUARD 死区（120px）与 isScrollInProgress 解除时序、流式增长配对在手势接管帧的一次性大 Δ 补偿错位
+  - 定罪仪器：复现时 logcat 采 ScrollDiag LEAP（跳变签名 dIdx/dOff 大值）+ VDRAW/RESERVE + 手势起止帧对照；『跳到统计栏上方』的落点特征（底部统计行上缘=某锚点）是重要线索
+  - 同域关联：#484（滚动坍缩）与 #442（高度引擎二期含流式滚动配对规则）——定罪时三卡域对照（跳变/坍缩/配对残缺可能是同一配对协议的不同症状）
+
+- [ ] **#490 单次发送显示两条相同消息并持久化（复进入仍在）** `chat` `bug`
+  - 2026-09-30 #458 演示中两度复现：单次 tap 发送键后显示两条相同用户消息，重进会话仍在=已持久化；触发环境=agent 侧 input text 注入+tap（dsh020-live 通道），真手指是否复现待用户确认
+  - 定罪方向：①IME 注入伪影 vs 真发送链路双提交②本地乐观双播种 vs 服务器双收（重进在=至少一侧持久化）③dsh 通道特有 or 通用（v2 通道对照待采）
+  - 诊断锚点：MsgEventHandler/Room 直查看服务器是否两条；本批未动发送链路（纯 0.2.0 适配），回归嫌疑低但需仪器定罪
+  - 2026-09-30 通道对照证据（模块 B 演示采集）：v2 2.0.19 通道同一注入手法（input text+tap 单击）单次提交——V2Api [prompt] 日志仅 1 次、POST /prompt 仅 1 次（200/142ms）、UI 显示 1 条；对照 dsh020-live 通道两轮均双发+持久化 → 双发为 DSH 通道特有（发送链路分叉在 DshApiClient prompt 路径或 dsh 事件回流双播种），v2 路径排除
+
 - [ ] **#484 #484 滚动中视口3/4高度坍缩(读历史方向切换触发,非完结族)** `scroll` `chat` `bug`
   - 用户主诉(2026-09-30):滚动阅读历史/方向切换时偶发约3/4视口高度坍缩后回弹;与#471完结族不同(滚动中触发,流式与否待证)
   - 取证进行中:全量logcat持续抓取(/tmp/scroll_bug_hitl2.txt,后台job运行中),复发时用户配合方向切换,判读RESERVE flush reserved=X stuck/ScrollDiag/MDResize负d签名
@@ -80,6 +92,11 @@
 
 ## P2 — 优化与锦上添花
 
+- [ ] **#491 轮次完成后整体会话内容向上抬升数像素（用户观感 2026-09-30）** `chat` `scroll`
+  - 用户主诉（2026-09-30 模块 B 演示期间发现）：AI 回答完毕后整体对话内容向上抬几个像素；用户判断与 #459/B 相关性不大，疑其他原因，先立卡追踪
+  - 同域关联：#442 已迁入观感记录『完结窗会小跳一下(2026-09-27,限速节奏参数 BIG_RELEASE_MIN_INTERVAL_MS 可调)』——本次『上抬数像素』为其更精确定义或同族不同症，定罪时需对照甄别（完结换装高度变化 vs 视口配对残留）
+  - 定罪方向：完结时流式 turn 换装（StreamingMarkdownState→完结态重排）高度差、chunk 裂变（流式单 item→完结分片 N item）视口补偿、帽/ledger 完结回缩路径
+
 - [ ] **#489 FileViewer 语法高亮 span 多染一字符（PhraseLocation.end exclusive 语义误用 end+1）** `ui` `bug`
   - 高亮影响面调研副产物（2026-09-30）：highlights 库 PhraseLocation.end 为 exclusive 语义（官方 README emphasis(13,25)→ExampleClass 占 13..24 + NumericLiteralLocator 测试双证），HighlightBuilder.kt:39 的 end+1 使每个高亮短语尾部多染 1 字符
   - 证据链与修复建议见 docs/research/2026-09-30-code-syntax-highlighting-impact-analysis.md §1.1.d；修复=去掉 +1（一行）+ 对照既有单测；注意与聊天域高亮组件（#488）的防御写法保持同语义
@@ -99,17 +116,12 @@
   - 2026-09-30 影响面分析完结（docs/research/2026-09-30-code-syntax-highlighting-impact-analysis.md）：路线修正——不引 -code 依赖（span 防御/M3 主题/打点三处定制全落其 v0.45.0 private 区，可见性直证），改仓库内自建组件（core public API MarkdownCodeFence + 已在依赖树的 highlights，~120 行 fork + CodeSyntaxTheme 映射纯函数 ~50 行）→ 零新依赖，UI 依赖禁令裁决面消失；user 气泡豁免是伪问题（用户消息走纯 Text 不进 MarkdownContent，PartContent.kt:144-154）
   - 影响面总评：小切口多波及——必改 2 文件（build.gradle.kts 注释 + MarkdownContent.kt 三点位 ~40 行）+ 新增 2-3 文件 + 测试 2（~120 行），但 components 单例使高亮一次性波及 8 调用面（assistant 双路径/Reasoning 流式/工具卡×2/通知卡/压缩卡/预览对话框），与流式重启节律/高度引擎 Bold advance/主题 remember 键三套承重机制交叉；实施三批（S/S-M/M），批 1 真机判据复用 #487「50 行 Kotlin」高度单调性；顺带发现 FileViewer HighlightBuilder.kt:39 end+1 多染一字符存量偏差（#489 另立）
   - 2026-09-30 阶段三处置：①块内 HTML 原文呈现已落地（custom 钩子覆写+真机 E2E 实证原文可见）④setext 维持 accepted-gap（卡原文语义，技术论证入 journal）②③方案文档 docs/research/2026-09-30-488-syntax-math-options.md——两裁决点待用户：②高亮走官方 renderer-code+highlights（新增两依赖）还是自写 top-5 lexer；③数学走降级+着色/标注升级还是维持现状
+  - 2026-09-30 ①块内 HTML 原文呈现用户验收通过（模块 C 演示『这算是对代码块的修复吧…没啥问题』——效果确认：HTML 内容以代码块样式展示原文，修复前整块隐形）；①就此收口，卡整体待 ②③两裁决点拍板后一并收尾
 
 - [ ] **#486 SSE retry 重建帧 watch（原#471④）：断连续传+滚出视口弃树+ever=false 理论盲区，复发再战勿主动开工** `scroll` `chat`
   - 原 #471④ 用户裁决 c 降级观察（v1+v2 四场景不可复现，331k 行取证 Loading=0，#472 hold/registry/preParsed 防御栈有效）；#471 整卡迁移后观察线独立成卡（spec §8：watch 不关）
   - 理论盲区：断连续传+滚出视口弃树重建+ever=false 帧（0 触发）；若复发，残余只剩 staged/换装差（-1330px ③族已消失）——spec §8 残余收窄注记
   - 判读取证：MDResize 负 d / RESETKEY / nonPrefix / rawTail 探针均保留 DEBUG-only（2026-09-30 用户裁决）
-
-- [~] **#439 流式期重组隔离：entries 签名缓存与子卡 skippability 恢复** `streaming` `compose`
-  - 流式批（~14/s）仍使流式 turn + 相邻注入卡条目全量重组（真机 35s 524 次）；渲染像素幂等故非闪烁源，属性能债。
-  - 修复位：ChatMessageList.kt:741 chatEntries 键改结构签名（仿 :283 turnGroups sig-cache）；MarkdownChunking.kt:291-313 ChatEntry 预载 msg/streaming/key；:2448-2487 item lambda 消除 displayItems/turnGroups 直读；:1361-1375/:1772 回调 lambda remember 化。
-  - 2026-09-29 E2E 活证:单轮流式 TextDelta 2877→InjCard 邻项全量重组 4443(1.5x);另一轮 1387→2523(1.8x)——逐 delta 重组放大实测,修点位与量级依据齐
-  - 2026-09-30 阶段二复查（真机仪器）：卡片修点位 2/3 已被前批 R4-B3 收编（ChatEntry 预载+身份编码，2026-09-29 的 4443 活证是其之前数据）；实测 v2.0.19 流式轮 145 批 InjCard 38 次（0.26 次/批 vs 基线 1.5 次/delta）——全量重组放大实质消除；残余链（transcriptCardPlan 每批重算 extras 新实例）收益微小且与冻结前科同域，并入 #442 R2 设计
 
 - [ ] **#442 高度引擎根修二期：R2分片增量化(滑动p90 12ms)+cadence收编+flush深拆+终审待复核项** `perf` `refactor`
   - 终审判定：R1批次已锁 A2 贴底5ms/A1回归/A4全项；滑动p90 19-27 未达12——R2分片(稳定块缓存/尾块单测)是 O(内容)→O(尾块) 唯一路径。
@@ -122,12 +134,6 @@
   - 0.1.7 实发斜杠命名空间码（session/not-found、gateway/arguments-invalid），app DshRpcErrorCode 闭集 isKnown 恒 false 全走 Unknown 兜底（优雅降级成立但分类/文案失准）；/api/respond 已移除改 /result（app 双路已备）。详见 docs/research/2026-09-28-triface-regression-report.md 缺陷 D1/D5
   - 2026-09-30 0.2.0-rc.2 live 实测（宿主 3080 systemd dsh.service，token 经 journal 提取）：漂移仍存在且范围扩大——①错误码斜杠命名空间依旧（session/not-found、gateway/arguments-invalid、gateway/internal 实证；app 39 值点式闭集 isKnown 恒 false 原样成立）②args 契约重构：typert gateway 描述符强制（session/list 要 _request:{}；session/create|cancel|search|messageFeedback/list 要 request:{...} 包装；commands/execute 裸字段且 images→submittedAttachments 改名）③agentPreset/read|list 端点 404 消失；settings/describe、llm/listProviders、session/list(+_request) 仍通。用户裁决（条件满足）：并入批次一起做；范围升级=错误码闭集+args 形状翻译（DshWireAdapter/协议探测 V020）+端点面清点
   - 2026-09-30 用户裁决（开工）：DSH 多版本兼容策略=只适配最新 0.2.0，不保 0.1.x 线面（V011/V012 退役，翻译层可直接对齐 V020，无需三协议并存）；分阶段批次开工（#458+#459→#439→#488）
-
-- [~] **#459 V2 2.0.18 消费侧 14 端点漂移清单（health/question|form request/pty shells/share/rename/service stop 等 404）** `regression,v2,data`
-  - app 调用面 45 点中 14 点在 2.0.18 openapi 缺失（全 404 实证）；真机主链路不受影响（探测器/PATCH session 等降级路径实证），但 question/form 轮询兜底、pty shells、share、service/stop 在 2.0.18 下不可用。详见回归报告 §1.2/缺陷 D2
-  - 2026-09-30 #482 实证副产物：部署版已升 v2.0.19（回归报告基于 2.0.18）——开工时漂移清单需对 2.0.19 重核（/api/version、/api/app/version、/api/health 均已实测 404）
-  - 2026-09-30 阶段一B 重核+适配完结：2.0.19 openapi 138 路由（openapi.json 需认证=新变化）对齐 14 漂移点——13 仍缺失（漂移延续，降级路径维持）；两小项适配落地：form 轮询 URL /api/form/request→/api/form（信封与字段逐一对齐实证）、session/import→/api/experimental/session/import；pty/shells 实为已自愈项。v2 域测试 138 绿
-  - 2026-09-30 0.2.0-rc.2 live E2E（dsh020-live:3080）副产物：①POST /api/session/prompt 受理正常、流式/渲染/轮次键稳定（t_seq-* grp=1 无漂移）；②[MsgEventHandler][skeleton] orphan part host missing→step.started 丢失自愈 在每轮流式首步稳定出现（0.2.0 part 事件先于 host 消息到达，自愈有效非阻塞，漂移信号留档）；③workspace.list 404（0.2.0 端点移除，app 已优雅降级）——归入本卡漂移清单
 
 - [ ] **#464 UI 暖态下列表/卡片点击偶发失效(冷启可靠)** `chat-ui`
   - 2026-09-29 #461/#462 取证副产物:force-stop 冷启后输入 tap 可靠命中(会话行/卡标题),同一 app 暖运行数分钟后点击同坐标零效果(无日志无 UI 变化,vibrator 反馈存在=命中可点击元素但未触发业务);两次独立取证会话复现,冷启后恢复。疑点:点击消费被某 overlay/焦点态拦截或状态门;影响面=自动化测试可靠性,人工使用未报告。待真机复现窗定罪(diagnosing-bugs 流程),暂无用户主诉不阻塞。

@@ -86,3 +86,19 @@ gateway/* 家族 20+（internal/arguments-invalid/bad-request/cancelled/ambiguou
 **①块内 HTML 原文呈现（已落地+E2E）**：mikepenz v0.45.0 对 HTML_BLOCK 零组件（javap 实证 MarkdownComponents 无 html 钩子；HTML_BLOCK ElementType 在 org.intellij.markdown.MarkdownElementTypes 非 GFM），分派走 custom(IElementType, model) 兜底（默认空=整块隐形根因）。覆写 custom：HTML_BLOCK → HtmlBlockRaw（等宽代码样式 + codeBlockBg/Fg 主题令牌 + 横向滚动 + 区间 clamp 截取防 #437 流式失配越界，失败回退整 content 宁多显不丢）；components remember 键补 codeBlockBg/codeBlockFg/typography.code。真机 E2E（v2 会话让 AI 产 div 块+正常句）：HTML 块原文完整可见、后续句子正常渲染——修复前该块整块隐形。
 **④setext stage-2**：卡片原文即「维持 accepted-gap 备查」——无实现需求。技术论证补档：setext 不破坏前缀不变量（gate 放行文本追加式，=== 到达仅渲染层样式翻转 paragraph→heading=视觉闪变）；stage-2 唯一安全解=段落尾行扣留到下一行首可见，实质收窄全部纯文字增量直出节奏，收益（低频 setext 闪变）不抵代价（每段慢一行）。
 **②③方案文档**（docs/research/2026-09-30-488-syntax-math-options.md，带两裁决点）：②推荐接官方 multiplatform-markdown-renderer-code:0.45.0（同版本线，引擎 dev.snipme:highlights 纯 Kotlin KMM 非 UI 库——不违红线；17 语言+增量缓存+sync/async）；备选 B 自写 top-5 lexer 零依赖。③推荐维持降级+着色/标注升级（方案 c）；WebView+KaTeX 混排割裂不推荐，KMM 数学排版生态未成熟。
+
+## 已完结卡片迁入（2026-09-30）
+
+### **#459 V2 2.0.18 消费侧 14 端点漂移清单（health/question|form request/pty shells/share/rename/service stop 等 404）** `regression,v2,data`
+  - app 调用面 45 点中 14 点在 2.0.18 openapi 缺失（全 404 实证）；真机主链路不受影响（探测器/PATCH session 等降级路径实证），但 question/form 轮询兜底、pty shells、share、service/stop 在 2.0.18 下不可用。详见回归报告 §1.2/缺陷 D2
+  - 2026-09-30 #482 实证副产物：部署版已升 v2.0.19（回归报告基于 2.0.18）——开工时漂移清单需对 2.0.19 重核（/api/version、/api/app/version、/api/health 均已实测 404）
+  - 2026-09-30 阶段一B 重核+适配完结：2.0.19 openapi 138 路由（openapi.json 需认证=新变化）对齐 14 漂移点——13 仍缺失（漂移延续，降级路径维持）；两小项适配落地：form 轮询 URL /api/form/request→/api/form（信封与字段逐一对齐实证）、session/import→/api/experimental/session/import；pty/shells 实为已自愈项。v2 域测试 138 绿
+  - 2026-09-30 0.2.0-rc.2 live E2E（dsh020-live:3080）副产物：①POST /api/session/prompt 受理正常、流式/渲染/轮次键稳定（t_seq-* grp=1 无漂移）；②[MsgEventHandler][skeleton] orphan part host missing→step.started 丢失自愈 在每轮流式首步稳定出现（0.2.0 part 事件先于 host 消息到达，自愈有效非阻塞，漂移信号留档）；③workspace.list 404（0.2.0 端点移除，app 已优雅降级）——归入本卡漂移清单
+  - 迁入依据：2026-09-30 用户验收通过（模块 B 演示『Bok』：v2 列表/新建/流式回合/双路回退全通过，附带双发对照证据亦收）（backlog.sh migrate 2026-09-30）
+
+### **#439 流式期重组隔离：entries 签名缓存与子卡 skippability 恢复** `streaming` `compose`
+  - 流式批（~14/s）仍使流式 turn + 相邻注入卡条目全量重组（真机 35s 524 次）；渲染像素幂等故非闪烁源，属性能债。
+  - 修复位：ChatMessageList.kt:741 chatEntries 键改结构签名（仿 :283 turnGroups sig-cache）；MarkdownChunking.kt:291-313 ChatEntry 预载 msg/streaming/key；:2448-2487 item lambda 消除 displayItems/turnGroups 直读；:1361-1375/:1772 回调 lambda remember 化。
+  - 2026-09-29 E2E 活证:单轮流式 TextDelta 2877→InjCard 邻项全量重组 4443(1.5x);另一轮 1387→2523(1.8x)——逐 delta 重组放大实测,修点位与量级依据齐
+  - 2026-09-30 阶段二复查（真机仪器）：卡片修点位 2/3 已被前批 R4-B3 收编（ChatEntry 预载+身份编码，2026-09-29 的 4443 活证是其之前数据）；实测 v2.0.19 流式轮 145 批 InjCard 38 次（0.26 次/批 vs 基线 1.5 次/delta）——全量重组放大实质消除；残余链（transcriptCardPlan 每批重算 extras 新实例）收益微小且与冻结前科同域，并入 #442 R2 设计
+  - 迁入依据：2026-09-30 用户验收通过（模块 D：仪器面 88 次/轮 vs 基线 4443=1/50、视口外零重组、零负向/零前缀破坏；体感面『其他的没啥问题』）；残余 transcriptCardPlan 每批重算并入 #442 R2（卡内已注记）（backlog.sh migrate 2026-09-30）
