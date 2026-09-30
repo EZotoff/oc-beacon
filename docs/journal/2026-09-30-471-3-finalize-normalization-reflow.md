@@ -125,3 +125,9 @@ v1 到 v2（真机 E2E 证伪驱动）：
   - 用户裁决（2026-09-26 #441 后续）：表格/列表已逐行；评估引用块(>)、嵌套列表、def list、长代码块行级、setext 标题等大块的行级定案可行性，逐类 TDD 扩展 SafePrefixGate。
   - 2026-09-30 核查收口：逐类对照 SafePrefixGate 现码，清单已随 #441→#472→#471③④ 四批逐类兑现——表格逐行(续放+三回退守卫)/列表(* 与有序行级、任务项行级+渐进、普通 - + 走纯文字直出)/引用块行级(懒延续刻意扣留)/嵌套列表浅缩进走行级、≥4 缩进刻意扣留/长代码块围栏行级/长段落位置制空行化+纯文字直出/ATX 行级/def list 无需(纯文字直出)；唯一残余 setext=刻意 accepted-gap(spec §3.6 stage-2 备查+铁律12注记)，不再单独占卡
   - 迁入依据：用户裁决关闭（2026-09-30「好」）：逐类对照表证实实质已随四批落地，setext 维持 accepted-gap 由 spec §3.6+铁律12 承载（backlog.sh migrate 2026-09-30）
+
+### **#482 V2 prompt.files 嵌套契约未经部署版实证(2026-08-16 TODO)** `v2` `data`
+  - V2ApiClient:526:嵌套 body 部署版 next-17430 一律 400→线上一直走平铺降级(files 顶层);主干部署后需 E2E 验证 modernBody 分支再收敛双路
+  - 验证成本低(一次带附件 prompt E2E+抓帧);与 #459 漂移族相邻但独立(这是契约实证,非端点缺失)
+  - 2026-09-30 实证收口（部署版 v2.0.19，systemd 常驻 4096）：①嵌套 body {prompt:{text,files}} → 400 Missing key ["text"]（服务端 zod schema 仍要求顶层 text，嵌套包裹仍不被接受）②平铺 body {text,files:[{uri:data:...;base64,name}]} → 200，payload.files 回显 {data,mime,source:inline,name}；一次性会话已 DELETE 204。结论：双路收敛不可行，平铺降级路径在 v2.0.19 仍为部署版唯一有效契约，modernBody 分支保留待未来主干部署
+  - 迁入依据：实证完成：v2.0.19 部署版嵌套 400/平铺 200，保持双路不收敛，零代码改动（curl 直打 4096，测试会话已清理）（backlog.sh migrate 2026-09-30）
