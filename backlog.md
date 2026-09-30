@@ -98,6 +98,7 @@
   - 验收发现(真机)：GFM 任务列表整块毕业（4条一次性吐出）——归一化后 [ 硬停+无任务项行分支致整列表扣到空行毕业；#471③ 归一化前移后原保守理由(☐完结改写)已消失，可行级放行（#441 任务项分支模式）
   - 追加根修(#471④-a,6011b888)：任务列表逐条放行——v1 行首守卫被真机 E2E 证伪(行续段冻结)，v2 锚定真实行首+未完行渐进；视觉验收待用户
   - 追加根修(#471④-b)：任务复选框此前渲染字面[x]文本——markdownComponents漏传checkbox参数落基础模块默认（官方demo接m3 Material CheckBox）；已接线+真机a11y验证0字面/119语义节点
+  - 坍缩重建根修四连（2026-09-30 真机定罪）：①归一化 run 哨兵空行吞噬——ensureBlankLineBeforeGfmTables/transformMathFallback 的 run.isNotEmpty() 哨兵把「首行为空行」（闭合围栏后空行）误判 run 未启动→分隔换行被跳过→空行吞噬；流式中 | 首达（快速路径退出）时首次生效→已放行前缀中段非前缀→RESETKEY 重建坍缩+4.4s 限速重铺（三案 13:55/14:13/14:40 同源 divergeAt 皆落围栏后空行）。②gate 表头行中线/未完分隔行/行首空白回退补口——批预算截点越过未来插空行点。③mergePart 流式期前缀一致性守卫——异构快照不再替换 delta 累积，终态权威替换不变。④pilot 重建快速重灌（200ch/200ms→800ch/帧）+rawTail 取证探针。真机终验：同配方 prompt 零 nonPrefix 零重建高度单调；全量单测绿；证据链=wire 抓取回放（WireReplayDivergenceTest）+全前缀扫描（NormalizeDivergenceProbeTest）
 
 ## P3 — 观察与低价值改进
 

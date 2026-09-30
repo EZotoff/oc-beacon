@@ -72,3 +72,28 @@ v1 到 v2（真机 E2E 证伪驱动）：
 修复：接 m3 MarkdownCheckBox（Material3 Checkbox 只读+role/stateDescription 语义），与官方 sample MarkDownPage.kt:84 同款。真机 a11y 验证：字面文本节点 0（修复前满屏）、checked 语义节点 119。全量单测绿。
 
 调研产出（能力矩阵+官方对照）见本轮回复；代码高亮模块（multiplatform-markdown-renderer-code）未接入为已知现状。
+
+## 坍缩重建根修四连（2026-09-30 下午，用户主诉「输出时整个回答坍缩并重建」）
+
+**证据链（Phase 1-2，全部可复核）**：
+- 99MB 后台全量 logcat（bash-901 持续抓取）捕获得 13:55 事件全链：nonPrefix armed（divergeAt=396）→ 300ms 宽限 → RESETKEY rebuild → MDResize 5741→3249（d=-2492 坍缩）→ 200ch/210ms × 21 块重灌 4.4s（重建段）→ 流末 d=-15432（模型退化复读 output=9155 tokens、服务器截断 914 字符、text.ended 权威替换）。
+- wire 真值：GET /api/event 全局 SSE 抓取（curl -Ns 重连循环）+ 逐 delta 回放（WireReplayDivergenceTest）：数据层组装与 wire 逐字节一致（289 字符）→ 数据层无罪。
+- Kotlin 探针（NormalizeDivergenceProbeTest）：真实语料 289 字符逐前缀扫描 normalizeForStreaming——定罪 k=232 处 divergeAt=163（围栏后空行消失），分级定位 = ensureBlankLineBeforeGfmTables。
+
+**根因（双层）**：
+1. ensureBlankLineBeforeGfmTables / transformMathFallback 的 run 累加器以 run.isNotEmpty() 作「已消费行」哨兵——run 首行为空行（闭合围栏后的空行）时 run=="" 被误判未启动，下一行 append 跳过分隔换行 → 空行被静默吞噬。流式中该吞噬在文本首次出现 |（表格行迟到，快速路径退出全量重扫）时首次生效 → 已放行前缀中段非前缀改写。13:55（divergeAt=396）/14:13/14:40（163）三案同源，divergeAt 全部落在闭合围栏后的空行位置。
+2. SafePrefixGate 纯文字分支视表头行为无标记文本增量直出 + 既有「表头行待定三行结构回退」以截点收在行尾为前提——批预算截点落在表头行行中/未完分隔行/行首空白时越过未来插空行点（14:58 真机：released=231 > 插点 229）。
+
+**修复（四提交）**：
+- 根修①（4f1..: MarkdownContent/MarkdownMathFallback）：run 哨兵改 runLines 显式计数，split/join 无损。
+- 根修②（SafePrefixGate）：截点所在行为表头行形态/截点前行内仅空白/截点落未完分隔行内——三形态回退到安全边界；分隔行完整=定案解锁。
+- 根修③（MessageMergeEngine）：流式期（无 end）前缀一致才替换（REST 领先快进保留），分歧保 delta 累积；终态权威不变（reasoning 对称+isTerminal 补齐）。
+- 根修④（StreamingMarkdownPilot）：RESETKEY 重建再铺开走快速重灌（800ch/帧、免壁钟，~6 帧完成）；限速仅保留首跑。nonPrefix 探针附 rawTail。
+
+**回归锚**：NormalizeDivergenceProbeTest（全前缀扫描）/ SafePrefixGateTableHeaderMidLineTest（三形态回退+完整解锁+跨分隔行前缀稳定）/ WireReplayDivergenceTest（wire 回放组装一致）/ RefeedPacingTest / MessageMergeEngineTest 四新测试 / MessageEventHandlerTest 语义修订（diverging longer snapshot kept out）。
+
+**真机终验（15:14，同配方 prompt——此前 4 次触发）**：零 nonPrefix、零 RESETKEY、MDResize 单调无负 delta（96→1838）。全量单测绿（EXIT=0），装机 Success。
+
+**残余（登记不修）**：流末模型退化截断替换（d=-15432 类）为内容真变的正确收敛，平滑化归高度引擎收縮配对（后续卡片）；RESETKEY 重建首帧空态闪帧（快速重灌已压至 ~6 帧，零闪帧需帽保持协议）。
+
+**方法论**：diagnosing-bugs 全流程——后台持续抓取即反馈环（Phase 1 #5 replay captured trace）；wire 回放 + Kotlin 探针 = 离线确定性复现（Phase 2 minimize）；假设排名（Phase 3）排除了高度引擎/数据层组装/表格插行主路径；分级探针定位（Phase 4）逐变换二分；TDD 红→绿（Phase 5）四层各带回归锚。
