@@ -60,6 +60,7 @@
   - 取证进行中:全量logcat持续抓取(/tmp/scroll_bug_hitl2.txt,后台job运行中),复发时用户配合方向切换,判读RESERVE flush reserved=X stuck/ScrollDiag/MDResize负d签名
   - 疑似与#470帽不回改/ledger收缩不配对同域,签名定罪后裁决并入或独立修复
   - 2026-09-30 复核机制定局：抓包持续运行，每 4 小时自动复核签名+轮转清理（cron 自动化+/tmp/484_review_log.md 台账）；基线复核 15:27-19:37（140MB/105万行/三段流式轮次）零坍缩签名
+  - 2026-09-30 抓包运维修正：增量抓包曾 80s 死亡无人察觉→自动化已加冻结检测（tail 时间戳>5min 即报告）；现活抓包=/tmp/scroll_bug_hitl3.txt（用户侧 job，自动化已改指向并获轮转授权）；19:47-20:04 复核零签名
 
 
 - [~] **#441 app SSE 长连接随机断连：输出期间渲染静默（服务端正常）** `bug` `dsh`
@@ -118,6 +119,7 @@
   - 2026-09-29 发掘审计:dumpsys 实测持锁(OpenCodeRemote::SSEConnection,周期性重取)+日志 WakeLock renewed 每 30s(OpenCodeConnectionService:650 起)——抗 MIUI 杀 socket 的保活设计(#441 域)
   - 未审计点:后台期是否释放/持锁时长分布/对电量的真实代价;若后台仍长持=电池债——需 acquire/release 全路径走查+一次耗电基线
   - 2026-09-29 E2E 活证:HOME 退后台 12s 后 PARTIAL_WAKE_LOCK 仍持有(dumpsys ACQ≈2m33s LONG;历史模式 ~9.5min REL+立即续取)——后台不释放确认;余下=电量代价量化+策略裁决(后台长置是否转释放靠重连)
+  - 2026-09-30 审计批次一（代码走查+活体实证）：①路径——acquire=onLifecycleChanged 非空集（首连），release=onLastServerDisconnected(:413)+onDestroy；HOLD=10min 超时兜底（#133 加固，进程死亡自愈）+续期协程；②续期间隔实测 9m30s（19:51:28→20:00:58 renewed，与 10min-30s 精确吻合，卡片原「每30s」为边距误记）；③后台不释放=设计使然（#441 抗 MIUI 杀 socket），MIUI batterystats 以 longwake 记账（时间线实证 +6m02/+7m02/-15m32/+16m32）；④低危发现：续期循环 isHeld→release→acquire 与 releaseWakeLock 非原子，理论竞态可在释放后重取，10min 超时兜底自愈。待办：电量 A/B 基线（重置 batterystats+定时读数）+策略裁决：维持现状 vs 后台空闲期释放靠重连+watchdog 兜底（省电但 #441 复发风险）vs 仅 streaming 活跃期持锁
 
 - [ ] **#477 长文 markdown 块 uiautomator 语义零暴露——dump 全盲致渲染正常被误判空白** `ui`
   - 2026-09-29 收口审计真机定罪:末轮长文(async parse 路径)可见区 dump 零文本节点(仅 1 个空 text 可点击 TextView h≈1921px),同期旧 turn 正常暴露;vision(三路交叉)+像素双验证内容完整渲染(连续正文/无空白/无圆点)——渲染层无恙,纯语义暴露缺陷
