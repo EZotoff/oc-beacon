@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#493**（2026-09-30 #492 流式期贴底起手上滑跳变——不跟手直接跳到统计栏上）。
+**编号**：全局递增，不回收。下一编号：**#498**（2026-10-01 #497 子会话底栏三形态分裂 + DSH compose）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
@@ -92,6 +92,21 @@
 
 ## P2 — 优化与锦上添花
 
+- [ ] **#495 TODO 入口空态泄漏（V2/DSH）——todoCapable 死状态与 #85 登记矛盾** `dsh`
+  - FAB TODO 入口无能力位门控；ChatViewModel.todoCapable 探测全仓无消费（死状态）；V2/DSH 入口常驻但 TodoSheet 恒空态（DSH getSessionTodos 恒空表=探测成功）。
+  - v1-v2-differences #85 明文要求 V2 隐藏 Todo 入口未落地——2026-09-07 审计 E-1 漏网项；修法=入口挂能力位。
+  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D1
+
+- [ ] **#494 DSH 权限预设下拉夺焦点收键盘——与 #361「菜单不得收键盘」裁决冲突** `keyboard`
+  - PermissionPresetSelector 用默认 DropdownMenu（focusable=true）→ DSH 输入框聚焦时点权限 pill 键盘收起；同屏 busy 气泡已按 #361 显式 focusable=false 保键盘。
+  - 仅 DSH 渲染该控件 → 同类轻量选择两套键盘策略按端不同（用户键盘不一致感知的真正近亲）；修法=同款焦点策略或非夺焦点容器。
+  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D5
+
+- [ ] **#493 模型抽屉键盘保持——切模型不收键盘（三端共享改造）** `keyboard`
+  - 真机实测三端一致为「收起→抽屉→回弹」（ModalBottomSheet 独立窗口必夺焦点）；2026-09-30 用户裁决基准=不收键盘。
+  - 实现方向：换主窗口内非模态呈现（Popup(focusable=false) 容器或布局内 BottomSheet），保留返回键/点外关闭、scrim、75% 固定高、#379/#405 手势隔离语义；共享组件=三端同改（影响面已裁决）。
+  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §一
+
 - [ ] **#491 轮次完成后整体会话内容向上抬升数像素（用户观感 2026-09-30）** `chat` `scroll`
   - 用户主诉（2026-09-30 模块 B 演示期间发现）：AI 回答完毕后整体对话内容向上抬几个像素；用户判断与 #459/B 相关性不大，疑其他原因，先立卡追踪
   - 同域关联：#442 已迁入观感记录『完结窗会小跳一下(2026-09-27,限速节奏参数 BIG_RELEASE_MIN_INTERVAL_MS 可调)』——本次『上抬数像素』为其更精确定义或同族不同症，定罪时需对照甄别（完结换装高度变化 vs 视口配对残留）
@@ -106,6 +121,16 @@
   - 2026-09-30 用户裁决（听agent建议）：先不急，并入 #442 高度引擎二期系统性解决——帽回改语义与 R2 分片增量化同域设计，B/A 裁决推迟到二期设计时定
 
 ## P3 — 观察与低价值改进
+
+- [ ] **#497 子会话底栏三形态分裂 + DSH composer 异步挂载焦点扰动** `subagent`
+  - 子会话底栏：V1/V2 整块空白（无任何说明）vs DSH 只读提示行/可输入 composer——同意图三形态；readOnlyHintVisible 现要求 subagentsSupported，V1/V2 不给提示行。
+  - DSH subagentMode 异步解析期 composer 先缺席后出现（ChatTextField 无 FocusRequester）→ 焦点/键盘重置——键盘行为按类型不同的真实结构源；对齐机会=V1/V2 也给只读提示行。
+  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D3/D4
+
+- [ ] **#496 空闲长按发送键三端语义分裂——DSH 死手势无反馈** `interaction`
+  - 空闲长按发送键：V1/V2=切 shell 模式；DSH=静默 no-op（连提示都没有，比能力位隐藏更差）；2026-09-07 审计 A-4 挂 ASK 至今未裁决。
+  - 需裁决统一语义：能力位分派维持（DSH 给 toast 说明/换 steer 入口）或全面重设计。
+  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D2
 
 - [~] **#488 markdown 能力补齐批次：块内HTML隐形+代码语法高亮+真数学渲染+setext stage-2（远期清单正式立卡）** `markdown` `render`
   - 2026-09-30 #487 后续深调定罪三项能力缺口：①块内 HTML 渲染为空（mikepenz v0.45.0 基础+m3 AAR 零 HTML 组件，二进制 grep 实证；整消息 HTML 走 looksLikeHtmlPayload 预览通道但混排块隐形）②代码块无语法高亮（走库默认 code renderer，build.gradle.kts:249 注释明示）③\begin/\[/712321 数学均降级为文本或围栏（transformMathFallback 文本降级 + \begin 无变换字面流）
