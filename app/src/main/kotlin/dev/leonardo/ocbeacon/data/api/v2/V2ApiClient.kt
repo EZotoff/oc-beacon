@@ -1162,7 +1162,7 @@ class V2ApiClient @Inject constructor(
     }
 
     override suspend fun importSession(conn: ServerConnection, shareUrl: String): Session {
-        val bodyText = httpClient.post("${conn.baseUrl}/api/session/import") {
+        val bodyText = httpClient.post("${conn.baseUrl}/api/experimental/session/import") { // #459：2.0.19 迁入 experimental 命名空间
             auth(conn)
             contentType(ContentType.Application.Json)
             setBody(kotlinx.serialization.json.buildJsonObject {
@@ -1382,12 +1382,14 @@ class V2ApiClient @Inject constructor(
 
     /**
      * #130：V2 question 工具已迁移到 form 服务——待处理表单从
-     * GET /api/form/request 读取（旧 /api/question/request 是 stale surface，
-     * 2026-08-14 实测恒返回空）。kind=question 的表单映射为 QuestionRequest DTO，
+     * GET /api/form 读取（#459：2.0.18 的 /api/form/request 已 404，2.0.19 重核
+     * 确认继任 = GET /api/form，响应 {location,data} 信封由 flexibleList 解包，
+     * Form.Info 字段与 toQuestionRequest 消费面逐字段一致；旧 /api/question/request
+     * 是 stale surface）。kind=question 的表单映射为 QuestionRequest DTO，
      * 供轮询兜底/通知复用；其他 kind 的表单忽略。
      */
     override suspend fun listPendingQuestions(conn: ServerConnection, directory: String?): List<QuestionRequest> {
-        val bodyText = httpClient.get("${conn.baseUrl}/api/form/request") {
+        val bodyText = httpClient.get("${conn.baseUrl}/api/form") {
             auth(conn)
             directoryHeader(directory)
         }.bodyAsText()
