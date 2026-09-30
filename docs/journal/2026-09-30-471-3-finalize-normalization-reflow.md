@@ -62,3 +62,13 @@ v1 到 v2（真机 E2E 证伪驱动）：
 验证边界（如实）：v2 的逐条视觉效果尚未取得真机日志/观察证据——复测窗口被会话污染（模型沿用会话模板输出物理学史清单 + Build agent 把测试提示词当任务开工 Reading 3m12s，已 API 中断）与设备占用（锁屏/用户操作）打断。函数级证据（含 E2E 形态冻结恢复回归）已钉死；视觉验收交用户（新会话发任务清单提示词，观察逐条出现）。
 
 （勘误：上一条目 "## -s" 为脚本误调用残片，已随本节补写清除。）
+
+## 6. 验收追加轮②：任务复选框字面文本根修（#471④-b）
+
+用户裁决：要求真 markdown 复选框（控件），否决 [x]/[ ] 字面文本形态。
+
+根因（库源定罪）：markdownComponents() 未覆写 checkbox 参数 → 基础模块默认 checkedIndicator = MarkdownText("[x] ", Monospace)（MarkdownCheckBox.kt 源码）。解析器（GFMFlavourDescriptor）与列表 CHECK_BOX 节点→components.checkbox 调用链路一直正确——纯组件层装配缺口，非解析缺口。
+
+修复：接 m3 MarkdownCheckBox（Material3 Checkbox 只读+role/stateDescription 语义），与官方 sample MarkDownPage.kt:84 同款。真机 a11y 验证：字面文本节点 0（修复前满屏）、checked 语义节点 119。全量单测绿。
+
+调研产出（能力矩阵+官方对照）见本轮回复；代码高亮模块（multiplatform-markdown-renderer-code）未接入为已知现状。
