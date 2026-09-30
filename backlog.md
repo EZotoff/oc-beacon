@@ -83,6 +83,7 @@
   - 根因:不稳定尾先字面排版后回溯重释义=已显示内容高度回溯(真机录屏A-B翻转帧定罪);#435引擎只能配对单调增长。方案:pilot差分与append之间加SafePrefixGate(库与渲染零改动):稳定块+开放段纯文字安全后缀两级放行,尾部扣留超龄进锁高降亮区,完结EOF全量flush。spec:docs/specs/2026-09-25-437-streaming-md-stable-reveal-design.md(阶段A-D+验收矩阵)
   - 2026-09-28 深度调研(issue437-research.md,204行):核心根因已由 SafePrefixGate 消灭有二十余轮定量证据;剩余=验收收口+关联残差分卡。R-7 重要发现:beta/stable 双关闭,修复仅 dev 生效(build.gradle.kts:108-118);铁律文档 sse-scroll-stability-iron-laws.md 未收编#437 内容(文档同步缺口);#450 是本卡判据放宽的直接次生回归(教训建议进铁律)
   - 2026-09-29 发掘审计:铁律收编缺口比 R-7 记载更大——sse-scroll-stability-iron-laws.md 止于 2026-09-25 #435,#437 稳定揭示/#438 限速与保 key/#472 行内放行/#474 守卫分通道/#476 GUARD 死区五域铁律全未收编;R-7 收口时应一并补
+  - 2026-09-30 铁律五域收编完成：sse-scroll-stability-iron-laws.md 新增 §2.6 铁律 10-14（#437 安全前缀+差分基准取放行前缀 / #438 壁钟限速+保 key 投影 / #472 行内放行镜像+非前缀宽限 / #474 手势-程序通道分治 / #476 GUARD 死区），全部代码符号 grep 核实在位；卡上残余仅剩 beta/stable flag 放行裁决（build.gradle.kts:108-118，等用户拍板）
 
 ## P2 — 优化与锦上添花
 
