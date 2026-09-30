@@ -59,9 +59,7 @@
   - 用户主诉(2026-09-30):滚动阅读历史/方向切换时偶发约3/4视口高度坍缩后回弹;与#471完结族不同(滚动中触发,流式与否待证)
   - 取证进行中:全量logcat持续抓取(/tmp/scroll_bug_hitl2.txt,后台job运行中),复发时用户配合方向切换,判读RESERVE flush reserved=X stuck/ScrollDiag/MDResize负d签名
   - 疑似与#470帽不回改/ledger收缩不配对同域,签名定罪后裁决并入或独立修复
-
-- [ ] **#470 流式高度配对收缩缺口:帽不回改空白残留+ledger收缩不配对视口落** `scroll,chat`
-  - 2026-09-30 调研 P3 定罪:①帽轨 reserveReleasePlan 对 trueHeight<=reserved 恒 null(帽单调只增,ScrollCompensation.kt:338)——流式内容回缩(表格列放宽/setext 前重排)时 item 保持旧高=空白残留,直到换流式项 reset;②ledger 轨 note 对 d<0 只 rebase 不配对(:157)——压缩卡/工具横幅回缩时上方内容下坠无补偿。修复需高度引擎域专项设计(帽回改与『已上屏永不回改』既有裁决冲突,需用户裁断语义:回缩时同步缩帽+视口跟随 vs 维持空白)。
+  - 2026-09-30 复核机制定局：抓包持续运行，每 4 小时自动复核签名+轮转清理（cron 自动化+/tmp/484_review_log.md 台账）；基线复核 15:27-19:37（140MB/105万行/三段流式轮次）零坍缩签名
 
 
 - [~] **#441 app SSE 长连接随机断连：输出期间渲染静默（服务端正常）** `bug` `dsh`
@@ -81,6 +79,10 @@
 
 ## P2 — 优化与锦上添花
 
+- [ ] **#470 流式高度配对收缩缺口:帽不回改空白残留+ledger收缩不配对视口落** `scroll,chat`
+  - 2026-09-30 调研 P3 定罪:①帽轨 reserveReleasePlan 对 trueHeight<=reserved 恒 null(帽单调只增,ScrollCompensation.kt:338)——流式内容回缩(表格列放宽/setext 前重排)时 item 保持旧高=空白残留,直到换流式项 reset;②ledger 轨 note 对 d<0 只 rebase 不配对(:157)——压缩卡/工具横幅回缩时上方内容下坠无补偿。修复需高度引擎域专项设计(帽回改与『已上屏永不回改』既有裁决冲突,需用户裁断语义:回缩时同步缩帽+视口跟随 vs 维持空白)。
+  - 2026-09-30 用户裁决（听agent建议）：先不急，并入 #442 高度引擎二期系统性解决——帽回改语义与 R2 分片增量化同域设计，B/A 裁决推迟到二期设计时定
+
 ## P3 — 观察与低价值改进
 
 - [ ] **#486 SSE retry 重建帧 watch（原#471④）：断连续传+滚出视口弃树+ever=false 理论盲区，复发再战勿主动开工** `scroll` `chat`
@@ -98,6 +100,7 @@
   - Medium欠账：cadence结构收编(spec裁决3)、flush八职责深拆(终审S2)、StreamingPairingRule缝退役迁移。
   - 待复核：ScrollQuiescence单例假设、HeldTail锁高裁剪视觉等价、diffDisplayItemsInto边界、SSE铁律逐条。
   - 2026-09-29 用户裁决:吸收 #445 并入——R2 深水区含流式 markdown 稳定/活跃双容器状态管理方案(append-only+前缀吸收,固化解迁移帧问题);随卡迁入用户观感记录:完结窗会小跳一下(2026-09-27,限速节奏参数 BIG_RELEASE_MIN_INTERVAL_MS 可调,视情况修)
+  - 2026-09-30 吸收 #470 域（用户裁决）：帽不回改+ledger 负向不配对两路径随 R2 一并设计（ScrollCompensation.kt:338/:157）；当前实证 4h 重度使用零负向高度事件，不阻塞
 
 - [ ] **#458 DSH 0.1.7 错误码税则漂移：39 值点式闭集全面脱节** `regression,dsh,data`
   - 0.1.7 实发斜杠命名空间码（session/not-found、gateway/arguments-invalid），app DshRpcErrorCode 闭集 isKnown 恒 false 全走 Unknown 兜底（优雅降级成立但分类/文案失准）；/api/respond 已移除改 /result（app 双路已备）。详见 docs/research/2026-09-28-triface-regression-report.md 缺陷 D1/D5
