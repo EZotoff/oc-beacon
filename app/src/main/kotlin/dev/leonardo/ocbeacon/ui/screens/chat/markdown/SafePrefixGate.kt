@@ -18,6 +18,10 @@ package dev.leonardo.ocbeacon.ui.screens.chat.markdown
  *        放——表格文本重排闪烁；预算不足整行等下批）；
  *     c. 纯文字行（无活动标记）：完整行整行放行；未完行增量放行至快照尾或
  *        预算耗尽——中点截断只落在纯文字上（字面=最终，安全）；
+ *     c2. GFM 任务列表项行（#471④-a）：完整行整行放行；复选框+空白前缀
+ *        齐备后未完行的条目文字渐进直出——复选框后空白从构造排除 ]( / ][
+ *        续接=前缀定案；条目文本经 InlineSpanSafety 安全帽；含 $$/\[ 的
+ *        条目行仍整行扣留（跨行数学配对面，与表行同口径）；
  *     d. 含活动标记的行：整行扣留等闭合（空行毕业/完结 flush）。
  *
  * 不变量：
@@ -81,6 +85,23 @@ internal object SafePrefixGate {
             val lineStartReal = j == 0 || snapshot[j - 1] == '\n'
             val budgetLeft = MAX_RELEASE_PER_BATCH - (allowed - floor)
             if (budgetLeft <= 0) break
+            // #471④-a：任务项行放行目标预计算——锚定**真实行首**判定（lineStartReal
+            // 为 false 的行续段同样可恢复：未完行先被兜底分支放行 "- " 后，完整行
+            // 到达仍能整行毕业，不再冻结到空行——真机 E2E 实证 v1 行首守卫的冻结面）。
+            // 复选框+空白前缀一旦齐备即定案（后续仅追加）：未完行的条目尾部纯文字
+            // 经安全帽渐进放行（字面=最终）。含未定案数学开定界符的行不走本分支。
+            val taskItemTarget: Int = run {
+                val ls = if (lineStartReal) j else snapshot.lastIndexOf('\n', j - 1) + 1
+                val realLine = if (ls == j) line else snapshot.substring(ls, lineEnd)
+                val off = taskItemMarkerEnd(realLine)
+                if (off < 0 || hasUndecidedMathOpen(realLine)) {
+                    -1
+                } else {
+                    val scanFrom = maxOf(j, ls + off)
+                    val cut = InlineSpanSafety.safeCut(snapshot, scanFrom)
+                    if (complete) minOf(nl + 1, cut) else cut
+                }
+            }
             when {
                 inFence -> {
                     // 块内部（上批预算截断的续放）：代码文本字面稳定，完整行整行
@@ -146,6 +167,20 @@ internal object SafePrefixGate {
                 // #441 粒度扩展：≥4 空格缩进行扣留——缩进代码块/列表延续的歧义形态
                 // （半行放行的重释义面不可控），保守等闭合。置于纯文字之前。
                 lineStartReal && isIndentedCodeLine(line) -> break
+                // #471④-a：GFM 任务列表项行（目标预计算见上）——行级定案 + 未完行
+                // 条目文字渐进（用户验收发现「4 条整块一次性吐出」：归一化后 [ 为
+                // 硬停字符，整列表只能等空行毕业——原扣留理由（☐ 完结归一化改写）
+                // 已随 #471③ 归一化前移消失）。定案论证：复选框后空白/行尾从构造
+                // 排除 ]( / ][ 链接续接，后续任何行不可回改已放行的标记前缀；列表
+                // 后续行为追加语义（新条目/懒延续文字）。条目文本内未闭合构造经
+                // InlineSpanSafety 安全帽（标记后起扫）。已知残余与既有行级分支
+                // （引用/ATX）同列：setext 懒延续升格、宽松列表段距变化——内容前缀
+                // 永不回写，视觉重排与表格行高度变化同类。
+                taskItemTarget > allowed -> {
+                    if (taskItemTarget - allowed > budgetLeft) break
+                    allowed = taskItemTarget
+                    j = taskItemTarget
+                }
                 !lineHasActiveMarker(line) -> {
                     // 纯文字（完整或未完）：字面=最终——整行/增量直出
                     val want = if (complete) nl + 1 else lineEnd
@@ -320,6 +355,41 @@ internal object SafePrefixGate {
             }
         }
         return false
+    }
+
+    /**
+     * #471④-a：GFM 任务列表项行——≤3 缩进 + 列表标记（无序 -、+、* 或
+     * 有序 数字加'.'或')'）+ 空白 + 复选框 [ ]、[x]、[X] + 空白或行尾（GFM
+     * 任务项语义，与
+     * normalizeTaskListMarkers 的产出形态一致）。
+     * 返回复选框标记后首字符相对行首的偏移（InlineSpanSafety 起扫点）；
+     * 裸项（复选框即行尾）返回行长；非任务项行返回 -1。
+     */
+    private fun taskItemMarkerEnd(line: String): Int {
+        var i = 0
+        var indent = 0
+        while (i < line.length && indent < 4 && (line[i] == ' ' || line[i] == '\t')) { i++; indent++ }
+        if (i >= line.length) return -1
+        val c = line[i]
+        val afterListMarker: Int = when {
+            c == '-' || c == '+' || c == '*' -> i + 1
+            c.isDigit() -> {
+                var d = i
+                while (d < line.length && d - i < ORDERED_LIST_MAX_DIGITS && line[d].isDigit()) d++
+                if (d > i && d < line.length && (line[d] == '.' || line[d] == ')')) d + 1 else return -1
+            }
+            else -> return -1
+        }
+        var m = afterListMarker
+        if (m >= line.length || (line[m] != ' ' && line[m] != '\t')) return -1
+        while (m < line.length && (line[m] == ' ' || line[m] == '\t')) m++
+        if (m + 3 > line.length || line[m] != '[') return -1
+        val box = line[m + 1]
+        if (box != ' ' && box != 'x' && box != 'X') return -1
+        if (line[m + 2] != ']') return -1
+        val afterBox = m + 3
+        if (afterBox < line.length && line[afterBox] != ' ' && line[afterBox] != '\t') return -1
+        return if (afterBox < line.length) afterBox + 1 else line.length
     }
 
     /** 开栏行：≤3 空白缩进 + ≥3 个反引号或 ~ + info string（反引号栏 info 不得含反引号）。返回 栏字符 to 栏长。 */

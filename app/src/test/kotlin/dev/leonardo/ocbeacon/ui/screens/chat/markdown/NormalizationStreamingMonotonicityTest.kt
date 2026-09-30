@@ -102,6 +102,25 @@ class NormalizationStreamingMonotonicityTest {
     }
 
     @Test
+    fun `task list per item line monotonic`() {
+        // #471④-a：任务项行级放行——☐/☑/✅ 归一化为 [ ]/[x] 后逐条毕业；
+        // 含原生 GFM 形态、有序形态、括号内容（行内安全帽截断面）。
+        val fixture = """
+            计划如下：
+            - ☐ 第一项：阅读需求文档
+            - ☑ 第二项：分析技术方案
+            - ✅ 第三项：输出最终结果
+            - [ ] 原生 GFM 第四项
+            - [ ] 引用 [链接] 与文字
+            1. [x] 有序完成项
+            2. [ ] 有序未完项
+
+            收尾段落。
+        """.trimIndent()
+        assertMonotonic("task-list-per-item", fixture, step = 1)
+    }
+
+    @Test
     fun `oversized paragraph monotonic`() {
         // >3000 段落：位置制升级边界随流到达出现在新 delta 里
         val longPara = (1..400).joinToString("\n") { "长段落流式行 " + it + " 继续填充内容直到越过阈值边界" }
