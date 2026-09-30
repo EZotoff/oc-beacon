@@ -85,6 +85,20 @@ class MessageEventHandler @Inject constructor(
          * 即判旧本地钟回填残留（实证残留 +3.5h；合法完结与水位差恒小）。
          */
         internal const val POLLUTED_COMPLETED_MARGIN_MS = 10 * 60_000L
+
+        /**
+         * #490：已拆待播台账容量上界——follow/历史回放会重放旧 user/message
+         * （各携带一次 pending-* 拆除登记），FIFO 上界防无界增长；requestId
+         * 每次发送新铸（UUID），淘汰永不误伤未来播种。
+         */
+        internal const val PRE_DEMOLISHED_ECHO_LIMIT = 32
+
+        /**
+         * #490：pending-* echo 行的合法寿命宽限。播种→拆除的正常间隔 <1s
+         *（持久回显随受理即时广播）；宽限远大于该窗口只为容纳极端调度延迟，
+         * 超龄即判拆除丢失（WS 断连/竞态残留/历史版本缺陷）的幽灵。
+         */
+        internal const val STALE_PENDING_ECHO_MS = 120_000L
     }
 
     private val _messages = MutableStateFlow<Map<String, List<Message>>>(emptyMap())
@@ -167,6 +181,35 @@ class MessageEventHandler @Inject constructor(
      * 竞态构造性消除；同 id 再到达时 enqueueUpsert 撤销待删（事件时间最后操作胜出）。
      */
     private val pendingDeletes = HashMap<String, HashSet<String>>()
+
+    /**
+     * #490 换装握手顺序无关化：已拆待播台账（pendingId → 登记时刻）。
+     *
+     * DSH 0.2.0-rc.2 实测（hitl3 捕获 09-30 22:21:31）：服务器广播的持久
+     * user/message 帧（mapper 随帧补发 MessageRemoved(pending-<rpcId>) 拆除）
+     * 可先于 prompt RPC 的 HTTP 响应到达——拆除时刻幽灵尚未播种（无行可删
+     * no-op），响应返回后的本地播种成为永不拆除的持久幽灵（单发双消息且
+     * 重进仍在的根因；同捕获 22:21/23:29/23:32 三次幽灵 vs 22:34/23:19 两次
+     * 正常换装 = 同一竞态的两种落序）。拆除时刻在此登记，迟到的播种命中即
+     * 丢弃：无论到达顺序，「pending-* 在拆除后必不存在」恒成立。V2 通道
+     * admission.id 即 durable id（同 id 幂等合并，顺序无关），不经本台账。
+     */
+    private val preDemolishedEchoes = LinkedHashMap<String, Long>()
+    private val preDemolishedLock = Any()
+
+    /** #490：登记一次 pending 拆除（含行在场被真删与行缺席 no-op 两种落序）。 */
+    private fun recordPreDemolishedEcho(id: String) {
+        synchronized(preDemolishedLock) {
+            preDemolishedEchoes[id] = System.currentTimeMillis()
+            while (preDemolishedEchoes.size > PRE_DEMOLISHED_ECHO_LIMIT) {
+                preDemolishedEchoes.remove(preDemolishedEchoes.keys.first())
+            }
+        }
+    }
+
+    /** #490：播种命中已拆台账则消费并返回 true（调用方丢弃本次播种）。 */
+    private fun consumePreDemolishedEcho(id: String): Boolean =
+        synchronized(preDemolishedLock) { preDemolishedEchoes.remove(id) != null }
 
     /**
      * #338：会话时间域基准——最近观察到的该会话「消息/事件时刻」（DSH=服务器
@@ -467,6 +510,17 @@ class MessageEventHandler @Inject constructor(
 
     internal fun handleMessageUpdated(event: SseEvent.MessageUpdated) {
         val sessionId = event.info.sessionId
+        // #490：迟到播种命中已拆台账——拆除已随持久回显先行到达（durable 行
+        // 在场），本次播种是竞态败者的幽灵，直接丢弃（不进内存不落 Room）。
+        if (event.info.id.startsWith("pending-") && consumePreDemolishedEcho(event.info.id)) {
+            if (BuildConfig.DEBUG) {
+                AppLogger.w(
+                    TAG,
+                    "[echo-drop] pre-demolished pending echo ${event.info.id.take(24)} (durable echo won the race)",
+                )
+            }
+            return
+        }
         // #378：迟到的被遮蔽消息（older page 回放在 surfaceOp 之后到达）——台账
         // 拦截，不重加（否则压缩在翻页场景下被视觉撤销）。
         DshMessageId.seqOf(event.info.id)?.let { seq ->
@@ -694,6 +748,11 @@ class MessageEventHandler @Inject constructor(
     }
 
     internal fun handleMessageRemoved(event: SseEvent.MessageRemoved) {
+        // #490：pending 拆除时刻登记（行在场=正常换装后防复活兜底；行缺席=
+        // 播种后到的竞态，台账使迟到的播种在 handleMessageUpdated 处被丢弃）。
+        if (event.messageId.startsWith("pending-")) {
+            recordPreDemolishedEcho(event.messageId)
+        }
         _messages.update { current ->
             val sessionMessages = current[event.sessionId]?.filter { it.id != event.messageId }
             if (sessionMessages != null) current + (event.sessionId to sessionMessages) else current
@@ -1009,7 +1068,31 @@ class MessageEventHandler @Inject constructor(
             MergeStrategy.REST_AUTHORITY -> upsertRestAuthority(sessionId, incoming)
             MergeStrategy.APPEND_ONLY -> upsertAppendOnly(sessionId, incoming)
         }
+        sweepStalePendingEchoes(sessionId)
         applyMessageCap(sessionId)
+    }
+
+    /**
+     * #490 存量幽灵自愈：REST 快照（任何策略）不含 pending-* 行——它只在本
+     * 进程播种、合法寿命 <1s（拆除随持久回显即时到达）。刷新时仍在场且超
+     * [STALE_PENDING_ECHO_MS] 宽限的 pending-* 行 = 拆除丢失的幽灵（WS 断连
+     * 窗口/历史版本竞态残留在 Room 的存量）——复用拆除原语（handleMessageRemoved：
+     * 内存三清 + Room 待删队列单写协程路径）清淤，重进会话时 REST 首刷即愈。
+     */
+    private fun sweepStalePendingEchoes(sessionId: String) {
+        val now = System.currentTimeMillis()
+        val staleIds = _messages.value[sessionId]
+            ?.filter { it.id.startsWith("pending-") && it is Message.User &&
+                now - it.time.created > STALE_PENDING_ECHO_MS }
+            ?.map { it.id }
+            .orEmpty()
+        if (staleIds.isEmpty()) return
+        staleIds.forEach { id ->
+            handleMessageRemoved(SseEvent.MessageRemoved(sessionId = sessionId, messageId = id))
+        }
+        if (BuildConfig.DEBUG) {
+            AppLogger.w(TAG, "[echo-sweep] dropped ${staleIds.size} stale pending echo row(s) in ${sessionId.take(12)}")
+        }
     }
 
     /**
