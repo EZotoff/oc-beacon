@@ -1453,7 +1453,7 @@ fun ChatMessageList(
                     // #378：原 itemsIndexed 内容抽出的消息条目渲染体（逻辑零变更——仅承载
                     // 点迁移；卡内嵌分派见 itemsIndexed lambda）。
                     @Composable
-                    fun renderTranscriptEntry(entry: ChatEntry) {
+                    fun renderTranscriptEntry(entry: ChatEntry, suppressBottomGap: Boolean = false) {
                         when (entry) {
                             is ChatEntry.Chunk -> {
                                 val displayItemIndex = entry.displayIndex
@@ -1472,7 +1472,7 @@ fun ChatMessageList(
                                         // 的越界绘制防御，见 Turn 分支注释）
                                         .clipToBounds()
                                         .let { m ->
-                                            if (entry.isLast) m.padding(bottom = messageSpacing) else m
+                                            if (entry.isLast && !suppressBottomGap) m.padding(bottom = messageSpacing) else m
                                         }
                                         .onSizeChanged { size ->
                                             if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
@@ -1568,7 +1568,7 @@ fun ChatMessageList(
                                         .fillMaxWidth()
                                         .clipToBounds()
                                         .let { m ->
-                                            if (entry.isLast) m.padding(bottom = messageSpacing) else m
+                                            if (entry.isLast && !suppressBottomGap) m.padding(bottom = messageSpacing) else m
                                         }
                                 ) {
                                     // [perf-flng] #258 Stage B 分段组合成本取证（DEBUG-only）。
@@ -1623,7 +1623,7 @@ fun ChatMessageList(
                                 val chatMessage = msg
                                 Box(
                                     modifier = Modifier.fillMaxWidth().let { m ->
-                                        if (entry.isLast) m.padding(bottom = messageSpacing) else m
+                                        if (entry.isLast && !suppressBottomGap) m.padding(bottom = messageSpacing) else m
                                     }
                                 ) {
                                     // [perf-flng] #258 组合成本取证（DEBUG-only）
@@ -1760,7 +1760,12 @@ fun ChatMessageList(
                             // 2026-08-20 分片：item 级间距（原 spacedBy 移除——
                             // chunk item 间需无缝，Turn 与相邻项间隙在此补）。
                             // 置于 layout{} 补偿之外，不影响补偿测量高度。
-                            .padding(bottom = messageSpacing)
+                            // 底部间隙收口（2026-10-01 用户主诉）：reverseLayout 全列表
+                            // 底位条目抑制 item 级底距——底距只留 contentPadding SM 呼吸
+                            //（对齐 2026-09-19 终裁「最后一条消息停在列表最底部」）。
+                            .let { m ->
+                                if (suppressBottomGap) m else m.padding(bottom = messageSpacing)
+                            }
                             .onSizeChanged { s ->
                                 if (BuildConfig.DEBUG) {
                                     val prev = diagLastSize.value
@@ -2626,7 +2631,7 @@ fun ChatMessageList(
                                 is ChatEntry.Turn -> if (entry.isUser) "user" else "assistant"
                             }
                         },
-                    ) { _, entry ->
+                    ) { entryIndex, entry ->
                         // #423 批次六:全条目接入 animateItem(仅位移,无淡入淡出——
                         // 滚动不触发,结构变化(条目插拔)平滑滑动)。调研定案:结构
                         // 裂变的成熟收尾;视口内让位条目滑开而非跳变。
@@ -2678,11 +2683,11 @@ fun ChatMessageList(
                             ) {
                                 val extras = transcriptCardExtras[entry.key]
                                 if (extras == null || extras.isEmpty) {
-                                    renderTranscriptEntry(entry)
+                                    renderTranscriptEntry(entry, suppressBottomGap = entryIndex == 0)
                                 } else {
                                     Column(modifier = Modifier.fillMaxWidth()) {
                                         extras.before.forEach { renderTranscriptCardItem(it, spacingBelow = true) }
-                                        renderTranscriptEntry(entry)
+                                        renderTranscriptEntry(entry, suppressBottomGap = entryIndex == 0)
                                         extras.after.forEach { renderTranscriptCardItem(it, spacingBelow = false) }
                                     }
                                 }
