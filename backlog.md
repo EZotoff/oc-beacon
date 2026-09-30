@@ -60,6 +60,8 @@
   - 疑点域：流式贴底跟随→读历史的手势接管切换路径（#435『锚即意图』贴底免派发/锚上移进入增长源才配对的切换时刻）、#476 GUARD 死区（120px）与 isScrollInProgress 解除时序、流式增长配对在手势接管帧的一次性大 Δ 补偿错位
   - 定罪仪器：复现时 logcat 采 ScrollDiag LEAP（跳变签名 dIdx/dOff 大值）+ VDRAW/RESERVE + 手势起止帧对照；『跳到统计栏上方』的落点特征（底部统计行上缘=某锚点）是重要线索
   - 同域关联：#484（滚动坍缩）与 #442（高度引擎二期含流式滚动配对规则）——定罪时三卡域对照（跳变/坍缩/配对残缺可能是同一配对协议的不同症状）
+  - 2026-10-01 系统性定罪（journal 详证）：方向映射=内容跟手（上滑朝最新/下滑读历史，贴底上滑=钳制零消费）；核心配对（锚在源内）实证无罪（19s +6656px 像素 diff 0.3%）；align-flip 良性；幻影日志 set(fii=7) 与 LEAP dIdx=7=穿零高横幅伪影。头号嫌疑=H1 锚越过增长源「读历史免」不补偿（几何推导必位移+手势结束一次性持帽Δ大跳，方向吻合主诉），设备复现两败（短轮 flash 完结/会话 SUSPICIOUS）待慢流式环境；次嫌疑=无补偿滑移家族（-40/-26px 两例，协议外高度源）
+  - 跨卡裁决：#492/#484/#491/#442 同住流式高度↔视口补偿协议，不变量只保稳态、全部转换接缝无保障——#442 为主干收口载体
 
 - [ ] **#490 单次发送显示两条相同消息并持久化（复进入仍在）** `chat` `bug`
   - 2026-09-30 #458 演示中两度复现：单次 tap 发送键后显示两条相同用户消息，重进会话仍在=已持久化；触发环境=agent 侧 input text 注入+tap（dsh020-live 通道），真手指是否复现待用户确认
@@ -73,6 +75,7 @@
   - 疑似与#470帽不回改/ledger收缩不配对同域,签名定罪后裁决并入或独立修复
   - 2026-09-30 复核机制定局：抓包持续运行，每 4 小时自动复核签名+轮转清理（cron 自动化+/tmp/484_review_log.md 台账）；基线复核 15:27-19:37（140MB/105万行/三段流式轮次）零坍缩签名
   - 2026-09-30 抓包运维修正：增量抓包曾 80s 死亡无人察觉→自动化已加冻结检测（tail 时间戳>5min 即报告）；现活抓包=/tmp/scroll_bug_hitl3.txt（用户侧 job，自动化已改指向并获轮转授权）；19:47-20:04 复核零签名
+  - 2026-10-01 #492 批次跨卡裁决补充：坍缩与本批实证的滑移家族/越界免补偿同属补偿协议不变量缺失（负向大位移变体）；hitl3 观察窗不动，判读时可对照 #492 journal 接缝地图（手势结束帧/完结退休/REST 刷新三接缝）
 
 
 - [~] **#441 app SSE 长连接随机断连：输出期间渲染静默（服务端正常）** `bug` `dsh`
@@ -111,6 +114,7 @@
   - 用户主诉（2026-09-30 模块 B 演示期间发现）：AI 回答完毕后整体对话内容向上抬几个像素；用户判断与 #459/B 相关性不大，疑其他原因，先立卡追踪
   - 同域关联：#442 已迁入观感记录『完结窗会小跳一下(2026-09-27,限速节奏参数 BIG_RELEASE_MIN_INTERVAL_MS 可调)』——本次『上抬数像素』为其更精确定义或同族不同症，定罪时需对照甄别（完结换装高度变化 vs 视口配对残留）
   - 定罪方向：完结时流式 turn 换装（StreamingMarkdownState→完结态重排）高度差、chunk 裂变（流式单 item→完结分片 N item）视口补偿、帽/ledger 完结回缩路径
+  - 2026-10-01 #492 批次顺带实证同族两例：完结窗内容整体下移 40px（残差0.0 完美平移）+26px（残差7.0），窗口内零仪器事件（仅 /question REST 轮询）——存在协议外非工具化高度源（统计行/时间戳/间距候选）；定罪前先补仪器，见 #492 journal
 
 - [ ] **#489 FileViewer 语法高亮 span 多染一字符（PhraseLocation.end exclusive 语义误用 end+1）** `ui` `bug`
   - 高亮影响面调研副产物（2026-09-30）：highlights 库 PhraseLocation.end 为 exclusive 语义（官方 README emphasis(13,25)→ExampleClass 占 13..24 + NumericLiteralLocator 测试双证），HighlightBuilder.kt:39 的 end+1 使每个高亮短语尾部多染 1 字符
@@ -132,7 +136,7 @@
   - 需裁决统一语义：能力位分派维持（DSH 给 toast 说明/换 steer 入口）或全面重设计。
   - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D2
 
-- [~] **#488 markdown 能力补齐批次：块内HTML隐形+代码语法高亮+真数学渲染+setext stage-2（远期清单正式立卡）** `markdown` `render`
+- [ ] **#488 markdown 能力补齐批次：块内HTML隐形+代码语法高亮+真数学渲染+setext stage-2（远期清单正式立卡）** `markdown` `render`
   - 2026-09-30 #487 后续深调定罪三项能力缺口：①块内 HTML 渲染为空（mikepenz v0.45.0 基础+m3 AAR 零 HTML 组件，二进制 grep 实证；整消息 HTML 走 looksLikeHtmlPayload 预览通道但混排块隐形）②代码块无语法高亮（走库默认 code renderer，build.gradle.kts:249 注释明示）③\begin/\[/712321 数学均降级为文本或围栏（transformMathFallback 文本降级 + \begin 无变换字面流）
   - setext stage-2（升格行级定案）维持 accepted-gap 备查（spec 2026-09-30-471-3 §3.6）；此前散落 handoff 未立卡，2026-09-30 正式收编
   - 实现方向：覆写 markdownComponents html 钩子（原文呈现或接预览同款）；高亮评估 league/ prism 类纯 Kotlin 方案（M3 禁引入额外 UI 依赖库红线内评估）；真数学需渲染层 KaTeX 级能力或维持降级+标注
@@ -147,6 +151,7 @@
   - 2026-10-01 批 1（最小着色）落地：自建壳 HighlightedCode.kt（fork -code v0.45.0，theme 入 produceState 键/每作业新建 Builder/区间守卫/CodeHL 打点四差异）+ CodeSyntaxTheme.kt（M3→SyntaxTheme 9 角色）+ MarkdownContent 三点位 + 单测 14 例；全量 3764 绿；真机 E2E 全判据过（流式逐批着色 ms≤27/MDResize 全正单调/守卫零触发/主题三态无残留/json 静默 spans=0）——journal 2026-10-01-488-syntax-highlight-shell 批 1 节；②余批 2（观察精修）/批 3（可选），③（数学标注）未开工
   - 2026-10-01 批 1 用户验收通过（「ok 可以」）——②最小着色收口；同会话续开 ③数学降级+标注升级（方案 c：降级块「公式」徽标+可选轻着色）
   - 2026-10-01 ③数学降级+标注升级落地：transform 产物围栏 tex→math（专属识别位，不误伤手写 tex 围栏）+ SafeHighlightedMathBlock（「公式」徽标 math_block_badge×15 语言 + \命令tertiary/花括号onSurfaceVariant/上下标secondary 手写轻着色，静态完结内容 remember 同步构建）+ 单测 12 例新增/transform 断言改标，全量绿+i18n 917 keys PASSED；真机 E2E（big-pickle 会话）：Code block, math 徽标块+dual族像素+vision 三色判读+亮色重建无残留+单美元守卫——journal 2026-10-01-488-syntax-highlight-shell ③节；环境坑：v1 无 zhipuai 凭据（新会话默认模型 401，改用既有 big-pickle 会话）；③ 就此收口待用户验收
+  - 2026-10-01 ③用户验收通过（「可以 我觉得可以暂时用这样的效果」）——降级+标注形态就此定局；批 2（观察精修）/批 3（可选语言标签+复制）维持挂卡随观察窗推进，不阻塞
 
 - [ ] **#486 SSE retry 重建帧 watch（原#471④）：断连续传+滚出视口弃树+ever=false 理论盲区，复发再战勿主动开工** `scroll` `chat`
   - 原 #471④ 用户裁决 c 降级观察（v1+v2 四场景不可复现，331k 行取证 Loading=0，#472 hold/registry/preParsed 防御栈有效）；#471 整卡迁移后观察线独立成卡（spec §8：watch 不关）
