@@ -104,18 +104,19 @@ android {
             manifestPlaceholders["appLabel"] = "OC Beacon Beta"
             // GitHub 分发渠道保留应用内自更新
             buildConfigField("boolean", "ENABLE_AUTO_UPDATE", "true")
-            // #265 试点未达标前 beta/stable 不放开
-            buildConfigField("boolean", "STREAMING_MD_PILOT", "false")
-            // #437 同步关闭（依赖 STREAMING_MD_PILOT）
-            buildConfigField("boolean", "STABLE_REVEAL_PILOT", "false")
+            // 2026-09-30 用户裁决放行（#437 收口）：廿余轮定量证据 + 铁律 10-14 收编
+            buildConfigField("boolean", "STREAMING_MD_PILOT", "true")
+            // #437 稳定揭示（依赖 STREAMING_MD_PILOT）
+            buildConfigField("boolean", "STABLE_REVEAL_PILOT", "true")
         }
         create("stable") {
             dimension = "flavor"
             manifestPlaceholders["appLabel"] = "@string/app_name"
             // Google Play 渠道：政策禁止 REQUEST_INSTALL_PACKAGES 自更新，禁用
             buildConfigField("boolean", "ENABLE_AUTO_UPDATE", "false")
-            buildConfigField("boolean", "STREAMING_MD_PILOT", "false")
-            buildConfigField("boolean", "STABLE_REVEAL_PILOT", "false")
+            // 2026-09-30 用户裁决放行（#437 收口）：与 beta 同批
+            buildConfigField("boolean", "STREAMING_MD_PILOT", "true")
+            buildConfigField("boolean", "STABLE_REVEAL_PILOT", "true")
         }
     }
 
