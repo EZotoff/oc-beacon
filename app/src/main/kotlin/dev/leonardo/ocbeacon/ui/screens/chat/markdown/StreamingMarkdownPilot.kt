@@ -116,6 +116,25 @@ internal const val BIG_RELEASE_CH = 200
 internal const val BIG_RELEASE_MIN_INTERVAL_MS = 200L
 
 /**
+ * #H4 重建快速重灌（2026-09-30 坍缩重建根修，真机 13:55 定罪）：RESETKEY
+ * 重建后的再铺开沿用首跑限速（200ch + 200ms 壁钟）——4108ch 以 200ch/210ms
+ * 重灌 4.4s（MDResize 每 210ms +988px ≈ 200 CJK 字符排版高），用户主诉
+ * 「整个回答坍缩并重建」的可感知重建段。重建内容是用户刚看过的材料：
+ * 逐帧 4× 批量、免壁钟限速（~6 帧≈100ms 完成换装，高度引擎帽配对吸收）；
+ * 限速仅保留给首跑铺开（其设计场景：多消息 turn 后续段全量到达的单帧
+ * GC/解析压力分散）。
+ */
+internal const val REBUILD_REFEED_CHUNK_CH = BIG_RELEASE_CH * 4
+internal const val REBUILD_REFEED_MIN_INTERVAL_MS = 0L
+
+/** 再铺开节奏（纯函数，单测锚 RefeedPacingTest）：首跑=限速铺开；重建=快速重灌。 */
+internal data class RefeedPacing(val chunkCh: Int, val minIntervalMs: Long)
+
+internal fun refeedPacing(rebuild: Boolean): RefeedPacing =
+    if (rebuild) RefeedPacing(REBUILD_REFEED_CHUNK_CH, REBUILD_REFEED_MIN_INTERVAL_MS)
+    else RefeedPacing(BIG_RELEASE_CH, BIG_RELEASE_MIN_INTERVAL_MS)
+
+/**
  * #461(2026-09-29):流式 pilot 准入契约(纯函数,单测锚)——pilot 仅服务真流式。
  *
  * 静态文本(历史/完结)一律 [asyncParse]=true 走 #428 分层解析:
@@ -201,6 +220,8 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
     var lastStormCount by remember { mutableIntStateOf(0) }
     // #438①：上次大放行（≥BIG_RELEASE_CH）壁钟——大放行间隔限速（与到达解耦）
     var lastBigReleaseAt by remember { mutableLongStateOf(0L) }
+    // #H4：非前缀重建后的再铺开走快速重灌（免壁钟限速）；首跑保持限速铺开
+    var fastRefeed by remember { mutableStateOf(false) }
     val gate = StreamingMarkdownPilot.stableReveal
     LaunchedEffect(normalized, state, StreamingScrollHold.holding) {
         val p = prev
@@ -222,12 +243,16 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                         // 单帧 GC/解析压力集中且打穿帽揭示量子化节奏。改为逐帧铺开
                         // + #438① 大放行壁钟限速（与增量分支同语义），视觉节奏由帽
                         // （≤800px 首亮+1600px/500ms 步进）+限速共同接管。
+                        // #H4（2026-09-30）：RESETKEY 重建后的再铺开改快速重灌
+                        //（4× 批量/帧、免壁钟限速）——重建限速重铺 4.4s 是「坍缩并
+                        // 重建」主诉的可感知重建段（节奏见 [refeedPacing]）。
+                        val pacing = refeedPacing(fastRefeed)
                         var rel = 0
                         while (rel < normalized.length) {
-                            val d = SafePrefixGate.releaseDelta(normalized, rel, BIG_RELEASE_CH)
+                            val d = SafePrefixGate.releaseDelta(normalized, rel, pacing.chunkCh)
                             if (d.newReleased <= rel) break // gate 拒绝（扣留中）——后续增量/EOF 接管
-                            if (d.newReleased - rel >= BIG_RELEASE_CH) {
-                                val wait = lastBigReleaseAt + BIG_RELEASE_MIN_INTERVAL_MS -
+                            if (pacing.minIntervalMs > 0 && d.newReleased - rel >= pacing.chunkCh) {
+                                val wait = lastBigReleaseAt + pacing.minIntervalMs -
                                     android.os.SystemClock.elapsedRealtime()
                                 if (wait > 0) delay(wait)
                                 lastBigReleaseAt = android.os.SystemClock.elapsedRealtime()
@@ -238,6 +263,7 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                         }
                         released = rel
                         logGate(normalized, 0, released)
+                        fastRefeed = false
                     } else {
                         appendAndTrace(state, normalized)
                         released = normalized.length
@@ -283,12 +309,18 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                     held.value = ""
                 } else {
                     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                        // #H1 取证增强（2026-09-30）：raw（归一化前）尾部同报——
+                        // 区分「数据层改写」（raw 亦异）与「归一化回改」（仅归一化
+                        // 坐标分歧）。13:55 事件仅 normalized ctx 可见，raw 侧归因
+                        // 靠本探针在下一次出现时补齐。
                         AppLogger.w("MDPilot", "RESETKEY rebuild — nonPrefix survived grace window" +
-                            " prevLen=" + (p?.length ?: -1) + " newLen=" + normalized.length)
+                            " prevLen=" + (p?.length ?: -1) + " newLen=" + normalized.length +
+                            " rawTail=[" + markdown.takeLast(24) + "]")
                     }
                     prev = null
                     released = 0
                     held.value = ""
+                    fastRefeed = true // #H4：重建再铺开走快速重灌
                     resetKey++
                 }
             }
