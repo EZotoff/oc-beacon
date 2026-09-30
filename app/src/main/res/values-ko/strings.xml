@@ -485,6 +485,7 @@
     <string name="server_settings_oauth_browser_hint">브라우저에서 인증을 완료하세요. 이 창은 자동으로 닫힙니다.</string>
     <string name="chat_error_view_page">페이지</string>
     <string name="chat_error_view_code">코드</string>
+    <string name="math_block_badge">수식</string>
     <string name="chat_save_image">이미지 저장</string>
     <string name="chat_image_saved">이미지가 저장되었습니다</string>
     <string name="chat_image_save_failed">이미지 저장에 실패했습니다</string>

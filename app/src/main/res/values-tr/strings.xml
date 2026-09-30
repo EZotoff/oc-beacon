@@ -485,6 +485,7 @@
     <string name="server_settings_oauth_browser_hint">Yetkilendirmeyi tarayıcınızda tamamlayın. Bu pencere otomatik olarak kapanacaktır.</string>
     <string name="chat_error_view_page">Sayfa</string>
     <string name="chat_error_view_code">Kod</string>
+    <string name="math_block_badge">Formül</string>
     <string name="chat_save_image">Görseli kaydet</string>
     <string name="chat_image_saved">Görsel kaydedildi</string>
     <string name="chat_image_save_failed">Görsel kaydedilemedi</string>

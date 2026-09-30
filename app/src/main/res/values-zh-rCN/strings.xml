@@ -503,6 +503,7 @@
     <string name="server_settings_oauth_browser_hint">请在浏览器中完成授权。此窗口将自动关闭。</string>
     <string name="chat_error_view_page">页面</string>
     <string name="chat_error_view_code">代码</string>
+    <string name="math_block_badge">公式</string>
     <string name="chat_save_image">保存图片</string>
     <string name="chat_image_saved">图片已保存</string>
     <string name="chat_image_save_failed">保存图片失败</string>

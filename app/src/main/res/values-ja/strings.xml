@@ -485,6 +485,7 @@
     <string name="server_settings_oauth_browser_hint">ブラウザで認証を完了してください。このウィンドウは自動的に閉じます。</string>
     <string name="chat_error_view_page">ページ</string>
     <string name="chat_error_view_code">コード</string>
+    <string name="math_block_badge">数式</string>
     <string name="chat_save_image">画像を保存</string>
     <string name="chat_image_saved">画像を保存しました</string>
     <string name="chat_image_save_failed">画像の保存に失敗しました</string>

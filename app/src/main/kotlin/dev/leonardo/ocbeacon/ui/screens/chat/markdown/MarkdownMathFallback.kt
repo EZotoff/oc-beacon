@@ -6,8 +6,10 @@ package dev.leonardo.ocbeacon.ui.screens.chat.markdown
  * 背景：渲染栈 multiplatform-markdown-renderer 0.45.0 无 math 扩展（已取证），
  * 裁决 = 预变换——不碰渲染器、不增依赖，检测数学定界符并把公式段替换为
  * 等宽可读块：
- * - 块级 `$$...$$`（含多行）与 `\[...\]` → tex 围栏代码块（```tex），
- *   走渲染器既有等宽代码块渲染，公式原样可读且有视觉区分；
+ * - 块级 `$$...$$`（含多行）与 `\[...\]` → math 围栏代码块（```math，#488③
+ *   自 tex 改标——math 是数学降级专属识别位，不与 AI 手写 tex 围栏混淆），
+ *   渲染侧（HighlightedCode.kt SafeHighlightedMathBlock）按 language=="math"
+ *   识别为数学块：等宽呈现 +「公式」徽标 + 手写轻着色；
  * - 行内 `\(...\)` → 行内代码 span（等宽+底色区分）。取舍：CommonMark
  *   围栏必须在行首开启，行内公式若替换为围栏会把所在句子拆成三个块，
  *   行内代码保留段落流且同样等宽可读。
@@ -18,7 +20,7 @@ package dev.leonardo.ocbeacon.ui.screens.chat.markdown
  * - 既有围栏代码块（``` / ~~~，含未闭合）与行内代码 span 内的定界符
  *   字面量不误伤——行级围栏跟踪（同 [normalizeTaskListMarkers] 语义）+
  *   反引号 run 匹配跳过；
- * - 幂等：已变换产物（tex 围栏/行内代码）再次变换不重复处理；
+ * - 幂等：已变换产物（math 围栏/行内代码）再次变换不重复处理；
  * - CommonMark 围栏须行首：行中块级定界符前后补换行隔断（围栏可打断段落）。
  *
  * 流式取舍（StreamingMarkdownState 铁律）：前缀差分 append 管线只接受
@@ -129,7 +131,7 @@ private fun transformMathSegments(text: String): String {
 }
 
 /**
- * 块级数学段替换为 tex 围栏。[closeStart] < 0 或内容空白 = 不成对 → 定界符
+ * 块级数学段替换为 math 围栏。[closeStart] < 0 或内容空白 = 不成对 → 定界符
  * 原样吐出（后续文本继续扫描，不影响下一段配对）。返回推进后的索引。
  */
 private fun appendBlockMath(
@@ -149,7 +151,7 @@ private fun appendBlockMath(
     // CommonMark：围栏须行首开启——行中定界符前补换行隔断（围栏可打断段落），
     // 围栏后非行尾同样补换行让后续文本独立成段
     if (openStart > 0 && text[openStart - 1] != '\n') out.append('\n')
-    out.append("```tex\n").append(inner).append("\n```")
+    out.append("```math\n").append(inner).append("\n```")
     val closeEnd = closeStart + closeDelim.length
     if (closeEnd < text.length && text[closeEnd] != '\n') out.append('\n')
     return closeEnd

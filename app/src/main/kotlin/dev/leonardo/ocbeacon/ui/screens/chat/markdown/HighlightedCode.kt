@@ -1,15 +1,19 @@
 package dev.leonardo.ocbeacon.ui.screens.chat.markdown
 
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -24,6 +28,7 @@ import com.mikepenz.markdown.compose.elements.MarkdownCodeBlock
 import com.mikepenz.markdown.compose.elements.MarkdownCodeFence
 import com.mikepenz.markdown.compose.elements.material.MarkdownBasicText
 import dev.leonardo.ocbeacon.BuildConfig
+import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.logging.AppLogger
 import dev.snipme.highlights.Highlights
 import dev.snipme.highlights.model.BoldHighlight
@@ -55,7 +60,15 @@ import org.intellij.markdown.ast.ASTNode
  *     是多染一字符的存量偏差（#489），此处按 exclusive 正确语义写。
  *  ④ AppLogger 打点（DEBUG-only，组合侧）。
  * showHeader/immediate 参数未带入（批 1 不开——纯着色零文案零 i18n 面）。
+ *
+ * #488③：SafeHighlightedMathBlock——数学降级块（```math 围栏，
+ * [transformMathFallback] 产物专属识别位）的「公式」徽标 + 手写轻着色。
+ * highlights 引擎无 tex/math 语言（SyntaxLanguage 枚举取证），
+ * 不走 [buildSafeHighlightedAnnotatedString]。
  */
+
+/** #488③：数学降级块的围栏 info 识别位（transformMathFallback 产物专属，AI 手写 math 围栏同享受徽标——语义本就是数学）。 */
+internal const val MATH_FENCE_LANGUAGE = "math"
 
 @Composable
 internal fun SafeHighlightedCodeFence(
@@ -65,7 +78,11 @@ internal fun SafeHighlightedCodeFence(
     theme: SyntaxTheme,
 ) {
     MarkdownCodeFence(content, node, style) { code, language, codeStyle ->
-        SafeHighlightedCode(code = code, language = language, style = codeStyle, theme = theme)
+        if (language.equals(MATH_FENCE_LANGUAGE, ignoreCase = true)) {
+            SafeHighlightedMathBlock(code = code, style = codeStyle)
+        } else {
+            SafeHighlightedCode(code = code, language = language, style = codeStyle, theme = theme)
+        }
     }
 }
 
@@ -132,6 +149,67 @@ internal fun SafeHighlightedCode(
     }
 }
 
+/*
+ * #488③（方案 c：降级 + 标注升级）：数学降级块渲染——
+ * [transformMathFallback] 把完结消息的块级 $$…$$ / \[…\] 归一化为 ```math
+ * 围栏，此处按 [MATH_FENCE_LANGUAGE] 精确识别（不误伤 AI 手写 tex 围栏——
+ * 那仍走 [SafeHighlightedCode]，引擎无 tex 语言 → 纯文本等价）。
+ *
+ * 形态 = 代码块同款底壳（MarkdownCodeBackground）+「公式」徽标行
+ * （i18n）+ 三角色轻着色等宽原文（真排版 KaTeX 级属远期）。
+ * 数学变换只在完结渲染期发生（流式期无 math 围栏），静态内容同步构建 +
+ * remember 即可——无 produceState 流式重启需求；键 = 参与着色的
+ * colorScheme 角色（MarkdownContent 键纪律同款，主题切换重建换色）。
+ */
+@Composable
+internal fun SafeHighlightedMathBlock(
+    code: String,
+    style: TextStyle,
+) {
+    val backgroundCodeColor = LocalMarkdownColors.current.codeBackground
+    val codeBackgroundCornerSize = LocalMarkdownDimens.current.codeBackgroundCornerSize
+    val codeBlockPadding = LocalMarkdownPadding.current.codeBlock
+    val colorScheme = MaterialTheme.colorScheme
+    val mathText = remember(
+        code,
+        colorScheme.tertiary, colorScheme.secondary, colorScheme.onSurfaceVariant,
+    ) {
+        buildMathAnnotatedString(
+            code = code,
+            commandColor = colorScheme.tertiary,
+            braceColor = colorScheme.onSurfaceVariant,
+            scriptColor = colorScheme.secondary,
+        )
+    }
+
+    MarkdownCodeBackground(
+        color = backgroundCodeColor,
+        shape = RoundedCornerShape(codeBackgroundCornerSize),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        language = MATH_FENCE_LANGUAGE,
+        code = code,
+    ) {
+        Column(modifier = Modifier.padding(codeBlockPadding)) {
+            MarkdownBasicText(
+                // 库的 String 重载是 internal——公共重载只收 AnnotatedString
+                text = AnnotatedString(stringResource(R.string.math_block_badge)),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Medium,
+                    color = colorScheme.onSurfaceVariant,
+                ),
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+            MarkdownBasicText(
+                text = mathText,
+                style = style,
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+            )
+        }
+    }
+}
+
 /**
  * 高亮构建（纯函数，JVM 可单测）。
  *
@@ -188,3 +266,46 @@ internal fun applyHighlightSpans(code: String, highlights: List<CodeHighlight>):
             }
         }
     }
+
+/**
+ * 数学块轻着色（纯函数，JVM 可单测）——#488③ 方案 c。
+ *
+ * 三角色（与 [toCodeSyntaxTheme] 令牌映射同哲学）：
+ *  - `\命令`（反斜杠 + 连续字母，整段含反斜杠）→ tertiary：LaTeX 控制
+ *    序列是公式的「关键字」；
+ *  - 花括号 `{`/`}` 单字符 → onSurfaceVariant：分组结构弱化呈现；
+ *  - `^`/`_` 单字符 → secondary：上下标钩子。
+ * `\` 后非字母（`\,` `\%` `\\`）为 LaTeX 转义字面量，保持原色
+ * （highlights 引擎无 tex 语言，此处手写——区间由本扫描器顺序产出，
+ * 天然非重叠、界内，无引擎区间守卫需求）。
+ */
+internal fun buildMathAnnotatedString(
+    code: String,
+    commandColor: Color,
+    braceColor: Color,
+    scriptColor: Color,
+): AnnotatedString = buildAnnotatedString {
+    append(code)
+    var i = 0
+    val n = code.length
+    while (i < n) {
+        val c = code[i]
+        when {
+            c == '\\' && i + 1 < n && code[i + 1].isLetter() -> {
+                var j = i + 1
+                while (j < n && code[j].isLetter()) j++
+                addStyle(SpanStyle(color = commandColor), i, j)
+                i = j
+            }
+            c == '{' || c == '}' -> {
+                addStyle(SpanStyle(color = braceColor), i, i + 1)
+                i++
+            }
+            c == '^' || c == '_' -> {
+                addStyle(SpanStyle(color = scriptColor), i, i + 1)
+                i++
+            }
+            else -> i++
+        }
+    }
+}

@@ -501,6 +501,7 @@
     <string name="server_settings_oauth_browser_hint">أكمِل عملية التفويض في متصفحك. سيتم إغلاق هذه النافذة تلقائيًا.</string>
     <string name="chat_error_view_page">صفحة</string>
     <string name="chat_error_view_code">رمز</string>
+    <string name="math_block_badge">صيغة</string>
     <string name="chat_save_image">حفظ الصورة</string>
     <string name="chat_image_saved">تم حفظ الصورة</string>
     <string name="chat_image_save_failed">فشل في حفظ الصورة</string>

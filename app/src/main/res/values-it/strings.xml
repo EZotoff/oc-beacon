@@ -485,6 +485,7 @@
     <string name="server_settings_oauth_browser_hint">Completa l\'autorizzazione nel tuo browser. Questa finestra si chiuderà automaticamente.</string>
     <string name="chat_error_view_page">Pagina</string>
     <string name="chat_error_view_code">Codice</string>
+    <string name="math_block_badge">Formula</string>
     <string name="chat_save_image">Salva immagine</string>
     <string name="chat_image_saved">Immagine salvata</string>
     <string name="chat_image_save_failed">Impossibile salvare l\'immagine</string>

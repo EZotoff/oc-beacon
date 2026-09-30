@@ -8,7 +8,8 @@ import org.junit.Test
  *
  * multiplatform-markdown-renderer 0.45.0 无 math 扩展（已取证）——裁决为预变换：
  * 检测 $$...$$（块级，含多行）与 \(...\)（行内）/ \[...\]（块级）成对定界符，
- * 替换为 tex 围栏代码块（块级）或行内代码（行内）——渲染器既有等宽代码渲染，
+ * 替换为 math 围栏代码块（块级，#488③ 自 tex 改标——数学块专属识别位）或
+ * 行内代码（行内）——渲染器既有等宽代码渲染，
  * 公式原样可读且有视觉区分。不碰渲染器、不增依赖。
  *
  * 边界钉子：块级/行内/不成对保留原文/多段/$$ 嵌入既有围栏代码内不误伤/
@@ -26,7 +27,7 @@ class MarkdownMathFallbackTest {
     @Test
     fun blockDollarSingleLineStandalone() {
         assertEquals(
-            "```tex\nE=mc^2\n```",
+            "```math\nE=mc^2\n```",
             transformMathFallback(dollar("\u00A4\u00A4E=mc^2\u00A4\u00A4")),
         )
     }
@@ -34,7 +35,7 @@ class MarkdownMathFallbackTest {
     @Test
     fun blockDollarMultiline() {
         assertEquals(
-            "```tex\nE=mc^2\n\\frac{a}{b}\n```",
+            "```math\nE=mc^2\n\\frac{a}{b}\n```",
             transformMathFallback(dollar("\u00A4\u00A4\nE=mc^2\n\\frac{a}{b}\n\u00A4\u00A4")),
         )
     }
@@ -42,7 +43,7 @@ class MarkdownMathFallbackTest {
     @Test
     fun blockDollarSurroundedByProse() {
         assertEquals(
-            "前文\n```tex\nx^2\n```\n后文",
+            "前文\n```math\nx^2\n```\n后文",
             transformMathFallback(dollar("前文\n\u00A4\u00A4x^2\u00A4\u00A4\n后文")),
         )
     }
@@ -51,7 +52,7 @@ class MarkdownMathFallbackTest {
     fun blockDollarMidLineSplitsToFence() {
         // CommonMark 围栏须在行首：行中 $$ 前后补换行隔断（fence 可打断段落）
         assertEquals(
-            "值 \n```tex\nx\n```\n 为",
+            "值 \n```math\nx\n```\n 为",
             transformMathFallback(dollar("值 \u00A4\u00A4x\u00A4\u00A4 为")),
         )
     }
@@ -59,7 +60,7 @@ class MarkdownMathFallbackTest {
     @Test
     fun consecutiveBlockPairsSameLine() {
         assertEquals(
-            "```tex\na\n```\n then \n```tex\nb\n```",
+            "```math\na\n```\n then \n```math\nb\n```",
             transformMathFallback(dollar("\u00A4\u00A4a\u00A4\u00A4 then \u00A4\u00A4b\u00A4\u00A4")),
         )
     }
@@ -84,7 +85,7 @@ class MarkdownMathFallbackTest {
     @Test
     fun blockBracketMultiline() {
         assertEquals(
-            "推导：\n```tex\n\\int_0^1 x\\,dx\n```\n完毕",
+            "推导：\n```math\n\\int_0^1 x\\,dx\n```\n完毕",
             transformMathFallback("推导：\n\\[\n\\int_0^1 x\\,dx\n\\]\n完毕"),
         )
     }
@@ -94,7 +95,7 @@ class MarkdownMathFallbackTest {
     @Test
     fun multipleSegmentsMixed() {
         assertEquals(
-            "```tex\na\n```\n\nmiddle\n\n`b` tail",
+            "```math\na\n```\n\nmiddle\n\n`b` tail",
             transformMathFallback(dollar("\u00A4\u00A4a\u00A4\u00A4\n\nmiddle\n\n") + "\\(b\\) tail"),
         )
     }
@@ -150,7 +151,7 @@ class MarkdownMathFallbackTest {
     @Test
     fun mathAfterFenceStillTransformed() {
         assertEquals(
-            "```\ncode\n```\n```tex\nx\n```",
+            "```\ncode\n```\n```math\nx\n```",
             transformMathFallback("```\ncode\n```\n" + dollar("\u00A4\u00A4x\u00A4\u00A4")),
         )
     }
@@ -189,13 +190,13 @@ class MarkdownMathFallbackTest {
             "结论：\n" + dollar("\u00A4\u00A4") + "\nE=mc^2\n" + dollar("\u00A4\u00A4") + "\n完毕",
             isUser = false,
         )
-        assertEquals("结论：\n```tex\nE=mc^2\n```\n完毕", out)
+        assertEquals("结论：\n```math\nE=mc^2\n```\n完毕", out)
     }
 
     @Test
     fun normalizeForRenderUserMessageAlsoTransformed() {
         val out = normalizeForRender(dollar("\u00A4\u00A4") + "\nx\n" + dollar("\u00A4\u00A4"), isUser = true)
-        // 用户路径单换行空行化发生在数学降级之后：围栏内容行距放宽，但仍是合法 tex 围栏
-        assertEquals("```tex\n\nx\n\n```", out)
+        // 用户路径单换行空行化发生在数学降级之后：围栏内容行距放宽，但仍是合法 math 围栏
+        assertEquals("```math\n\nx\n\n```", out)
     }
 }

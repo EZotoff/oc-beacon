@@ -60,3 +60,38 @@
 | 主题切换无残留 | ✅ 三态像素+重放互证 |
 | 未知语言静默纯色 | ✅ spans=0 |
 | i18n 面 | ✅ 零文案零 a11y 变更 |
+
+## 批 1 验收（2026-10-01）
+
+用户验收通过（「ok 可以」）——批 1 最小着色收口。#488 剩余：②批 2 观察/批 3 可选、③数学标注（本批续开）。
+
+## 实现落点（4 文件 + 15 i18n + 2 文档）
+
+- `MarkdownMathFallback.kt`：`appendBlockMath` 产物围栏标签 `tex → math`——math 是数学降级专属识别位（渲染期归一化不入库，无存量双写）；AI 手写 tex 围栏不受影响（仍走 SafeHighlightedCode，引擎无 tex 语言→纯文本=现状等价）。KDoc 同步。
+- `HighlightedCode.kt`：`MATH_FENCE_LANGUAGE="math"` + `SafeHighlightedCodeFence` lambda 内 `language.equals(math, true)` 分流 → 新组件 `SafeHighlightedMathBlock`——`MarkdownCodeBackground` 同款底壳（徽标+内容统一圆角块）+「公式」徽标行（labelSmall+Medium+onSurfaceVariant）+ 等宽轻着色内容（horizontalScroll）；**静态完结内容同步构建 + remember**（键=code+三色角色——数学变换只在完结渲染期发生，流式期无 math 围栏，无 produceState 需求）。纯函数 `buildMathAnnotatedString`：`\命令`（反斜杠+连续字母整段）tertiary / 花括号 onSurfaceVariant / `^`_` secondary；`\`后非字母（`\,` `\%` `\\`）LaTeX 转义字面量保持原色；区间由扫描器顺序产出（非重叠、界内，无引擎区间守卫需求）。
+- i18n：`math_block_badge`（en=Formula / zh-rCN=公式 / ja=数式 / ko=수식 / ru,uk=Формула / de=Formel / es,pt-rBR=Fórmula / fr=Formule / it=Formula / id=Rumus / pl=Wzór / tr=Formül / ar=صيغة）×15；`i18n-check.sh` PASSED（917 keys × 14 languages）。
+- 测试：`MarkdownMathFallbackTest` 全部 ```tex 断言改 ```math（NormalizeTaskListMarkersTest 只有 ```text 不涉及）；新增 `MathBlockHighlightTest` 12 例（命令整段含反斜杠/大写命令/非字母转义不染/末尾孤立反斜杠越界守卫/花括号单字符/上下标单字符/纯文本空串零 span/综合区间有序不重叠界内/原文保全/路由守卫（null·Math·tex·mathematics）/transform 产物=math 围栏）。
+- 文档：regression-guide 域 6 增 6c 行（数学降级块判据）；ui-conventions Syntax theme 节补数学块手写三角色映射说明。
+
+## 环境事实（E2E 中撞上并定罪）
+
+- 新会话默认模型 **zhipuai/glm-5.3-flash** 在 v1 隔离环境无凭据（`~/oc-v1-env/{data,data2,config}` 三处 auth.json 全缺）→ provider 侧 `AI_APICallError: 身份验证失败`（服务端 opencode.log 18:14Z 定罪，app↔server Basic 认证正常——会话列表可加载）。批 1 会话用的是 **opencode/big-pickle**（服务端日志 providerID=opencode）→ E2E 改在既有 big-pickle 会话进行，模型问题非本批改动引入，**不登记新卡**（v1 环境凭据配置属服务器运维面，若用户后续要跑 zhipuai 再处理）。
+- 设备经网络 adb（192.168.110.239:36339）+ USB 双传输挂同一手机；hitl3 抓包在网络传输上存活 → 本批全程**未执行 `adb logcat -c`**（debug-entry.sh 复刻序列手工执行，成功标志改用 mCurrentFocus+uiautomator dump 校验）。
+
+## V1/V3 验证证据
+
+- V1 单测：compileDevDebugKotlin 绿；`testDevDebugUnitTest --rerun` 全量绿（BUILD SUCCESSFUL，含新 12 例与改标 transform 断言）。i18n 检查 PASSED。
+- V3 真机（e69a99d8 网络传输，dev 包 02:11 构建 adb install -r 覆盖安装，debug intent 冷启 Host-4199）：
+  - prompt「reply in chat only… quadratic formula… double dollar sign delimiters… backslash parenthesis delimiters」（type.sh 纯 keyevent，dump 头+截图尾互证完整入框）→ big-pickle 4.3s 完结回复；
+  - **块级降级**：完结后 dump 出 `Code block, math`（a11y desc，[36,925][1164,1074]）+ `text='公式'` 徽标行 + 等宽公式行 `x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}`（可横滚）——transform 产物 math 围栏被 SafeHighlightedMathBlock 精确接管 ✓；
+  - **着色像素取证**（暗色 1200×2670 直接采样）：公式行 y=1027 双族色——蓝紫系 (192,192,216)×23+(24,24,48)×53（\frac/\pm/\sqrt=tertiary）+ 中性灰 (216,216,216)/(192,192,192)（花括号/上下标=onSurfaceVariant/secondary）vs 正文白；徽标行 y=970 灰系 (192,192,192)；
+  - **vision 判读**（裁块放大）：徽标=「公式」白字无独立 pill；命令淡紫薰衣草 vs 普通字符白；花括号+^ 第三色弱灰（三色方案确认）；徽标与公式同一深灰圆角块（统一容器）；
+  - **亮色重建**（`cmd uimode night no`，块仍在组合）：公式行像素族翻转为深蓝紫 (72,72,120)×21+(144,144,168)×8 + 深灰正文 (24,24,24)×17 + 灰蓝 (48,72,72)/(120,120,144)——remember 键纪律生效，无旧色残留；切回 night yes 恢复原状；
+  - **守卫**：正文单美元 `$ax^2 + bx + c = 0$` 保持原文不误伤（货币防护，恰为模型实际输出形态）；模型未按指示用 `\(...\)` 而用单美元 → 行内降级路径本条未触发（③ 未改行内路径，#312② 既有单测覆盖；单美元不误伤反而是本条的实际验证点）。
+- 流式期原文如实未单独截图取证：③ 零改流式路径（math 围栏只在完结归一化管点产生，#312② 已单测钉死 + V6 完结跳变项沿用）。
+
+## 遗留与边界
+
+- `\{`（转义花括号字面量）会被当分组花括号着色——轻着色纯增益路径的已知化妆品级偏差，不值守卫成本。
+- 徽标色 full-alpha onSurfaceVariant；块底壳较深，亮暗两主题实测均可读（vision+像素双证）。
+- 批 2（观察精修）/批 3（可选语言标签+复制）仍挂卡上待观察窗结论；③ 就此收口待用户验收。

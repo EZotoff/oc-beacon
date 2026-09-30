@@ -493,6 +493,7 @@
     <string name="server_settings_oauth_browser_hint">Завершіть авторизацію у вашому браузері. Це вікно закриється автоматично.</string>
     <string name="chat_error_view_page">Сторінка</string>
     <string name="chat_error_view_code">Код</string>
+    <string name="math_block_badge">Формула</string>
     <string name="chat_save_image">Зберегти зображення</string>
     <string name="chat_image_saved">Зображення збережено</string>
     <string name="chat_image_save_failed">Не вдалося зберегти зображення</string>
