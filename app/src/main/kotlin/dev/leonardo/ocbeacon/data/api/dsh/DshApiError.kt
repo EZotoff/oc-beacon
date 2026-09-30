@@ -51,7 +51,7 @@ data class DshApiError(
     override val cause: Throwable? = null,
 ) : Exception(message, cause) {
 
-    /** 语义分类：有码按 39 码闭集表；无码按 HTTP 搬运层语义；两者皆无 = 传输层 [DshErrorCategory.Network]。 */
+    /** 语义分类：有码按 0.2.0 观测 64 码闭集表；无码按 HTTP 搬运层语义；两者皆无 = 传输层 [DshErrorCategory.Network]。 */
     val category: DshErrorCategory
         get() = when {
             code != null -> categoryForCode(code)
@@ -60,39 +60,65 @@ data class DshApiError(
         }
 
     companion object {
-        /** 39 码 → 七类表（§5 补遗行闭集；与 DshApiErrorTest 期望表互为独立来源）。 */
+        /**
+         * 64 码 → 七类表（#458 重建；与 DshApiErrorTest 期望表互为独立来源）。
+         * 分类原则：0.1.x 点式码原语义随码形迁移（agent-busy→session/agent-busy
+         * 仍 Busy）；gateway 按传输层语义细分（lookup/context 的 not-found→NotFound、
+         * unavailable 与 internal 与 failed 族→Server、输入与协议违约→Unknown）。
+         */
         private val CODE_CATEGORIES: Map<String, DshErrorCategory> = mapOf(
-            // NotFound
-            "session-not-found" to DshErrorCategory.NotFound,
-            "workspace-not-found" to DshErrorCategory.NotFound,
-            "agent-preset-not-found" to DshErrorCategory.NotFound,
-            "queue-item-not-found" to DshErrorCategory.NotFound,
-            "subagent-not-found" to DshErrorCategory.NotFound,
-            // Busy
-            "agent-busy" to DshErrorCategory.Busy,
-            "agent-preset-locked" to DshErrorCategory.Busy,
-            "not-resumable" to DshErrorCategory.Busy,
-            "steer-unavailable" to DshErrorCategory.Busy,
-            // Conflict
-            "session-conflict" to DshErrorCategory.Conflict,
-            "workspace-name-conflict" to DshErrorCategory.Conflict,
-            "agent-preset-conflict" to DshErrorCategory.Conflict,
-            "settings-conflict" to DshErrorCategory.Conflict,
-            "directory-exists" to DshErrorCategory.Conflict,
-            // Auth（DSH 无鉴权面：仅栅栏 + 上游凭据两处）
-            "unauthorized" to DshErrorCategory.Auth,
-            "credential-rejected" to DshErrorCategory.Auth,
-            // Server
-            "model-unavailable" to DshErrorCategory.Server,
-            "workspace-attach-failed" to DshErrorCategory.Server,
-            "directory-unreadable" to DshErrorCategory.Server,
-            "directory-create-failed" to DshErrorCategory.Server,
-            "picker-unavailable" to DshErrorCategory.Server,
-            "command-error" to DshErrorCategory.Server,
-            "model-discovery-failed" to DshErrorCategory.Server,
-            "catalog-diagnostic" to DshErrorCategory.Server,
-            "delivery-unavailable" to DshErrorCategory.Server,
-            "internal" to DshErrorCategory.Server,
+            // NotFound：资源不存在族
+            "session/not-found" to DshErrorCategory.NotFound,
+            "workspace/not-found" to DshErrorCategory.NotFound,
+            "subagent/not-found" to DshErrorCategory.NotFound,
+            "job/not-found" to DshErrorCategory.NotFound,
+            "session/queue-item-not-found" to DshErrorCategory.NotFound,
+            "agent-preset/not-found" to DshErrorCategory.NotFound,
+            "gateway/lookup-not-found" to DshErrorCategory.NotFound,
+            "gateway/context-not-found" to DshErrorCategory.NotFound,
+            // Busy：资源被占用/暂不可继续族
+            "session/agent-busy" to DshErrorCategory.Busy,
+            "session/steer-unavailable" to DshErrorCategory.Busy,
+            "session/writer-held" to DshErrorCategory.Busy,
+            "subagent/not-resumable" to DshErrorCategory.Busy,
+            "agent-preset/locked" to DshErrorCategory.Busy,
+            "workspace/session-active" to DshErrorCategory.Busy,
+            "terminal/limit-reached" to DshErrorCategory.Busy,
+            // Conflict：状态/命名冲突族
+            "session/conflict" to DshErrorCategory.Conflict,
+            "agent-preset/conflict" to DshErrorCategory.Conflict,
+            "workspace/name-conflict" to DshErrorCategory.Conflict,
+            "directory-picker/exists" to DshErrorCategory.Conflict,
+            // Auth（DSH 无鉴权面：栅栏 unauthorized + 上游凭据两处）
+            "subagent/unauthorized" to DshErrorCategory.Auth,
+            "credential/rejected" to DshErrorCategory.Auth,
+            "session/provider-credentials-unavailable" to DshErrorCategory.Auth,
+            // Server：服务端执行失败族
+            "gateway/internal" to DshErrorCategory.Server,
+            "gateway/service-unavailable" to DshErrorCategory.Server,
+            "gateway/context-failed" to DshErrorCategory.Server,
+            "gateway/context-unavailable" to DshErrorCategory.Server,
+            "gateway/definition-unavailable" to DshErrorCategory.Server,
+            "gateway/invocation-unavailable" to DshErrorCategory.Server,
+            "gateway/lookup-failed" to DshErrorCategory.Server,
+            "gateway/lookup-unavailable" to DshErrorCategory.Server,
+            "gateway/method-unavailable" to DshErrorCategory.Server,
+            "gateway/provider-mismatch" to DshErrorCategory.Server,
+            "gateway/result-invalid" to DshErrorCategory.Server,
+            "gateway/uplink-overflow" to DshErrorCategory.Server,
+            "session/model-unavailable" to DshErrorCategory.Server,
+            "session/projections-unavailable" to DshErrorCategory.Server,
+            "session/provider-models-unavailable" to DshErrorCategory.Server,
+            "session/workspace-attach-failed" to DshErrorCategory.Server,
+            "subagent/catalog-diagnostic" to DshErrorCategory.Server,
+            "subagent/delivery-unavailable" to DshErrorCategory.Server,
+            "subagent/parent-unavailable" to DshErrorCategory.Server,
+            "llm/model-discovery-rejected" to DshErrorCategory.Server,
+            "directory-picker/create-failed" to DshErrorCategory.Server,
+            "directory-picker/unavailable" to DshErrorCategory.Server,
+            "directory-picker/unreadable" to DshErrorCategory.Server,
+            "terminal/control-unavailable" to DshErrorCategory.Server,
+            "terminal/unavailable" to DshErrorCategory.Server,
             // Unknown（其余闭集成员：客户端输入违约/无领域语义）
         )
 

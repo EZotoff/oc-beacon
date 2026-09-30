@@ -444,16 +444,17 @@ class WorkspaceViewModelTest {
     // ===== #276 终验 V4：DSH 目录惰性探测——失败转叶 =====
 
     /**
-     * DSH host.listDirectory 条目无类型判别（仅 {name,path,hidden}），缺省全按
-     * directory 可展开；对非目录路径展开得到闭集错误码 directory-unreadable，
-     * 该节点须转标 file（叶）且随树缓存——转标后不可再展开（不重复探测）。
+     * DSH directoryPicker/list 条目无类型判别（仅 {name,path,hidden}），缺省全按
+     * directory 可展开；对非目录路径展开得到闭集错误码 directory-picker/unreadable
+     * （#458：0.2.0 斜杠码，旧 directory-unreadable 退役），该节点须转标 file（叶）
+     * 且随树缓存——转标后不可再展开（不重复探测）。
      */
     @Test
-    fun `toggleExpand directory-unreadable failure demotes node to file leaf`() = runTest {
+    fun `toggleExpand directory-picker unreadable failure demotes node to file leaf`() = runTest {
         coEvery { listDirectory(serverId, directory, "") } returns Result.success(sampleFileNodes)
         coEvery { getVcsStatus(serverId, directory) } returns Result.success(sampleGitChanges)
         coEvery { listDirectory(serverId, directory, "src") } returns Result.failure(
-            DshApiError(DshRpcErrorCode.DirectoryUnreadable, "not a directory", null, 200)
+            DshApiError(DshRpcErrorCode.DirectoryPickerUnreadable, "not a directory", null, 200)
         )
 
         val vm = WorkspaceViewModel(savedStateHandle(), listDirectory, getVcsStatus, findFiles, io.mockk.mockk(relaxed = true), FakeServerAdapterResolver())

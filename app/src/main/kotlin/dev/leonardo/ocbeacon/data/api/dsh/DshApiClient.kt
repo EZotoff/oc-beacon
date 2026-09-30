@@ -338,7 +338,7 @@ class DshApiClient @Inject constructor(
             put("args", buildJsonObject {
                 put("agentId", sessionId)
                 put("line", "/compact")
-                put("images", JsonArray(emptyList()))
+                put("submittedAttachments", JsonArray(emptyList()))
             })
         }
         val value = rpc.call(conn, "commands/execute", payload) { it }.getOrElse { e -> throw e }
@@ -346,7 +346,7 @@ class DshApiClient @Inject constructor(
         val kind = result?.dshStr("kind")
         if (kind != "success") {
             throw DshApiError(
-                code = DshRpcErrorCode.CommandError,
+                code = DshRpcErrorCode.GatewayResultInvalid,
                 message = result?.dshStr("text") ?: "compact rejected: kind=" + kind,
                 details = null,
                 httpStatus = null,
@@ -401,21 +401,21 @@ class DshApiClient @Inject constructor(
      * 通用斜杠命令执行（commands/execute typert 通道，非 52 方法面；
      * docs/research/2026-08-31-dsh-permission-sandbox-approval.md §2）。
      *
-     * 传输：POST /api/commands/execute，payload {args:{agentId,line,images:[]}}。
+     * 传输：POST /api/commands/execute，payload {args:{agentId,line,submittedAttachments:[]}}（#458：0.2.0 images→submittedAttachments）。
      * DSH 单 agent 每会话——agentId == sessionId（SessionId 即 agentId，dsh-commands
      * typert 的 agent 参数 source=lookup 落到 agentId=SessionId）。响应 value =
      * {commandId,result:{kind,text}}，kind!="success" 视为失败（如未知名 → kind:"error"）。
      */
     suspend fun executeCommand(conn: ServerConnection, sessionId: String, line: String): Boolean {
         // #358（2026-09-08 走查⑦取证定音）：typert 网关 args 语义 =
-        // payload.args.{agentId,line,images}（RPC 直探双证：args 内再包 args →
+        // payload.args.{agentId,line,submittedAttachments}（#458 0.2.0 改名；RPC 直探双证：args 内再包 args →
         // gateway/arguments-invalid「missing agentId…unexpected args」；正确包裹
         // → ok 受理）——SELF_METHODS 直传原样包裹。
         val payload = buildJsonObject {
             put("args", buildJsonObject {
                 put("agentId", sessionId)
                 put("line", line)
-                put("images", JsonArray(emptyList()))
+                put("submittedAttachments", JsonArray(emptyList()))
             })
         }
         // #358 终版：CommandExecution|undefined（dsh-commands typert）三分派——
@@ -493,6 +493,9 @@ class DshApiClient @Inject constructor(
     /**
      * agentPresets/copy(from, id, name?) → 复制为 user 预设（void 回程走
      * [DshRpcClient.callVoid]）。name 空→载荷不放键（服务端按 id 派生）。
+     *
+     * #458：0.2.0-rc.2 已移除该端点（404 实测）——恒走失败分支，UI 提示
+     * 「复制失败」（不崩不静默）；rc 后续版本若恢复端点即自动复通。
      */
     suspend fun copyAgentPreset(conn: ServerConnection, from: String, id: String, name: String?): Boolean {
         val payload = buildJsonObject {
@@ -503,7 +506,12 @@ class DshApiClient @Inject constructor(
         return rpc.callVoid(conn, "agentPreset.copy", payload).isSuccess
     }
 
-    /** agentPresets/deletePreset(id)（user 预设可删；system 拒绝；void 回程）。 */
+    /**
+     * agentPresets/deletePreset(id)（user 预设可删；system 拒绝；void 回程）。
+     *
+     * #458：0.2.0-rc.2 已移除该端点（404 实测）——恒走失败分支，UI 提示
+     * 「删除失败」；rc 后续版本若恢复端点即自动复通。
+     */
     suspend fun deleteAgentPreset(conn: ServerConnection, id: String): Boolean =
         rpc.callVoid(conn, "agentPreset.deletePreset", buildJsonObject { put("id", id) }).isSuccess
 
@@ -667,6 +675,10 @@ class DshApiClient @Inject constructor(
      *
      * 容错映射：非对象条目/缺 id 跳过；缺 kind 按 child、缺 hasChildren 按
      * false、activity 保留原串（"running"/"inactive" 由上层判定）。
+     *
+     * #458：0.2.0-rc.2 已移除 subagents/list 端点（404 实测，typert 生成
+     * 绑定无此方法）——调用方软降级本地镜像递归（listSessions 过滤
+     * parentId）已就位，此处上抛 DshApiError 即触发该降级。
      */
     override suspend fun listSubagentCatalog(
         conn: ServerConnection,
@@ -1376,11 +1388,11 @@ class DshApiClient @Inject constructor(
             onFailure = { e ->
                 val code = (e as? DshApiError)?.code
                 when {
-                    code == DshRpcErrorCode.SteerUnavailable ->
+                    code == DshRpcErrorCode.SessionSteerUnavailable ->
                         dev.leonardo.ocbeacon.domain.model.QueueMutationResult.SteerUnavailable
-                    code == DshRpcErrorCode.QueueItemNotFound ->
+                    code == DshRpcErrorCode.SessionQueueItemNotFound ->
                         dev.leonardo.ocbeacon.domain.model.QueueMutationResult.QueueItemNotFound
-                    code == DshRpcErrorCode.AgentBusy ->
+                    code == DshRpcErrorCode.SessionAgentBusy ->
                         dev.leonardo.ocbeacon.domain.model.QueueMutationResult.Busy
                     else -> dev.leonardo.ocbeacon.domain.model.QueueMutationResult.Failed(
                         (e as? DshApiError)?.message ?: (e.message ?: "updateQueue failed")
@@ -1545,7 +1557,7 @@ class DshApiClient @Inject constructor(
             }
             return rpc.eventsResult(conn, requestId, outcome).isSuccess
         }
-        return rpc.respondError(conn, requestId, DshRpcErrorCode.Cancelled, "user cancelled ask_user_question").isSuccess
+        return rpc.respondError(conn, requestId, DshRpcErrorCode.GatewayCancelled, "user cancelled ask_user_question").isSuccess
     }
 
     override suspend fun listPendingQuestions(

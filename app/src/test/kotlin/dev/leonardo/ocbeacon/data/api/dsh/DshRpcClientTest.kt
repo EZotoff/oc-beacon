@@ -89,13 +89,13 @@ class DshRpcClientTest {
     fun `call business error maps to DshApiError with code and httpStatus 200`() = runTest {
         val engine = MockEngine { request ->
             respond(
-                """{"type":"server-response","rpcId":"x","result":{"ok":false,"error":{"code":"internal","message":"search index disabled","details":{}}}}""",
+                """{"type":"server-response","rpcId":"x","result":{"ok":false,"error":{"code":"gateway/internal","message":"search index disabled","details":{}}}}""",
                 HttpStatusCode.OK, headersOf("Content-Type" to listOf("application/json")),
             )
         }
         val result = client(engine).call(conn, "session.search", buildJsonObject { put("q", "x") }) { it }
         val error = result.exceptionOrNull() as DshApiError
-        assertEquals("internal", error.code?.wire)
+        assertEquals("gateway/internal", error.code?.wire)
         assertEquals(200, error.httpStatus)
         assertEquals("search index disabled", error.message)
         assertEquals(DshErrorCategory.Server, error.category)

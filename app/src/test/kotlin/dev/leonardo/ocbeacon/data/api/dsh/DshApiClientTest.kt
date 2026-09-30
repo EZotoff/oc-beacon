@@ -319,7 +319,9 @@ class DshApiClientTest {
 
     /**
      * 压缩不可用（活跃压缩中/agent 非 idle → kind:"error"）→ 抛 DshApiError
-     * （command-error）——repository 收编失败、UI 失败 snackbar（静默失败不可接受）。
+     * （app 本地铸码 gateway/result-invalid，#458：0.2.0 闭集形——命令通道
+     * result.kind != success 的语义标记）——repository 收编失败、UI 失败
+     * snackbar（静默失败不可接受）。
      */
     @Test
     fun `compactSession throws on compaction unavailable`() = runTest {
@@ -331,7 +333,7 @@ class DshApiClientTest {
         }
         val outcome = runCatching { client(engine).compactSession(conn, "s-1", "p", "m") }
         assertTrue(outcome.isFailure)
-        assertEquals("command-error", (outcome.exceptionOrNull() as DshApiError).code?.wire)
+        assertEquals("gateway/result-invalid", (outcome.exceptionOrNull() as DshApiError).code?.wire)
     }
 
     /**
@@ -502,7 +504,7 @@ class DshApiClientTest {
         assertEquals("frame-q", body["rpcId"]!!.jsonPrimitive.content)
         val result = body["result"]!!.jsonObject
         assertEquals(false, result["ok"]!!.jsonPrimitive.boolean)
-        assertEquals("cancelled", result["error"]!!.jsonObject["code"]!!.jsonPrimitive.content)
+        assertEquals("gateway/cancelled", result["error"]!!.jsonObject["code"]!!.jsonPrimitive.content)
     }
 
     private fun QuestionFixture(
@@ -522,9 +524,10 @@ class DshApiClientTest {
     // ============ commands/execute + setPermissionPreset（权限预设切换） ============
 
     /**
-     * 活体（perm-10b）：POST /api/commands/execute，payload {args:{agentId,line,images}}；
-     * agentId == sessionId（DSH 单 agent 每会话）；images 恒空数组。响应
-     * {commandId,result:{kind,text}}，kind=success → true。
+     * 活体（perm-10b；#458 字段改名）：POST /api/commands/execute，payload
+     * {args:{agentId,line,submittedAttachments}}（0.2.0：images → submittedAttachments）；
+     * agentId == sessionId（DSH 单 agent 每会话）；submittedAttachments 恒空数组。
+     * 响应 {commandId,result:{kind,text}}，kind=success → true。
      */
     @Test
     fun `executeCommand posts commands execute with args envelope`() = runTest {
@@ -542,7 +545,7 @@ class DshApiClientTest {
         val args = body["payload"]!!.jsonObject["args"]!!.jsonObject
         assertEquals("s-1", args["agentId"]!!.jsonPrimitive.content)
         assertEquals("/permission danger-full-access", args["line"]!!.jsonPrimitive.content)
-        assertEquals(0, args["images"]!!.jsonArray.size)
+        assertEquals(0, args["submittedAttachments"]!!.jsonArray.size)
     }
 
     /** kind != success（如未知名 → error）→ false。 */
@@ -794,34 +797,34 @@ class DshApiClientTest {
         assertEquals("standard", payload["agentPreset"]!!.jsonPrimitive.content)
     }
 
-    /** 非 blank select → agent-preset-locked（DshApiError.code 分类 Busy）。 */
+    /** 非 blank select → agent-preset/locked（#458：0.2.0 横杠域码）（DshApiError.code 分类 Busy）。 */
     @Test
     fun `selectAgentPreset maps locked error to busy category`() = runTest {
         val engine = MockEngine {
             respond(
-                """{"type":"server-response","rpcId":"r","result":{"ok":false,"error":{"code":"agent-preset-locked","message":"preset is fixed"}}}""",
+                """{"type":"server-response","rpcId":"r","result":{"ok":false,"error":{"code":"agent-preset/locked","message":"preset is fixed"}}}""",
                 HttpStatusCode.OK, jsonHeaders(),
             )
         }
         val outcome = runCatching { client(engine).selectAgentPreset(conn, "s-1", "code") }
         assertTrue(outcome.isFailure)
         val err = outcome.exceptionOrNull() as DshApiError
-        assertEquals("agent-preset-locked", err.code?.wire)
+        assertEquals("agent-preset/locked", err.code?.wire)
         assertEquals(DshErrorCategory.Busy, err.category)
     }
 
-    /** 未知 id → agent-preset-not-found（DshApiError.code 分类 NotFound）。 */
+    /** 未知 id → agent-preset/not-found（#458）（DshApiError.code 分类 NotFound）。 */
     @Test
     fun `selectAgentPreset maps not found error to notfound category`() = runTest {
         val engine = MockEngine {
             respond(
-                """{"type":"server-response","rpcId":"r","result":{"ok":false,"error":{"code":"agent-preset-not-found","message":"unknown"}}}""",
+                """{"type":"server-response","rpcId":"r","result":{"ok":false,"error":{"code":"agent-preset/not-found","message":"unknown"}}}""",
                 HttpStatusCode.OK, jsonHeaders(),
             )
         }
         val outcome = runCatching { client(engine).selectAgentPreset(conn, "s-1", "nope") }
         val err = outcome.exceptionOrNull() as DshApiError
-        assertEquals("agent-preset-not-found", err.code?.wire)
+        assertEquals("agent-preset/not-found", err.code?.wire)
         assertEquals(DshErrorCategory.NotFound, err.category)
     }
 
