@@ -974,3 +974,8 @@ IP 漂移对策；dsh-pair.sh 支持 DSH_PAIR_SERIAL 参数化传名）。
   - 2026-09-29 发掘审计:铁律收编缺口比 R-7 记载更大——sse-scroll-stability-iron-laws.md 止于 2026-09-25 #435,#437 稳定揭示/#438 限速与保 key/#472 行内放行/#474 守卫分通道/#476 GUARD 死区五域铁律全未收编;R-7 收口时应一并补
   - 2026-09-30 铁律五域收编完成：sse-scroll-stability-iron-laws.md 新增 §2.6 铁律 10-14（#437 安全前缀+差分基准取放行前缀 / #438 壁钟限速+保 key 投影 / #472 行内放行镜像+非前缀宽限 / #474 手势-程序通道分治 / #476 GUARD 死区），全部代码符号 grep 核实在位；卡上残余仅剩 beta/stable flag 放行裁决（build.gradle.kts:108-118，等用户拍板）
   - 迁入依据：用户裁决放行 beta/stable（2026-09-30）：SafePrefixGate 根修廿余轮定量证据+铁律 10-14 五域收编完成+compileBetaDebugKotlin 绿，dev-only 门结束；回退通道=flavor flag 置 false（backlog.sh migrate 2026-09-30）
+
+## 放行后验证状态（2026-09-30）
+
+- compileBetaDebugKotlin 绿 + 全量单测 3742/0 失败 + R8 静态核查：proguard 对 mikepenz/intellij markdown 全家 keep（proguard-rules.pro:38-40），pilot/gate/inline 三类无自定义反射面（唯一 Class.forName=平台类 android.os.SystemProperties，R8 透明）
+- 残余：beta/stable **release** 构建开 R8，flag 翻 true 后 pilot 路径首次进入 R8 常量折叠保留面——运行时 smoke 未做（发版红线：version.properties 未 bump 禁 assemble beta/stable）。**下次 beta 发版首轮 E2E 必须覆盖一轮流式输出**；回退通道=flavor flag 置 false
