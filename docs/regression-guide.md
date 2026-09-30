@@ -131,6 +131,7 @@ adb shell dumpsys dropbox --print
 | 4 | 发送后草稿清除 | 发送完成 | 输入框回到 hint | [UI] |
 | 5 | 流式节奏 | 长回复全程观察 | 无卡顿突发、无闪烁、无跳底（SSE 铁律） | [MANUAL] |
 | 6 | Markdown 渲染 | 发含代码块/表格消息 | 渲染正确；表格两端一致 | [UI] |
+| 6b | 代码块语法高亮 | 发「Reply with one markdown code block …」类消息 | 支持语言（kotlin 等 17 种）流式期与完结态关键字/字符串/注释多彩着色；未支持语言（json/yaml 等）静默纯色=现状；主题切换颜色跟随无残留 | [UI] |
 
 > SSE 滚动稳定性铁律见 AGENTS.md「SSE 滚动稳定性」段；修改前必读 `docs/research/sse-scroll-stability-iron-laws.md` 与 `docs/chat-ui-event-lifecycle.md`。
 

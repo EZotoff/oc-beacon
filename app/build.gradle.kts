@@ -245,8 +245,8 @@ dependencies {
     implementation("com.mikepenz:multiplatform-markdown-renderer-m3:$markdownRendererVersion")
     implementation("com.mikepenz:multiplatform-markdown-renderer-coil3:$markdownRendererVersion")
 
-    // FileViewer 源码视图的语法高亮（dev.snipme/highlights）。
-    // 注意：Markdown 代码块使用 mikepenz 内置的默认渲染器，而非本库。
+    // 语法高亮引擎（dev.snipme/highlights）：FileViewer 源码视图 + 主对话流
+    // Markdown 代码块（#488② 自建渲染壳，ui/screens/chat/markdown/HighlightedCode.kt）。
     implementation("dev.snipme:highlights:1.1.0")
 
     // WebView 回退（为兼容遗留场景保留）

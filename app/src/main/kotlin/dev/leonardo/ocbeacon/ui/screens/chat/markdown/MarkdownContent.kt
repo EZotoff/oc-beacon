@@ -524,11 +524,22 @@ internal fun MarkdownContent(
         }
     }
 
+    // #488②：代码高亮主题（M3 令牌 → highlights SyntaxTheme 9 角色，
+    // CodeSyntaxTheme.kt）。键 = 参与映射的 colorScheme 角色（下方 components
+    // 键纪律同款）——主题/动态色/AMOLED 切换 → 新实例 → components 键变化
+    // → codeFence 闭包重建，防代码块残留旧主题色。
+    val colorScheme = MaterialTheme.colorScheme
+    val codeSyntaxTheme = remember(
+        colorScheme.primary, colorScheme.secondary, colorScheme.tertiary,
+        colorScheme.onSurface, colorScheme.onSurfaceVariant,
+    ) { colorScheme.toCodeSyntaxTheme() }
+
     // components 闭包捕获 linkColor/typography/textColor + #488① custom 钩子捕获
-    // codeBlockBg/codeBlockFg/typography.code。键必须包含它们：主题切换时颜色变化
+    // codeBlockBg/codeBlockFg/typography.code + #488② codeFence/codeBlock 捕获
+    // codeSyntaxTheme。键必须包含它们：主题切换时颜色变化
     // → 重建闭包 → 内部 AnnotatedString 用新颜色重建，否则切换主题后文字颜色停留
     // 在旧主题（暗色浅色在亮色背景下"过曝"）。
-    val components = remember(density, isUser, linkListener, linkColor, textColor, codeBlockBg, codeBlockFg, typography.code) {
+    val components = remember(density, isUser, linkListener, linkColor, textColor, codeBlockBg, codeBlockFg, typography.code, codeSyntaxTheme) {
         markdownComponents(
             text = { model ->
                 val settings = annotatorSettings(linkInteractionListener = linkListener)
@@ -639,6 +650,28 @@ internal fun MarkdownContent(
                     content = model.content,
                     node = model.node,
                     style = model.typography.text,
+                )
+            },
+            // #488②：代码块语法高亮——自建壳（fork -code v0.45.0，
+            // HighlightedCode.kt）。components 单例覆写 → 八个 MarkdownContent
+            // 调用面（assistant 双路径/思考/工具卡×2/通知卡/压缩卡/预览）自动
+            // 获得；user 气泡结构性不触达（PartContent isUser 分支走纯 Text）。
+            // 未知语言引擎侧静默纯色 = 现状等价；流式期 produceState 按 code
+            // 批重启（48ms 天然节流），初值纯文本无空窗。
+            codeFence = { model ->
+                SafeHighlightedCodeFence(
+                    content = model.content,
+                    node = model.node,
+                    style = model.typography.code,
+                    theme = codeSyntaxTheme,
+                )
+            },
+            codeBlock = { model ->
+                SafeHighlightedCodeBlock(
+                    content = model.content,
+                    node = model.node,
+                    style = model.typography.code,
+                    theme = codeSyntaxTheme,
                 )
             },
             // #488①：块内 HTML——库对 HTML_BLOCK 零组件（v0.45.0 base+m3 AAR 二进制
