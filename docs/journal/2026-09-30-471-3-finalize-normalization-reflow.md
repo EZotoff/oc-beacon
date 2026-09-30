@@ -120,3 +120,8 @@ v1 到 v2（真机 E2E 证伪驱动）：
   - 坍缩重建根修四连（2026-09-30 真机定罪）：①归一化 run 哨兵空行吞噬——ensureBlankLineBeforeGfmTables/transformMathFallback 的 run.isNotEmpty() 哨兵把「首行为空行」（闭合围栏后空行）误判 run 未启动→分隔换行被跳过→空行吞噬；流式中 | 首达（快速路径退出）时首次生效→已放行前缀中段非前缀→RESETKEY 重建坍缩+4.4s 限速重铺（三案 13:55/14:13/14:40 同源 divergeAt 皆落围栏后空行）。②gate 表头行中线/未完分隔行/行首空白回退补口——批预算截点越过未来插空行点。③mergePart 流式期前缀一致性守卫——异构快照不再替换 delta 累积，终态权威替换不变。④pilot 重建快速重灌（200ch/200ms→800ch/帧）+rawTail 取证探针。真机终验：同配方 prompt 零 nonPrefix 零重建高度单调；全量单测绿；证据链=wire 抓取回放（WireReplayDivergenceTest）+全前缀扫描（NormalizeDivergenceProbeTest）
   - 2026-09-30 用户整卡验收通过（③归一化前移+④-a 任务列表逐条放行+④-b 复选框接线+坍缩重建四连，真机复验干净；①#422 根灭/②#472 已验收/④转 watch 另立观察卡）；同批新裁决：验收探针（MDResize/heldTail/nonPrefix/rawTail 等）永久保留 DEBUG-only 不清理——同 #485，为复发保留第一手取证
   - 迁入依据：用户整卡复验通过（③④及坍缩重建四连真机干净，spec §8 关卡清单兑现）；④转 watch 另立观察卡；探针保留裁决随卡迁入（backlog.sh migrate 2026-09-30）
+
+### **#443 markdown 稳态粒度扩展：更多大块逐行/逐段放行（引用块/嵌套列表/长段落折行等）** `streaming`
+  - 用户裁决（2026-09-26 #441 后续）：表格/列表已逐行；评估引用块(>)、嵌套列表、def list、长代码块行级、setext 标题等大块的行级定案可行性，逐类 TDD 扩展 SafePrefixGate。
+  - 2026-09-30 核查收口：逐类对照 SafePrefixGate 现码，清单已随 #441→#472→#471③④ 四批逐类兑现——表格逐行(续放+三回退守卫)/列表(* 与有序行级、任务项行级+渐进、普通 - + 走纯文字直出)/引用块行级(懒延续刻意扣留)/嵌套列表浅缩进走行级、≥4 缩进刻意扣留/长代码块围栏行级/长段落位置制空行化+纯文字直出/ATX 行级/def list 无需(纯文字直出)；唯一残余 setext=刻意 accepted-gap(spec §3.6 stage-2 备查+铁律12注记)，不再单独占卡
+  - 迁入依据：用户裁决关闭（2026-09-30「好」）：逐类对照表证实实质已随四批落地，setext 维持 accepted-gap 由 spec §3.6+铁律12 承载（backlog.sh migrate 2026-09-30）
