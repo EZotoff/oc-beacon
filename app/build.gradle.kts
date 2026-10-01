@@ -114,10 +114,10 @@ android {
             buildConfigField("boolean", "STREAMING_MD_PILOT", "true")
             // #437 稳定揭示（依赖 STREAMING_MD_PILOT）
             buildConfigField("boolean", "STABLE_REVEAL_PILOT", "true")
-            // #442 R2 分片 + B案节奏收编：dev 试点未提升（编译必需字段——
-            // dev-only 声明曾致 beta/stable 自 A2 起编译失败，2026-10-02 终审发现）
-            buildConfigField("boolean", "STREAM_SHARD_PILOT", "false")
-            buildConfigField("boolean", "STREAM_DELTA_BUS", "false")
+            // #442 R2 分片 + B案节奏收编：2026-10-02 用户裁决提升 beta
+            //（dev 泡机+双臂单测+真机矩阵后；stable 再晚一批观察）
+            buildConfigField("boolean", "STREAM_SHARD_PILOT", "true")
+            buildConfigField("boolean", "STREAM_DELTA_BUS", "true")
         }
         create("stable") {
             dimension = "flavor"
@@ -127,7 +127,8 @@ android {
             // 2026-09-30 用户裁决放行（#437 收口）：与 beta 同批
             buildConfigField("boolean", "STREAMING_MD_PILOT", "true")
             buildConfigField("boolean", "STABLE_REVEAL_PILOT", "true")
-            // #442 R2 分片 + B案节奏收编：dev 试点未提升（编译必需字段，同 beta）
+            // #442 R2 分片 + B案节奏收编：stable 待观察后随下一批提升
+            //（beta 先行裁决 2026-10-02；回退=beta/stable 翻 false 一行）
             buildConfigField("boolean", "STREAM_SHARD_PILOT", "false")
             buildConfigField("boolean", "STREAM_DELTA_BUS", "false")
         }
