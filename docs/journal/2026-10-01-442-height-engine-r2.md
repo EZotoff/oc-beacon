@@ -161,3 +161,29 @@ R1 reasoning 覆盖（不覆盖=根修对 glm 系主流模型不成立——**�
 ### 6.7 若裁决提前：批次草案与验证面（记录备裁）
 
 B1 spec 批（R1-R9 裁决+bus 形态+对账 cadence+STREAM_DELTA_BUS dev 开关）→ B2 数据层切割 → B3 text 接线 → B4 reasoning 接线 → B5 表征+E2E（完结/回收/翻页/切换/resync）→ B6 真机判定。**根修达成判据**：流式稳态 ChatMessageList 函数体重执行≈结构性事件数（今日 ~10/s→≈0/s，重组计数器/[DEBUG-jk] 观测）；[452-combine] 发射频率同降；既有铁律网全绿（VDRAW 泄漏=0/CONTENT-BLINK=0/#492 检测网/贴底跟随与读历史回归）。与 A 线关系：A2.5/A4 与 B 案正交可并行（A 线修测量面，B 线修重组面）——次序裁决留用户。
+
+## §7 B案节奏收编实施 + A2.5 泛化 + B6 判定（2026-10-02，用户指令：B 面全量+A 线收尾一次到位）
+
+
+### 7.1 落地批次（六 commit）
+- B1 spec：docs/specs/2026-10-02-442-b-cadence-incorporation-design.md（R1-R9 裁决+A2.5 设计+A3 裁决）→ d9f128b4
+- B2 数据层：`_parts` 热视图语义零变更；structuralParts（dispatch 尾+直调入口发布）+ StreamingDeltaBus（flush 发布累积全文/终态与清理族撤销）+ getStructuralPartsMap 接口贯通；5+1 表征测 → d9f128b4
+- B3+B4 UI 接线：PartContent 文本/推理两分支 `live ?: part.text`；五消费面切 structural（十源 combine/跳转镜像/shell 解析/任务聚合×2）；9 测试桩补 → c7ab5887
+- A2.5：注册放宽任意位置首个未完结 Single-Text（活提问暂缓门控）；StreamPrefix 条目（#p 键族，ChunkAssistantItems 前缀+questionAnchorInPrefix 提问分工）；尾块子范围切片；3 测例 → 9dcb8295
+- B6 判定批（两真机定罪热修）→ 8a9eff20
+
+### 7.2 B6 判定证据（v2e2e:4298 真机，WiFi adb e69a99d8）
+- **CML-tick 判据探针**（ChatMessageList 函数体重执行计数，DEBUG 永久）：关关基线（-POCBEACON_STREAM_FLAGS_OFF=true 构建）流式稳态 **~4.8-6/s**；A+B 开（含两热修）**轮次启动结构性窗口（~10s：播种/part 生命周期/毕业）后 ≈0/s**——deltas 持续流入（[flush] batch #601→901）而 tick 归零。**根因二收口实证。**
+- **热修①（P1，仪器定罪）**：dispatch 尾对 MessagePartDelta 也发布 structural——flush 与后续 delta 交错把「已含本批累积」的热视图新值过桥 → 结构性静默被击穿（CML-tick ~6/s 之谜；探针 raw 身份签名逐 tick 变化定罪）。修复=Delta 事件例外发布；单测钉死。
+- **热修②（P2）**：ChatScreen `jkHold` 直读 `StreamingScrollHold.holding`——B案后冻结无事可做，但贴底跟随每滚动帧翻转 → ChatScreen 重组经参数链重跑 ChatMessageList（raw/cp/sp/rk/tp 全稳定仍 ~10/s 的残余驱动者）。修复=旗标开时退役该读（R8 裁决修正：非「无害失活」而是「按旗标退役」）。
+- **B5 烟测（全链活）**：text-first（Big Pickle）3 fire+EOF flush 完整（682==682 held=0）+三视口无重复；reasoning-first（LongCat）注册+3 fire+**prefix 渲染实证**（「思考完毕」chip+推理预览在正文上方，文档序正确）+EOF 213==213；会话切换重进正常；零 FATAL。
+- **gfxinfo 配对**：基线混合窗 p50=6/p90=29/p95=38ms vs 修复后多窗 31/73（启动铺开窗）/10-31——**噪声主导**（呼吸光标 120Hz/铺开期重解析/overscroll 伪影），帧级收益被掩蔽；根修判定以 CML-tick 为准。A4 正式 p90≤12ms 专项方法学（分阶段窗+光标抑制）仍开放（A4 烟测混合窗 12ms 在案）。
+
+### 7.3 A 线收尾
+- **A2.5 落地**（见 7.1）：推理先行轮（glm/LongCat 常态）分片覆盖，37K 正文零分片的 P2 缺口关闭。
+- **A3 影子态裁决：放弃**（按 §6 调研：tail 恒 ≤800ch 实证，影子态复杂度无对应收益；A4 正式复测若推翻前提再立卡）。
+- **架构2（预留高度表）维持 parked**（spec 2026-10-02 §2.4：A案冻结分片已等价达成其测量面目标）。
+
+### 7.4 遗留/顺手发现
+- **CJK 粗体 flanking**：`**……。**学`（闭界后紧跟 CJK 字符）渲染为字面星号——服务端原文+markdown 库 flanking 行为，旧路径同渲染（非 B案/A案回归）；已录 backlog 卡。
+- JankHold/STREAMING_MD_PILOT 等过渡装备在 B案稳定后可整体清扫（独立批次）。
