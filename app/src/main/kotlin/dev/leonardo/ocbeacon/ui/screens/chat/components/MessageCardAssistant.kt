@@ -357,10 +357,21 @@ internal fun MessageCardAssistant(
                                             it.ignored != true && !it.text.contains("User has answered")
                                     }
                                 val preParsedAssistantState = if (longTextPart != null) {
-                                    val partReadiness by readinessRegistry
-                                        .flow(longTextPart.id)
-                                        .collectAsState()
-                                    (partReadiness as? RenderReadiness.Parsed)?.state
+                                    // #442 A2 修复（真机 02:05 定罪）：已分片 part 的全文
+                                    // 预解析态会把尾块 item 撑成全文高（RESIZE 96→49390，
+                                    // 与冻结 shard 双渲染重复 + 完结瞬间踢飞 pilot 致尾段
+                                    // held 不再 flush）——已发布 part 抑制预解析，尾块渲染
+                                    // 权归 pilot 切片（shardHold 冷续）。
+                                    if (dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker
+                                            .controllerFor(longTextPart.id)?.hasPublished() == true
+                                    ) {
+                                        null
+                                    } else {
+                                        val partReadiness by readinessRegistry
+                                            .flow(longTextPart.id)
+                                            .collectAsState()
+                                        (partReadiness as? RenderReadiness.Parsed)?.state
+                                    }
                                 } else {
                                     null
                                 }

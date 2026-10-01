@@ -83,3 +83,24 @@
 **验证**：StreamShardEntryTest 3 例（逆文档序/原键保持/displayEntryStart 钉头块/键族互斥/空表不变）+ StreamingShardBrokerTest 6 例（注册身份稳定/fire 钩子先行时序/未注册 no-op/注销后发布兜底+冷启续账/onRebuild 清账）+ 全量 **3810/0/0** + compile 绿。
 
 **已知边界（诚实）**：①Fire 重建窗——尾块 >800ch 时切尾重建经 2-3 帧回涨（≤800ch 单帧完成），A3 影子态双喂消除；②资格限制——非 text-leading turn（reasoning 先行等）不分片，O(内容) 残留在该形态；③真机未验（A4：gfxinfo 滑动 p90 ≤12ms、换装帧高度恒等的块 padding 对称假设、VDRAW/SilentShift 零毕业帧滑移）。
+
+## §5 A4 真机烟测两轮 + 热修（2026-10-02，dev 包 v2e2e:4298 容器，Big Pickle 模型）
+
+**环境**：WiFi adb（mdns 别名 serial）；v2-e2e 容器（xchg-data 可写挂载，新建会话选 ~ 目录）；长文 prompt（25 节/6000 词技术综述）。
+
+**第一轮（装机 db4f7e91）**：
+- **shard fire 全链活**：16 次毕业（origin 2195→35531，每 ~2.1Kch 一次），tail 恒小（26-403ch ≤800ch 单帧重建——**A3 影子态的实际需求存疑，待正式 A4 判定**）；
+- 视觉完整性：3 采样视口 vision 判读（节号 22→18→15 单调递减、无重复段/无空洞/无重叠）；
+- 混合窗帧率（含呼吸光标 120Hz 动画帧+16 次毕业+滑动）：p50=5/p90=12/p95=17ms，Janky(legacy)=16.9%——无灾难（正式 p90 判定需专项方法学与基线对照，另批）；
+- 信号判读：MDResize 负 d 锯齿族（-28xx）= 尾块毕业收缩（新签名家族，**与 #484 坍缩判读签名集区分：负 d 大值+同步 shard fire 行=毕业常态**）；ScrollDiag RESIZE 正向 132-198px=尾块健康增长；SilentShift 18 条全在轮首（底距恢复 48px 标准行为）；零 app 崩溃。
+- **发现 P1**：回收重组合后尾块 RESIZE **h 96→49390（d=+49294）**——全文重复渲染。
+
+**P1 定罪（日志链）**：MessageCardAssistant 长文本滚动预解析通道（RenderReadiness registry ≥200ch）为完结 part 提供**全文** preParsedState → MarkdownContent preParsed 分支先于 pilot 分支 → 尾块渲染全文与冻结 shard 双重复 + 完结瞬间踢飞 pilot（效果在 delay(200ms) 中被取消，尾段 held 1415ch 不再 flush——REST 37224 vs 渲染账 35531+278）。
+
+**热修**（同日装机）：已发布 part（controllerFor().hasPublished()）抑制预解析消费——尾块渲染权归 pilot 切片（shardHold 冷续）。附带 shard-reg/unreg DEBUG 日志（注册可观测盲区补齐）。
+
+**第二轮复测（热修版）**：shard-reg ✓、14 次 fire ✓、**完结 EOF flush 完整**（held=0、releasedTotal==snapshotTotal=659）✓、**滚出滚回冷续单帧入树**（659ch 两批同帧 append、零 49xxx RESIZE）✓、全量单测 3810/0/0。
+
+**发现 P2（覆盖面缺口，A2.5 待办）**：资格=text-leading turn 把**推理先行**轮次全部排除（服务端实证：LongCat 轮=[reasoning 1991ch, text 37218ch]，37K 正文零分片）——推理先行是现代模型常态，泛化方向=turn 在 renderItem 级拆分（推理前缀独立 item，TurnSegment Items(from,to) 同构），录 backlog。
+
+**已知项**：正式 A4 判定（滑动 p90≤12ms 专项方法学+关开关基线对照）未做；+49270 的旧轮次 RESIZE 均为重启后 broker 清空的遗留路径（正常）。

@@ -1745,10 +1745,16 @@ fun ChatMessageList(
                                 dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.register(
                                     itemKey, shardRegPartId,
                                 ) { heightReserve.hardReset() }
+                                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                    AppLogger.d("SGR-435", "shard-reg key=" + itemKey + " part=" + shardRegPartId.take(18))
+                                }
                             }
                         }
                         androidx.compose.runtime.DisposableEffect(itemKey, shardRegPartId) {
                             onDispose {
+                                if (shardRegPartId != null && dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                    AppLogger.d("SGR-435", "shard-unreg key=" + itemKey + " part=" + shardRegPartId.take(18))
+                                }
                                 shardRegPartId?.let {
                                     dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.unregister(it)
                                 }
