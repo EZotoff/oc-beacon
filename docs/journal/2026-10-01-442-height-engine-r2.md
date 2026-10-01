@@ -49,3 +49,20 @@
 **残余（低价值不追）**：数据层历史性能叙述注释（MessageStore/MessageDao/CachedPartEntity/SessionStateService 等描述当时实测，保留原文）；ChatScreen.kt 3 处注释走编辑协议成本高于价值，记此处跳过；ChatScrollUtils「3×16ms」为帧基重试与 cadence 无关。DshSilenceWatchdog「48ms 批处理上限」为阈值论证语义（保守方向），不动。
 
 **定位（诚实）**：本批是 R2 分片手术的**安全网与清障**——八职责拆开后布尔语义接线测试在位（终审 P1 教训补课），p90 目标未动（主体在批次 A）。
+
+## §3 批次 A1 + A2 内核：毕业计划纯函数、武装/触发状态机、施工 spec（2026-10-01）
+
+**A1 毕业计划纯函数**（commit c6f1c113；`StreamingGraduationPlan.kt` + 测试 8 例）：
+- `planStreamingGraduation(snapshot, released, previous, min, max)` → `StreamingGraduation(chunks, tailFrom)`；
+- 语义：空行块边界（stableTailBoundary 同源多块化）贪心打包；**冻结 append-only**（旧块永不改写——装配层键稳定前提）；tailFrom 单调只前进；门槛（GRADUATE_MIN_CHARS=2000）/上限（GRADUATE_MAX_CHUNK_CHARS=4000，无内部边界巨块允许超限独占）；非前缀防御性重置（与 pilot resetKey 路径对齐）；
+- 不变量测试钉死：单调/无缝从零起/切点全落空行边界/append-only/拼接恒等（chunks+尾块=快照）。两轮测试数据自纠（快照过短、release 回退触发重置、超限块尾空行 run）——重置防御按设计工作。
+
+**A2 内核：武装/触发状态机**（`StreamingSplitMachine.kt` + 测试 6 例）：
+- `onBatch(snapshot, released, quiescent, shadowLen)` → Arm/Feed/Fire/None/Reset——把 spec §2 毕业时机（武装=新冻结≥门槛；触发=影子追平∧滚动静止——**p90 窗口零毕业成本**；换装只冻到武装边界、武装后增量留下轮；武装中快照缩短显式重置）编码为可执行决策件；
+- 实现期修复一缺口：plan 侧重置检测只覆盖已生效集，武装中缩短须按 `snapshot.length < max(tailFrom, armedOrigin)` 显式判（测试先暴露后修）。
+
+**施工 spec 定稿**：`docs/specs/2026-10-01-442-r2-shard-awakening-design.md`——影子态零闪烁换装（同 delta 双喂→内容恒等交换，否决数据层 substring 直喂=非前缀墙）、键族 `t_X`/`t_X#g_i`（锚键永不消失+逆文档序发射 #246 对齐+displayEntryStart 钉头片）、换装帧帽 reset（防「帽不回改」使尾块永久虚高=#470 墙的毕业形态）、切割高度恒等假设（#258 块 padding 对称先例，A4 像素验证）、完结持续性（StreamChunk 保留不迁 TurnSegmentPlan）、STREAM_SHARD_PILOT 开关回退。A2/A3/A4 施工路线已写明。
+
+**验证**：新增 14 例单测全绿 + 全量 **3801/0/0** + compile 绿 ×3。
+
+**下一步（实施批）**：A2 装配层接线（StreamChunk entry/发射/渲染切片/streamingOverride 通道/开关）→ A3 影子态换装+帽 reset+完结持续 → A4 真机 p90 判定。#470 帽回改 B/A 语义裁决仍挂起（不阻塞 A 线）。
