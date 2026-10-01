@@ -14,6 +14,13 @@ import org.junit.Test
  */
 class StreamingShardBrokerTest {
 
+    @org.junit.Before
+    fun assumeFlagOn() {
+        // 双臂纪律：本类断言旗标开语义——旗标关臂（-POCBEACON_STREAM_FLAGS_OFF=true
+        // 的 test 任务）显式跳过而非假红
+        org.junit.Assume.assumeTrue(StreamingShardPilot.enabled)
+    }
+
     @After
     fun tearDown() {
         StreamingShardBroker.resetForTest()

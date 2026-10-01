@@ -17,6 +17,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume
 import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
@@ -40,6 +41,8 @@ class MessageEventHandlerStructuralPartsTest {
 
     @Before
     fun setUp() {
+        // 双臂纪律：本类断言旗标开语义（B2/B3 通道）——旗标关臂显式跳过而非假红
+        org.junit.Assume.assumeTrue(dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled)
         handler = MessageEventHandler()
         StreamingDeltaBus.clearAll()
         structuralEmissions.set(0)
