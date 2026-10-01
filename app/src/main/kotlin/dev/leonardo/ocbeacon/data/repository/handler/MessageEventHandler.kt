@@ -41,7 +41,7 @@ class MessageEventHandler @Inject constructor(
      * MessageUpdated / MessageRemoved / MessagePartUpdated / Delta / PartRemoved。
      */
     override fun handle(event: SseEvent, serverId: String): Boolean {
-        return when (event) {
+        val handled = when (event) {
             is SseEvent.MessageUpdated -> { handleMessageUpdated(event); true }
             is SseEvent.MessageRemoved -> { handleMessageRemoved(event); true }
             is SseEvent.MessagePartUpdated -> { handleMessagePartUpdated(event); true }
@@ -54,6 +54,11 @@ class MessageEventHandler @Inject constructor(
             is SseEvent.SurfaceRangeReplaced -> { handleSurfaceRangeReplaced(event); true }
             else -> false
         }
+        // #442 B案：SSE 结构事件统一发布结构性视图（Delta 事件仅缓冲——热视图
+        // 未变，同实例发布被值相等去重吸收=零发射）。dispatch 外直调入口
+        //（upsert/clear/patch 族）各自就地发布。
+        if (handled) publishStructural()
+        return handled
     }
 
     internal companion object {
@@ -106,6 +111,39 @@ class MessageEventHandler @Inject constructor(
 
     private val _parts = MutableStateFlow<Map<String, List<Part>>>(emptyMap())
     val parts: StateFlow<Map<String, List<Part>>> = _parts.asStateFlow()
+
+    // #442 B案 节奏收编（spec 2026-10-02 §2.1）：UI 主列表消费的**结构性视图**——
+    // 仅结构性事件发射（part 生命周期/消息生命周期/会话清理/REST 合并）；流式
+    // delta 批只进热视图（_parts）与 StreamingDeltaBus，不经此流——十源 combine
+    // 及其下游（ChatScreen 投影/ChatMessageList 函数体）在流式稳态零滴答
+    //（根因二：100ms 批快照重组链收口）。热视图语义零变更（所有既有读点
+    //（isStaleDelta/inferDeltaKind/持久化）继续读 _parts 拿最新累积）。
+    private val _structuralParts = MutableStateFlow<Map<String, List<Part>>>(emptyMap())
+    val structuralParts: StateFlow<Map<String, List<Part>>> = _structuralParts.asStateFlow()
+
+    /** 结构性发布：热视图当前值整体过桥（同实例=StateFlow 值相等去重，幂等零成本）。 */
+    private fun publishStructural() {
+        if (!dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) return
+        _structuralParts.value = _parts.value
+    }
+
+    /** #442 B案：消息内已终态（time.end≠0）的 Text/Reasoning 撤销 bus 覆盖——
+     *  structural 权威已发布，live 让位防陈旧覆盖（服务端改写/迟滞累积族）。 */
+    private fun clearTerminalLiveParts(messageId: String) {
+        if (!dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) return
+        val parts = _parts.value[messageId] ?: return
+        val terminal = parts.mapNotNull { p ->
+            val ended = when (p) {
+                is Part.Text -> (p.time?.end ?: 0L) != 0L
+                is Part.Reasoning -> (p.time?.end ?: 0L) != 0L
+                else -> false
+            }
+            if (ended) p.id else null
+        }
+        if (terminal.isNotEmpty()) {
+            dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.clearParts(terminal)
+        }
+    }
 
     /**
      * assistant 消息 ID 集合，供 PartUpdated handler 进行快速 O(1) 查找。
@@ -460,6 +498,17 @@ class MessageEventHandler @Inject constructor(
             updated
         }
 
+        // #442 B案 节奏收编：触及消息的累积全文发布引擎域快通道（键=落位
+        // part.id；值与热视图同字符串实例零拷贝）——UI 消费端（PartContent 两
+        // 分支）以 live 覆盖参数，重组收敛到 item 内部。本发布**替代**了
+        // `_parts` 对 UI 主列表的每 flush 发射（structuralParts 不动）。
+        if (dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
+            for (messageId in effective.map { it.messageId }.toSet()) {
+                dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
+                    .publishParts(_parts.value[messageId])
+            }
+        }
+
         // SSE 双写：#97（H-6）增量落盘——本批 delta 只追加到对应 part 行
         //（O(delta) 写，替代原整条消息 JSON 编码 + 全行重写）。
         // 按 (sessionId, messageId) 聚合 partId→文本（同 part 多次 delta 合并）。
@@ -741,8 +790,12 @@ class MessageEventHandler @Inject constructor(
             val sessionMessages = current[sessionId] ?: return@update current
             current + (sessionId to sessionMessages.filter { it.id < revertMessageId })
         }
+        // #442 B案：bus 清理先于热视图移除（part ids 仅此刻可得）
+        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
+            .clearParts(_parts.value.filterKeys { it in removedIds }.values.flatten().map { it.id })
         _parts.update { it.filterKeys { msgId -> msgId !in removedIds } }
         assistantMessageIds.removeAll(removedIds)
+        publishStructural()
 
         if (BuildConfig.DEBUG) AppLogger.d(TAG, "Pruned ${removedIds.size} reverted messages for session ${sessionId.take(12)}")
     }
@@ -902,6 +955,7 @@ class MessageEventHandler @Inject constructor(
             }
             if (mutated) next else current
         }
+        publishStructural()
     }
 
     internal fun patchToolChildSession(sessionId: String, callId: String, childSessionId: String) {
@@ -932,6 +986,7 @@ class MessageEventHandler @Inject constructor(
             }
             next
         }
+        publishStructural()
     }
 
     internal fun handleMessagePartUpdated(event: SseEvent.MessagePartUpdated) {
@@ -959,6 +1014,10 @@ class MessageEventHandler @Inject constructor(
             }
             current + (messageId to messageParts)
         }
+        // #442 B案：终态（time.end）Text/Reasoning 撤销 bus 覆盖——完结权威
+        //（本 update 已携全量累积）经 structuralParts 发布（dispatch 尾），
+        // live 让位防陈旧覆盖。
+        clearTerminalLiveParts(messageId)
     }
 
     /**
@@ -1001,6 +1060,8 @@ class MessageEventHandler @Inject constructor(
             val messageParts = current[event.messageId]?.filter { it.id != event.partId }
             if (messageParts != null) current + (event.messageId to messageParts) else current
         }
+        // #442 B案：移除的 part 撤销 bus 覆盖
+        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.clearPart(event.partId)
     }
 
     /**
@@ -1046,6 +1107,8 @@ class MessageEventHandler @Inject constructor(
             // 落盘闭环：重启/离线 seed 后计时冻结不回涨（对齐 markSessionIdle 的
             // persistSseUpdate 语义——内存态 part 变更必须同步 Room）。
             persistSseUpdate(event.sessionId, listOf(event.messageId))
+            // #442 B案：块完结=终态，撤销该消息内 bus 终态覆盖
+            clearTerminalLiveParts(event.messageId)
         }
     }
 
@@ -1070,6 +1133,13 @@ class MessageEventHandler @Inject constructor(
         }
         sweepStalePendingEchoes(sessionId)
         applyMessageCap(sessionId)
+        // #442 B案：dispatch 外直调入口（REST 合并/缓存种子）就地发布结构性视图；
+        // bus 对触及消息撤销覆盖——服务端权威若与累积分歧（resync 改写族），
+        // pilot 前缀差分自证走 #472 宽限+重建兜底；流仍在飞则下一 flush 重新
+        // 发布合并后基线（R6）。
+        publishStructural()
+        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
+            .clearParts(incoming.flatMap { mwp -> mwp.parts.map { it.id } })
     }
 
     /**
@@ -1261,10 +1331,14 @@ class MessageEventHandler @Inject constructor(
     // ============ 批量操作 ============
     fun clearForSession(sessionId: String) {
         val messageIds = _messages.value[sessionId]?.map { it.id }?.toSet() ?: emptySet()
+        // #442 B案：bus 清理先于热视图移除（part ids 仅此刻可得）
+        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
+            .clearParts(_parts.value.filterKeys { it in messageIds }.values.flatten().map { it.id })
         _messages.update { it - sessionId }
         _parts.update { it - messageIds }
         assistantMessageIds.removeAll(messageIds)
         lastDomainEventTimeMs.remove(sessionId)
+        publishStructural()
         // 可观测性（#89 验证）：记录清理量
         dev.leonardo.ocbeacon.logging.AppLogger.d(
             "MsgEvent",
@@ -1276,9 +1350,12 @@ class MessageEventHandler @Inject constructor(
         val messageIds = _messages.value
             .filterKeys { it in sessionIds }.values.flatten()
             .map { it.id }.toSet()
+        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
+            .clearParts(_parts.value.filterKeys { it in messageIds }.values.flatten().map { it.id })
         _messages.update { it - sessionIds }
         _parts.update { it - messageIds }
         assistantMessageIds.removeAll(messageIds)
+        publishStructural()
     }
 
     fun clearAll() {
@@ -1286,6 +1363,8 @@ class MessageEventHandler @Inject constructor(
         _parts.value = emptyMap()
         assistantMessageIds.clear()
         lastDomainEventTimeMs.clear()
+        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.clearAll()
+        publishStructural()
     }
 
     /**

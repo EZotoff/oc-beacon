@@ -100,6 +100,9 @@ class FakeChatRepository @Inject constructor() : ChatRepository {
 
     override fun getAllPartsMap(): Flow<Map<String, List<Part>>> = allPartsMapState
 
+    // #442 B案：测试替身无流式静默语义——与全量视图同源
+    override fun getStructuralPartsMap(): Flow<Map<String, List<Part>>> = allPartsMapState
+
     override fun getPermissionsFlow(sessionId: String): Flow<List<PermissionState>> = permissionsState
 
     override fun getQuestionsFlow(sessionId: String): Flow<List<QuestionState>> = questionsState

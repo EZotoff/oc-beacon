@@ -212,6 +212,8 @@ class EventDispatcher @Inject constructor(
     }
     val messages: StateFlow<Map<String, List<Message>>> get() = messageHandler.messages
     val parts: StateFlow<Map<String, List<Part>>> get() = messageHandler.parts
+    /** #442 B案：UI 主列表消费的结构性 parts 视图（流式 delta 批零发射）。 */
+    val structuralParts: StateFlow<Map<String, List<Part>>> get() = messageHandler.structuralParts
     val sessionDiffs: StateFlow<Map<String, List<FileDiff>>> get() = sessionHandler.sessionDiffs
     val permissions: StateFlow<Map<String, List<SseEvent.PermissionAsked>>> get() = permissionHandler.permissions
     val questions: StateFlow<Map<String, List<SseEvent.QuestionAsked>>> get() = questionHandler.questions
