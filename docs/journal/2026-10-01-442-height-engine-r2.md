@@ -257,3 +257,12 @@ B1 spec 批（R1-R9 裁决+bus 形态+对账 cadence+STREAM_DELTA_BUS dev 开关
 
 ### 7.8.2 #470 帽回改 B/A 裁决（用户 2026-10-02：「470 先 A 吧」）
 - **选 A：维持空白**（帽不回改+视口不跟随——回缩后空白保留）。依据：4h 重度使用零负向高度事件在案；如日后实际遇到「回缩后大片空白」不适再立卡升 B。#442 吸收域内唯一挂起项就此闭合。
+
+## §7.9 旗标提升 beta 与 v0.4.0-beta 发版（2026-10-02，用户裁决「提升吧」）
+
+
+- **裁决执行**：STREAM_SHARD_PILOT+STREAM_DELTA_BUS 提升 beta=true（ad9cb70a）；stable 维持 false（再晚一批观察；回退=翻 false 一行）。
+- **发版实战**：v0.3.0 正式版后首个 beta=**v0.4.0-beta**（code 41）——版本线勘误：v0.3.1-beta/0.3.2-dev 系 v0.3.0 正式版之前的历史线，脚本自 0.3.0 推 patch 撞旧 tag，按 §3.3 用 `--force-bump=minor` 开 0.4.0 线（自上正式版起 feat 累积，MINOR 合规）。
+- **顺手修复两件**：①release.sh `python` 裸调在本机（仅 python3）中断——补 PY 派发器（4bded7f9）；②#484 关卡迁移 journal 补提交（当时编辑未随批入库）。
+- **Release Notes**：FIFO 控制脚本 stdin 在润色暂停点注入用户视角稿（范围 v0.3.1-beta→HEAD 全役主题：流式引擎根修/高亮/数学标注/卡内滚动/数据层稳健/V2-DSH 适配）。
+- CI Build Release APK 已触发（in_progress）；§6 验证清单（Release/APK/签名）随后执行。
