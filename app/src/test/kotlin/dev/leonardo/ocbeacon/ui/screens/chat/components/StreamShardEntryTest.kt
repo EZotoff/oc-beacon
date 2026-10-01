@@ -43,8 +43,11 @@ class StreamShardEntryTest {
         generation = 1,
     )
 
-    @Test
+    private fun motive(msg: String) = println("[MOTIVE] " + msg)
+
+        @Test
     fun `shard 命中发射逆文档序且尾块保原键`() {
+        motive("A2 基线契约：reverseLayout 逆文档序 + 尾块原键（锚/帽物主/跳转零迁移）——泛化不得破坏")
         val doc = "块零\n\n块一\n\n块二\n\n尾块内容"
         val a = assistant("m_a", "p_a", doc)
         val u = user("m_u", "问")
@@ -77,6 +80,7 @@ class StreamShardEntryTest {
 
     @Test
     fun `shard 命中抑制同 turn 其他分片路径`() {
+        motive("键族互斥：shard 与历史 MdChunkPlan 并存的异常态防御——双计划=双渲染")
         // 同 turn 若既有旧 MdChunkPlan 又有 shard 发布（异常态防御）：shard 优先
         val doc = "# 标\n\n" + "内容。\n\n".repeat(20)
         val a = assistant("m_a", "p_a", doc)
@@ -97,6 +101,7 @@ class StreamShardEntryTest {
 
     @Test
     fun `空发布表行为不变`() {
+        motive("无分片零改动——旗标关/未毕业路径逐字节等价的锚点")
         val a = assistant("m_a", "p_a", "短回复")
         val chat = buildChatEntries(
             displayItems = listOf(0 to a),
@@ -122,6 +127,7 @@ class StreamShardEntryTest {
 
     @Test
     fun `推理先行 k 大于 0 发射 StreamPrefix 且钉跳转落点`() {
+        motive("A2.5 主场景：推理先行轮 renderItem 级拆分——prefix 最末发射（视觉 turn 顶）+ displayEntryStart 钉 prefix（跳转落点）")
         val a = reasoningFirst("p_a", "思考内容", "块零\n\n块一\n\n尾块内容")
         val shards = published(
             "p_a",
@@ -152,6 +158,7 @@ class StreamShardEntryTest {
 
     @Test
     fun `text-leading k 等于 0 不发射 prefix`() {
+        motive("k=0 边界：text-leading 维持 A2 原发射（无空前缀条目——零高条目吃间距的 #456 族坑）")
         val a = assistant("m_a", "p_a", "块零\n\n尾块内容")
         val shards = published("p_a", listOf(0 to 7), listOf("块零\n\n"), tailFrom = 7)
         val chat = buildChatEntries(
@@ -170,6 +177,7 @@ class StreamShardEntryTest {
 
     @Test
     fun `无 shardPartIdx 条目的推理先行轮维持原发射`() {
+        motive("派生滞后防御：映射缺失时不拆前缀——尾块整 turn 渲染（内容永不因派生缺失而丢失）")
         // 映射缺失（派生滞后/防御）：不拆前缀——尾块整 turn 渲染（今日行为）
         val a = reasoningFirst("p_a", "思考内容", "块零\n\n尾块内容")
         val shards = published("p_a", listOf(0 to 7), listOf("块零\n\n"), tailFrom = 7)

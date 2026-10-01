@@ -59,7 +59,7 @@ class MessageEventHandler @Inject constructor(
         //「已含本批累积」的热视图新值过桥（B6 真机定罪：CML-tick ~6/s =
         // 每 flush 后首个 delta 事件击穿结构性静默）——结构性发射只属于结构
         // 事件族。dispatch 外直调入口（upsert/clear/patch 族）各自就地发布。
-        if (handled && event !is SseEvent.MessagePartDelta) publishStructural()
+        if (handled && event !is SseEvent.MessagePartDelta) publishStructural(event::class.simpleName ?: "SseEvent")
         return handled
     }
 
@@ -123,10 +123,14 @@ class MessageEventHandler @Inject constructor(
     private val _structuralParts = MutableStateFlow<Map<String, List<Part>>>(emptyMap())
     val structuralParts: StateFlow<Map<String, List<Part>>> = _structuralParts.asStateFlow()
 
-    /** 结构性发布：热视图当前值整体过桥（同实例=StateFlow 值相等去重，幂等零成本）。 */
-    private fun publishStructural() {
+    /** 结构性发布：热视图当前值整体过桥（同实例=StateFlow 值相等去重，幂等零成本）。
+     *  [cause] 仅用于 [B2-struct] 埋点动机标注（哪个结构事件触发了 combine 源滴答）。 */
+    private fun publishStructural(cause: String) {
         if (!dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) return
         _structuralParts.value = _parts.value
+        if (BuildConfig.DEBUG) {
+            AppLogger.d(TAG, "[B2-struct] publish cause=$cause msgs=${_parts.value.size} — 结构性视图过桥（流式 delta 批不经此=根因二静默前提）")
+        }
     }
 
     /** #442 B案：消息内已终态（time.end≠0）的 Text/Reasoning 撤销 bus 覆盖——
@@ -797,7 +801,7 @@ class MessageEventHandler @Inject constructor(
             .clearParts(_parts.value.filterKeys { it in removedIds }.values.flatten().map { it.id })
         _parts.update { it.filterKeys { msgId -> msgId !in removedIds } }
         assistantMessageIds.removeAll(removedIds)
-        publishStructural()
+        publishStructural("pruneReverted")
 
         if (BuildConfig.DEBUG) AppLogger.d(TAG, "Pruned ${removedIds.size} reverted messages for session ${sessionId.take(12)}")
     }
@@ -957,7 +961,7 @@ class MessageEventHandler @Inject constructor(
             }
             if (mutated) next else current
         }
-        publishStructural()
+        publishStructural("patchFileUrl")
     }
 
     internal fun patchToolChildSession(sessionId: String, callId: String, childSessionId: String) {
@@ -988,7 +992,7 @@ class MessageEventHandler @Inject constructor(
             }
             next
         }
-        publishStructural()
+        publishStructural("patchToolChild")
     }
 
     internal fun handleMessagePartUpdated(event: SseEvent.MessagePartUpdated) {
@@ -1139,7 +1143,7 @@ class MessageEventHandler @Inject constructor(
         // bus 对触及消息撤销覆盖——服务端权威若与累积分歧（resync 改写族），
         // pilot 前缀差分自证走 #472 宽限+重建兜底；流仍在飞则下一 flush 重新
         // 发布合并后基线（R6）。
-        publishStructural()
+        publishStructural("upsert:" + strategy::class.simpleName)
         dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
             .clearParts(incoming.flatMap { mwp -> mwp.parts.map { it.id } })
     }
@@ -1340,7 +1344,7 @@ class MessageEventHandler @Inject constructor(
         _parts.update { it - messageIds }
         assistantMessageIds.removeAll(messageIds)
         lastDomainEventTimeMs.remove(sessionId)
-        publishStructural()
+        publishStructural("clearForSession")
         // 可观测性（#89 验证）：记录清理量
         dev.leonardo.ocbeacon.logging.AppLogger.d(
             "MsgEvent",
@@ -1357,7 +1361,7 @@ class MessageEventHandler @Inject constructor(
         _messages.update { it - sessionIds }
         _parts.update { it - messageIds }
         assistantMessageIds.removeAll(messageIds)
-        publishStructural()
+        publishStructural("clearForServer")
     }
 
     fun clearAll() {
@@ -1366,7 +1370,7 @@ class MessageEventHandler @Inject constructor(
         assistantMessageIds.clear()
         lastDomainEventTimeMs.clear()
         dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.clearAll()
-        publishStructural()
+        publishStructural("clearAll")
     }
 
     /**

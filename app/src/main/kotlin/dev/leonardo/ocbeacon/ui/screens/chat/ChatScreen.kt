@@ -955,6 +955,19 @@ fun ChatScreen(
                         // 裁决退役该读（B案关闭时行为逐字节不变）。
                         val jkFrozenRef = remember { arrayOfNulls<List<ChatMessage>>(1) }
                         val jkFrozenStateRef = remember { arrayOfNulls<dev.leonardo.ocbeacon.ui.screens.chat.MessageListState>(1) }
+                        // [B3] 动机埋点：jkHold 退役声明（一次性）——验证旗标开时
+                        // 冻结链确已旁路（holding 直读不再驱动本屏重组）
+                        remember(dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
+                            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
+                                dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled
+                            ) {
+                                dev.leonardo.ocbeacon.logging.AppLogger.d(
+                                    "B3",
+                                    "jkHold retired — 节奏收编后快照本就静止，holding 直读退役防 ChatScreen 重组",
+                                )
+                            }
+                            true
+                        }
                         val jkHold = !dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled &&
                             dev.leonardo.ocbeacon.ui.screens.chat.markdown.JankHoldGate.enabled &&
                             dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingScrollHold.holding

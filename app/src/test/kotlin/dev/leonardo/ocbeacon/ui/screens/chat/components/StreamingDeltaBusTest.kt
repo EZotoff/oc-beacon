@@ -27,8 +27,11 @@ class StreamingDeltaBusTest {
         Part.Text(id = id, sessionId = "s1", messageId = "m1", text = t,
             time = Part.Text.Time(start = 1L, end = end))
 
-    @Test
+    private fun motive(msg: String) = println("[MOTIVE] " + msg)
+
+        @Test
     fun `publishParts accumulates by landed part id and flags kind`() {
+        motive("键=落位 part.id（#87b 内容匹配合并族下 delta 派生 id 可异于落位 id）——UI 查询命中的前提")
         StreamingDeltaBus.publishParts(listOf(text("p1", "Hel")))
         StreamingDeltaBus.publishParts(listOf(text("p1", "Hello")))
 
@@ -43,6 +46,7 @@ class StreamingDeltaBusTest {
 
     @Test
     fun `empty text removes coverage`() {
+        motive("空文本撤销覆盖——part 清空（重生成清场族）不留幽灵")
         StreamingDeltaBus.publishParts(listOf(text("p1", "Hel")))
         assertTrue(StreamingDeltaBus.live.value.containsKey("p1"))
 
@@ -53,6 +57,7 @@ class StreamingDeltaBusTest {
 
     @Test
     fun `clearPart and clearParts drop coverage`() {
+        motive("终态/批量撤销通道——完结与 REST 合并族的让位机制")
         StreamingDeltaBus.publishParts(listOf(text("p1", "a"), text("p2", "b")))
         StreamingDeltaBus.clearPart("p1")
         assertNull(StreamingDeltaBus.live.value["p1"])
@@ -64,6 +69,7 @@ class StreamingDeltaBusTest {
 
     @Test
     fun `liveFor emits null fallback then published growth`() = runTest {
+        motive("消费端契约 live ?: part.text 的通道语义：初值 null 回退 + 增长逐帧（distinct 防同值重启）")
         val emissions = mutableListOf<String?>()
         val job = launch {
             StreamingDeltaBus.liveFor("p1").collect { emissions.add(it) }
@@ -85,6 +91,7 @@ class StreamingDeltaBusTest {
 
     @Test
     fun `liveFor clears back to null on clearPart`() = runTest {
+        motive("完结后回退通道：清覆盖→null→参数路径接管（换装无缝）")
         StreamingDeltaBus.publishParts(listOf(text("p1", "Hel")))
         assertEquals("Hel", StreamingDeltaBus.liveFor("p1").first())
 

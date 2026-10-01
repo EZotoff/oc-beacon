@@ -41,6 +41,9 @@ object StreamingDeltaBus {
     private val _live = MutableStateFlow<Map<String, Live>>(emptyMap())
     val live: StateFlow<Map<String, Live>> = _live.asStateFlow()
 
+    /** [B2-bus] 埋点限频计数（每 100 次发布打一行——10Hz 通道防刷屏，与 [flush] 同粒度）。 */
+    private val publishCount = java.util.concurrent.atomic.AtomicLong(0L)
+
     /**
      * 数据层每 flush 发布：触及消息的全部 Text/Reasoning part（键=合并后
      * part.id——内容匹配合并族（#87b）下 delta 派生 id 可能不同于落位 part id，
@@ -69,23 +72,48 @@ object StreamingDeltaBus {
             // 无变化回原实例——StateFlow 值相等去重，零发射
             if (changed) next else current
         }
+        // [B2-bus] 动机埋点：流式累积直达 item（绕过 combine=根因二收口通道）
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG && publishCount.incrementAndGet() % 100L == 1L) {
+            dev.leonardo.ocbeacon.logging.AppLogger.d(
+                "B2-bus",
+                "publish batch#$publishCount live=${_live.value.size} — 流式累积全文直达 item（B3/B4 live ?: part.text 消费）",
+            )
+        }
     }
 
     /** 终态（time.end）/移除清除——structural 权威已在 `_parts` 发布，live 让位。 */
     fun clearPart(partId: String) {
         if (!enabled) return
         _live.update { it - partId }
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+            dev.leonardo.ocbeacon.logging.AppLogger.d(
+                "B2-bus",
+                "clear part=${partId.takeLast(14)} — 终态/移除撤销覆盖（消费端回退 part.text=完结换装路径）",
+            )
+        }
     }
 
     fun clearParts(partIds: Collection<String>) {
         if (!enabled || partIds.isEmpty()) return
         _live.update { cur -> if (cur.isEmpty()) cur else cur.filterKeys { it !in partIds } }
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+            dev.leonardo.ocbeacon.logging.AppLogger.d(
+                "B2-bus",
+                "clearParts n=${partIds.size} — REST 权威合并/会话清理族撤销覆盖（防陈旧累积遮蔽服务端真相）",
+            )
+        }
     }
 
     /** 全量替换/会话清理（REST 权威 resync、clearAll 族）。 */
     fun clearAll() {
         if (!enabled) return
         _live.value = emptyMap()
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+            dev.leonardo.ocbeacon.logging.AppLogger.d(
+                "B2-bus",
+                "clearAll — 全量状态重置（clearAll 族；重进冷启走参数原路径）",
+            )
+        }
     }
 
     /** UI 读口：该 part 的活跃流式全文；null=无覆盖（回退参数）。distinct 防同值重启。 */

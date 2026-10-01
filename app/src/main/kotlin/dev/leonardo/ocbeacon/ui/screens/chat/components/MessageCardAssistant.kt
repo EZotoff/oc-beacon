@@ -760,6 +760,27 @@ internal fun questionAnchorInPrefix(
     return anchorIdx in 0 until partIdx
 }
 
+/**
+ * #442 A2.5 注册资格（纯函数，单测锚）：任意位置首个**未完结** Single-Text
+ * renderItem 的 partId（推理/工具前缀后——推理先行轮 glm 系常态；A2 仅
+ * index 0 把它们全排除）。无流式 text 时回退首个 text（A2 平权——无增长
+ * 即无 Fire，注册无害）。活提问在场返回 null：提问卡锚定语义依赖整 turn
+ * 渲染（Q 解决后下一批恢复资格）；发布态不受影响（完结持续性）。
+ * [pilotEnabled] 参数化供旗标关分支单测。
+ */
+internal fun shardRegistrationPartId(
+    renderItems: List<RenderItem>?,
+    hasLiveQuestion: Boolean,
+    pilotEnabled: Boolean = true,
+): String? {
+    if (!pilotEnabled || hasLiveQuestion) return null
+    val textParts = renderItems?.mapNotNull { item ->
+        (((item as? RenderItem.GroupedParts)?.group as? PartGroup.Single)?.part as? Part.Text)
+    }.orEmpty()
+    return (textParts.firstOrNull { it.time?.end == null }
+        ?: textParts.firstOrNull())?.id
+}
+
 /** 分片场景的 renderItems 渲染（复制自 MessageCardAssistant 主循环的精简版：
  *  无 pendingQuestion / 无 question 锚定——历史已完结 turn 不含待处理提问）。 */
 @Composable

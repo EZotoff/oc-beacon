@@ -171,6 +171,17 @@ private fun PartContentInner(
                             kotlinx.coroutines.flow.emptyFlow()
                         }
                     }.collectAsState(initial = null)
+                    // [B3] 动机埋点：live 覆盖接管/让位（每 part 状态翻转一次）——
+                    // 验证 bus 快通道在此 item 生效（而非参数回退路径）
+                    androidx.compose.runtime.LaunchedEffect(part.id, liveText != null) {
+                        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                            dev.leonardo.ocbeacon.logging.AppLogger.d(
+                                "B3",
+                                "text live " + (if (liveText != null) "override" else "fallback") +
+                                    " part=" + part.id.takeLast(14) + " — bus 快通道/参数对账源切换事实",
+                            )
+                        }
+                    }
                     SelectionContainer {
                         MarkdownContent(
                             markdown = liveText ?: part.text,
@@ -230,6 +241,17 @@ private fun PartContentInner(
                         kotlinx.coroutines.flow.emptyFlow()
                     }
                 }.collectAsState(initial = null)
+                // [B4] 动机埋点：推理 live 接管/让位（每 part 状态翻转一次）——
+                // 推理先行轮 Waiting 期重组收敛到本块的验证锚
+                androidx.compose.runtime.LaunchedEffect(part.id, liveReasoning != null) {
+                    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                        dev.leonardo.ocbeacon.logging.AppLogger.d(
+                            "B4",
+                            "reasoning live " + (if (liveReasoning != null) "override" else "fallback") +
+                                " part=" + part.id.takeLast(14) + " — 推理流式经 bus 收敛到本块",
+                        )
+                    }
+                }
                 ReasoningBlock(
                     text = liveReasoning ?: part.text,
                     isExpanded = rbExpanded,

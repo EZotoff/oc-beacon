@@ -1749,6 +1749,17 @@ fun ChatMessageList(
                                 val displayItemIndex = entry.displayIndex
                                 val pMsg = displayItems[entry.displayIndex].second
                                 val fullTurn = renderableTurns[displayItemIndex]
+                                // [A2.5] 动机埋点：前缀条目组合事实（推理先行轮
+                                // renderItem 级拆分的渲染端验证锚——重进/回收后
+                                // 首组合必现此行）
+                                androidx.compose.runtime.LaunchedEffect(entry.key, entry.partIdx) {
+                                    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                        dev.leonardo.ocbeacon.logging.AppLogger.d(
+                                            "A2.5",
+                                            "prefix compose key=${entry.key.takeLast(20)} k=${entry.partIdx} — 推理/工具前缀独立条目（文档序：冻结块上方）",
+                                        )
+                                    }
+                                }
                                 val prefixQ = embeddedQuestionByMsgId[pMsg.message.id]?.takeIf { q ->
                                     fullTurn != null && questionAnchorInPrefix(q, fullTurn, entry.partIdx)
                                 }
@@ -1839,20 +1850,11 @@ fun ChatMessageList(
                         // 询）；key 变更/离树注销——发布态保留（controllerFor 对
                         // 已发布 part 兜底返回）。
                         val shardRegPartId =
-                            if (dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardPilot.enabled &&
-                                isStreamingMsg &&
-                                embeddedQuestionByMsgId[msg.message.id] == null
-                            ) {
-                                val textParts = renderableTurns[displayItemIndex]?.renderItems
-                                    ?.mapNotNull { item ->
-                                        (((item as? dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem.GroupedParts)
-                                            ?.group as? dev.leonardo.ocbeacon.ui.screens.chat.tools.PartGroup.Single)
-                                            ?.part as? Part.Text)
-                                    }
-                                    .orEmpty()
-                                (textParts.firstOrNull { it.time?.end == null }
-                                    ?: textParts.firstOrNull())?.id
-                            } else null
+                            dev.leonardo.ocbeacon.ui.screens.chat.components.shardRegistrationPartId(
+                                renderItems = renderableTurns[displayItemIndex]?.renderItems,
+                                hasLiveQuestion = embeddedQuestionByMsgId[msg.message.id] != null,
+                                pilotEnabled = dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardPilot.enabled && isStreamingMsg,
+                            )
                         remember(itemKey, shardRegPartId) {
                             if (shardRegPartId != null) {
                                 dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.register(
@@ -2067,6 +2069,16 @@ fun ChatMessageList(
                                 val tailTurn = if (shardK != null && fullTurnForSlice != null &&
                                     shardK < fullTurnForSlice.renderItems.size
                                 ) {
+                                    // [A2.5] 动机埋点：尾块切片生效（k 变化时重打——
+                                    // 毕业/前缀出现时切片边界追踪）
+                                    androidx.compose.runtime.LaunchedEffect(itemKey, shardK) {
+                                        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                            dev.leonardo.ocbeacon.logging.AppLogger.d(
+                                                "A2.5",
+                                                "tail slice key=${itemKey.takeLast(20)} from=$shardK — 尾块渲染子范围（前缀移交 StreamPrefix，帽物主仍本键）",
+                                            )
+                                        }
+                                    }
                                     fullTurnForSlice.copy(
                                         renderItems = fullTurnForSlice.renderItems.subList(
                                             shardK, fullTurnForSlice.renderItems.size,
