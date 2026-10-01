@@ -801,6 +801,30 @@ fun ChatMessageList(
     // 发布 → 此处消费）。发布只在滚动静止时发生（Fire 门 quiescent），与
     // JankHoldGate 冻结窗不冲突。
     val streamShards = dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.shards
+    // #442 A2.5 资格泛化：turnKey → 分片 part 的 renderItem 位置 k（推理先行轮
+    // k>0）。值相等 Map 作 chatEntries remember 键——纯文本增长期 k 不变（结构
+    // 性派生），零额外重建；B案后 renderableTurns 亦结构性稳定。
+    val shardPartIdx: Map<String, Int> = remember(renderableTurns, streamShards) {
+        if (streamShards.isEmpty()) emptyMap() else {
+            val m = HashMap<String, Int>()
+            displayItems.forEachIndexed { displayIdx, pair ->
+                val (rawIndex, msg) = pair
+                if (!msg.isUser) {
+                    val rt = renderableTurns[displayIdx] ?: return@forEachIndexed
+                    val idx = rt.renderItems.indexOfFirst { item ->
+                        val pid = (item as? dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem.GroupedParts)
+                            ?.group?.let { it as? dev.leonardo.ocbeacon.ui.screens.chat.tools.PartGroup.Single }
+                            ?.part?.id
+                        pid != null && streamShards.containsKey(pid)
+                    }
+                    if (idx > 0) {
+                        m[chatEntryKey(turnGroups, rawIndex, msg, turnAnchors)] = idx
+                    }
+                }
+            }
+            m
+        }
+    }
     // ===== 2026-08-20 fling 巨帧根治：分片发射表（消息区 entries）=====
     // entries = displayItems 经 chunkPlans 展开（巨型 turn → N 个 chunk item）。
     // 双向索引是 LazyColumn index ↔ displayItems index 的单一真相源。
@@ -814,7 +838,7 @@ fun ChatMessageList(
     // 修复：displayItems.size 是快照读（建立失效依赖）且值比较——条目数
     // 变化必重建；同 size 的内容替换（pending-* 换装）由 item 级 get(i)
     // 快照依赖自愈，turnGroups（id 序列变 → Map 值变）兜底。
-    val chatEntries = remember(displayItems.size, turnGroups, turnAnchors, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans, streamShards) {
+    val chatEntries = remember(displayItems.size, turnGroups, turnAnchors, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans, streamShards, shardPartIdx) {
         // [DEBUG-jk] #437 卡顿诊断：chatEntries 全量重建计时——确证「批快照重组
         // 风暴」归因（每行含耗时/规模/滚动状态）；确证并固化冻结修复后整块移除。
         val jkT0 = android.os.SystemClock.elapsedRealtime()
@@ -825,7 +849,7 @@ fun ChatMessageList(
                 " streaming=" + (streamingMsgId != null) +
                 " recentN=" + recentStreamedTurnKeys.size
         }
-        buildChatEntries(displayItems, turnGroups, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans, turnAnchors = turnAnchors, streamShards = streamShards)
+        buildChatEntries(displayItems, turnGroups, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans, turnAnchors = turnAnchors, streamShards = streamShards, shardPartIdx = shardPartIdx)
             .also { ents ->
                 if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                     dev.leonardo.ocbeacon.logging.AppLogger.d(
@@ -1694,6 +1718,67 @@ fun ChatMessageList(
                                     )
                                 }
                             }
+                            is ChatEntry.StreamPrefix -> {
+                                // #442 A2.5 资格泛化：推理/工具前缀条目——
+                                // renderItems[0..partIdx) 经 ChunkAssistantItems 渲染
+                                //（历史 Chunk 路径首段同机制：reasoning/工具卡/分
+                                // 隔线全内建）。零 padding（turn 内无缝；turn 顶缝
+                                // 由更旧侧条目的 bottom padding 自带）。提问卡分工：
+                                // 锚落在前缀（推理区）时在此渲染（与尾块同一确定性
+                                // 算法自算），简化锚定=前缀末位（锚=末前缀 item 时
+                                // 与原位精确一致；中位锚罕见路径容忍轻微后移）。
+                                val displayItemIndex = entry.displayIndex
+                                val pMsg = displayItems[entry.displayIndex].second
+                                val fullTurn = renderableTurns[displayItemIndex]
+                                val prefixQ = embeddedQuestionByMsgId[pMsg.message.id]?.takeIf { q ->
+                                    fullTurn != null && questionAnchorInPrefix(q, fullTurn, entry.partIdx)
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clipToBounds()
+                                ) {
+                                    if (fullTurn != null) {
+                                        Column {
+                                            dev.leonardo.ocbeacon.ui.screens.chat.components.ChunkAssistantItems(
+                                                items = fullTurn.renderItems.subList(
+                                                    0, entry.partIdx.coerceAtMost(fullTurn.renderItems.size),
+                                                ),
+                                                textColor = MaterialTheme.colorScheme.onSurface,
+                                                isAmoled = isAmoled,
+                                                onViewSubSession = navigateToChildSession,
+                                                onOpenFile = onOpenFile,
+                                                onLocateTask = onLocateTask,
+                                                eventExpandedStates = eventCardExpandedStates,
+                                                renderableTurn = fullTurn,
+                                                compact = LocalChatDensity.current == ChatDensity.Compact,
+                                                readinessRegistry = LocalRenderReadiness.current,
+                                            )
+                                            if (prefixQ != null) {
+                                                var lastPrefixQ by remember {
+                                                    androidx.compose.runtime.mutableStateOf<
+                                                        dev.leonardo.ocbeacon.domain.model.SseEvent.QuestionAsked?
+                                                        >(null)
+                                                }
+                                                lastPrefixQ = prefixQ
+                                                dev.leonardo.ocbeacon.ui.screens.chat.components.CardExpandReveal(
+                                                    visible = prefixQ != null,
+                                                ) {
+                                                    lastPrefixQ?.let { pq ->
+                                                        dev.leonardo.ocbeacon.ui.screens.chat.dialog.QuestionCard(
+                                                            question = pq,
+                                                            onSubmit = { answers ->
+                                                                viewModel.replyToQuestion(pq.id, answers)
+                                                            },
+                                                            onReject = { viewModel.rejectQuestion(pq.id) },
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             is ChatEntry.Turn -> {
                         val displayItemIndex = entry.displayIndex
                         val (rawIndex, msg) = displayItems[entry.displayIndex]
@@ -1725,20 +1810,29 @@ fun ChatMessageList(
                                 )
                             }
                         }
-                        // #442 R2 分片唤醒（A2）：资格注册——首个 renderItem 为
-                        // Single-Text 的流式 turn（text-leading；多步 turn 先行
-                        // reasoning/工具卡与 shard 全 turn 粒度插入的文档序不兼容，
-                        // 拒绝分片降级单容器）。注册在组合期（先于子树 PartContent
-                        // 的 controllerFor 查询）；key 变更/离树注销——发布态保留
-                        // （controllerFor 对已发布 part 兜底返回，完结持续性渲染
-                        // 不依赖注册在位）。
+                        // #442 R2 分片唤醒（A2.5 资格泛化）：注册资格放宽到**任意
+                        // 位置**的首个 Single-Text renderItem（推理/工具前缀后——
+                        // 推理先行轮 glm 系常态；A2 仅 index 0 把它们全排除）。
+                        // 优先未完结 part（增长源；已完结 part 无 Fire 无害）。
+                        // 活提问在场时暂缓注册（提问卡锚定语义依赖整 turn 渲染，
+                        // Q 解决后下一批恢复资格）；发布态不受影响（完结持续性）。
+                        // 注册在组合期（先于子树 PartContent 的 controllerFor 查
+                        // 询）；key 变更/离树注销——发布态保留（controllerFor 对
+                        // 已发布 part 兜底返回）。
                         val shardRegPartId =
-                            if (dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardPilot.enabled && isStreamingMsg) {
-                                val firstPart = (renderableTurns[displayItemIndex]?.renderItems?.firstOrNull()
-                                    as? dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem.GroupedParts)
-                                    ?.group?.let { it as? dev.leonardo.ocbeacon.ui.screens.chat.tools.PartGroup.Single }
-                                    ?.part
-                                (firstPart as? Part.Text)?.id
+                            if (dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardPilot.enabled &&
+                                isStreamingMsg &&
+                                embeddedQuestionByMsgId[msg.message.id] == null
+                            ) {
+                                val textParts = renderableTurns[displayItemIndex]?.renderItems
+                                    ?.mapNotNull { item ->
+                                        (((item as? dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem.GroupedParts)
+                                            ?.group as? dev.leonardo.ocbeacon.ui.screens.chat.tools.PartGroup.Single)
+                                            ?.part as? Part.Text)
+                                    }
+                                    .orEmpty()
+                                (textParts.firstOrNull { it.time?.end == null }
+                                    ?: textParts.firstOrNull())?.id
                             } else null
                         remember(itemKey, shardRegPartId) {
                             if (shardRegPartId != null) {
@@ -1945,6 +2039,41 @@ fun ChatMessageList(
                                 // 嵌入该消息的思考卡片（ReasoningBlock）内部渲染
                                 val embeddedQ = embeddedQuestionByMsgId[msg.message.id]
 
+                                // #442 A2.5：分片 part 前缀在场（k>0）时尾块 turn
+                                // 渲染子范围 [k, size)（renderItems 切片——推理/工
+                                // 具前缀移交 StreamPrefix 条目）。切片键=fullTurn 实
+                                // 例（结构性事件换代自动重切，防工具卡终态陈旧）。
+                                val fullTurnForSlice = renderableTurns[displayItemIndex]
+                                val shardK = shardPartIdx[itemKey]
+                                val tailTurn = if (shardK != null && fullTurnForSlice != null &&
+                                    shardK < fullTurnForSlice.renderItems.size
+                                ) {
+                                    fullTurnForSlice.copy(
+                                        renderItems = fullTurnForSlice.renderItems.subList(
+                                            shardK, fullTurnForSlice.renderItems.size,
+                                        )
+                                    )
+                                } else {
+                                    fullTurnForSlice
+                                }
+                                // A2.5 提问卡分工：锚 part 落在前缀（推理区）时，尾块
+                                // 切片不含锚——卡移交 StreamPrefix 条目渲染（防丢卡/
+                                // 防尾块错锚；前缀分支以同一确定性算法自算分工）；
+                                // 锚在尾块或无分片时维持原路径。
+                                var tailQ = embeddedQ
+                                if (embeddedQ != null && shardK != null && fullTurnForSlice != null) {
+                                    val anchorId = dev.leonardo.ocbeacon.ui.screens.chat.components
+                                        .questionAnchorPartIdFor(embeddedQ, fullTurnForSlice)
+                                    val anchorIdx = fullTurnForSlice.renderItems.indexOfFirst { item ->
+                                        (((item as? dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem.GroupedParts)
+                                            ?.group as? dev.leonardo.ocbeacon.ui.screens.chat.tools.PartGroup.Single)
+                                            ?.part?.id) == anchorId
+                                    }
+                                    if (anchorIdx in 0 until shardK) {
+                                        tailQ = null
+                                    }
+                                }
+
                                 // [perf-flng] #258 组合成本取证（DEBUG-only）
                                 if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                                     android.os.Trace.beginSection("flng:it:turn-a")
@@ -1953,7 +2082,7 @@ fun ChatMessageList(
                                 Column {
                                 MessageCard(
                                     role = MessageCardRole.ASSISTANT,
-                                    renderableTurn = renderableTurns[displayItemIndex],
+                                    renderableTurn = tailTurn,
                                     currentMessage = msg,
                                     onViewSubSession = navigateToChildSession,
                                     onOpenFile = onOpenFile,
@@ -1970,7 +2099,7 @@ fun ChatMessageList(
                                         }
                                     },
                                     onLocateTask = onLocateTask,
-                                    pendingQuestion = embeddedQ,
+                                    pendingQuestion = tailQ,
                                     // 2026-08-30 提问卡下跳根修：提交/忽略不再强制拉底——
                                     // mid-list 回答问题被 requestScrollToItem(0) 瞬跳拉底
                                     // 是「提问卡片往下跳」的第二来源。贴底场景 drift guard
@@ -2691,6 +2820,7 @@ fun ChatMessageList(
                                 is ChatEntry.Chunk -> "assistant_chunk"
                                 is ChatEntry.TurnChunk -> "assistant_segment"
                                 is ChatEntry.StreamChunk -> "assistant_stream_shard"
+                                is ChatEntry.StreamPrefix -> "assistant_stream_prefix"
                                 is ChatEntry.UserChunk -> "user_chunk"
                                 is ChatEntry.Turn -> if (entry.isUser) "user" else "assistant"
                             }

@@ -244,6 +244,21 @@ internal sealed interface ChatEntry {
         val isFirst: Boolean get() = chunkIndex == 0
         val isLast: Boolean get() = chunkIndex == chunkCount - 1
     }
+
+    /**
+     * #442 R2 分片唤醒（A2.5）：推理/工具前缀条目——分片 part 的 renderItem
+     * 位置 k>0（推理先行轮）时，turn 以 renderItem 级拆分为
+     * [StreamPrefix（renderItems[0..k)，本条目）][冻结块 #g][Turn 尾块（原键，
+     * renderItems[k..)）]。key "t_<turnKey>#p"（与 #g/#c/#s 键族互斥）。
+     * reverseLayout 最末发射=视觉 turn 顶部；内容静态无帽无账（帽物主=尾块）。
+     */
+    data class StreamPrefix(
+        override val displayIndex: Int,
+        override val key: String,
+        val turnKey: String,
+        /** 分片 part 在 renderItems 中的位置（渲染端切片单一真相源）。 */
+        val partIdx: Int,
+    ) : ChatEntry
 }
 
 /**
@@ -295,6 +310,10 @@ internal fun buildChatEntries(
      *  turn 的发射走 [ChatEntry.StreamChunk] 结构（尾块 Turn + 冻结块逆文档序），
      *  抑制该 turn 的其他分片路径（键族互斥）。 */
     streamShards: Map<String, dev.leonardo.ocbeacon.ui.screens.chat.markdown.PublishedShards> = emptyMap(),
+    /** #442 A2.5 资格泛化：turnKey → 分片 part 的 renderItem 位置 k。k>0
+     *  （推理/工具前缀在场的推理先行轮）时发射 [ChatEntry.StreamPrefix] 并把
+     *  displayEntryStart 钉 prefix；k==0（text-leading）维持 A2 原发射。 */
+    shardPartIdx: Map<String, Int> = emptyMap(),
 ): ChatEntries {
     val entries = mutableListOf<ChatEntry>()
     val displayEntryStart = IntArray(displayItems.size)
@@ -399,6 +418,18 @@ internal fun buildChatEntries(
                     chunkIndex = c,
                     chunkCount = count,
                     text = turnShards.shards[c].text,
+                )
+            }
+            // #442 A2.5 资格泛化：分片 part 前有推理/工具 renderItem（k>0）时，
+            // 前缀独立成条（最末发射=视觉 turn 顶部），displayEntryStart 改钉
+            // prefix（turn 头=跳转落点）；k==0 维持 A2 原钉头块。
+            val shardK = shardPartIdx[turnKey] ?: 0
+            if (shardK > 0) {
+                entries += ChatEntry.StreamPrefix(
+                    displayIndex = displayIdx,
+                    key = turnKey + "#p",
+                    turnKey = turnKey,
+                    partIdx = shardK,
                 )
             }
             displayEntryStart[displayIdx] = entries.size - 1

@@ -110,6 +110,81 @@ class StreamShardEntryTest {
         assertEquals("t_m_a", chat.entries[0].key)
     }
 
+    // ===== #442 A2.5 资格泛化：推理先行轮的 renderItem 级拆分 =====
+
+    private fun reasoningFirst(partId: String, reasoning: String, text: String) = ChatMessage(
+        message = Message.Assistant(id = "m_a", sessionId = "s1", time = TimeInfo(2, 2), parentId = "p0"),
+        parts = listOf(
+            Part.Reasoning(id = partId + "_r", sessionId = "s1", messageId = "m_a", text = reasoning),
+            Part.Text(id = partId, sessionId = "s1", messageId = "m_a", text = text),
+        ),
+    )
+
+    @Test
+    fun `推理先行 k 大于 0 发射 StreamPrefix 且钉跳转落点`() {
+        val a = reasoningFirst("p_a", "思考内容", "块零\n\n块一\n\n尾块内容")
+        val shards = published(
+            "p_a",
+            chunks = listOf(0 to 7),
+            texts = listOf("块零\n\n"),
+            tailFrom = 7,
+        )
+        val chat = buildChatEntries(
+            displayItems = listOf(0 to a),
+            turnGroups = mapOf(0 to listOf(a)),
+            streamingMsgId = "m_a",
+            chunkPlans = emptyMap(),
+            recentStreamedTurnKeys = emptySet(),
+            streamShards = mapOf("p_a" to shards),
+            shardPartIdx = mapOf("t_m_a" to 1),
+        )
+        // 逆文档序：尾块 Turn（原键）→ 冻结块 → StreamPrefix（最末=视觉 turn 顶部）
+        assertEquals(
+            listOf("t_m_a", "t_m_a#g0", "t_m_a#p"),
+            chat.entries.map { it.key },
+        )
+        val prefix = chat.entries.last() as ChatEntry.StreamPrefix
+        assertEquals(1, prefix.partIdx)
+        assertEquals("t_m_a", prefix.turnKey)
+        // displayEntryStart 钉 prefix（turn 头=跳转落点）
+        assertEquals(2, chat.displayEntryStart[0])
+    }
+
+    @Test
+    fun `text-leading k 等于 0 不发射 prefix`() {
+        val a = assistant("m_a", "p_a", "块零\n\n尾块内容")
+        val shards = published("p_a", listOf(0 to 7), listOf("块零\n\n"), tailFrom = 7)
+        val chat = buildChatEntries(
+            displayItems = listOf(0 to a),
+            turnGroups = mapOf(0 to listOf(a)),
+            streamingMsgId = "m_a",
+            chunkPlans = emptyMap(),
+            recentStreamedTurnKeys = emptySet(),
+            streamShards = mapOf("p_a" to shards),
+            shardPartIdx = mapOf("t_m_a" to 0),
+        )
+        // k=0：无前缀条目（A2 原发射——displayEntryStart 钉头块）
+        assertEquals(listOf("t_m_a", "t_m_a#g0"), chat.entries.map { it.key })
+        assertEquals(1, chat.displayEntryStart[0])
+    }
+
+    @Test
+    fun `无 shardPartIdx 条目的推理先行轮维持原发射`() {
+        // 映射缺失（派生滞后/防御）：不拆前缀——尾块整 turn 渲染（今日行为）
+        val a = reasoningFirst("p_a", "思考内容", "块零\n\n尾块内容")
+        val shards = published("p_a", listOf(0 to 7), listOf("块零\n\n"), tailFrom = 7)
+        val chat = buildChatEntries(
+            displayItems = listOf(0 to a),
+            turnGroups = mapOf(0 to listOf(a)),
+            streamingMsgId = "m_a",
+            chunkPlans = emptyMap(),
+            recentStreamedTurnKeys = emptySet(),
+            streamShards = mapOf("p_a" to shards),
+        )
+        assertEquals(listOf("t_m_a", "t_m_a#g0"), chat.entries.map { it.key })
+        assertTrue(chat.entries.none { it is ChatEntry.StreamPrefix })
+    }
+
     private fun parseState(text: String): com.mikepenz.markdown.model.State.Success =
         kotlinx.coroutines.runBlocking {
             val normalized = dev.leonardo.ocbeacon.ui.screens.chat.markdown.normalizeForRender(text, isUser = false)

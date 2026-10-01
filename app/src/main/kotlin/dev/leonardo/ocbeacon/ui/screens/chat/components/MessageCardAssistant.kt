@@ -188,21 +188,10 @@ internal fun MessageCardAssistant(
     // ——提交后 pendingQuestion 移除，全部重复卡一起消失）。
     // 锚定策略：优先 pendingQuestion.tool.callId 精确匹配的 Tool part；
     // 否则最后一个 Reasoning/Tool part（保持"渲染在思考流末尾"原语义）。
+    // #442 A2.5：算法提纯为 [questionAnchorPartIdFor]——ChatMessageList 的
+    // 分片前缀/尾块提问卡分工与其共用同一真相源。
     val questionAnchorPartId = remember(pendingQuestion?.id, renderableTurn) {
-        if (pendingQuestion == null) {
-            null
-        } else {
-            val singles = renderableTurn.renderItems.mapNotNull { item ->
-                (item as? RenderItem.GroupedParts)?.group
-                    ?.let { it as? PartGroup.Single }?.part
-            }
-            val callId = pendingQuestion.tool?.callId?.takeIf { it.isNotBlank() }
-            val toolMatch = callId?.let { cid ->
-                singles.lastOrNull { it is Part.Tool && (it.callId == cid || it.id == cid) }
-            }
-            toolMatch?.id
-                ?: singles.lastOrNull { it is Part.Reasoning || it is Part.Tool }?.id
-        }
+        questionAnchorPartIdFor(pendingQuestion, renderableTurn)
     }
 
     // 2026-08-30 提问卡跳变根修：提交/忽略后 pendingQuestion 立即移除 →
@@ -729,6 +718,46 @@ internal fun ChunkedAssistantMessage(
                 }
             }
     }
+}
+
+/**
+ * #442 A2.5：提问卡锚定算法（提纯自 MessageCardAssistant 内联——前缀/尾块
+ * 分工共用同一真相源）。优先 question.tool.callId 精确匹配的 Tool part；
+ * 否则最后一个 Reasoning/Tool Single part。null=无锚（含 question=null）。
+ */
+internal fun questionAnchorPartIdFor(
+    question: SseEvent.QuestionAsked?,
+    renderableTurn: RenderableTurn,
+): String? {
+    if (question == null) return null
+    val singles = renderableTurn.renderItems.mapNotNull { item ->
+        (item as? RenderItem.GroupedParts)?.group
+            ?.let { it as? PartGroup.Single }?.part
+    }
+    val callId = question.tool?.callId?.takeIf { it.isNotBlank() }
+    val toolMatch = callId?.let { cid ->
+        singles.lastOrNull { it is Part.Tool && (it.callId == cid || it.id == cid) }
+    }
+    return toolMatch?.id
+        ?: singles.lastOrNull { it is Part.Reasoning || it is Part.Tool }?.id
+}
+
+/**
+ * #442 A2.5：分片前缀的提问卡分工判定——锚 part 的 renderItem 位置落在
+ * [0, partIdx) 前缀区间（推理区）时 true（提问卡由 StreamPrefix 条目渲染，
+ * 尾块切片不含锚）。锚在尾块/无锚/锚不可定位（StepGroup 内 part 恒非锚）
+ * 时 false。
+ */
+internal fun questionAnchorInPrefix(
+    question: SseEvent.QuestionAsked,
+    renderableTurn: RenderableTurn,
+    partIdx: Int,
+): Boolean {
+    val anchorId = questionAnchorPartIdFor(question, renderableTurn) ?: return false
+    val anchorIdx = renderableTurn.renderItems.indexOfFirst { item ->
+        ((item as? RenderItem.GroupedParts)?.group as? PartGroup.Single)?.part?.id == anchorId
+    }
+    return anchorIdx in 0 until partIdx
 }
 
 /** 分片场景的 renderItems 渲染（复制自 MessageCardAssistant 主循环的精简版：
