@@ -245,3 +245,15 @@ B1 spec 批（R1-R9 裁决+bus 形态+对账 cadence+STREAM_DELTA_BUS dev 开关
 - 测试弱项如实：插桩 androidTest 族仅编译验证未执行；提问卡×分片共存、多消息 turn 二段正文为单测覆盖未真机专项（场景难造）；模型侧行为（繁体输出/慢推理/排队）非 app 缺陷。
 - UX 观察项：#498 CJK 粗体闭界（P3 在册）；轮次铺开期 16-17ms 块（限速铺开设计内，稳态 7-8ms）；FAB 遮挡行尾（既有 UI）；完结小跳待复验（上表）。
 - 清扫独立卡已登记（B案验收+提升后执行）。
+
+## §7.8 中断 E2E 补测 + #470 裁决落章（2026-10-02）
+
+
+### 7.8.1 流式中点「停止」真机 E2E（补缺口，v2-e2e:4298）
+- 路径：真实输入（keyevent 打字）→ 真实 SSE 流（deltas batch#601 活跃验证）→ 清空输入框（DEL 键序列）→ 停止键现身（#326 单键裁决：忙+输入空白=停止键）→ 点击。
+- **中断生效链全绿**：Ktor abort 请求 → 服务器 `session.execution.interrupted`+`session.step.failed` → FSM `Idle --TextDelta/TextStopped` 转移 → part 终态化（[B2-struct] cause=MessagePartUpdated 过桥）→ 后续 REST 合并 clearParts n=9 撤销全部 bus 覆盖 → UI 呈现「已中断：Step interrupted」状态行+被中断部分正文保留+统计栏正常 → 零 FATAL。
+- 两次预备尝试的教训（如实）：①重复发送造成双轮排队（重试发送前的「无流证据」是 grep 窗口太窄误判——首个 prompt 实际已发出）；②停止点击曾落空（两轮已在点击前正常完结）——最终以 deltas 活跃验证后才执行。
+- 顺手观察（低优先）：`session.execution.interrupted` 事件在 SessionNextEventHandler 未映射（Unhandled 日志）——step.failed 已驱动 FSM/UI 正确收敛，无 UX 影响；事件映射补全可随 #459 漂移域顺带。
+
+### 7.8.2 #470 帽回改 B/A 裁决（用户 2026-10-02：「470 先 A 吧」）
+- **选 A：维持空白**（帽不回改+视口不跟随——回缩后空白保留）。依据：4h 重度使用零负向高度事件在案；如日后实际遇到「回缩后大片空白」不适再立卡升 B。#442 吸收域内唯一挂起项就此闭合。
