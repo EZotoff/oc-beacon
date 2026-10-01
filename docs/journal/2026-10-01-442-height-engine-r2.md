@@ -200,3 +200,18 @@ B1 spec 批（R1-R9 裁决+bus 形态+对账 cadence+STREAM_DELTA_BUS dev 开关
 **判定：达标（p90=7.6ms ≤ 12ms 目标）**；相对基线 p90 -27%、p95 -40%，且 A+B 尾部块稳定收敛 7.1-8.0（基线散布 7.1-16.4）。前两块 16.9/17.3 = 轮次铺开/毕业窗残余（结构性合法成本）。帧时长列=[13]-[2]（Vsync→完成，本机 HyperOS framestats 混合时钟列布局下的稳定量纲；数据健全性：计数器单调、p50 4.7ms 合理）。
 
 **§7.2 勘误补正**：先前 gfxinfo 摘要百分率配对（基线 29ms vs 终版 10-31ms「同量级」）的结论作废——该法受多分钟窗光标稀释+过滚伪影污染；本节方法学取代之。**A4 正式判定关闭。**
+
+## §7.6 全面覆盖批 + 重进场景族真机实证（2026-10-02，用户指令：最全面测试+全路径动机埋点）
+
+
+### 7.6.1 分支补全与动机埋点（f7ca309d）
+- **分支补测**（全量 3848/0/0，+24 测例）：PartRemoved/TimePatch 终态化撤销、**非终态 PartUpdated 保留覆盖**（流式连续性——元数据补齐不得误清 bus）、**REST 合并后下一 flush 以合并基线重发布**（连续性闭环）、clearForSession、no-op 补丁值相等去重零发射、pruneReverted 发布；资格纯函数 shardRegistrationPartId 提取（7 分支：text-leading 平权/推理先行 k>0/未完结优先/全完结回退/无 text/活提问暂缓/旗标关）+ 锚定函数 10 分支（含 callId 只认 Tool part、指向非 Tool 不命中走回退两个真实语义修正——测试期望先行错误被运行揭穿）。
+- **动机埋点体系**：每测首行 `[MOTIVE]`（测试报告 stdout 可追溯「为何测此路径」）；生产探针全部带动机语义——[B2-struct] cause=<事件> msgs=<n>（哪个结构事件触发了 combine 源滴答）、[B2-bus] publish/clear/clearParts/clearAll（通道事实+让位原因）、[A2.5] prefix compose/tail slice（k 边界）、[B3] text live override/fallback + jkHold retired、[B4] reasoning live。
+
+### 7.6.2 重进场景族真机实证（v2e2e:4298，探针验证路径）
+- **①流式中途退出→重进（推理期，最对抗路径）**：退出会话 15s（SSE 持续、bus 后台持续 publish）→重进触发 REST 刷新连发（upsert 4 次/160ms，历史行为）：每次 clearParts 撤销覆盖→**同帧 structural 已发布合并态兜底**→下一 flush（≤100ms）bus 重建→`[B4] reasoning live override` 探针于重进帧重新接管（fallback→override 翻转完整闭环可见）→batch#401/#501 持续发布、deltas 持续到达→轮次正常完结（completed 实证）→终态重进渲染完整。**结论：输出消息重进问题已解决**（内容零丢失、流零中断、换装无缝）。
+- **②完结会话重进**：丝路会话（完结数分钟）重进——结尾结语段落完整连续、无重复、无空白。
+- **③完结长文深滚回收**：6+6 双向 fling——内容连续（景教→伊斯兰→翻译节）、无重复/缺失、梵文变音符号渲染正确、零 FATAL（FAB 遮挡为既有 UI 非回归）。
+
+### 7.6.3 顺手发现（未立项，低危）
+- 重进时 REST 刷新连发 4 次（多线程并发完成）——历史行为放大 bus clear/publish 抖动一帧（被同帧 structural 兜底吸收，无视觉影响）；如后续观测到重进闪烁可查此（upsert 幂等合并本就防御）。
