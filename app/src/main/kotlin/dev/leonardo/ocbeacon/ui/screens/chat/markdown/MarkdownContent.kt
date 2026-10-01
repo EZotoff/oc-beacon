@@ -126,7 +126,7 @@ internal fun normalizeMarkdownCore(raw: String): String {
     // 规范化 Windows 换行符（\r\n → \n）。Windows 上的 opencode server
     // 在 Markdown 文本中返回 \r\n，这可能破坏 GFM 表格解析
     //（\r 可能被当作单元格内容而非行尾）。
-    // 快路径：无 \r 整串跳过两次 replace（流式热路径 48ms 每批）。
+    // 快路径：无 \r 整串跳过两次 replace（流式热路径每批一次）。
     var result = if (raw.indexOf('\r') < 0) raw
     else raw.replace("\r\n", "\n").replace("\r", "\n")
 
@@ -158,7 +158,7 @@ internal fun normalizeMarkdownCore(raw: String): String {
  */
 internal fun ensureBlankLineBeforeGfmTables(text: String): String {
     // 2026-08-26 流式卡顿根因修复（simpleperf 实证 ICU RegexMatcher 占主线程
-    // CPU 8.35% 全进程第一）：该正则对全文扫描，流式期间每 48ms 全量重跑。
+    // CPU 8.35% 全进程第一）：该正则对全文扫描，流式期间每批（100ms）全量重跑。
     // 模式必然含 '|'（组 2/3 的表格行）——无 '|' 的文本（essay/纯段落常态）
     // 不可能命中，native contains 扫描短路，正则零成本。
     if (!text.contains('|')) return text
@@ -373,7 +373,7 @@ internal fun MarkdownContent(
     // 索引漂移自愈 + 片间顺序由锚点在 AST 中的出现序保证（确定性排序）。
     blockAnchor: String? = null,
     // 2026-08-22 滚动巨帧根治：非流式 fallback 的异步解析（见
-    // rememberAsyncMarkdownState）——流式内容必须 false（48ms 批处理 +
+    // rememberAsyncMarkdownState）——流式内容必须 false（批处理 cadence +
     // conflate 铁律路径，rememberMarkdownState 保留）。
     asyncParse: Boolean = false,
 ) {
@@ -657,7 +657,7 @@ internal fun MarkdownContent(
             // 调用面（assistant 双路径/思考/工具卡×2/通知卡/压缩卡/预览）自动
             // 获得；user 气泡结构性不触达（PartContent isUser 分支走纯 Text）。
             // 未知语言引擎侧静默纯色 = 现状等价；流式期 produceState 按 code
-            // 批重启（48ms 天然节流），初值纯文本无空窗。
+            // 批重启（批节奏天然节流），初值纯文本无空窗。
             codeFence = { model ->
                 SafeHighlightedCodeFence(
                     content = model.content,

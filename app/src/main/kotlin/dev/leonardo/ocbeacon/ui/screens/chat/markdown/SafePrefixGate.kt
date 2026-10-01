@@ -458,7 +458,7 @@ internal object SafePrefixGate {
      * 闭栏行经整行放行，floor 不会落在其中，此防御针对任意调用方）。
      * #487：返回值从 Boolean 升级为开栏描述符——预算续放/流中闭栏判定需要
      * 开栏长度感知匹配（防 ```` 外栏内 ``` 行误闭栏）。每批 O(n)（n=快照长，
-     * 48ms 批节奏下可忽略）。
+     * 批节奏下可忽略）。
      */
     private fun fenceOpenAt(snapshot: String, pos: Int): Pair<Char, Int>? {
         var open: Pair<Char, Int>? = null

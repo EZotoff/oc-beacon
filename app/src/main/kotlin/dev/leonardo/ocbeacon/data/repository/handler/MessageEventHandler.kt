@@ -119,8 +119,8 @@ class MessageEventHandler @Inject constructor(
      */
     private val assistantMessageIds: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
-    // ── SSE delta 批处理（48ms 窗口）──────────────────────────────
-    // 缓冲传入的 delta 并每 48ms 刷新一次，以降低
+    // ── SSE delta 批处理（窗口 = STREAM_FLUSH_INTERVAL_MS，引擎域常量）──
+    // 缓冲传入的 delta 并按批周期（100ms）刷新一次，以降低
     // 重组频率。每次 flush = 1 次 StateFlow 更新 = 1 次
     // 重组 = 1 次 layout 修饰符测量。
     private data class PendingDelta(
@@ -145,7 +145,7 @@ class MessageEventHandler @Inject constructor(
     // #340 根因修复：原 Channel.BUFFERED(64) + trySend 满即丢——真机 resync 期
     // 实证 dropped 1150→1500 连发（Room 写入慢于 SSE 生产时丢弃最新写
     // 请求，含终态修复写）。两路重构：
-    // - 增量 delta：UNLIMITED channel 保序入队不丢（流式生产速率有界：48ms 批）；
+    // - 增量 delta：UNLIMITED channel 保序入队不丢（流式生产速率有界：批 cadence）；
     // - 全量 upsert：按 (sessionId, messageId) 最新快照合并（latest-wins，快照语义
     //   天然幂等），内存占用=窗口内不同消息数（阈值刷洗封顶）；
     // - 刷洗策略：消息数≥阈值或 最老条目时延≥上限时刷洗（每会话
@@ -706,7 +706,7 @@ class MessageEventHandler @Inject constructor(
      * - fire-and-forget：在 [batchScope] 中 launch，不阻塞 SSE 处理
      * - 写失败静默（MessageStore 内部已捕获，内存视图不受影响）
      * - [messageStore] 为 null 时（测试环境）直接返回
-     * - 沿用 48ms 批处理节奏：调用方在 flushPendingDeltas（已聚合）或
+     * - 沿用批处理节奏（STREAM_FLUSH_INTERVAL_MS）：调用方在 flushPendingDeltas（已聚合）或
      *   handleMessageUpdated（单条事件）处调用，不逐 delta 写
      */
     private fun persistSseUpdate(sessionId: String, messageIds: List<String>) {
@@ -977,8 +977,8 @@ class MessageEventHandler @Inject constructor(
         // delta 流宿主缺失时播种骨架（骨架经 mergeAssistantMeta 由后续
         // step.ended/REST 兜底补齐 agent/model 元数据）。
         ensureAssistantSkeleton(event.sessionId, event.messageId)
-        // 缓冲 delta 以批量 flush（48ms 窗口）——将重组频率
-        // 从逐 token 降至约 20 次/秒，消除布局抖动。
+        // 缓冲 delta 以批量 flush（批窗口 = STREAM_FLUSH_INTERVAL_MS）——将重组频率
+        // 从逐 token 降至约 10 次/秒，消除布局抖动。
         // #230：part 未注册时（空 started 被 #230 丢弃/事件丢失）此前默认
         // "text"——reasoning delta 会以正文 kind 重建（渲染进正文块+dedup
         // 分桶错乱）。按派生 id 契约判型：`_reasoning_ord_` → reasoning。
@@ -1133,7 +1133,7 @@ class MessageEventHandler @Inject constructor(
         // 在 update 内对比「合并前后」的 tokens/cost（消息不在 existing = null→值
         // 视为变更），变更行于 parts 合并后经 [persistSseUpdate] 增量落盘。
         // CAS 重试重复 add 同 id 幂等；值未变的重复刷新 0 写库——检测即节流
-        //（SSE_PRIORITY 仅由 REST 快照触发，不在 48ms delta 批处理路径上）。
+        //（SSE_PRIORITY 仅由 REST 快照触发，不在 delta 批处理路径上）。
         val tokensChangedIds = HashSet<String>()
         _messages.update { current ->
             val existing = current[sessionId] ?: emptyList()

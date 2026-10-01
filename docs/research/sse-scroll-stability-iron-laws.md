@@ -10,7 +10,7 @@
 ```
 SSE token 到达
     ↓
-48ms delta 批处理（MessageEventHandler.scheduleFlush）
+100ms delta 批处理（MessageEventHandler.scheduleFlush，周期常量 STREAM_FLUSH_INTERVAL_MS 定义于引擎域 ScrollCompensation.kt）
     ↓ 单次 flush = 1 次 StateFlow 更新 = 1 次重组
 高度补偿（layout{} modifier，仅 streaming message）
     ↓ requestScrollToItemNoCancel 抵消高度增长
@@ -29,7 +29,7 @@ SSE token 到达
 
 ### 铁律 2：`scheduleFlush()` 绝不能取消正在运行的 timer
 
-每个 token 都取消 in-flight timer 会在到达速率 > 1/48ms 时饿死 flush → 块状突发输出。
+每个 token 都取消 in-flight timer 会在到达速率高于批周期（100ms，见 §1）时饿死 flush → 块状突发输出。
 
 **位置**：`MessageEventHandler.kt:58`。实现：`if (batchJob?.isActive == true) return`。
 
@@ -282,7 +282,7 @@ val streamingMsgId = remember(rawMessages) {
 | shouldCompensate LaunchedEffect | `components/ChatMessageList.kt` | ~160 |
 | streaming message 识别 | `components/ChatMessageList.kt` | ~448 |
 | layout 高度补偿 modifier | `components/ChatMessageList.kt` | ~449-471 |
-| 48ms flush | `MessageEventHandler.kt` | ~58 |
+| 100ms flush（`STREAM_FLUSH_INTERVAL_MS`，#442 二期收编引擎域） | `MessageEventHandler.kt` | ~58 |
 | Markdown stateful 渲染 | `markdown/MarkdownContent.kt` | ~364 |
 | isAtBottom 定义 | `ChatScreen.kt` | ~326 |
 | snapToBottom 扩展 | `util/ChatScrollUtils.kt` | ~26 |
@@ -341,6 +341,7 @@ val streamingMsgId = remember(rawMessages) {
 | 2026-08-06 | v1-v6 | 滚动性能全链路修复：cache window（跳过）→ 指纹缓存（重算）→ 实例/签名缓存（分配风暴）→ 对称窗口（摩擦/fling）；新增铁律 6-8 与 3.4/5.3 节 |
 | 2026-09-25 | #435 | COMP 家族（DeferredRevealCompensator×5 挂载点）/PreRenderShiftChannel/GUARD stream-instant 退役；流式增长并入高度引擎统一配对（StreamingGrowLedger→pre-draw flush，「锚即意图」规则）；引擎 steady flush 增补 #432 贴底豁免；顺带修复读历史流式拖拽缺陷 |
 | 2026-09-30 | #437 收口 | 新增 §2.6 铁律 10-14：五域收编（#437 稳定揭示安全前缀 / #438 限速与保 key / #472 行内放行+非前缀宽限 / #474 手势-程序通道分治 / #476 GUARD 死区）——补 2026-09-29 发掘审计定罪的文档同步缺口；同日铁律 9（#471③ 归一化同源）随坍缩重建批次先期落档 |
+| 2026-10-01 | #442 批次 C | cadence 文档漂移修正：§1 管线/铁律 2/§4 速查表的 48ms 表述更新为现行 100ms（常量实际已于 #437 cadence 快赢改为 100ms、#442 终审 S4 收编引擎域，本文档滞后）；§3.4 历史表格保留 48ms 原文（记录当时事实） |
 
 ---
 

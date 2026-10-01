@@ -49,7 +49,7 @@ internal class PilotStreamingState(
 /**
  * 前缀差分 append 包装（spec §1）+ #437 安全放行闸接线。
  *
- * Part.Text.text 仍以整串快照到达（48ms flush 产物），在此与库状态内部的
+ * Part.Text.text 仍以整串快照到达（STREAM_FLUSH_INTERVAL_MS 批 flush 产物），在此与库状态内部的
  * StringBuilder 做前缀差分，仅把 delta 交给 append()——解析下沉在
  * org.jetbrains:markdown 0.7.9 的 StreamingMarkdownFile，只重解析不稳定尾部，
  * 稳定块 ASTNode 实例跨 append 复用。
@@ -62,7 +62,7 @@ internal class PilotStreamingState(
  * - 非前缀（重生成/编辑）→ prev 置空 + released 清零 + resetKey++ 经 key()
  *   整体重建状态实例，新实例首跑整串 append（无残留旧内容）。
  * - append 在组合协程（主线程）：与渲染同线程，StringBuilder 无跨线程竞态
- *   （库官方姿势同此；尾部小解析由 48ms flush 节奏摊平）。
+ *   （库官方姿势同此；尾部小解析由批 flush 节奏摊平）。
  * - #471③ 归一化前移（冲突①裁决解除，spec §3.4）：快照先经
  *   normalizeForStreaming（与完结 normalizeForRender 同核心同序、逐字节
  *   一致），delta 为归一化文本——终帧=流式帧，完结换装不再有归一化

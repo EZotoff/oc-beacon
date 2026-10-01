@@ -89,7 +89,7 @@ internal fun HeldTailReveal(
     var lockedPx by remember { mutableIntStateOf(-1) }
     val naturalRef = remember { intArrayOf(0) }
 
-    // 超龄轮询：48ms 步进（与批节奏一致）；tail 清空即复位
+    // 超龄轮询：48ms 步进（细于 100ms 批节奏——超龄判定及时性优先）；tail 清空即复位
     var agedLogged by remember { mutableStateOf(false) }
     LaunchedEffect(tail) {
         if (tail.isEmpty()) {

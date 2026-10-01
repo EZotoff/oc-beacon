@@ -322,7 +322,8 @@ fun ChatMessageList(
         }
     }) {
     // turnGroups 缓存（v6）：消息 id 序列未变时复用上次 Map，消除流式期间
-    // 每 48ms 全量重建（~2000 entry/轮）的分配压力（GC 卡顿根因之一）。
+    // 每批节奏（STREAM_FLUSH_INTERVAL_MS=100ms）全量重建（~2000 entry/轮）的
+    // 分配压力（GC 卡顿根因之一）。
     // 安全前提：renderableTurns 的 miss 分支（流式/新消息）用最新 msg 引用替换
     // turn 内同 id 的旧引用 —— 流式 turn 永不冻结（历史回归 37d9a6ac 的教训）。
     // 此处仅按结构（id 序列）缓存；内容（parts）变化不重建 Map —— 同 id 的
@@ -473,13 +474,13 @@ fun ChatMessageList(
 
     // 预计算 assistant 显示项的全部渲染数据。
     // 单个 remember 块 —— 仅在 rawMessages/displayItems 变化时运行，而非组合期间。
-    // 缓存优化（2026-08）：流式期间数据层每 48ms 全量重建消息列表（即使只有最后
-    // 一条在变），若 renderableTurns 全量重算 → 新实例 → @Immutable 相等性失效 →
+    // 缓存优化（2026-08）：流式期间数据层每批节奏（100ms）全量重建消息列表（即使
+    // 只有最后一条在变），若 renderableTurns 全量重算 → 新实例 → @Immutable 相等性失效 →
     // LazyColumn 可见 item 全量重组 → 滚动卡顿。这里按消息 id + 内容指纹缓存：
     // 指纹覆盖流式追加（Text/Reasoning 尾部）、工具输出注入（Running/Completed
     // output 尾部）与消息级时间/错误字段；内容未变的消息复用缓存实例 → 重组只落
     // 在变化消息上。相比早期"activeTools 非空整体禁用缓存"的实现（工具运行期间
-    // 每 48ms 全量重算 → 工具调用时滑动卡顿），工具活跃时其他消息仍命中缓存。
+    // 每批全量重算 → 工具调用时滑动卡顿），工具活跃时其他消息仍命中缓存。
     val renderableCache = remember { HashMap<String, Pair<Int, RenderableTurn>>() }
     val renderableTurns: List<RenderableTurn?> = remember(rawMessages, displayItems, turnGroups) {
         val streamingId = streamingMsgId
@@ -803,7 +804,7 @@ fun ChatMessageList(
     // 变化必重建；同 size 的内容替换（pending-* 换装）由 item 级 get(i)
     // 快照依赖自愈，turnGroups（id 序列变 → Map 值变）兜底。
     val chatEntries = remember(displayItems.size, turnGroups, turnAnchors, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans) {
-        // [DEBUG-jk] #437 卡顿诊断：chatEntries 全量重建计时——确证「48ms 快照重组
+        // [DEBUG-jk] #437 卡顿诊断：chatEntries 全量重建计时——确证「批快照重组
         // 风暴」归因（每行含耗时/规模/滚动状态）；确证并固化冻结修复后整块移除。
         val jkT0 = android.os.SystemClock.elapsedRealtime()
         dev.leonardo.ocbeacon.debug.RaceProbe.probe {
