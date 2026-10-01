@@ -266,3 +266,10 @@ B1 spec 批（R1-R9 裁决+bus 形态+对账 cadence+STREAM_DELTA_BUS dev 开关
 - **顺手修复两件**：①release.sh `python` 裸调在本机（仅 python3）中断——补 PY 派发器（4bded7f9）；②#484 关卡迁移 journal 补提交（当时编辑未随批入库）。
 - **Release Notes**：FIFO 控制脚本 stdin 在润色暂停点注入用户视角稿（范围 v0.3.1-beta→HEAD 全役主题：流式引擎根修/高亮/数学标注/卡内滚动/数据层稳健/V2-DSH 适配）。
 - CI Build Release APK 已触发（in_progress）；§6 验证清单（Release/APK/签名）随后执行。
+
+## §7.9 续——v0.4.0-beta 发布落地与 §6 验证（2026-10-02）
+
+
+- **首次 CI 失败→lint 门禁四错清零（aae6b576）**：间距令牌绕过×3（HighlightedCode vertical 8.dp×2+bottom 4.dp、MarkdownContent 12.dp → SpacingTokens SM/XS/MD）+remember 返回 Unit（A2 shard 注册块 true 收尾）+组合期 StateFlow.value（#477 A11yDiag 探针 stateType 字段移除，探针保留 src/len）。教训：**本地漏跑 lintDevDebug 预检**（AGENTS 在案条款，后续批次必跑）。tag v0.4.0-beta 重指修复提交（原 tag 无出货 Release，重指不触 §7 红线）；全量 3848/0/0 复核后推。
+- **§6 验证全绿**：Release=OC Beacon 0.4.0-beta（prerelease ✓）恰好 1 APK=oc-beacon-0.4.0-beta.apk；aapt2=dev.leonardo.ocbeacon.beta/vc41/vn0.4.0-beta；apksigner DN=CN=OC Beacon（release keystore ✓ 非 debug）；说明=润色稿（版本摘要+用户视角）。
+- **beta 渠道自此带上**：R2 分片（A案）+ 节奏收编（B案重组根修）+ A2.5 推理先行泛化。stable 待下一批观察后随发。
