@@ -324,6 +324,18 @@ private fun HeightReserveState.resetIfOwnerChanged(itemKey: Any) {
     }
 }
 
+/**
+ * #442 R2 分片唤醒（A2）：毕业换装帧强制重立基线——reserved/trueHeight 归
+ * 未初始化（换装帧 measure 直通真高），itemKey 保持（帽所有权与尾块 item
+ * 连续，不动 resetIfOwnerChanged 语义）。不 reset 的话「帽不回改」会使尾块
+ * item 永久虚高已冻结前缀的高度（#470 墙的毕业形态）。调用点：ShardController
+ * .fire 的 onFire 钩子（发布同协程步先行——换装帧原子见三者）。
+ */
+internal fun HeightReserveState.hardReset() {
+    reserved = -1
+    trueHeight = -1
+}
+
 /** 释放决策（纯函数，单测缝）。null=本帧不释放（未初始化/无增量/手势持帽）。 */
 internal data class ReserveReleasePlan(val delta: Int, val scrollPaired: Boolean)
 

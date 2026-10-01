@@ -1,8 +1,14 @@
 # #442 R2 分片唤醒设计（批次 A2/A3 施工图）
 
-> 状态：设计定稿待实施（2026-10-01）。前置：批次 C（flush 深拆+安全网测试，commit 2248a551）+
-> 批次 A1（毕业计划纯函数+不变量测试 8 例，commit c6f1c113）。调研底座：
-> docs/research/2026-09-28-issue442-research.md §5 方案 A。
+> 状态：A2 装配已落地（2026-10-01，Fire=切尾重建快灌中间态；STREAM_SHARD_PILOT
+> dev 开关）；A3 影子态换装（§2 双喂消除重建窗）与 A4 真机判定未落。前置：批次 C
+> （flush 深拆+安全网测试，commit 2248a551）+ 批次 A1（毕业计划纯函数+不变量测试
+> 8 例，commit c6f1c113）。调研底座：docs/research/2026-09-28-issue442-research.md §5 方案 A。
+> A2 落点补充（实施期裁决）：broker 单例按 partId 注册/发布（ScrollQuiescence 先例）；
+> 资格=text-leading 流式 turn（首个 renderItem 为 Single-Text——多步 turn 先行
+> reasoning/工具卡的文档序与全 turn 粒度插入不兼容，拒绝分片）；完结/回收持续性
+> 经 controllerFor 对已发布 part 兜底 + pilot 冷续单帧入树（sliceOrigin 继承时
+> 免限速重铺）。
 
 ## 0. 目标与判定
 

@@ -191,7 +191,14 @@ internal object JankHoldGate {
 }
 
 @Composable
-internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boolean = false): PilotStreamingState {
+internal fun rememberPilotStreamingMarkdownState(
+    markdown: String,
+    freeze: Boolean = false,
+    /** #442 R2 分片唤醒（A2）：注册在案的流式大文本 part 携带控制器——毕业
+     *  时机由 [StreamingSplitMachine] 决策，Fire 时切尾重建（#H4 快速重灌）+
+     *  发布冻结块。null（未注册/开关关）= 原路径零改造。 */
+    shard: ShardController? = null,
+): PilotStreamingState {
     // #471③ 归一化前移（终帧=流式帧，spec §3.4）：快照先归一化再前缀差分——
     // prev/released/heldTail 坐标皆归一化坐标，heldTail 随之显示归一化文本
     //（- [ ] 预览、tex 围栏行——WYSIWYG）。流式显示文本与完结渲染逐字节
@@ -201,6 +208,14 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
     // 各变换哨兵快路径约束（无 | /无任务字符/无数学痕迹时零正则）。
     val normalized = remember(markdown) { normalizeForStreaming(markdown) }
     var resetKey by remember { mutableIntStateOf(0) }
+    // #442 A2 分片切尾：已毕业冻结前缀的原点（归一化全坐标）。state 内容与
+    // prev/released 为「尾坐标」（eff = normalized.substring(sliceOrigin)）；
+    // machine 与 broker 发布为全坐标。冷启（item 回收重组合）从 broker 续账。
+    var sliceOrigin by remember { mutableIntStateOf(shard?.coldStartOrigin() ?: 0) }
+    // machine 冷启播种：已发布冻结集 append-only 续账（防重复毕业已发布区间）
+    val shardMachine = remember(shard) {
+        StreamingSplitMachine().also { m -> shard?.coldStartPlan()?.let { m.adopt(it) } }
+    }
     // #471③ 差分基准修正：prev 存「放行前缀」（normalized.take(released)）
     // 而非全文快照——归一化闭合重写（$$→tex 围栏等）天然使全文对 prev
     // 非前缀，但重写点全部落在 gate 扣留区（released 之后），放行前缀跨
@@ -225,31 +240,39 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
     val gate = StreamingMarkdownPilot.stableReveal
     LaunchedEffect(normalized, state, StreamingScrollHold.holding) {
         val p = prev
+        // #442 A2 分片切尾：差分/放行在尾坐标（eff）上进行——machine 与 broker
+        // 为全坐标（sliceOrigin + released 换算）。coerce 防御非前缀缩短窗的
+        // 越界（随后 startsWith 判负 → 既有重建路径接管）。
+        val eff = normalized.substring(sliceOrigin.coerceAtMost(normalized.length))
         // #472 完结桥接期冻结:pilot 终帧即终点——async 在途的新快照(完结
         // sync/part 重组的非前缀串)一律不进 pilot,换装交给终态路径
         if (freeze) return@LaunchedEffect
         // 滚动/惯性中：暂缓增长增量（prev 不动，settle 后整段一次追平=一次重排版）
-        if (StreamingScrollHold.holding && p != null && normalized.length > p.length) {
+        if (StreamingScrollHold.holding && p != null && eff.length > p.length) {
             return@LaunchedEffect
         }
-        if (p == null || normalized.startsWith(p)) nonPrefixSinceMs = -1L
+        if (p == null || eff.startsWith(p)) nonPrefixSinceMs = -1L
         when {
             // 首跑（含重建后的新实例）：整串作为初始增量（gate 后定案前缀）
             p == null -> {
-                if (normalized.isNotEmpty()) {
+                if (eff.isNotEmpty()) {
                     if (gate) {
                         // 2026-09-27 首跑多帧铺开（真机取证：多消息 turn 的后续段
                         // 全量到达无 delta 流，首跑单帧巨量 append 1136-2087ch——
                         // 单帧 GC/解析压力集中且打穿帽揭示量子化节奏。改为逐帧铺开
                         // + #438① 大放行壁钟限速（与增量分支同语义），视觉节奏由帽
-                        // （≤800px 首亮+1600px/500ms 步进）+限速共同接管。
+                        //（≤800px 首亮+1600px/500ms 步进）+限速共同接管。
                         // #H4（2026-09-30）：RESETKEY 重建后的再铺开改快速重灌
                         //（4× 批量/帧、免壁钟限速）——重建限速重铺 4.4s 是「坍缩并
                         // 重建」主诉的可感知重建段（节奏见 [refeedPacing]）。
-                        val pacing = refeedPacing(fastRefeed)
+                        // #442 A2 冷续单帧：item 回收重组合（sliceOrigin 继承、
+                        // fastRefeed=false）的尾块内容一次性入树——静态内容不得
+                        // 限速重铺；Fire 重建仍走 #H4 快灌。
+                        val pacing = if (fastRefeed || sliceOrigin <= 0) refeedPacing(fastRefeed)
+                        else RefeedPacing(Int.MAX_VALUE, 0L)
                         var rel = 0
-                        while (rel < normalized.length) {
-                            val d = SafePrefixGate.releaseDelta(normalized, rel, pacing.chunkCh)
+                        while (rel < eff.length) {
+                            val d = SafePrefixGate.releaseDelta(eff, rel, pacing.chunkCh)
                             if (d.newReleased <= rel) break // gate 拒绝（扣留中）——后续增量/EOF 接管
                             if (pacing.minIntervalMs > 0 && d.newReleased - rel >= pacing.chunkCh) {
                                 val wait = lastBigReleaseAt + pacing.minIntervalMs -
@@ -259,22 +282,22 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                             }
                             if (d.delta.isNotEmpty()) appendAndTrace(state, d.delta)
                             rel = d.newReleased
-                            if (rel < normalized.length) withFrameNanos { }
+                            if (rel < eff.length) withFrameNanos { }
                         }
                         released = rel
-                        logGate(normalized, 0, released)
+                        logGate(eff, 0, released)
                         fastRefeed = false
                     } else {
-                        appendAndTrace(state, normalized)
-                        released = normalized.length
+                        appendAndTrace(state, eff)
+                        released = eff.length
                     }
                 }
-                prev = normalized.take(released) // 放行前缀（#471③ 差分基准）
+                prev = eff.take(released) // 放行前缀（#471③ 差分基准）
             }
             // 非前缀（重生成/编辑）：下轮新实例走整串重建；
             // #437 §4 数据层摆动（reconciler vs live 竞态）会高频触发此分支——
             // 风暴抑制：冻结放行与重建（prev 保持旧值，旧串回来无缝恢复）
-            !normalized.startsWith(p) -> {
+            !eff.startsWith(p) -> {
                 // #472 宽限冻结:瞬时摆动(reconciler 竞态/完结 sync 重组)保树
                 // 保进度,旧串回来无缝续播;超窗仍非前缀才是真重生成
                 val nowMs = android.os.SystemClock.elapsedRealtime()
@@ -285,13 +308,13 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                     val p0 = p
                     if (p0 != null) {
                         var i = 0
-                        val lim = minOf(p0.length, normalized.length)
-                        while (i < lim && p0[i] == normalized[i]) i++
+                        val lim = minOf(p0.length, eff.length)
+                        while (i < lim && p0[i] == eff[i]) i++
                         val ctxA = p0.substring(i.coerceAtMost(p0.length), (i + 16).coerceAtMost(p0.length))
-                        val ctxB = normalized.substring(i.coerceAtMost(normalized.length), (i + 16).coerceAtMost(normalized.length))
+                        val ctxB = eff.substring(i.coerceAtMost(eff.length), (i + 16).coerceAtMost(eff.length))
                         AppLogger.w("MDPilot", "nonPrefix " +
                             (if (nonPrefixSinceMs < 0L) "armed" else "hold") +
-                            " prevLen=" + p0.length + " newLen=" + normalized.length +
+                            " prevLen=" + p0.length + " newLen=" + eff.length +
                             " divergeAt=" + i + " prevCtx=[" + ctxA + "] newCtx=[" + ctxB + "]")
                     }
                 }
@@ -314,9 +337,12 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                         // 坐标分歧）。13:55 事件仅 normalized ctx 可见，raw 侧归因
                         // 靠本探针在下一次出现时补齐。
                         AppLogger.w("MDPilot", "RESETKEY rebuild — nonPrefix survived grace window" +
-                            " prevLen=" + (p?.length ?: -1) + " newLen=" + normalized.length +
+                            " prevLen=" + (p?.length ?: -1) + " newLen=" + eff.length +
                             " rawTail=[" + markdown.takeLast(24) + "]")
                     }
+                    // #442 A2：真重建——冻结文本已陈旧，清发布回单容器
+                    if (shard != null) shard.onRebuild()
+                    sliceOrigin = 0
                     prev = null
                     released = 0
                     held.value = ""
@@ -324,18 +350,18 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                     resetKey++
                 }
             }
-            normalized.length > p.length -> {
+            eff.length > p.length -> {
                 if (gate) {
                     // #438①（2026-09-27 壁钟限速）：catch-up/突发到达期 gate 按
-                    // 400ch/48ms 释放过快（R9 真机实证 442ms 聚 7 批=单 note
+                    // 400ch/批 释放过快（R9 真机实证 442ms 聚 7 批=单 note
                     // d=6236px，中继缓冲突发下观感即「整块一次性出」）。大放行
-                    // （≥[BIG_RELEASE_CH]）间隔下限 [BIG_RELEASE_MIN_INTERVAL_MS]——
+                    //（≥[BIG_RELEASE_CH]）间隔下限 [BIG_RELEASE_MIN_INTERVAL_MS]——
                     // 与到达解耦、只约束大批；正常流式小批（<200ch）直通不受影响。
                     val from = released
-                    while (released < normalized.length) {
+                    while (released < eff.length) {
                         // #438①：每批喂 [BIG_RELEASE_CH]（含空行毕业段——原不受
                         // 批预算约束的漏洞）；批 ≥ 阈值即触发壁钟间隔
-                        val d = SafePrefixGate.releaseDelta(normalized, released, BIG_RELEASE_CH)
+                        val d = SafePrefixGate.releaseDelta(eff, released, BIG_RELEASE_CH)
                         if (d.newReleased <= released) break
                         if (d.newReleased - released >= BIG_RELEASE_CH) {
                             val wait = lastBigReleaseAt + BIG_RELEASE_MIN_INTERVAL_MS -
@@ -346,17 +372,63 @@ internal fun rememberPilotStreamingMarkdownState(markdown: String, freeze: Boole
                         if (d.delta.isNotEmpty()) appendAndTrace(state, d.delta)
                         released = d.newReleased
                     }
-                    logGate(normalized, from, released)
+                    logGate(eff, from, released)
                 } else {
-                    appendAndTrace(state, normalized.substring(p.length))
-                    released = normalized.length
+                    appendAndTrace(state, eff.substring(p.length))
+                    released = eff.length
                 }
-                prev = normalized.take(released) // 放行前缀（#471③ 差分基准）
+                prev = eff.take(released) // 放行前缀（#471③ 差分基准）
             }
-            else -> prev = normalized.take(released) // 等长：无增量（#471③ 基准统一）
+            else -> prev = eff.take(released) // 等长：无增量（#471③ 基准统一）
+        }
+        // #442 A2：毕业时机决策（全坐标；quiescent=!holding——滚动期不毕业，
+        // 滑动 p90 窗口零毕业成本）。首跑铺开完成（prev!=null）后才参与。
+        if (shard != null && gate && prev != null) {
+            val act = shardMachine.onBatch(
+                normalized,
+                sliceOrigin + released,
+                quiescent = !StreamingScrollHold.holding,
+                // A2 中间态（spec §2）：无影子态——武装即视为追平，Fire=切尾
+                // 重建走 #H4 快速重灌（≤800ch 尾单帧完成；大尾块数帧回涨，
+                // A3 影子态换装消除该窗口）
+                shadowLen = if (shardMachine.armedOrigin >= 0) sliceOrigin + released - shardMachine.armedOrigin else 0,
+            )
+            when (act) {
+                is SplitAction.Fire -> {
+                    val texts = act.plan.chunks.map { c -> normalized.substring(c.from, c.to) }
+                    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                        AppLogger.i("MDPilot", "shard fire origin=" + act.plan.tailFrom +
+                            " chunks=" + act.plan.chunks.size +
+                            " tail=" + (normalized.length - act.plan.tailFrom) + "ch")
+                    }
+                    // 帽 hardReset → 发布 → 切尾重建：同协程步，换装帧原子见三者
+                    shard.fire(act.plan.chunks, texts, act.plan.tailFrom)
+                    sliceOrigin = act.plan.tailFrom
+                    prev = null
+                    released = 0
+                    fastRefeed = true
+                    resetKey++
+                    return@LaunchedEffect // 新实例+新原点由重启的 effect 首跑接管
+                }
+                SplitAction.Reset -> {
+                    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                        AppLogger.w("MDPilot", "shard reset — snapshot shrink/release regression")
+                    }
+                    shard.onRebuild()
+                    sliceOrigin = 0
+                    prev = null
+                    released = 0
+                    fastRefeed = true
+                    resetKey++
+                    return@LaunchedEffect
+                }
+                else -> {}
+            }
         }
         if (gate && prev != null) {
-            val newHeld = normalized.substring(released.coerceIn(0, normalized.length))
+            val newHeld = normalized.substring(
+                (sliceOrigin + released).coerceIn(0, normalized.length)
+            )
             // #446 根修（2026-09-27 真机条带差分定罪）：毕业收缩侧撤销一帧延迟。
             // 旧延迟使 held 收缩落在正文扩张的下一帧——净高单帧回缩，而帽
             // reserved 单调不回改：top 对齐下统计栏/held 缝单帧上跳 Δmoved、

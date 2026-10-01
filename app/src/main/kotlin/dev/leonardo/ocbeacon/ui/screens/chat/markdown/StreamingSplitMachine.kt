@@ -72,6 +72,13 @@ internal class StreamingSplitMachine(
         plan = StreamingGraduation(emptyList(), 0)
         armedOrigin = -1
     }
+
+    /** 冷启播种（#442 A2）：item 回收重组合后从 broker 已发布态续账——冻结
+     *  append-only 语义防重复毕业已发布区间。 */
+    fun adopt(seed: StreamingGraduation) {
+        plan = seed
+        armedOrigin = -1
+    }
 }
 
 internal sealed interface SplitAction {

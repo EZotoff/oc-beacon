@@ -779,6 +779,13 @@ fun ChatMessageList(
     val sharedJumpPhase = remember { MutableStateFlow<JumpPhase>(JumpPhase.Idle) }
     // 渲染就绪注册表（原声明位置上移——协调器构造依赖）。
     val renderReadiness = remember { RenderReadinessRegistry() }
+    // #442 A2：列表离树清空 broker（会话切换防跨会话陈旧堆积；导航重叠窗的
+    // 罕见重分片由新列表 pilot 重新武装自愈——见 broker.clearAll KDoc）。
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.clearAll()
+        }
+    }
     val renderSupply = remember {
         RenderSupplyCoordinator(renderReadiness, coroutineScope, sharedJumpPhase)
     }
@@ -790,6 +797,10 @@ fun ChatMessageList(
     val lastStreamingMsgId = remember { mutableStateOf<String?>(null) }
     // [DEBUG-hflick] #437 十三轮仪器：计划锚键序列上一次快照（PLAN diff 探针用）
     val hflickPrevPlanKeys = remember { mutableStateOf<List<String>?>(null) }
+    // #442 R2 分片唤醒（A2）：流式 shard 发布表（broker 单例快照——pilot 深处
+    // 发布 → 此处消费）。发布只在滚动静止时发生（Fire 门 quiescent），与
+    // JankHoldGate 冻结窗不冲突。
+    val streamShards = dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.shards
     // ===== 2026-08-20 fling 巨帧根治：分片发射表（消息区 entries）=====
     // entries = displayItems 经 chunkPlans 展开（巨型 turn → N 个 chunk item）。
     // 双向索引是 LazyColumn index ↔ displayItems index 的单一真相源。
@@ -803,7 +814,7 @@ fun ChatMessageList(
     // 修复：displayItems.size 是快照读（建立失效依赖）且值比较——条目数
     // 变化必重建；同 size 的内容替换（pending-* 换装）由 item 级 get(i)
     // 快照依赖自愈，turnGroups（id 序列变 → Map 值变）兜底。
-    val chatEntries = remember(displayItems.size, turnGroups, turnAnchors, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans) {
+    val chatEntries = remember(displayItems.size, turnGroups, turnAnchors, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans, streamShards) {
         // [DEBUG-jk] #437 卡顿诊断：chatEntries 全量重建计时——确证「批快照重组
         // 风暴」归因（每行含耗时/规模/滚动状态）；确证并固化冻结修复后整块移除。
         val jkT0 = android.os.SystemClock.elapsedRealtime()
@@ -814,7 +825,7 @@ fun ChatMessageList(
                 " streaming=" + (streamingMsgId != null) +
                 " recentN=" + recentStreamedTurnKeys.size
         }
-        buildChatEntries(displayItems, turnGroups, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans, turnAnchors = turnAnchors)
+        buildChatEntries(displayItems, turnGroups, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans, turnAnchors = turnAnchors, streamShards = streamShards)
             .also { ents ->
                 if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                     dev.leonardo.ocbeacon.logging.AppLogger.d(
@@ -1667,6 +1678,22 @@ fun ChatMessageList(
                                     }
                                 }
                             }
+                            is ChatEntry.StreamChunk -> {
+                                // #442 R2 分片唤醒（A2）：冻结块渲染——归一化切片
+                                // 同步解析（remember(text) 单次，首组合即全高）。
+                                // 零 item 间距（turn 内无缝，#246 同款；底距归尾块
+                                // Turn entry）；冻结内容不可变=零失效零重测。
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clipToBounds()
+                                ) {
+                                    dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamShardContent(
+                                        markdown = entry.text,
+                                        textColor = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                            }
                             is ChatEntry.Turn -> {
                         val displayItemIndex = entry.displayIndex
                         val (rawIndex, msg) = displayItems[entry.displayIndex]
@@ -1696,6 +1723,35 @@ fun ChatMessageList(
                                     "attach key=" + itemKey + " streaming=" + isStreamingMsg +
                                         " sid=" + streamingMsgId,
                                 )
+                            }
+                        }
+                        // #442 R2 分片唤醒（A2）：资格注册——首个 renderItem 为
+                        // Single-Text 的流式 turn（text-leading；多步 turn 先行
+                        // reasoning/工具卡与 shard 全 turn 粒度插入的文档序不兼容，
+                        // 拒绝分片降级单容器）。注册在组合期（先于子树 PartContent
+                        // 的 controllerFor 查询）；key 变更/离树注销——发布态保留
+                        // （controllerFor 对已发布 part 兜底返回，完结持续性渲染
+                        // 不依赖注册在位）。
+                        val shardRegPartId =
+                            if (dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardPilot.enabled && isStreamingMsg) {
+                                val firstPart = (renderableTurns[displayItemIndex]?.renderItems?.firstOrNull()
+                                    as? dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem.GroupedParts)
+                                    ?.group?.let { it as? dev.leonardo.ocbeacon.ui.screens.chat.tools.PartGroup.Single }
+                                    ?.part
+                                (firstPart as? Part.Text)?.id
+                            } else null
+                        remember(itemKey, shardRegPartId) {
+                            if (shardRegPartId != null) {
+                                dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.register(
+                                    itemKey, shardRegPartId,
+                                ) { heightReserve.hardReset() }
+                            }
+                        }
+                        androidx.compose.runtime.DisposableEffect(itemKey, shardRegPartId) {
+                            onDispose {
+                                shardRegPartId?.let {
+                                    dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.unregister(it)
+                                }
                             }
                         }
                         // [#437 引擎①] 帽协议（一帧缓冲+同 pass 原子释放）；旧 pairing 路径
@@ -2628,6 +2684,7 @@ fun ChatMessageList(
                             when (entry) {
                                 is ChatEntry.Chunk -> "assistant_chunk"
                                 is ChatEntry.TurnChunk -> "assistant_segment"
+                                is ChatEntry.StreamChunk -> "assistant_stream_shard"
                                 is ChatEntry.UserChunk -> "user_chunk"
                                 is ChatEntry.Turn -> if (entry.isUser) "user" else "assistant"
                             }

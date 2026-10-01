@@ -124,6 +124,8 @@
   - 2026-10-01 二期开工（journal 2026-10-01-442 §1）：销账——cadence 收编(5d061df2)/缝退役(12513603)/待复核四项(四十六世轮)已完成；调研 §3.8 失活防御已被 #438 R-2 修复(FlushTaskMemoryTest 在案)
   - 2026-10-01 批次 C 落地：flush 八职责深拆(FlushTaskMemory/reservePhase/vtraceTick/applyPairedShift，表征测试 7 例先行钉行为+引擎域 47/47+全量 3787/0/0，日志签名集字节不变)+cadence 文档漂移修正(48ms→100ms)；主体 R2 分片唤醒(批次 A1 毕业计划纯函数→A2 装配层多 item→A3 帽/配对适配→A4 真机 p90)进行中
   - 2026-10-01 批次 A1+A2 内核落地：毕业计划纯函数(空行块边界贪心打包/冻结append-only/单调/门槛上限重置，8例) + 武装/触发状态机(影子态毕业时机决策件，6例) + 施工 spec(docs/specs/2026-10-01-442-r2-shard-awakening-design.md：影子态零闪烁换装/键族/帽reset/切割高度恒等假设/完结持续性)；全量 3801/0/0。下一实施批 A2 装配层接线→A3 换装收口→A4 真机 p90
+  - 2026-10-01 批次 A2 装配落地（journal §4）：STREAM_SHARD_PILOT dev 开关+broker 单例(partId 注册/发布/完结兜底)+StreamChunk 逆文档序发射(尾块原键零迁移)+StreamShardContent 同步解析渲染+pilot 切尾坐标(Fire=帽hardReset→发布→重建快灌同协程步,冷续单帧,完结持续 shardHold)；测试 9 新例+全量 3810/0/0
+  - 已知边界：Fire 重建窗待 A3 影子态、非 text-leading turn 不分片、真机 A4 未验
 
 - [ ] **#464 UI 暖态下列表/卡片点击偶发失效(冷启可靠)** `chat-ui`
   - 2026-09-29 #461/#462 取证副产物:force-stop 冷启后输入 tap 可靠命中(会话行/卡标题),同一 app 暖运行数分钟后点击同坐标零效果(无日志无 UI 变化,vibrator 反馈存在=命中可点击元素但未触发业务);两次独立取证会话复现,冷启后恢复。疑点:点击消费被某 overlay/焦点态拦截或状态门;影响面=自动化测试可靠性,人工使用未报告。待真机复现窗定罪(diagnosing-bugs 流程),暂无用户主诉不阻塞。

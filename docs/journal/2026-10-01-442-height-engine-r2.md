@@ -66,3 +66,20 @@
 **验证**：新增 14 例单测全绿 + 全量 **3801/0/0** + compile 绿 ×3。
 
 **下一步（实施批）**：A2 装配层接线（StreamChunk entry/发射/渲染切片/streamingOverride 通道/开关）→ A3 影子态换装+帽 reset+完结持续 → A4 真机 p90 判定。#470 帽回改 B/A 语义裁决仍挂起（不阻塞 A 线）。
+
+## §4 批次 A2：装配层接线落地（2026-10-01，STREAM_SHARD_PILOT dev 先行）
+
+**交付**（spec §7-A2 全量；Fire=切尾重建快灌中间态，A3 影子态未落）：
+1. **开关**：`STREAM_SHARD_PILOT`（dev=true/beta/stable=false，build.gradle.kts——STREAMING_MD_PILOT 先例；关=零改造原路径）。
+2. **broker 单例**（`StreamingShardBroker.kt`，ScrollQuiescence 先例）：partId 键注册表（Turn 分支组合期登记资格+Fire 帽钩子）+ 发布表（快照态驱动 chatEntries 重算）；controllerFor 对**已发布** part 兜底返回（完结/回收持续性——fire 无注册 no-op 防幽灵发布）；列表离树 clearAll（会话切换防陈旧堆积）。
+3. **装配**：`ChatEntry.StreamChunk`（key `t_X#g<i>`，与 #c/#s 键族互斥）+ buildChatEntries streamShards 参数——shard 命中先于其他分片路径（键族互斥），尾块 Turn 保原键（锚/帽物主/跳转/槽位锚零迁移）+ 冻结块逆文档序发射 + displayEntryStart 钉头块（#246 契约）；itemsIndexed contentType 补 `assistant_stream_shard`。
+4. **渲染**：`StreamShardContent`——归一化切片同步解析（remember(text) 单次）经 preParsed 通道（换装帧首组合即全高，无 Loading 空窗）；分片 item 零间距（底距归尾块 Turn entry）。
+5. **pilot 切尾**（`rememberPilotStreamingMarkdownState` + `shard` 控制器参数）：差分/放行/gate 全部改尾坐标（eff=substring(sliceOrigin)，coerce 防非前缀缩短窗越界）；machine 全坐标驱动（released+sliceOrigin 换算，quiescent 门）；**Fire=帽 hardReset→发布→切尾重建**同协程步（换装帧原子见三者；重建走 #H4 快灌 800ch/帧）；**冷续单帧**（sliceOrigin 继承+fastRefeed=false → RefeedPacing(MAX,0) 一次性入树——静态内容不得限速重铺）；非前缀重建路径清发布回单容器。
+6. **帽**：`HeightReserveState.hardReset()`（reserved/trueHeight 归 -1、itemKey 保持——所有权连续；不 reset 则「帽不回改」使尾块永久虚高冻结区高度）。
+7. **完结持续性**：shardHold（已发布 part 完结后保持 pilot 终帧——#471③ 归一化同源即终态；跳过 async 终态预热与 freeze——最终 EOF flush 必须放行）——规避「完结切全量终态与冻结 shard 双渲染重复」。
+
+**实施期裁决（spec 补记）**：资格=text-leading 流式 turn（首个 renderItem 为 Single-Text）——多步 turn 先行 reasoning/工具卡的文档序与 shard 全 turn 粒度插入不兼容（shard 会排到先行内容之上），拒绝分片降级单容器；A2 不复用 ChunkedAssistantMessage（MdChunkPlan blockRange 与 renderItems 强耦合，shard=单 part 文本切片不适配）——新极简分支。
+
+**验证**：StreamShardEntryTest 3 例（逆文档序/原键保持/displayEntryStart 钉头块/键族互斥/空表不变）+ StreamingShardBrokerTest 6 例（注册身份稳定/fire 钩子先行时序/未注册 no-op/注销后发布兜底+冷启续账/onRebuild 清账）+ 全量 **3810/0/0** + compile 绿。
+
+**已知边界（诚实）**：①Fire 重建窗——尾块 >800ch 时切尾重建经 2-3 帧回涨（≤800ch 单帧完成），A3 影子态双喂消除；②资格限制——非 text-leading turn（reasoning 先行等）不分片，O(内容) 残留在该形态；③真机未验（A4：gfxinfo 滑动 p90 ≤12ms、换装帧高度恒等的块 padding 对称假设、VDRAW/SilentShift 零毕业帧滑移）。

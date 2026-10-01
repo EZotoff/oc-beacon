@@ -1,0 +1,121 @@
+package dev.leonardo.ocbeacon.ui.screens.chat.components
+
+import dev.leonardo.ocbeacon.domain.model.Message
+import dev.leonardo.ocbeacon.domain.model.Part
+import dev.leonardo.ocbeacon.domain.model.TimeInfo
+import dev.leonardo.ocbeacon.ui.screens.chat.ChatMessage
+import dev.leonardo.ocbeacon.ui.screens.chat.markdown.PublishedShards
+import dev.leonardo.ocbeacon.ui.screens.chat.markdown.ShardDoc
+import kotlinx.coroutines.flow.first
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * #442 R2 分片唤醒（A2）——流式 shard 发射契约（#246 同源）：
+ * 逆文档序（尾块 Turn 先入列、头块 g0 最末）+ 尾块保原键（锚/帽物主零迁移）
+ * + displayEntryStart 钉头块 + shard 命中抑制其他分片路径（键族互斥）。
+ */
+class StreamShardEntryTest {
+
+    private fun assistant(id: String, partId: String, text: String) = ChatMessage(
+        message = Message.Assistant(id = id, sessionId = "s1", time = TimeInfo(2, 2), parentId = "p0"),
+        parts = listOf(Part.Text(id = partId, sessionId = "s1", messageId = id, text = text)),
+    )
+
+    private fun user(id: String, text: String) = ChatMessage(
+        message = Message.User(id = id, sessionId = "s1", time = TimeInfo(1, 1)),
+        parts = listOf(Part.Text(id = id + "_p", sessionId = "s1", messageId = id, text = text)),
+    )
+
+    private fun published(
+        partId: String,
+        chunks: List<Pair<Int, Int>>,
+        texts: List<String>,
+        tailFrom: Int,
+    ) = PublishedShards(
+        turnKey = "t_m_a",
+        partId = partId,
+        shards = chunks.zip(texts).mapIndexed { i, (range, text) ->
+            ShardDoc(i, range.first, range.second, text)
+        },
+        tailFrom = tailFrom,
+        generation = 1,
+    )
+
+    @Test
+    fun `shard 命中发射逆文档序且尾块保原键`() {
+        val doc = "块零\n\n块一\n\n块二\n\n尾块内容"
+        val a = assistant("m_a", "p_a", doc)
+        val u = user("m_u", "问")
+        val displayItems = listOf(0 to a, 1 to u)
+        val shards = published(
+            "p_a",
+            chunks = listOf(0 to 7, 7 to 14),
+            texts = listOf("块零\n\n", "块一\n\n"),
+            tailFrom = 14,
+        )
+        val chat = buildChatEntries(
+            displayItems = displayItems,
+            turnGroups = mapOf(0 to listOf(a)),
+            streamingMsgId = "m_a",
+            chunkPlans = emptyMap(),
+            recentStreamedTurnKeys = emptySet(),
+            streamShards = mapOf("p_a" to shards),
+        )
+        // 逆文档序：尾块 Turn（原键）先入列，g1（新冻结）次之，g0（头块）最末
+        assertEquals(listOf("t_m_a", "t_m_a#g1", "t_m_a#g0"), chat.entries.take(3).map { it.key })
+        val sc = chat.entries[1] as ChatEntry.StreamChunk
+        assertEquals("块一\n\n", sc.text)
+        assertEquals(1, sc.chunkIndex)
+        assertEquals(2, sc.chunkCount)
+        // displayEntryStart 钉头块 g0（跳转落点=turn 首块语义）
+        assertEquals(2, chat.displayEntryStart[0])
+        // user turn 不受影响
+        assertEquals(3, chat.displayEntryStart[1])
+    }
+
+    @Test
+    fun `shard 命中抑制同 turn 其他分片路径`() {
+        // 同 turn 若既有旧 MdChunkPlan 又有 shard 发布（异常态防御）：shard 优先
+        val doc = "# 标\n\n" + "内容。\n\n".repeat(20)
+        val a = assistant("m_a", "p_a", doc)
+        val shards = published("p_a", listOf(0 to 10), listOf("# 标\n\n"), tailFrom = 10)
+        val chat = buildChatEntries(
+            displayItems = listOf(0 to a),
+            turnGroups = mapOf(0 to listOf(a)),
+            streamingMsgId = null,
+            chunkPlans = mapOf("p_a" to computeChunkPlan("p_a", parseState(doc), minChars = 50, targetChars = 60)!!),
+            recentStreamedTurnKeys = emptySet(),
+            streamShards = mapOf("p_a" to shards),
+        )
+        assertTrue(chat.entries.any { it is ChatEntry.StreamChunk })
+        assertTrue(chat.entries.none { it is ChatEntry.Chunk })
+        // 完结 turn（isStreamingTurn=false）尾块 Turn 保持原键
+        assertEquals("t_m_a", chat.entries.first().key)
+    }
+
+    @Test
+    fun `空发布表行为不变`() {
+        val a = assistant("m_a", "p_a", "短回复")
+        val chat = buildChatEntries(
+            displayItems = listOf(0 to a),
+            turnGroups = mapOf(0 to listOf(a)),
+            streamingMsgId = "m_a",
+            chunkPlans = emptyMap(),
+            recentStreamedTurnKeys = emptySet(),
+            streamShards = emptyMap(),
+        )
+        assertEquals(1, chat.entries.size)
+        assertEquals("t_m_a", chat.entries[0].key)
+    }
+
+    private fun parseState(text: String): com.mikepenz.markdown.model.State.Success =
+        kotlinx.coroutines.runBlocking {
+            val normalized = dev.leonardo.ocbeacon.ui.screens.chat.markdown.normalizeForRender(text, isUser = false)
+            kotlinx.coroutines.withTimeout(10_000) {
+                com.mikepenz.markdown.model.parseMarkdownFlow(normalized)
+                    .first { it is com.mikepenz.markdown.model.State.Success }
+            } as com.mikepenz.markdown.model.State.Success
+        }
+}

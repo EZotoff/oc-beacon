@@ -153,6 +153,12 @@ private fun PartContentInner(
                         )
                     }
                 } else {
+                    // #442 R2 分片唤醒（A2）：注册在案的流式大文本 part 取分片
+                    // 控制器（装配层 Turn 分支按资格注册；未注册=null 原路径）。
+                    // 控制器身份=注册生命周期（broker 保证稳定），remember 仅免重复查表。
+                    val shardCtl = remember(part.id) {
+                        dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.controllerFor(part.id)
+                    }
                     SelectionContainer {
                         MarkdownContent(
                             markdown = part.text,
@@ -162,6 +168,7 @@ private fun PartContentInner(
                             overrideState = markdownStateOverride,
                             preParsedState = preParsedState,
                             asyncParse = asyncParse,
+                            shardCtl = shardCtl,
                         )
                     }
                 }

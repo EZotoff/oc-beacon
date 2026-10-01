@@ -92,6 +92,8 @@ android {
             buildConfigField("boolean", "STREAMING_MD_PILOT", "true")
             // #437 两级安全放行闸（stable reveal）：dev 先行（回退=置 false 一行）
             buildConfigField("boolean", "STABLE_REVEAL_PILOT", "true")
+            // #442 R2 分片唤醒（spec 2026-10-01-442-r2-shard-awakening）：dev 先行
+            buildConfigField("boolean", "STREAM_SHARD_PILOT", "true")
             // 2026-08-13 用户决策：dev 测试构建 versionCode 用 Unix 时间戳——
             // 每次构建自动递增，adb install -r 可覆盖安装（保留 App 数据/服务器配置，
             // 禁止卸载重装）；正式版本号（version.properties）仅 beta/stable 使用。

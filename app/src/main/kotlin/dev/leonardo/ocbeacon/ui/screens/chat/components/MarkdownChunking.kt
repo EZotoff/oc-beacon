@@ -226,6 +226,24 @@ internal sealed interface ChatEntry {
         val isFirst: Boolean get() = chunkIndex == 0
         val isLast: Boolean get() = chunkIndex == chunkCount - 1
     }
+
+    /**
+     * #442 R2 分片唤醒（A2）：流式 turn 的已毕业冻结块（key "t_<turnId>#g<i>"，
+     * 与 #c/#s 键族互斥；index=文档序，0=最旧/头块）。text 为归一化切片
+     * （pilot 归一化坐标），item 渲染经 StreamShardContent 同步解析——冻结
+     * 内容不可变=零失效零重测（O(尾块) 的机制来源）。发射规则同 #246 逆文档序。
+     */
+    data class StreamChunk(
+        override val displayIndex: Int,
+        override val key: String,
+        val turnKey: String,
+        val chunkIndex: Int,
+        val chunkCount: Int,
+        val text: String,
+    ) : ChatEntry {
+        val isFirst: Boolean get() = chunkIndex == 0
+        val isLast: Boolean get() = chunkIndex == chunkCount - 1
+    }
 }
 
 /**
@@ -273,6 +291,10 @@ internal fun buildChatEntries(
     /** #440 槽位锚（computeTurnAnchors）——turnKey 锚到轮 user 消息，换装零漂移；
      *  置于参数表末尾（带默认值），既有位置传参调用零改动。 */
     turnAnchors: Map<Int, String> = emptyMap(),
+    /** #442 R2 分片唤醒（A2）：partId → 已发布冻结块集（broker 快照）。命中
+     *  turn 的发射走 [ChatEntry.StreamChunk] 结构（尾块 Turn + 冻结块逆文档序），
+     *  抑制该 turn 的其他分片路径（键族互斥）。 */
+    streamShards: Map<String, dev.leonardo.ocbeacon.ui.screens.chat.markdown.PublishedShards> = emptyMap(),
 ): ChatEntries {
     val entries = mutableListOf<ChatEntry>()
     val displayEntryStart = IntArray(displayItems.size)
@@ -355,7 +377,32 @@ internal fun buildChatEntries(
                     sp.fingerprint == turnPlanFingerprint(msg, turnMsgs)
             }
         } else null
-        if (plan != null) {
+        // #442 A2：流式分片（broker 发布命中 turn 的任一 part）——先于其他分片
+        // 路径（键族互斥）；完结后持续有效（spec 完结持续性：StreamChunk 保留
+        // 不迁 TurnSegmentPlan，尾块同键换终态渲染）
+        val turnShards = if (streamShards.isNotEmpty()) {
+            (turnGroups[rawIndex] ?: listOf(msg)).firstNotNullOfOrNull { cm ->
+                cm.parts.firstNotNullOfOrNull { streamShards[it.id] }
+            }
+        } else null
+        if (turnShards != null && turnShards.shards.isNotEmpty()) {
+            // #246 逆文档序（尾片先入列）：尾块 Turn 保原键（锚/帽物主/跳转/槽位
+            // 锚零迁移），冻结块 #g 键族 index=文档序（0=最旧/头块），头块最末
+            // 发射，displayEntryStart 钉头块（跳转落点语义与分片路径一致）
+            entries += ChatEntry.Turn(displayIdx, turnKey, isUser = msg.isUser, isStreaming = isStreamingTurn)
+            val count = turnShards.shards.size
+            for (c in count - 1 downTo 0) {
+                entries += ChatEntry.StreamChunk(
+                    displayIndex = displayIdx,
+                    key = turnKey + "#g" + c,
+                    turnKey = turnKey,
+                    chunkIndex = c,
+                    chunkCount = count,
+                    text = turnShards.shards[c].text,
+                )
+            }
+            displayEntryStart[displayIdx] = entries.size - 1
+        } else if (plan != null) {
             val count = plan.ranges.size
             // #246 定音（2026-08-27 真机截图+ScrollDiag 算术链）：displayItems
             // 最新在前（reverseLayout 索引 0 在屏幕底部），chunk 必须逆文档序
@@ -375,7 +422,6 @@ internal fun buildChatEntries(
             displayEntryStart[displayIdx] = entries.size - 1
         } else if (userPlan != null) {
             val count = userPlan.segments.size
-            // 同上：逆文档序发射（#246）
             for (c in count - 1 downTo 0) {
                 entries += ChatEntry.UserChunk(
                     displayIndex = displayIdx,

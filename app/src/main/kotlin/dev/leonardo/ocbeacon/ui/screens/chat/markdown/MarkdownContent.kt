@@ -376,6 +376,9 @@ internal fun MarkdownContent(
     // rememberAsyncMarkdownState）——流式内容必须 false（批处理 cadence +
     // conflate 铁律路径，rememberMarkdownState 保留）。
     asyncParse: Boolean = false,
+    // #442 R2 分片唤醒（A2）：注册在案的流式大文本 part 的分片控制器
+    //（PartContent 按 part.id 从 broker 查得；null=原路径零改造）。
+    shardCtl: ShardController? = null,
 ) {
     // 注意：customFontSize 和 immediate 保留是为了调用点兼容性
     //（PartContent / ReasoningBlock 仍传入它们），但有意不使用
@@ -755,8 +758,12 @@ internal fun MarkdownContent(
     // #472 完结换装无缝:async 终态源提升到固定组合位(条件创建在稳定位置,
     // hold 期与切换后同一实例——切换帧不再二次 remember 重解析)。完结前
     // (asyncParse=false)不创建,流式路径零额外成本。
+    // #442 A2：已分片（broker 有发布）的 part 完结后**保持 pilot**（终帧=终态，
+    // #471③ 归一化同源）——完结切全量终态会与冻结 shard items 双渲染（内容
+    // 重复）；async 终态预热也一并跳过（无用功）。
+    val shardHold = shardCtl != null && shardCtl.hasPublished()
     val asyncTerminal: com.mikepenz.markdown.model.MarkdownState? =
-        if (overrideState == null && asyncParse && markdown.length > ASYNC_PARSE_MIN_CHARS) {
+        if (overrideState == null && asyncParse && !shardHold && markdown.length > ASYNC_PARSE_MIN_CHARS) {
             rememberAsyncMarkdownState(markdown, isUser)
         } else {
             null
@@ -772,14 +779,22 @@ internal fun MarkdownContent(
     val holdPilotTerminal = StreamingMarkdownPilot.enabled &&
         pilotTerminalHold(pilotEverRendered, asyncTerminalPending)
     if (streamingPilotEligible(overrideState != null, asyncParse, isUser) && StreamingMarkdownPilot.enabled ||
-        holdPilotTerminal
+        holdPilotTerminal ||
+        shardHold
     ) {
         // #437：pilotState.state 只收 SafePrefixGate 放行的定案内容；
         // 扣留尾部（heldTail）超龄后由降亮区呈现（锁高裁剪+呼吸光标，
         // 高度流=低频量子，与 #435 引擎配对兼容）。回退 = STABLE_REVEAL_PILOT
         // 置 false（gate 旁路，pilot 原行为）。
         pilotEverRendered = true
-        val pilotState = rememberPilotStreamingMarkdownState(markdown, freeze = holdPilotTerminal)
+        // shardHold 期不得冻结：pilot 即终点（内容=尾块终态），最终 EOF flush
+        // 必须放行；freeze 只服务 #472 async 桥接（shardHold 下 asyncTerminal
+        // 已跳过，holdPilotTerminal 恒 false——防御性 && !shardHold）。
+        val pilotState = rememberPilotStreamingMarkdownState(
+            markdown,
+            freeze = holdPilotTerminal && !shardHold,
+            shard = shardCtl,
+        )
         androidx.compose.foundation.layout.Column {
             // #437 崩溃修复：非前缀重建（resetKey++）换 state 实例的同一帧，
             // 库 Markdown 内部 collectAsState 对流实例的记忆可能残留旧 snapshot
@@ -985,6 +1000,23 @@ private fun rememberSyncMarkdownState(content: String, isUser: Boolean): Markdow
             parseMarkdown(normalizeForRender(content, isUser)),
         )
     }
+
+/**
+ * #442 R2 分片唤醒（A2）：流式冻结块渲染——归一化切片（pilot 归一化坐标，
+ * 已是终态形态，#471③ 同源）同步解析 + preParsed 通道（无 Loading 空窗：
+ * 换装帧首组合即全高）。冻结内容不可变 → remember(text) 单次解析；item
+ * 回收重组合按 text 重解析（A2 接受；后续可接 SyncParseCache）。
+ */
+@Composable
+internal fun StreamShardContent(markdown: String, textColor: Color) {
+    val parsed = remember(markdown) { parseMarkdown(markdown) }
+    MarkdownContent(
+        markdown = "",
+        textColor = textColor,
+        isUser = false,
+        preParsedState = parsed,
+    )
+}
 
 @Composable
 private fun rememberAsyncMarkdownState(content: String, isUser: Boolean): MarkdownState {
