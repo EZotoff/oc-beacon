@@ -14,6 +14,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -159,9 +161,19 @@ private fun PartContentInner(
                     val shardCtl = remember(part.id) {
                         dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.controllerFor(part.id)
                     }
+                    // #442 B案 节奏收编（B3）：流式增长经 bus 快通道直达本 item——
+                    // part.text 参数降级为结构性对账源（完结权威/回收冷启/旗标关
+                    // 时兜底，`live ?: part.text` 回退=今日行为逐字节等价）。
+                    val liveText by androidx.compose.runtime.remember(part.id) {
+                        if (dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
+                            dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.liveFor(part.id)
+                        } else {
+                            kotlinx.coroutines.flow.emptyFlow()
+                        }
+                    }.collectAsState(initial = null)
                     SelectionContainer {
                         MarkdownContent(
-                            markdown = part.text,
+                            markdown = liveText ?: part.text,
                             textColor = textColor,
                             isUser = isUser,
                             immediate = !isUser,
@@ -209,8 +221,17 @@ private fun PartContentInner(
                             " default=" + expandReasoningDefault
                     )
                 }
+                // #442 B案（B4）：推理流式同走 bus 快通道——重组收敛到本块
+                //（combine/ChatMessageList 静默后块内 Text 重排版=必要工作面）。
+                val liveReasoning by androidx.compose.runtime.remember(part.id) {
+                    if (dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
+                        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.liveFor(part.id)
+                    } else {
+                        kotlinx.coroutines.flow.emptyFlow()
+                    }
+                }.collectAsState(initial = null)
                 ReasoningBlock(
-                    text = part.text,
+                    text = liveReasoning ?: part.text,
                     isExpanded = rbExpanded,
                     onToggleExpand = { onToggleToolExpanded(part.id, expandReasoningDefault) },
                     durationMs = reasoningDuration,

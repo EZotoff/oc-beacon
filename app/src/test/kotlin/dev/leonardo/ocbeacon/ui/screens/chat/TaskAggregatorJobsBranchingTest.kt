@@ -47,6 +47,7 @@ class TaskAggregatorJobsBranchingTest {
         every { sessionRepo.getSessionsFlow(any()) } returns flowOf(emptyList())
         every { sessionRepo.getSessionStatusesFlow(any()) } returns flowOf(emptyMap())
         every { chatRepo.getAllPartsMap() } returns flowOf(emptyMap())
+        every { chatRepo.getStructuralPartsMap() } returns flowOf(emptyMap())
         return TaskAggregator(
             sessionRepository = sessionRepo,
             chatRepository = chatRepo,

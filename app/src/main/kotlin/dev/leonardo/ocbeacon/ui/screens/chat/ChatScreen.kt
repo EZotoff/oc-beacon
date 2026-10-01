@@ -657,8 +657,15 @@ fun ChatScreen(
     // #252：shell 输出三级 provider（迁自 TaskSheet：事件输出 → 消息流回填 → REST 拉取）——
     // 前移到 Scaffold 之前供输入栏上方 ShellJobsStrip 复用。
     val shellOutputs = remember { mutableStateMapOf<String, String?>() }
-    val allPartsMap by viewModel.chatRepositoryExposed.getAllPartsMap()
-        .collectAsStateWithLifecycle(initialValue = emptyMap())
+    // #442 B案 节奏收编：shell 输出解析（Tool.Completed 输出=结构性数据）同切
+    // 结构性视图——流式 delta 批零滴答（旗标关回退全量热视图）。
+    val allPartsMap by (
+        if (dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
+            viewModel.chatRepositoryExposed.getStructuralPartsMap()
+        } else {
+            viewModel.chatRepositoryExposed.getAllPartsMap()
+        }
+        ).collectAsStateWithLifecycle(initialValue = emptyMap())
     val shellOutputResolver = remember(viewModel.sessionId, allPartsMap) {
         { shell: ShellJob ->
             shell.output

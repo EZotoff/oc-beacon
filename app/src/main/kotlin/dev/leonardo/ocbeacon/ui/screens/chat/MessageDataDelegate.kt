@@ -191,7 +191,13 @@ internal class MessageDataDelegate(
         combine(
             sessionRepository.getSessionsFlow(serverId),
             messagePaging.observeMessages(sid),
-            chatRepository.getAllPartsMap(),
+            // #442 B案 节奏收编：parts 源切结构性视图（流式 delta 批零滴答）；
+            // 旗标关回退全量热视图（今日行为）。
+            if (dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
+                chatRepository.getStructuralPartsMap()
+            } else {
+                chatRepository.getAllPartsMap()
+            },
             _isLoading,
             paginationDelegate.hasOlderMessages,
             paginationDelegate.isLoadingOlder,
@@ -481,7 +487,14 @@ internal class MessageDataDelegate(
         //（仅在 parts 变化时赋值，读取方 loadJumpTargets 同步取用）。
         scope.launch {
             try {
-                chatRepository.getAllPartsMap().collect { map ->
+                // #442 B案：跳转镜像同切结构性视图（跳转目标=turn 级结构，无流式文面需求）
+                val partsFlow =
+                    if (dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
+                        chatRepository.getStructuralPartsMap()
+                    } else {
+                        chatRepository.getAllPartsMap()
+                    }
+                partsFlow.collect { map ->
                     messagePartsProvider = { id -> map[id] }
                 }
             } catch (e: Throwable) {

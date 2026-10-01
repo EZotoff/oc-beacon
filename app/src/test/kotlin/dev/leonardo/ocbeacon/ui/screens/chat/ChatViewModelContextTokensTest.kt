@@ -272,6 +272,7 @@ class ChatViewModelContextTokensTest {
                 every { chatRepo.getMessagesFlow(any()) } answers { eventDispatcher.messages.map { it[firstArg<String>()] ?: emptyList() } }
                 every { chatRepo.getParts(any()) } answers { eventDispatcher.parts.map { it[firstArg<String>()] ?: emptyList() } }
                 every { chatRepo.getAllPartsMap() } returns eventDispatcher.parts
+                every { chatRepo.getStructuralPartsMap() } returns eventDispatcher.structuralParts
                 every { chatRepo.getActiveToolProgressForSession(any()) } returns flowOf(emptyList())
                 every { chatRepo.upsertMessages(any(), any(), any()) } answers { eventDispatcher.upsertMessages(firstArg(), secondArg(), thirdArg()) }
                 every { chatRepo.getPermissionsSnapshot() } answers { eventDispatcher.permissions.value }

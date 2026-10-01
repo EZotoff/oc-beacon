@@ -104,6 +104,14 @@ class TaskAggregator(
      *  避免 ViewModel 测试在 runTest 虚拟时间下无限循环 OOM）。 */
     private val activeSessionIds = MutableStateFlow<Set<String>>(emptySet())
 
+    /** #442 B案：任务域 parts 源——结构性视图（工具卡=结构性数据；旗标关回退全量）。 */
+    private fun structuralPartsOrAll() =
+        if (dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
+            chatRepository.getStructuralPartsMap()
+        } else {
+            chatRepository.getAllPartsMap()
+        }
+
     /**
      * 启动 active 会话轮询（幂等）。
      * #99（M-10）：原每 5s 无条件打 REST（无任何活跃会话时也无限空转）；
@@ -178,7 +186,8 @@ class TaskAggregator(
     private val aggregatedSubagents = combine(
         sessionRepository.getSessionsFlow(serverId),
         sessionRepository.getSessionStatusesFlow(serverId),
-        chatRepository.getAllPartsMap(),
+        // #442 B案：任务聚合（task/subagent 工具卡=结构性数据）同切结构性视图
+        structuralPartsOrAll(),
         sessionIdFlow,
         // 2026-08-16 根治（任务面板 R1——进行中任务不显示）：activeSessionIds
         // 原先在 lambda 内读取但不在 combine 源中——V2 下 FSM 错过
@@ -298,7 +307,7 @@ class TaskAggregator(
 
     private val foregroundCountFlow = combine(
         sessionRepository.getSessionStatusesFlow(serverId),
-        chatRepository.getAllPartsMap(),
+        structuralPartsOrAll(),
         sessionIdFlow
     ) { statuses, partsMap, currentSessionId ->
         val runningIds = statuses.filterValues { it == SessionStatus.Busy }.keys

@@ -252,6 +252,7 @@ class ChatViewModelPermissionTest {
         }
         every { chatRepo.getParts(any()) } returns flowOf(emptyList())
         every { chatRepo.getAllPartsMap() } returns eventDispatcher.parts
+                every { chatRepo.getStructuralPartsMap() } returns eventDispatcher.structuralParts
         return ChatViewModel(
             serverAdapters = FakeServerAdapterResolver(),
             sseConnectionManager = sseConnectionManager,
