@@ -948,9 +948,15 @@ fun ChatScreen(
                         // holding 期间派生冻结在最近快照（实例相等 → 下游 remember 全命中 →
                         // 零重算零重组），settle 后首个新快照一次追平（与 append 追平同帧）。
                         // A/B 开关 JankHoldGate（debug.ocbeacon.jankhold），确证后转默认开。
+                        // #442 B案（B6 真机定罪修正 R8）：节奏收编后 messageState 流式期
+                        // 本就静止——冻结语义无事可做，但 `holding` 直读仍随贴底跟随
+                        // 每滚动帧翻转 → ChatScreen 级重组经不稳定参数链重跑
+                        // ChatMessageList（CML-tick ~10/s 的残余驱动者）。旗标开=按
+                        // 裁决退役该读（B案关闭时行为逐字节不变）。
                         val jkFrozenRef = remember { arrayOfNulls<List<ChatMessage>>(1) }
                         val jkFrozenStateRef = remember { arrayOfNulls<dev.leonardo.ocbeacon.ui.screens.chat.MessageListState>(1) }
-                        val jkHold = dev.leonardo.ocbeacon.ui.screens.chat.markdown.JankHoldGate.enabled &&
+                        val jkHold = !dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled &&
+                            dev.leonardo.ocbeacon.ui.screens.chat.markdown.JankHoldGate.enabled &&
                             dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingScrollHold.holding
                         // messageState 一并冻结（二十四世轮终修）：否则其每 48ms 新实例
                         // 经传参旁路触发 ChatMessageList 整体重组（三千行函数体重跑），

@@ -157,6 +157,33 @@ class MessageEventHandlerStructuralPartsTest {
     }
 
     @Test
+    fun `delta events through handle do not bridge flushed state into structural`() {
+        // B6 真机定罪回归锚：flush 改热视图后，后续 MessagePartDelta 事件经
+        // handle() 分发不得把「已含本批累积」的热视图新值过桥进结构性视图
+        //（否则每 flush 后首个 delta 击穿静默 → combine 恢复每批滴答）
+        seedMessage("m1", Part.Text(id = "m1_text_ord_0", sessionId = "s1", messageId = "m1", text = "Hel"))
+        delta("lo")
+        handler.forceFlushDeltas()
+        assertEquals("Hello", StreamingDeltaBus.live.value["m1_text_ord_0"]?.text)
+        val baseline = structuralEmissions.get()
+
+        handler.handle(
+            SseEvent.MessagePartDelta(
+                sessionId = "s1", messageId = "m1", partId = "m1_text_ord_0",
+                field = "text", delta = "!",
+            ),
+            "srv",
+        )
+
+        assertEquals(baseline, structuralEmissions.get())
+        // 热视图不受影响（缓冲照旧）
+        assertEquals(
+            "Hello",
+            handler.parts.value["m1"]?.firstOrNull { it.id == "m1_text_ord_0" }?.let { (it as Part.Text).text },
+        )
+    }
+
+    @Test
     fun `reasoning deltas publish bus with reasoning flag`() {
         seedMessage("m1", Part.Reasoning(id = "m1_reasoning_ord_0", sessionId = "s1", messageId = "m1", text = "th"))
         delta("ink", partId = "m1_reasoning_ord_0", field = "reasoning")

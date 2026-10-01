@@ -54,10 +54,12 @@ class MessageEventHandler @Inject constructor(
             is SseEvent.SurfaceRangeReplaced -> { handleSurfaceRangeReplaced(event); true }
             else -> false
         }
-        // #442 B案：SSE 结构事件统一发布结构性视图（Delta 事件仅缓冲——热视图
-        // 未变，同实例发布被值相等去重吸收=零发射）。dispatch 外直调入口
-        //（upsert/clear/patch 族）各自就地发布。
-        if (handled) publishStructural()
+        // #442 B案：SSE 结构事件统一发布结构性视图。**MessagePartDelta 例外**
+        //——它仅缓冲（不立即改热视图），但 flush 与后续 delta 事件的交错会把
+        //「已含本批累积」的热视图新值过桥（B6 真机定罪：CML-tick ~6/s =
+        // 每 flush 后首个 delta 事件击穿结构性静默）——结构性发射只属于结构
+        // 事件族。dispatch 外直调入口（upsert/clear/patch 族）各自就地发布。
+        if (handled && event !is SseEvent.MessagePartDelta) publishStructural()
         return handled
     }
 

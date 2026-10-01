@@ -800,6 +800,25 @@ fun ChatMessageList(
     // #442 R2 分片唤醒（A2）：流式 shard 发布表（broker 单例快照——pilot 深处
     // 发布 → 此处消费）。发布只在滚动静止时发生（Fire 门 quiescent），与
     // JankHoldGate 冻结窗不冲突。
+    // [CML-tick] #442 B案判据探针（DEBUG-only，随 probe 保留纪律永久保留）：
+    // 本函数体（~2800 行装配主体）重执行计数——每 25 次打一行（普通数组非
+    // 快照写，零重组副作用）。根因二判读：流式稳态老世界 ~10/s（每 flush 新
+    // rawMessages 实例驱动整函数体重跑），B案后 ≈结构性事件率（<<1/s）。
+    val cmlTick = remember { longArrayOf(0L) }
+    cmlTick[0]++
+    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG && cmlTick[0] % 25L == 0L) {
+        dev.leonardo.ocbeacon.logging.AppLogger.d(
+            "CML-tick",
+            "n=" + cmlTick[0] + " t=" + android.os.SystemClock.elapsedRealtime() +
+                " raw=" + System.identityHashCode(rawMessages) +
+                " disp=" + displayItems.size +
+                " cp=" + System.identityHashCode(chunkPlans) +
+                " sp=" + System.identityHashCode(segmentPlans) +
+                " rk=" + System.identityHashCode(recentStreamedTurnKeys) +
+                " tp=" + System.identityHashCode(toolProgress),
+        )
+    }
+
     val streamShards = dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.shards
     // #442 A2.5 资格泛化：turnKey → 分片 part 的 renderItem 位置 k（推理先行轮
     // k>0）。值相等 Map 作 chatEntries remember 键——纯文本增长期 k 不变（结构
