@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 import com.mikepenz.markdown.annotator.annotatorSettings
 import com.mikepenz.markdown.coil3.Coil3ImageTransformerImpl
 import com.mikepenz.markdown.compose.components.markdownComponents
@@ -872,8 +873,8 @@ internal fun MarkdownContent(
             asyncParse -> "syncSmall"
             else -> "libStreaming"
         }
-        android.util.Log.w("A11yDiag", "path=render src=" + src + " len=" + markdown.length +
-            " stateType=" + markdownState.state.value.javaClass.simpleName)
+        // stateType 字段已移除（组合期 StateFlow.value 读触发 lint 门禁——#477 诊断探针保留 src/len；v0.4.0-beta CI 定罪）
+        android.util.Log.w("A11yDiag", "path=render src=" + src + " len=" + markdown.length)
     }
     Markdown(
         markdownState = markdownState,
@@ -1169,7 +1170,7 @@ private fun HtmlBlockRaw(
         Text(
             text = raw,
             style = style.copy(color = foreground, fontFamily = FontFamily.Monospace),
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(SpacingTokens.MD.dp),
         )
     }
 }

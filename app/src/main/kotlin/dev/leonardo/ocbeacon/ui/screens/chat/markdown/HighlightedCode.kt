@@ -20,6 +20,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 import com.mikepenz.markdown.compose.LocalMarkdownColors
 import com.mikepenz.markdown.compose.LocalMarkdownDimens
 import com.mikepenz.markdown.compose.LocalMarkdownPadding
@@ -135,7 +136,7 @@ internal fun SafeHighlightedCode(
         shape = RoundedCornerShape(codeBackgroundCornerSize),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = SpacingTokens.SM.dp),
         language = language,
         code = code,
     ) {
@@ -187,7 +188,7 @@ internal fun SafeHighlightedMathBlock(
         shape = RoundedCornerShape(codeBackgroundCornerSize),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = SpacingTokens.SM.dp),
         language = MATH_FENCE_LANGUAGE,
         code = code,
     ) {
@@ -199,7 +200,7 @@ internal fun SafeHighlightedMathBlock(
                     fontWeight = FontWeight.Medium,
                     color = colorScheme.onSurfaceVariant,
                 ),
-                modifier = Modifier.padding(bottom = 4.dp),
+                modifier = Modifier.padding(bottom = SpacingTokens.XS.dp),
             )
             MarkdownBasicText(
                 text = mathText,

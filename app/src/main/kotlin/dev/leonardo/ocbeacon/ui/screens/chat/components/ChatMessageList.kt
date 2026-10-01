@@ -1864,6 +1864,8 @@ fun ChatMessageList(
                                     AppLogger.d("SGR-435", "shard-reg key=" + itemKey + " part=" + shardRegPartId.take(18))
                                 }
                             }
+                            // lint：remember 禁返回 Unit——注册副作用块以 true 收尾
+                            true
                         }
                         androidx.compose.runtime.DisposableEffect(itemKey, shardRegPartId) {
                             onDispose {
