@@ -104,3 +104,60 @@
 **发现 P2（覆盖面缺口，A2.5 待办）**：资格=text-leading turn 把**推理先行**轮次全部排除（服务端实证：LongCat 轮=[reasoning 1991ch, text 37218ch]，37K 正文零分片）——推理先行是现代模型常态，泛化方向=turn 在 renderItem 级拆分（推理前缀独立 item，TurnSegment Items(from,to) 同构），录 backlog。
 
 **已知项**：正式 A4 判定（滑动 p90≤12ms 专项方法学+关开关基线对照）未做；+49270 的旧轮次 RESIZE 均为重启后 broker 清空的遗留路径（正常）。
+
+## §6 B案（节奏收编）适配性系统分析（2026-10-02，用户指令：只分析不改动）
+
+
+用户裁决语境（2026-10-02）：先系统性分析当前代码是否适配 B案，**不着急改动**；本节为全量分析存档。B案语义按 #442 裁决 note：SSE 原始 delta 直入引擎，绕开数据层 StateFlow→ChatMessageList 快照重组链（spec 2026-09-26 架构1 节奏收编；架构2 预留高度表见 §6.5 重估）。
+
+### 6.1 现行管线全景（每 100ms 文本 flush 的实际逐跳路径，2026-10-02 代码实测）
+
+1. **SSE 咽喉**：三服务器源（V1/V2/DSH）全部收口于 `MessageEventHandler.handleMessagePartDelta`（MessageEventHandler.kt:975）→ `pendingDeltas` 缓冲 + `scheduleFlush()`（不取消在途定时器——铁律）。
+2. **flush（Default 线程）**：`flushPendingDeltas`（:424）= isStaleDelta 过滤（读 `_parts.value` 终态包含判定，#265/#266 语义）→ `_parts.update{}` 走 `MessageMergeEngine.applyDelta`（endsWith 去重+#223/#230 重建兜底）→ **StateFlow 发射**。持久化另路：`deltaPersistQueue` 增量 appendPartTexts（#340/#57 合并写）。
+3. **发射源唯一性（本分析关键实测）**：`getMessagesFlow`（ChatRepositoryImpl.kt:74）冷种子仅 `first()` 读 Room，之后 `emitAll(eventDispatcher.messages)` 纯内存热视图——Room 持久化写**不回流 UI**。故每文本 flush **唯一滴答源 = `_parts`**（combine 十源中 getAllPartsMap 一支）；`_messages` 仅消息级事件滴答。
+4. **ViewModel 投影**：MessageDataDelegate 十源 combine（:190，parts/加载/翻页/工具展开/status/toolProgress）整体重跑：会话投影 O(n)+ChatMessage 实例缓存逐条 `cached.parts === injected` 比对（仅流式消息失配换新实例）→ messageListState 新实例。
+5. **ChatScreen 投影**：messageState collect →（JankHold：仅滚动窗内冻结）→ `rawMessages` remember 重跑：reversed+filterNot（遮蔽/压缩绑定）+dedupeByEventIdentity+mapIndexedNotNull O(n)+`diffDisplayItemsInto` O(n)（槽位差量 set——**结构性改善**：仅尾槽失效）→ `rawMessages` 新 List 实例。
+6. **ChatMessageList 整函数体重跑（根因二主面）**：rawMessages 参数新实例 → ~2756 行函数体重跑。逐项实测：
+   - `remember(rawMessages)` lambda 全部重执行：turnGroups/turnAnchors 生命周期签名 O(n)（缓存命中免重建但 lambda 本身重跑）、streamingMsgId 扫描、nextReal/hasLater 两 map 重建 O(n)；
+   - `renderableTurns` 逐消息**内容指纹**（流式消息全文本哈希 O(len)/flush——Default 线程 isStaleDelta O(len) 之外的第二个 O(len)/flush 面）；
+   - **chatEntries 不重建**（实测键分析：displayItems.size/turnGroups/turnAnchors/streamingMsgId/chunkPlans/segPlans/recentKeys/streamShards 在纯文本增长时全部相等——签名缓存生效，仅结构性事件/毕业发布触发重建。比 25 世轮根因清单时点已收敛）；
+   - itemsIndexed content lambda 可见项重执行：键比对后**仅流式 item 重组**（指纹缓存）。
+7. **必要工作面（item 级）**：流式 item → PartContent → MarkdownContent(markdown=part.text) → `normalized=remember(markdown){normalizeForStreaming}` O(len)（哨兵快路径）→ pilot LaunchedEffect 重启 → 前缀差分 O(delta) → SafePrefixGate → state.append → 帽尾块测量+配对。
+8. **reasoning 期同链**：终点 ReasoningBlock(text=part.text) 整块重排版（无 pilot 增量机制）；glm/LongCat 推理先行轮次的 Waiting 期全程走 1-6 全链。
+
+**根因二残余面精确化**：相对 437:402 时点清单，displayItems 差量写/指纹缓存/签名缓存已把「可见 item 全量重组」收敛为「单 item 重组」；**残余=步骤 4-6 的每批顶层重跑**（combine O(n)、ChatScreen 投影 O(n)、ChatMessageList 函数体+全部 remember(rawMessages) lambda+指纹哈希），这正是裁决 note 所指「A案不消除每批顶层重跑」。
+
+### 6.2 B案可复用接缝盘点（A2 之后资产，成熟度高于 spec 撰写时点）
+
+1. **单一咽喉**：handleMessagePartDelta 三源收口——B案切割点唯一，无服务器分支。
+2. **三分离已成型**：flushPendingDeltas 内累积（pendingDeltas）/发射（_parts.update）/持久化（deltaPersistQueue）本就是三段——B案切割是**函数内改写**，非跨模块重构。
+3. **broker 单例先例**（A2 新增）：snapshot-state 发布 map + partId 注册生命周期 + clearAll + controllerFor 回退——delta bus 同构可复制（或 broker 扩 lane）。
+4. **pilot append 机器完整**：前缀差分/gate/#471③归一化（终帧=流式帧）/#472 非前缀宽限/resetKey/#H4 快速重灌/shard adopt 冷续——B案只换**驱动源**（参数快照→bus 快照），机器本体不动。
+5. **JankHold 终态实证（最强可行性证据）**：滚动窗内冻结 messageState+rawMessages、pilot append 照常、渲染正确（二十四世轮终修+后续重度使用）——「UI 快照静止+item 级增长」**正是 B案目标态的手动模拟**，已在生产路径验证。B案实质=把该终态常态化+把增量喂送搬到冻结点之前。
+6. **完结换装三件套就位**：#440 槽位键（t_X 稳定）、#472 完结保持（pilotTerminalHold）、PartUpdated 权威替换走结构性 _parts 发射——text.ended 到达时 pilot 前缀差分自证（等值=no-op；不等=既有宽限+重建兜底）。
+7. **ScrollQuiescence 单信号源**：append 暂缓/settle 追平语义原样保留。
+8. **cadence 常量已归引擎域**（5d061df2）：bus 节奏即引擎策略，架构1「48ms 退役为引擎内部策略」的常量面已就位（100ms 现值，可调）。
+9. **RenderSupplyCoordinator 推送制**：onWorldArrived/onViewportChanged 由 list 侧 LaunchedEffect 推送——快照静止后 world 推送自然停，plans 稳定，chatEntries 键面静。
+
+### 6.3 架构2（预留高度表/预测量管线）关系重估
+
+A案冻结分片已以「静态内容零重测（Compose 布局缓存）+尾块小重测」**等价达成架构2的测量面目标**（根因一：帽全子树重测——437:400 已收口为帽=尾块 item）；预留高度表独有值（施加前预知高度）被「帽配对+I1′ 同帧原子」（VPT/VDRAW 证据链）覆盖。**裁决建议：B案提前范围裁为架构1（节奏收编）单干；架构2维持 parked**（spec 2026-09-26 变更记录第 1 条的 R2 预期已由 A案以不同机制兑现），A4 正式复测不达标再议。
+
+### 6.4 B案落点设计草案（记录备裁，不实施）
+
+- **数据层**（flushPendingDeltas 内切割）：per-flush 改为①影子累积（shadowParts——**复用 MessageMergeEngine.applyDelta 纯函数**，#223/#230/#265 语义不回退）②bus 发布（聚合 delta 按消息，singleton snapshot-state）③持久化照旧；`_parts.update` **延迟到结构性事件**（part started/ended、message add/update/complete、tool/step 事件照常即发）。isStaleDelta/inferDeltaKind 读点改读影子。
+- **UI-text**：pilot 喂养源换 bus 快照（markdown 参数降级为结构性对账源——完结权威/REST resync/翻页回收冷启时兜底，**真相源仍是 _parts+Room，bus 只是流式期快路径**——R7 降级安全）。
+- **UI-reasoning**：ReasoningBlock 直读 bus snapshot state（块内作用域重组；无 markdown 增量需求，Text 重排版即必要工作）。
+- **对账 cadence**：流式期低频结构性回灌（如 1s^-1 或 N 字符阈值）保复制/搜索新鲜度（R4）。
+
+### 6.5 风险清单（spec 批裁决点）
+
+R1 reasoning 覆盖（不覆盖=根修对 glm 系主流模型不成立——**必须进范围**）；R2 影子累积复用 applyDelta；R3 读点改影子；R4 流式中读旧文（复制/搜索）；R5 完结权威对账（机器已在，验证面）；R6 会话切换/多服务器/DSH echo 竞态（bus partId 键+clearAll，#490 族语义保持）；R7 回收/翻页/冷启降级路径（bus 缺席=原路径，非真相源）；R8 JankHold 退役时机（B案后成死代码——过渡期保留，验证后另批清扫，**probe 保留纪律同理**）；R9 归一化全串重算 O(len)/flush（哨兵快路径已限成本；增量归一化留优化位非阻塞）。
+
+### 6.6 适配性结论
+
+**适配，且接缝成熟度显著高于 spec 撰写时点**（6.2 九项）。实质表述：B案=「把 JankHold 已验证的滚动窗终态常态化，并把增量喂送点搬到冻结点之前」——不是开新架构，是沿既有缝把缓解装置换成常态装置。无阻塞性技术缺口；R1-R9 均为 spec 批裁决点而非可行性风险。
+
+### 6.7 若裁决提前：批次草案与验证面（记录备裁）
+
+B1 spec 批（R1-R9 裁决+bus 形态+对账 cadence+STREAM_DELTA_BUS dev 开关）→ B2 数据层切割 → B3 text 接线 → B4 reasoning 接线 → B5 表征+E2E（完结/回收/翻页/切换/resync）→ B6 真机判定。**根修达成判据**：流式稳态 ChatMessageList 函数体重执行≈结构性事件数（今日 ~10/s→≈0/s，重组计数器/[DEBUG-jk] 观测）；[452-combine] 发射频率同降；既有铁律网全绿（VDRAW 泄漏=0/CONTENT-BLINK=0/#492 检测网/贴底跟随与读历史回归）。与 A 线关系：A2.5/A4 与 B 案正交可并行（A 线修测量面，B 线修重组面）——次序裁决留用户。
