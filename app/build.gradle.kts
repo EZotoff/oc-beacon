@@ -97,7 +97,7 @@ android {
             // #503（2026-10-02 真机定罪）：毕业 fire 回卷循环（fire→条目churn→条目回收
             //→pilot 冷启→origin 回滚重冻结→再 fire，9 fire/9s）——流式尾段重建循环。
             // 关闭冻结分片（性能优化，回退=单容器流式；#501 正文修复在 DELTA_BUS 不受影响）
-            buildConfigField("boolean", "STREAM_SHARD_PILOT", "false")
+            buildConfigField("boolean", "STREAM_SHARD_PILOT", "true")
             // #442 B案 节奏收编（spec 2026-10-02-442-b-cadence-incorporation）：dev 先行
             buildConfigField("boolean", "STREAM_DELTA_BUS", "!$streamFlagsOff")
             // 2026-08-13 用户决策：dev 测试构建 versionCode 用 Unix 时间戳——

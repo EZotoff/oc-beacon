@@ -61,6 +61,7 @@ import dev.leonardo.ocbeacon.domain.model.Message
 import dev.leonardo.ocbeacon.ui.screens.chat.components.RenderReadiness
 import dev.leonardo.ocbeacon.domain.model.Part
 import dev.leonardo.ocbeacon.domain.model.SseEvent
+import dev.leonardo.ocbeacon.domain.model.PartIdContract
 import dev.leonardo.ocbeacon.ui.components.ProviderIcon
 import dev.leonardo.ocbeacon.ui.screens.chat.ChatMessage
 import dev.leonardo.ocbeacon.ui.screens.chat.dialog.QuestionCard
@@ -333,7 +334,9 @@ internal fun MessageCardAssistant(
                                 if (item.group.part.id == renderableTurn.lastStepDividerBeforePartId) {
                                     StepDivider(0)
                                 }
-                                key(item.group.part.id) {
+                                // #507:派生 part 用换装稳定键（kind+ordinal）——DSH
+                                // 完结换代(dsh-tXs1→seq-…)子树不换血；非派生 id 原样。
+                                key(PartIdContract.swapStableKey(item.group.part.id)) {
                                 // 滚动预解析消费：长文本 part 取 Parsed state（与驱动端
                                 // key 约定：partId；阈值一致 ≥200 字符）。
                                 // 2026-08-20 滚动卡顿根因修复：原 current() 走快照 Map 读
@@ -870,7 +873,8 @@ internal fun ChunkAssistantItems(
                     if (item.group.part.id == renderableTurn.lastStepDividerBeforePartId) {
                         StepDivider(0)
                     }
-                    key(item.group.part.id) {
+                    // #507:派生 part 用换装稳定键（kind+ordinal）——同平铺分支。
+                    key(PartIdContract.swapStableKey(item.group.part.id)) {
                     val part = item.group.part
                     val preParsed = (part as? Part.Text)
                         ?.takeIf { it.text.length >= 200 && it.synthetic != true && it.ignored != true && !it.text.contains("User has answered") }

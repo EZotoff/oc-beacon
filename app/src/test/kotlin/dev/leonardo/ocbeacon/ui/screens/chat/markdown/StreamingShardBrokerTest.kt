@@ -46,11 +46,12 @@ class StreamingShardBrokerTest {
         val order = mutableListOf<String>()
         StreamingShardBroker.register("t_a", "p_a") { order += "capReset" }
         val ctl = StreamingShardBroker.controllerFor("p_a")!!
-        ctl.fire(
+        val ok = ctl.fire(
             chunks = listOf(FrozenChunk(0, 10), FrozenChunk(10, 20)),
             texts = listOf("AAAA\n\n", "BBBB\n\n"),
             tailFrom = 20,
         )
+        assertTrue(ok) // #503 R2：发布成败回执
         assertEquals(listOf("capReset"), order)
         val pub = StreamingShardBroker.shards["p_a"]!!
         assertEquals("t_a", pub.turnKey)
@@ -66,7 +67,7 @@ class StreamingShardBrokerTest {
         StreamingShardBroker.register("t_a", "p_a") {}
         val ctl = StreamingShardBroker.controllerFor("p_a")!!
         StreamingShardBroker.unregister("p_a")
-        ctl.fire(listOf(FrozenChunk(0, 5)), listOf("X"), 5)
+        assertFalse(ctl.fire(listOf(FrozenChunk(0, 5)), listOf("X"), 5)) // #503 R2：no-op 回 false
         assertNull(StreamingShardBroker.shards["p_a"])
     }
 
@@ -84,7 +85,7 @@ class StreamingShardBrokerTest {
         assertEquals(listOf(FrozenChunk(0, 10)), seed.chunks)
         assertEquals(10, seed.tailFrom)
         // 但再 fire 已无钩子（no-op，防幽灵发布）
-        ctl2.fire(listOf(FrozenChunk(0, 99)), listOf("Y"), 99)
+        assertFalse(ctl2.fire(listOf(FrozenChunk(0, 99)), listOf("Y"), 99)) // 防幽灵发布=false
         assertEquals(10, StreamingShardBroker.shards["p_a"]!!.tailFrom)
     }
 

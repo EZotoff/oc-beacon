@@ -509,23 +509,32 @@ internal fun rememberPilotStreamingMarkdownState(
                 // 重建走 #H4 快速重灌（≤800ch 尾单帧完成；大尾块数帧回涨，
                 // A3 影子态换装消除该窗口）
                 shadowLen = if (shardMachine.armedOrigin >= 0) sliceOrigin + released - shardMachine.armedOrigin else 0,
+                // #503 R1：回退宽限判定的壁钟注入（纯函数 machine 无时钟）
+                nowMs = android.os.SystemClock.elapsedRealtime(),
             )
             when (act) {
                 is SplitAction.Fire -> {
+                    // #503 R2 事务性：发布成功才落账/推进——未注册（回收竞态）
+                    // 返回 false 时账本与 pilot 原地不动，下批重试
                     val texts = act.plan.chunks.map { c -> normalized.substring(c.from, c.to) }
-                    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-                        AppLogger.i("MDPilot", "shard fire origin=" + act.plan.tailFrom +
-                            " chunks=" + act.plan.chunks.size +
-                            " tail=" + (normalized.length - act.plan.tailFrom) + "ch")
+                    val published = shard.fire(act.plan.chunks, texts, act.plan.tailFrom)
+                    if (published) {
+                        shardMachine.confirmFire()
+                        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                            AppLogger.i("MDPilot", "shard fire origin=" + act.plan.tailFrom +
+                                " chunks=" + act.plan.chunks.size +
+                                " tail=" + (normalized.length - act.plan.tailFrom) + "ch")
+                        }
+                        // 帽 hardReset → 发布 → 切尾重建：同协程步，换装帧原子见三者
+                        sliceOrigin = act.plan.tailFrom
+                        prev = null
+                        released = 0
+                        fastRefeed = true
+                        resetKey++
+                        return@LaunchedEffect // 新实例+新原点由重启的 effect 首跑接管
+                    } else if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                        AppLogger.w("MDPilot", "shard fire dropped (unregistered) — retry next batch")
                     }
-                    // 帽 hardReset → 发布 → 切尾重建：同协程步，换装帧原子见三者
-                    shard.fire(act.plan.chunks, texts, act.plan.tailFrom)
-                    sliceOrigin = act.plan.tailFrom
-                    prev = null
-                    released = 0
-                    fastRefeed = true
-                    resetKey++
-                    return@LaunchedEffect // 新实例+新原点由重启的 effect 首跑接管
                 }
                 SplitAction.Reset -> {
                     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {

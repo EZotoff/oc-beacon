@@ -29,4 +29,24 @@ object PartIdContract {
     /** 未注册 part 到达 delta 时的 kind 推断（#230）。返回 "reasoning" | "text"。 */
     fun kindOf(id: String): String =
         if (id.contains(REASONING_MARKER)) "reasoning" else "text"
+
+    /**
+     * #507 换装稳定组合键：派生 id 的**消息内逻辑身份**（kind+ordinal 后缀）。
+     *
+     * DSH 完结换代（流式宿主 `dsh-t{turn}s{step}` → 权威 `seq-…`）时消息 id 前缀
+     * 更换，但 kind/ordinal 编号域两侧同一（mapper 契约：整装 content 下标 =
+     * 实况 chunk.index 同一编号域）——取后缀为 UI 组合键，`key(…)` 跨换代连续，
+     * 子树（#472 pilot 保持记忆/流式状态）不换血；消息级 `t_` 键另有 #440 槽位锚
+     * （锚 user 消息 id）同为换装稳定。非派生 id（服务器原生/legacy）原样返回——
+     * 其 id 本身即稳定身份（OpenCode SSE 完结不换代，无此症）。
+     *
+     * **仅用于消息卡内兄弟作用域的组合键**（同消息内 kind+ordinal 唯一）；
+     * 全列表作用域的键（toolExpandedStates 等跨消息 Map）不得使用——会跨消息
+     * 碰撞。数据层（merge/Room/bus/registry 键）一律仍用全 id。
+     */
+    fun swapStableKey(id: String): String {
+        val i = maxOf(id.lastIndexOf(TEXT_MARKER), id.lastIndexOf(REASONING_MARKER))
+        if (i < 0) return id
+        return id.substring(i + 1) // "text_ord_1" / "reasoning_ord_0"
+    }
 }

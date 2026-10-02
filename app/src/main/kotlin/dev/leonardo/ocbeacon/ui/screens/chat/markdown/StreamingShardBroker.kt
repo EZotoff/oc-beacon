@@ -58,8 +58,10 @@ internal interface ShardController {
     /** 冷启播种毕业计划（冻结 append-only 续账——防重复毕业已发布区间）。 */
     fun coldStartPlan(): StreamingGraduation?
 
-    /** Fire：先 [ShardRegistration.onFire]（帽 hardReset），后原子发布。 */
-    fun fire(chunks: List<FrozenChunk>, texts: List<String>, tailFrom: Int)
+    /** Fire：先 [ShardRegistration.onFire]（帽 hardReset），后原子发布。
+     *  #503 R2：返回发布成败——未注册（回收竞态）false，接线层据此不落账
+     *  （machine.confirmFire 不调用=下批重试），账本与发布态不脱钩。 */
+    fun fire(chunks: List<FrozenChunk>, texts: List<String>, tailFrom: Int): Boolean
 
     /** 非前缀重建（resetKey 路径）：冻结文本已陈旧——清本 part 发布。 */
     fun onRebuild()
@@ -116,11 +118,10 @@ internal object StreamingShardBroker {
             )
         }
 
-        override fun fire(chunks: List<FrozenChunk>, texts: List<String>, tailFrom: Int) {
+        override fun fire(chunks: List<FrozenChunk>, texts: List<String>, tailFrom: Int): Boolean {
             // 帽 hardReset 先行（同协程步）：换装帧 measure 见 reserved<0 直通真高
             // ——沿用旧 reserved 会因「帽不回改」使尾块永久虚高冻结区高度
-            val reg = registrations[partId]
-            if (reg == null) return
+            val reg = registrations[partId] ?: return false
             reg.onFire()
             val prev = shards[partId]
             val docs = chunks.mapIndexed { i, c ->
@@ -133,6 +134,7 @@ internal object StreamingShardBroker {
                 tailFrom = tailFrom,
                 generation = (prev?.generation ?: 0) + 1,
             ))
+            return true
         }
 
         override fun onRebuild() {

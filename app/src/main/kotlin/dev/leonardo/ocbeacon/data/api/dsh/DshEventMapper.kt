@@ -83,7 +83,20 @@ object DshEventMapper {
      */
     private val stepStartTimes = HashMap<String, Long>()
 
+    /**
+     * #507 块级起止时刻（key = "sid:turn:step|ordinal"）：实况 block-start 记
+     * 起始；前驱块结束=后继 block-start 时刻（块严格顺序，DSH 的 block-end 帧
+     * 被服务端压到流尾、时间戳为投递时刻非真实完成——不能用作结束）。整装
+     * assistant/message 结算时读后删（真实块时长供思考卡显示）；turn/end 清
+     * 该会话残留。历史重放无实况块 → 空表回退事件时刻（时长 0=不显示，现状）。
+     */
+    private val blockStartTimes = HashMap<String, Long>()
+    private val blockEndTimes = HashMap<String, Long>()
+
     private fun stepKey(sessionId: String, turn: Long, step: Long) = "$sessionId:$turn:$step"
+
+    private fun blockKey(sessionId: String, turn: Long, step: Long, ordinal: Long) =
+        stepKey(sessionId, turn, step) + "|" + ordinal
 
     /**
      * 首 token 时刻（dsh-llm `isTokenDelta` 规则的 app 侧复刻，权威 =
@@ -700,6 +713,9 @@ object DshEventMapper {
             "turn/end" -> {
                 // #411：轮结束清该会话在途步起始时刻（取消步不结算、不残留）
                 stepStartTimes.keys.removeAll { it.startsWith("$sessionId:") }
+                // #507：块起止时刻同域清理（|ordinal 后缀不参与前缀匹配）
+                blockStartTimes.keys.removeAll { it.startsWith("$sessionId:") }
+                blockEndTimes.keys.removeAll { it.startsWith("$sessionId:") }
                 val idle = DshMappedEvent.Sse(SseEvent.SessionIdle(sessionId, time.takeIf { it > 0 }))
                 val reason = data.obj("reason")
                 when (reason?.str("kind")) {
@@ -1202,31 +1218,47 @@ object DshEventMapper {
             )
         )
         val content = message?.arr("content") ?: emptyList()
+        // #507 整装块时刻：实况记账的块起止（读后删）；历史重放/无实况块 → 回退
+        // 事件时刻（start=end → 时长 0 → 显示层不显示，现状语义）。末块无后继 →
+        // 结束回退事件时刻（消息完结≈末块真实完成）。
+        fun blockTimeOf(ordinal: Int): Pair<Long, Long> {
+            if (turn == null || step == null) return time to time
+            val bk = blockKey(sessionId, turn, step, ordinal.toLong())
+            val start = blockStartTimes.remove(bk) ?: time
+            val end = blockEndTimes.remove(bk) ?: time
+            return start to maxOf(end, start)
+        }
         content.forEachIndexed { i, el ->
             val block = el as? JsonObject ?: return@forEachIndexed
             when (block.str("type")) {
-                "reasoning" -> events += DshMappedEvent.Sse(
-                    SseEvent.MessagePartUpdated(
-                        Part.Reasoning(
-                            id = PartIdContract.derive(id, "reasoning", i.toLong()),
-                            sessionId = sessionId,
-                            messageId = id,
-                            text = block.str("text") ?: "",
-                            time = Part.Reasoning.Time(start = time, end = time),
+                "reasoning" -> {
+                    val (bStart, bEnd) = blockTimeOf(i)
+                    events += DshMappedEvent.Sse(
+                        SseEvent.MessagePartUpdated(
+                            Part.Reasoning(
+                                id = PartIdContract.derive(id, "reasoning", i.toLong()),
+                                sessionId = sessionId,
+                                messageId = id,
+                                text = block.str("text") ?: "",
+                                time = Part.Reasoning.Time(start = bStart, end = bEnd),
+                            )
                         )
                     )
-                )
-                "text" -> events += DshMappedEvent.Sse(
-                    SseEvent.MessagePartUpdated(
-                        Part.Text(
-                            id = PartIdContract.derive(id, "text", i.toLong()),
-                            sessionId = sessionId,
-                            messageId = id,
-                            text = block.str("text") ?: "",
-                            time = Part.Text.Time(start = time, end = time),
+                }
+                "text" -> {
+                    val (bStart, bEnd) = blockTimeOf(i)
+                    events += DshMappedEvent.Sse(
+                        SseEvent.MessagePartUpdated(
+                            Part.Text(
+                                id = PartIdContract.derive(id, "text", i.toLong()),
+                                sessionId = sessionId,
+                                messageId = id,
+                                text = block.str("text") ?: "",
+                                time = Part.Text.Time(start = bStart, end = bEnd),
+                            )
                         )
                     )
-                )
+                }
                 // E2E 实证（1192 例）：tool-call/tool-result 块是核心 ContentBlock 的冗余镜像——
                 // 工具卡真源 = tool/call|result 事件对（会话 B 实证渲染正常）。静默确认防重复卡。
                 "tool-call", "tool-result" -> Unit
@@ -1713,6 +1745,14 @@ object DshEventMapper {
                     )
                 }
                 val events = mutableListOf(DshMappedEvent.Sse(SseEvent.MessagePartUpdated(part)))
+                // #507 块时刻记账：起始=本帧时刻；前驱块结束=本帧时刻（后继启动⇒
+                // 前驱完成，与下方 #506 前驱终态补丁同一推断）。
+                if (turn != null && step != null) {
+                    if (blockStartTimes.size > 256) { blockStartTimes.clear(); blockEndTimes.clear() }
+                    val bk = blockKey(sessionId, turn, step, index)
+                    blockStartTimes[bk] = time
+                    if (index > 0L) blockEndTimes[blockKey(sessionId, turn, step, index - 1)] = time
+                }
                 // #506：后继块启动 ⇒ 前驱块已完成——就地发前驱终态补丁。DSH 块
                 // 严格顺序（t31/t32 抓包零交错实证），但 block-end 被服务端压到
                 // 整流结束才发（t32：思考 22:10:56 完，block-end 22:12:03.9 才到）

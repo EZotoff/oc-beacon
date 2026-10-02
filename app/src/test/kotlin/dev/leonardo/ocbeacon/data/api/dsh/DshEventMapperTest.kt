@@ -245,6 +245,56 @@ class DshEventMapperTest {
         assertTrue(events.single() is SseEvent.MessagePartUpdated)
     }
 
+    // ============ #507 整装块真时长（实况块起止记账）============
+
+    private fun chunkEventAt(t: Long, turn: Long, step: Long, chunkJson: String): JsonObject =
+        json.parseToJsonElement(
+            """{"type":"assistant/chunk","seq":100,"time":$t,"data":{"turn":$turn,"step":$step,"chunk":$chunkJson}}"""
+        ).jsonObject
+
+    @Test
+    fun `整装块时长取实况块起止 - #507`() {
+        // 权威 part 时长此前恒 0（start=end=事件时刻）→ 完结思考卡时长消失。
+        // 根修：block-start 记起始、后继 block-start 推前驱结束（DSH block-end
+        // 帧时间戳=流尾投递时刻非真实完成，不能用），整装结算读后删。
+        val sid = "fixture-blocktime"
+        DshEventMapper.mapSessionEvent(sid, chunkEventAt(1000, 7, 1,
+            """{"type":"block-start","index":0,"blockType":"reasoning"}"""))
+        DshEventMapper.mapSessionEvent(sid, chunkEventAt(8000, 7, 1,
+            """{"type":"block-start","index":1,"blockType":"text"}"""))
+        val mapped = DshEventMapper.mapSessionEvent(
+            sid,
+            json.parseToJsonElement(
+                """{"type":"assistant/message","seq":101,"time":60000,"data":{"turn":7,"step":1,""" +
+                    """"message":{"role":"assistant","content":[{"type":"reasoning","text":"想"},{"type":"text","text":"答"}]}}}"""
+            ).jsonObject,
+        )
+        val parts = eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>()
+            .map { it.part }
+        val reasoning = parts.filterIsInstance<Part.Reasoning>().single()
+        val text = parts.filterIsInstance<Part.Text>().single()
+        assertEquals(1000L, reasoning.time!!.start)   // 块启动时刻
+        assertEquals(8000L, reasoning.time!!.end)     // 后继块启动=思考结束
+        assertEquals(8000L, text.time!!.start)
+        assertEquals(60000L, text.time!!.end)         // 末块无后继=事件时刻
+    }
+
+    @Test
+    fun `历史重放无实况块回退事件时刻 - #507`() {
+        // 历史加载（无 chunk 流）→ start=end=事件时刻（时长 0=不显示，现状语义）。
+        val mapped = DshEventMapper.mapSessionEvent(
+            "fixture-history",
+            sessionEvent(
+                "assistant/message",
+                """{"turn":9,"step":1,"message":{"role":"assistant","content":[{"type":"reasoning","text":"h"},{"type":"text","text":"b"}]}}""",
+            ),
+        )
+        val reasoning = eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>()
+            .map { it.part }.filterIsInstance<Part.Reasoning>().single()
+        assertEquals(1788109999000L, reasoning.time!!.start)
+        assertEquals(1788109999000L, reasoning.time!!.end)
+    }
+
     @Test
     fun `usage chunk is ignored for 276 session usage`() {
         val m = mappedFrames("dsh/mux-frames-extra.jsonl")[10]

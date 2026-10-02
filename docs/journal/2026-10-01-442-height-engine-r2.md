@@ -401,3 +401,35 @@ MDResize: card=b21bbd95-272 h=9597 d=9397    ← 100ms 回弹
 
 完结换代（删 dsh-t{N}s1 合成消息 + 上权威 seq 消息，不同 message id 不走 mergePart）后思考卡时长消失：转写块无 time 字段（实测 message.content 仅 type/text），跨消息时间迁移需 temporal join，用户未报、留待裁决。
 
+
+## ## 14. 三卡根修批次：#503 分片回卷根修 + #504 深层身份连续 + #506 时长残余（2026-10-02 深夜三段，用户裁决「三者都根修+回归」）
+
+### #503 根修：回退宽限 + fire 事务性（StreamingSplitMachine/Broker/Pilot）
+
+回卷闭环（Explore agent 机制地图定罪）：Fire → 帽 hardReset+shards 写+resetKey++/sliceOrigin 推进 → chatEntries 重算插 #g 键 → LazyColumn 重排驱逐 Turn item → unreg→reg → pilot 冷启（coldStartOrigin+coldStartPlan adopt）→ 尾段再攒 2000ch → Arm→Fire 循环；**回滚环**（真机 9 fire/9s 的直接形态）：冷启重组窗的瞬时陈旧快照（总线让位回退）短于 plan.tailFrom → Machine.Reset 单批即判死（无宽限）→ onRebuild 销毁已发布集 + origin 归零 → 重播已发布区间 → 再毕业再 fire。
+
+两处根修（探查判定的最薄弱环节）：
+1. **R1 回退宽限窗**（SHARD_RESET_GRACE_MS=300，与 pilot 非前缀宽限同语义）：瞬时回退 None 等待恢复；持续超宽限才 Reset（真重生成）。nowMs 注入保持纯函数可测。
+2. **R2 fire 事务性**：旧实现 Machine 在发布**前**推进 plan（fire 对未注册 no-op 时账本与 broker 脱钩=内容缺段）；现 Fire 携带 pendingFire 返回、发布成功（Broker.fire 回 Boolean）后接线层 confirmFire() 落账，失败下批重试同计划。附带消除旧「空 publish 重发旧计划」的无效 churn（fired≠armedOrigin 时解除武装而非 Fire）。
+
+真机 t36（6000 字长文，dev 旗标重开）：**三次毕业 origin 严格递增（2050→4177→6185）chunks append-only 递增、零 Reset、零 dropped、shard-reg=1/unreg=0**——对比修复前同 origin 回卷 9 fire/9s。回卷消灭。
+
+### #504 深层根修：part 组合键归一化（PartIdContract.swapStableKey）
+
+架构事实：消息级 t_ 键已有 #440 槽位锚（锚 user 消息 id，换装稳定）——断层只在 part 级 key(part.id)（dsh-tXs1_text_ord_1 → seq-…_text_ord_1 前缀换代，kind/ordinal 编号域两侧同一=mapper 契约）。根修=派生 id 取 kind+ordinal 后缀为消息卡内组合键（非派生 id 原样），子树跨换代存活——#472 holdPilotTerminal 机制在 DSH 上首次可用（pilotEverRendered 不再死），#504 指纹桥降为第二道防线。红线：仅限消息卡内兄弟作用域（跨消息 Map 键不得用——会碰撞）；数据层（merge/Room/bus/registry）全 id 不变。
+
+### #506 残余根修：mapper 块时刻记账（真块时长）
+
+定罪修正：权威 part 其实带 time 但 start=end=完结事件时刻（时长恒 0）——非「转写无 time」。DSH block-end 帧时间戳=流尾投递时刻非真实完成（不能用作块结束）。根修：blockStartTimes/blockEndTimes 记账（block-start(N) 记 N 起始 + 推 N-1 结束——与 #506 前驱终态补丁同推断），整装结算读后删、历史重放回退事件时刻（现状语义）。
+
+### 真机 E2E（t36，7440 字 + 分片开启 + 全链根修包）
+
+- 换装帧 `src=asyncInline`（桥命中同步解析）+ `MDResize h=17554 d=14602 首测即全高`——零 200px 桩零回弹零 forensic miss。
+- 思考卡完结后显示 **5.2s 真时长**（与 text 块启动时刻吻合；修复前恒空）。
+- 分片完结形态记录：h 2952→17554 单帧增长=冻结条目被权威全文吸收（shardPartIdx 按 partId 查询 miss → 条目退场），贴底配对吸收——观测无异常。
+
+### 回归
+
+- 全量单测绿×2（旗标改后分片测试臂真正执行）；新增：Machine 宽限/事务性 3 用例、Broker fire 回执 3 处断言、swapStableKey 4 用例、整装块时长 2 用例。
+- STREAM_SHARD_PILOT dev=true（根修已验证，交用户自然使用验收）；beta/stable 保持 false。
+
