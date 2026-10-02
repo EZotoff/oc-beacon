@@ -58,6 +58,7 @@
   - 根因：#g 条目生成的发布查找走 turnGroups 的 cm.parts——turnGroups 是结构缓存（id 生命周期签名），流式宿主 ChatMessage 捕获于创建时刻（parts 尚空，出生在后续 delta 批），签名不变缓存永不刷新 → 查找恒 miss。渲染管道（renderableTurns miss 分支修正）看得见 parts——两管道视野分裂。
   - 修复：发布查找改 turnKey 直查（PublishedShards.turnKey 同源注册期条目键），组遍历降兜底——绕开整类 parts 引用陈旧性。回归测试 StreamShardEntryEmissionTest（结构缓存空 parts 场景红→绿）；真机 E2E 毕业①len2179/h5065px 毕业②len2093/h4796px 冻结条目全高组合，视觉满屏连续正文零消失。508-shard 探针（组合+实测高度）按 keep-probes 裁决保留 DEBUG-only。
   - 展开收起不稳定主根因同源（内容消失+整视口条目churn）；修复后毕业重排仍在（冻结条目插入+尾块收缩=引擎配对合法转移）——待用户验收确认，若残余另立卡。
+  - 复杂交互矩阵验收（2026-10-03 晨，8 场景全过）：T1 毕业时上滚阅读（读位历经完结换装纹丝不动）/T2 流式中展开思考卡保到完结（3 毕业穿过展开态，冻结块 5380/5084/3960px 全高）/T3 六连toggle 展开收起（终态正确零破损）/T4 排队第二问（双轮交接 fires 单调）/T5 Home 后台 6s 回前台（无缝，4 fires 单调）/T6 毕业后远滚驱逐+回滚（冷启 adopt 续账，冻结条目同长重组，继续毕业 6779→9062）/T7 9500+字压力（6 fires 单调 2047→12363，每刻内容在场）/T8 退出重进冷启（8 章+结语零缺口）。全程 20+ fires 全单调、零 reset、零 dropped、零换装 forensic miss。
 
 - [~] **#506 思考卡计时拖满全程+展开内容困在 240dp 隐形滚动窗（#506）** `streaming` `dsh` `render`
   - 真机 t33/t34 定罪（用户报告）：①DSH 把 reasoning 的 block-end 压到整流结束才发（t32 抓包：思考 22:10:56 完，block-end 22:12:03.9 才到）→ time.end 迟到 67s → 计时跑满正文流式全程；②展开思考卡内容完整可达但锁在 240dp 内滚窗（无滚动条提示/流式不跟随），用户感知「展示不全」。
