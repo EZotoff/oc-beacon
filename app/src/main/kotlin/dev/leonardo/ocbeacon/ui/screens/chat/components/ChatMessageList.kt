@@ -2907,6 +2907,10 @@ fun ChatMessageList(
                                 LocalCardExpandListState provides listState,
                                 LocalCardExpandDeparture provides onExpandDeparture,
                                 LocalInStreamingTurn provides entryStreaming,
+                                // #508:宿主 item 身份——展开反射归一的折叠算术需要
+                                // 知道 +H 落在哪个 item(宿主=锚永不折叠;宿主在上方
+                                // 按增长后容量向旧侧折算)。
+                                LocalCardExpandHostKey provides entry.key,
                             ) {
                                 val extras = transcriptCardExtras[entry.key]
                                 if (extras == null || extras.isEmpty) {

@@ -89,6 +89,15 @@ internal val LocalCardExpandDeparture = compositionLocalOf<(() -> Unit)?> { null
 /** 当前 item 是否属于流式 turn(CML 逐 item 提供);true = 降级裸 AV。 */
 internal val LocalInStreamingTurn = staticCompositionLocalOf { false }
 
+/**
+ * #508:本卡宿主 item 的 key(CML 逐 item 提供)。展开反射目标归一需知 +H 增长
+ * 落在哪个 item——宿主=锚 item 时 (fii,fiso+H) 随同遍增长落地恒合法(fiso≤尺寸
+ * ⇔ fiso+H≤尺寸+H),永不折叠;宿主在锚 item 上方时才需向旧侧折算且宿主容量
+ * 按 +H 计。null=宿主未提供(横幅/预览/其他未挂供给的 item),按宿主=锚 item
+ * 兜底(反射路径现存唯一消费域=turn 条目块,恒有供给;横幅走裸 AV 不经此)。
+ */
+internal val LocalCardExpandHostKey = compositionLocalOf<Any?> { null }
+
 /** 展开位移离开贴底区(补偿后)判定阈值,对齐 isAtBottom 的 100px 判据。 */
 private const val DEPARTURE_THRESHOLD_PX = 100f
 
@@ -540,6 +549,8 @@ internal fun CardExpandReveal(
 ) {
     val listState = LocalCardExpandListState.current
     val departure = LocalCardExpandDeparture.current
+    // #508:宿主 item 身份在组合层读取(LaunchedEffect 协程内不可读 CompositionLocal)
+    val hostItemKey = LocalCardExpandHostKey.current
     if (listState == null || LocalInStreamingTurn.current) {
         // 降级:出厂过渡(与 2026-08-30 终局一致)
         AnimatedVisibility(
@@ -804,17 +815,22 @@ internal fun CardExpandReveal(
                         // 「锚定底部零位移」(上方让位=向上扩展)被用户否决,撤销。
                         // 真正的偶发跳变源=半贴底 fiso+H 超界(见下方归一)。
                         if (anchored) {
-                            // 超界防御(2026-09-29 定罪 v1 偶发):fii==0 时 fiso+H
-                            // 超过 item0 可滚范围→反射超范围 offset 的框架归一
-                            // 不受控=偶发视口跳变。预先沿可见 item 链向新端折算
-                            // 到合法 (item,offset)——数学等价(绝对滚动位不变)。
+                            // 超界防御(#466 建立;#508 根修方向修正):折叠方向=
+                            // 向旧侧(idx 递增)且宿主容量 +H——原向新侧过滤在逆布局
+                            // 下链恒只含锚 item 自身,链尽 fall-through 丢整 item 高度
+                            // (展开位移恒=H−锚item尺寸的视口跳变根因)。
                             val rawTarget = anchorFiso + H
+                            val visItems = listState.layoutInfo.visibleItemsInfo
+                            val hostIndex =
+                                if (hostItemKey != null) visItems.firstOrNull { it.key == hostItemKey }?.index ?: -1 else -1
                             val norm = normalizeExpandAnchor(
-                                listState.layoutInfo.visibleItemsInfo
-                                    .filter { it.index <= anchorFii }
-                                    .sortedByDescending { it.index }
+                                visItems
+                                    .filter { it.index >= anchorFii }
+                                    .sortedBy { it.index }
                                     .map { it.index to it.size },
                                 rawTarget,
+                                hostIndex,
+                                H,
                             )
                             dev.leonardo.ocbeacon.ui.screens.chat.components.LazyListReflection
                                 .requestScrollToItemNoCancel(
@@ -828,6 +844,7 @@ internal fun CardExpandReveal(
                                     "CardExpand",
                                     "[DEBUG-466] expand-anchor fii=" + anchorFii +
                                         " fiso=" + anchorFiso + " +H=" + H +
+                                        " host=" + hostIndex +
                                         (if (norm.first != anchorFii) " norm->" + norm.first + ":" + norm.second else "") +
                                         " pinned=" + wasPinnedToBottom,
                                 )
@@ -1618,24 +1635,38 @@ private fun dispatchClosedLoop(
 internal fun bottomPinnedExpandSkip(fii: Int, fiso: Int): Boolean = fii == 0 && fiso == 0
 
 /**
- * 展开反射目标归一(2026-09-29 四轮,纯函数可单测):半贴底 fii==0 时
- * fiso+H 超过 item0 可滚范围 → 反射超范围 offset 的框架归一不受控=偶发
- * 视口跳变(v1 残留定罪)。沿可见 item 链向新端(idx 递减)折算到合法
- * (item,offset)——数学等价(绝对滚动位不变)。零尺寸占位 item 直接穿过
- * (高度 0,offset 语义无损);链尽(已到 item0 仍超)clamp 到列表端。
+ * 展开反射目标归一(#466 建立,#508 根修):目标滚动位=当前+H,分解 (fii,fiso+H)
+ * 的合法性只取决于**锚 item 的增长后尺寸**——锚 item 唯一会变大的场合是宿主=锚
+ * item 本身(卡在可见域,增长与待定位同遍 measure 落地),此时 fiso≤尺寸 ⇔
+ * fiso+H≤尺寸+H 恒成立,永不折叠。宿主在锚 item 上方(锚 item 不增长)且
+ * fiso+H 超其尺寸时,才沿可见链**向旧侧**(idx 递增,逆布局下即折叠的正方向)
+ * 折算——宿主 item 容量按 +H 计,否则途经宿主的折叠会错一个 H(绝对位偏移)。
  *
- * @param itemsNewward 自 anchorFii 起向新端递减的 (index,height) 链
+ * #508 根因(2026-10-03 T9 定罪):原实现向**新侧**过滤折叠链——逆布局可见链
+ * 是 fii..最高可见 idx,新侧(更小 idx)已滚过不可见,链恒只含锚 item 自身;
+ * rawTarget 超锚尺寸时单步折叠后链尽,fall-through 返回 (锚idx, fiso+H−旧尺寸)
+ * ——越界穿越的整 item 高度被静默丢弃,目标恒短一个锚 item 尺寸,实际位移=
+ * H−锚item尺寸(与 fiso 无关;真机两例同值 −1024px)。原 fii==0 设计场景 item0
+ * 为流式巨轮恒不触发折叠,潜伏至中位小 item 构型(2359px 分片条目)。
+ *
+ * @param itemsOldward 自锚 item 起 idx **递增**的 (index,height) 链
+ * @param hostIndex 宿主 item idx;-1=未知(按宿主=链首=锚 item 兜底)
+ * @param hostGrowth 宿主本集增长量(+H)
  */
 internal fun normalizeExpandAnchor(
-    itemsNewward: List<Pair<Int, Int>>,
+    itemsOldward: List<Pair<Int, Int>>,
     rawTarget: Int,
+    hostIndex: Int,
+    hostGrowth: Int,
 ): Pair<Int, Int> {
     var off = rawTarget
-    for ((idx, h) in itemsNewward) {
-        if (h > 0 && off < h) return idx to off
-        off -= h.coerceAtLeast(0)
+    val host = if (hostIndex >= 0) hostIndex else itemsOldward.firstOrNull()?.first ?: -1
+    for ((idx, h) in itemsOldward) {
+        val cap = if (idx == host) h + hostGrowth else h
+        if (off < cap) return idx to off
+        off -= cap
     }
-    val last = itemsNewward.lastOrNull()
+    val last = itemsOldward.lastOrNull()
     return (last?.first ?: 0) to off.coerceAtLeast(0)
 }
 
