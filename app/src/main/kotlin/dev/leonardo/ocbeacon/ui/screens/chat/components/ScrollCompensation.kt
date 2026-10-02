@@ -117,6 +117,32 @@ internal fun shouldYieldPairing(
     readFii != lastSetFii || readFiso != lastSetFiso
 }
 
+/**
+ * #502：divergence 静止判定——读位与上一帧 yield 检查点观测值相同 **且** lastSet
+ * 已陈旧（连续 ≥2 帧引擎无 set 写入）⇒ 已定居的外部滚动（用户手势停下的新位
+ * 置 / 外部显式意图消费后的落点），**不是**引擎待消费 pending。此时须采纳为新
+ * 配对基线恢复正常求值：否则让位永久化——lastSet 仅由 applyPairedShift 写，引
+ * 擎因让位不 apply ⇒ 读位永 ≠ lastSet ⇒ 每帧作废帽释放计划 ⇒ 帽冻结在旧值
+ * （min(真高, 冻结帽高) + clipToBounds = 流式消息被裁剪在视口一小块固定区域，
+ * 完结换装 reset 才全量展示——真机定罪 2026-10-02：上翻阅读期间引擎 set(7,393)
+ * → 甩回底 (0,0) → yield×1448 / reserved 冻 685 达 12s / 真高涨至 4303）。
+ *
+ * 陈旧度守卫（防回归口）：引擎 set 是请求时即写 lastSet（measure 消费前），
+ * pending 未消费窗口内读位=旧位且静止——裸静止判定会误采纳旧位毁掉 pending
+ * 保护（「上方内容闪烁消失」根修回归）。只认「引擎近期确无 set」的静止。
+ *
+ * 「上一帧」为 null（首批/无历史）⇒ 不采纳（保持一帧让位观察期——真 pending
+ * 消费中或 fling 刚 settle，下一帧即达稳态）。
+ */
+internal fun shouldAdoptExternalPosition(
+    readFii: Int,
+    readFiso: Int,
+    prevFii: Int?,
+    prevFiso: Int?,
+    framesSinceLastSet: Long,
+): Boolean = prevFii != null && prevFiso != null &&
+    readFii == prevFii && readFiso == prevFiso && framesSinceLastSet >= 2
+
 
 /**
  * 每列表单一流式账本(ChatMessageList remember;主线程专用——measure/flush 均在 UI 线程)。
@@ -408,6 +434,16 @@ internal fun resolvePairedTarget(
 internal class FlushTaskMemory {
     var lastSetFii: Int? = null
     var lastSetFiso: Int? = null
+
+    /** #502：上一帧 yield 检查点读位——divergence 静止判定（采纳外部定居位）的观测侧。 */
+    var prevFii: Int? = null
+    var prevFiso: Int? = null
+
+    /** #502：flush 帧序（divergence 检查点递增）——lastSet 陈旧度计算基准。 */
+    var frameSeq: Long = 0L
+
+    /** #502：lastSet 写入时的帧序（applyPairedShift 写 set 与 #502 采纳写基线两处戳记）。 */
+    var lastSetFrame: Long = -1L
 }
 
 /**
@@ -459,15 +495,32 @@ internal fun streamingGrowFlushTask(
         val fiso = listState.firstVisibleItemScrollOffset
         val infos = listState.layoutInfo.visibleItemsInfo
         // 新bug根修：外部 pending 未消费（读位≠上批目标）→ 让位（配对覆盖写会抵消显式意图）
+        mem.frameSeq++
         if (shouldYieldPairing(fii, fiso, mem.lastSetFii, mem.lastSetFiso)) {
-            ledger.rebaseAll()
-            pendingReserveRelease = null
-            if (BuildConfig.DEBUG) {
-                AppLogger.d("SGR-435", "yield(external-pending) t=" + android.os.SystemClock.elapsedRealtime() +
-                    " read(fii=" + fii + ",fiso=" + fiso + ") last(fii=" + mem.lastSetFii + ",fiso=" + mem.lastSetFiso + ")")
+            if (shouldAdoptExternalPosition(fii, fiso, mem.prevFii, mem.prevFiso, mem.frameSeq - mem.lastSetFrame)) {
+                // #502：静止且 lastSet 陈旧 = 已定居的外部位置（非待消费 pending）——
+                // 采纳为配对基线，落回正常求值（帽释放计划当帧生效，防永久让位）
+                mem.lastSetFii = fii
+                mem.lastSetFiso = fiso
+                mem.lastSetFrame = mem.frameSeq
+                if (BuildConfig.DEBUG) {
+                    AppLogger.d("SGR-435", "adopt(external-settled) t=" + android.os.SystemClock.elapsedRealtime() +
+                        " fii=" + fii + ",fiso=" + fiso + " — 外部滚动已定居，重立配对基线（#502 防永久让位）")
+                }
+            } else {
+                ledger.rebaseAll()
+                pendingReserveRelease = null
+                if (BuildConfig.DEBUG) {
+                    AppLogger.d("SGR-435", "yield(external-pending) t=" + android.os.SystemClock.elapsedRealtime() +
+                        " read(fii=" + fii + ",fiso=" + fiso + ") last(fii=" + mem.lastSetFii + ",fiso=" + mem.lastSetFiso + ")")
+                }
+                mem.prevFii = fii
+                mem.prevFiso = fiso
+                return@PreDrawFlushTask true
             }
-            return@PreDrawFlushTask true
         }
+        mem.prevFii = fii
+        mem.prevFiso = fiso
         val ledgerTotal = ledger.takePaired(fii, fiso) { ik -> infos.firstOrNull { it.key == ik }?.index ?: -1 }
         // [R1-A2] 单出口：帽配对 shift 与 ledger 配对 shift 同帧叠加，单事务一次 set。
         val pendingPlan = pendingReserveRelease
@@ -616,6 +669,9 @@ private fun applyPairedShift(
                 LazyListReflection.requestScrollToItemNoCancel(listState, targetFii, targetFiso, targetKey)
                 mem.lastSetFii = targetFii
                 mem.lastSetFiso = targetFiso
+                // #502：set 写入帧戳记——divergence 陈旧度守卫的基准（pending 未消费
+                // 窗口内读位=旧位静止，近帧 set 不采纳防误毁 pending 保护）
+                mem.lastSetFrame = mem.frameSeq
             }
         }
         if (BuildConfig.DEBUG && (total != 0f || writtenReserve)) {

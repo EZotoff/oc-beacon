@@ -295,3 +295,16 @@ B1 spec 批（R1-R9 裁决+bus 形态+对账 cadence+STREAM_DELTA_BUS dev 开关
 **真机验证（13:14 E2E，TLS 1.3 prompt）**：`part-birth` 过桥 ×2（reasoning 0.15s / text 5.3s）；**shard-reg 流式期注册**（A2.5 首次在 DSH 线真实生效——此前文本 part 不在 renderItems，资格判定恒空）；B3 5.4s 即燃；MDResize 421→1586+px ~66px 步长持续增长；CML-tick=0；完结换装干净（无重复/脏行，视觉查重通过）。单测 3850/0/0，OFF 臂 15 skip（Assume 纪律）。
 
 **遗留认知**：思考期 app 呈折叠单行预览（live 更新）与 Web 展开形态不同——既有 ReasoningBlock 设计，非本缺陷范畴。beta 旗标已提升，下一 beta 版本携带本修复。
+
+## §9 #502 配对让位永久化死锁——高度帽冻结致流式消息裁剪在视口小块
+
+
+**用户定罪（2026-10-02 #501 验收中有机复现，难复现）**：「最后一条消息被限制在视口的一小块区域内，输出完毕之后就展示全消息了」。受控复现三轮（纯贴底/慢拖上翻回底/快甩）均未踩中——配方是时序敏感的。
+
+**帧级定罪链（现有埋点，turn 10 17:08:31-49）**：上翻阅读（idx 0→7，align-flip bottom=false 阅读态）→ 引擎在阅读位配对 `set(7,393)`（lastSet 写入）→ 用户甩回底 (0,0)（align-flip bottom=true）→ 回底后首个增长 flush `yield(external-pending) read(0,0) last(7,393)` → 此后 **yield×1448（每帧）**，`reserved` 冻结 685 而真高 1128→4303 → 完结换装 reset 直通真高（症状自愈）。
+
+**根因**：`shouldYieldPairing`（ScrollCompensation）的假设「读位≠上批 set 目标 ⇒ 存在待消费外部 pending」只对引擎自己写的 pending 成立（set 请求时即写 lastSet，measure 消费后读位=目标，让位自愈）。用户手势是**已完成**的外部滚动：读位永 ≠ lastSet，而 lastSet 仅由 applyPairedShift 写——引擎因让位不 apply ⇒ 永不让位条件解除。鸡生蛋死锁。每帧 `pendingReserveRelease = null` 作废帽释放计划 → 帽协议 `min(child.height, reserved)` + `clipToBounds`（底对齐 place）= 消息裁剪在冻结帽高的小框。**暴露条件**：#501 后 DSH 流式期有真实增量可卡（此前正文不增长无增量），用户滚动测试凑齐「流式中+上翻阅读（引擎 set）+甩回底」配方。
+
+**修复（静止采纳 + 陈旧度守卫）**：`shouldAdoptExternalPosition(read, prev, framesSinceLastSet)`——读位连续两帧静止 **且** lastSet 陈旧（≥2 帧引擎无 set 写入；守卫防误毁引擎 pending 未消费窗口的保护——set 请求时即写 lastSet、消费前读位=旧位静止，裸静止判定会把旧位错立为基线=「上方内容闪烁消失」根修回归口）⇒ 采纳为配对基线，落回正常求值（帽释放当帧生效）。FlushTaskMemory 增 prev 读位 + 帧序 + lastSetFrame 戳记（applyPairedShift 写 set 与采纳两处）。
+
+**验证**：相位级测试（mockk LazyListState 确定性驱动三帧死锁转换）——帧1 阅读位 set → 帧2 yield 观察（帽不动）→ 帧3 **采纳+帽 685→1128 当帧释放**（旧行为此处永久 yield）；pending 近帧保护回归锚。纯函数矩阵 4 用例（静止采纳/移动不采纳/近帧 set 不采纳/无观测不采纳）。全量 3856/0/0。真机三轮 E2E（长文流式+手势）：帽全程健康推进、无回归、无 adopt 误触发；有机配方（用户手指的精确甩量）待用户自然使用复测。

@@ -3,6 +3,7 @@ package dev.leonardo.ocbeacon.ui.screens.chat.components
 import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.foundation.lazy.LazyListState
 import dev.leonardo.ocbeacon.ui.screens.chat.markdown.ScrollQuiescence
+import dev.leonardo.ocbeacon.ui.screens.chat.scroll.PreDrawFlushTask
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
@@ -37,6 +38,90 @@ class FlushTaskPhasesTest {
 
     private fun emptyLedger(): StreamingGrowLedger = mockk(relaxed = true) {
         every { hasPending } returns false
+    }
+
+    private fun motive(msg: String) = println("[MOTIVE] $msg")
+
+    // ============ #502：外部定居位静止采纳（永久让位死锁根修） ============
+
+    /** 可变读位 mock——同 task 跨帧驱动（模拟用户甩动后落位静止）。 */
+    private fun mutableState(): LazyListState {
+        val state = mockk<LazyListState>(relaxed = true) {
+            every { layoutInfo } returns mockk<LazyListLayoutInfo> {
+                every { visibleItemsInfo } returns emptyList()
+            }
+            every { isScrollInProgress } returns false
+            every { firstVisibleItemIndex } returns 7
+            every { firstVisibleItemScrollOffset } returns 393
+        }
+        return state
+    }
+
+    private fun readAt(state: LazyListState, fii: Int, fiso: Int) {
+        every { state.firstVisibleItemIndex } returns fii
+        every { state.firstVisibleItemScrollOffset } returns fiso
+    }
+
+    /** 反射读 task 闭包捕获的 mem（相位行为断言需要 lastSet 可观测——测试缝）。 */
+    private fun memOf(task: PreDrawFlushTask): FlushTaskMemory {
+        val fld = task.javaClass.getDeclaredFields().first { it.type == FlushTaskMemory::class.java }
+        fld.isAccessible = true
+        return fld.get(task) as FlushTaskMemory
+    }
+
+    @Test
+    fun `外部定居位两帧静止后采纳并恢复帽释放 - 永久让位死锁根修`() {
+        motive("#502 相位级主断言：真机 17:08 场景——引擎在阅读位 set(7,393+Δ) 后用户甩回底 (0,0)。旧行为：yield 每帧作废帽释放计划（真机 yield×1448 / reserved 冻 685 达 12s = 流式消息被裁剪在视口小块直到完结）。新行为：首帧让位观察，次帧静止即采纳基线并当帧释放帽")
+        mockkObject(LazyListReflection)
+        mockkObject(ScrollQuiescence)
+        val state = mutableState()
+        val reserve = HeightReserveState().apply { itemKey = "k1"; reserved = 685; trueHeight = 685 }
+        val ledger = mockk<StreamingGrowLedger>(relaxed = true)
+        every { ledger.hasPending } returns true
+        every { ledger.takePaired(any(), any(), any()) } returns 66f
+        val task = streamingGrowFlushTask(state, ledger, reserve)
+
+        // 帧 1：阅读位增长配对——引擎 apply set → lastSet=(7,459)（真机 set(7,393) 同构）
+        task.onPreDraw()
+        val mem = memOf(task)
+        assertEquals(7, mem.lastSetFii)
+
+        // 帧 2：用户甩回底 (0,0)，真高增长（1128>685 待释放）→ divergence 首帧：让位观察，帽不动
+        every { ledger.hasPending } returns false
+        every { ledger.takePaired(any(), any(), any()) } returns 0f
+        readAt(state, 0, 0)
+        reserve.trueHeight = 1128
+        assertTrue(task.onPreDraw())
+        assertEquals("让位观察帧不得释放帽", 685, reserve.reserved)
+
+        // 帧 3：读位静止 (0,0) → 采纳基线 + 当帧帽释放（旧代码此处永远 yield——死锁点）
+        assertTrue(task.onPreDraw())
+        assertEquals("采纳后帽释放必须当帧生效（真高直通）", 1128, reserve.reserved)
+        assertEquals(0, mem.lastSetFii)
+    }
+
+    @Test
+    fun `引擎pending未消费窗口不采纳 - 近帧set保护`() {
+        motive("#502 回归锚：引擎 set 请求时即写 lastSet、measure 消费前读位=旧位且静止（上方内容闪烁消失根修场景）——近帧（<2 帧）set 存在时不得把旧位采纳为基线毁掉 pending 保护")
+        mockkObject(LazyListReflection)
+        mockkObject(ScrollQuiescence)
+        val state = mutableState()
+        readAt(state, 7, 66)
+        val reserve = HeightReserveState().apply { itemKey = "k1"; reserved = 100; trueHeight = 100 }
+        val ledger = mockk<StreamingGrowLedger>(relaxed = true)
+        every { ledger.hasPending } returns true
+        every { ledger.takePaired(any(), any(), any()) } returns 66f
+        val task = streamingGrowFlushTask(state, ledger, reserve)
+
+        // 帧 1：引擎配对 set → lastSet=(7,132)（目标位=读位+Δ），lastSetFrame=帧1
+        task.onPreDraw()
+        assertEquals(7, memOf(task).lastSetFii)
+
+        // 帧 2：pending 未消费——读位仍旧位 (7,66) ≠ lastSet(7,132)；静止但 set 在近帧 → 继续让位
+        every { ledger.hasPending } returns false
+        reserve.trueHeight = 200
+        assertTrue(task.onPreDraw())
+        assertEquals("近帧 set 保护期不得采纳释放帽", 100, reserve.reserved)
     }
 
     @Test
