@@ -77,10 +77,6 @@
   - 高亮影响面调研副产物（2026-09-30）：highlights 库 PhraseLocation.end 为 exclusive 语义（官方 README emphasis(13,25)→ExampleClass 占 13..24 + NumericLiteralLocator 测试双证），HighlightBuilder.kt:39 的 end+1 使每个高亮短语尾部多染 1 字符
   - 证据链与修复建议见 docs/research/2026-09-30-code-syntax-highlighting-impact-analysis.md §1.1.d；修复=去掉 +1（一行）+ 对照既有单测；注意与聊天域高亮组件（#488）的防御写法保持同语义
 
-- [ ] **#470 流式高度配对收缩缺口:帽不回改空白残留+ledger收缩不配对视口落** `scroll,chat`
-  - 2026-09-30 调研 P3 定罪:①帽轨 reserveReleasePlan 对 trueHeight<=reserved 恒 null(帽单调只增,ScrollCompensation.kt:338)——流式内容回缩(表格列放宽/setext 前重排)时 item 保持旧高=空白残留,直到换流式项 reset;②ledger 轨 note 对 d<0 只 rebase 不配对(:157)——压缩卡/工具横幅回缩时上方内容下坠无补偿。修复需高度引擎域专项设计(帽回改与『已上屏永不回改』既有裁决冲突,需用户裁断语义:回缩时同步缩帽+视口跟随 vs 维持空白)。
-  - 2026-09-30 用户裁决（听agent建议）：先不急，并入 #442 高度引擎二期系统性解决——帽回改语义与 R2 分片增量化同域设计，B/A 裁决推迟到二期设计时定
-
 ## P3 — 观察与低价值改进
 
 - [ ] **#499 cleanup**

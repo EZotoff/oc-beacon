@@ -273,3 +273,10 @@ B1 spec 批（R1-R9 裁决+bus 形态+对账 cadence+STREAM_DELTA_BUS dev 开关
 - **首次 CI 失败→lint 门禁四错清零（aae6b576）**：间距令牌绕过×3（HighlightedCode vertical 8.dp×2+bottom 4.dp、MarkdownContent 12.dp → SpacingTokens SM/XS/MD）+remember 返回 Unit（A2 shard 注册块 true 收尾）+组合期 StateFlow.value（#477 A11yDiag 探针 stateType 字段移除，探针保留 src/len）。教训：**本地漏跑 lintDevDebug 预检**（AGENTS 在案条款，后续批次必跑）。tag v0.4.0-beta 重指修复提交（原 tag 无出货 Release，重指不触 §7 红线）；全量 3848/0/0 复核后推。
 - **§6 验证全绿**：Release=OC Beacon 0.4.0-beta（prerelease ✓）恰好 1 APK=oc-beacon-0.4.0-beta.apk；aapt2=dev.leonardo.ocbeacon.beta/vc41/vn0.4.0-beta；apksigner DN=CN=OC Beacon（release keystore ✓ 非 debug）；说明=润色稿（版本摘要+用户视角）。
 - **beta 渠道自此带上**：R2 分片（A案）+ 节奏收编（B案重组根修）+ A2.5 推理先行泛化。stable 待下一批观察后随发。
+
+## 已完结卡片迁入（2026-10-02）
+
+### **#470 流式高度配对收缩缺口:帽不回改空白残留+ledger收缩不配对视口落** `scroll,chat`
+  - 2026-09-30 调研 P3 定罪:①帽轨 reserveReleasePlan 对 trueHeight<=reserved 恒 null(帽单调只增,ScrollCompensation.kt:338)——流式内容回缩(表格列放宽/setext 前重排)时 item 保持旧高=空白残留,直到换流式项 reset;②ledger 轨 note 对 d<0 只 rebase 不配对(:157)——压缩卡/工具横幅回缩时上方内容下坠无补偿。修复需高度引擎域专项设计(帽回改与『已上屏永不回改』既有裁决冲突,需用户裁断语义:回缩时同步缩帽+视口跟随 vs 维持空白)。
+  - 2026-09-30 用户裁决（听agent建议）：先不急，并入 #442 高度引擎二期系统性解决——帽回改语义与 R2 分片增量化同域设计，B/A 裁决推迟到二期设计时定
+  - 迁入依据：用户裁决 2026-10-02 选 A（维持空白——帽不回改+视口不跟随）：缺口两路径（帽轨恒 null/ledger 负 d 不配对）经裁断定为接受现状；4h 重度使用零负向高度事件实证为据；如日后遇到「回缩后大片空白」不适可凭本卡重开升 B（journal §7.8.2）（backlog.sh migrate 2026-10-02）
