@@ -280,3 +280,18 @@ B1 spec 批（R1-R9 裁决+bus 形态+对账 cadence+STREAM_DELTA_BUS dev 开关
   - 2026-09-30 调研 P3 定罪:①帽轨 reserveReleasePlan 对 trueHeight<=reserved 恒 null(帽单调只增,ScrollCompensation.kt:338)——流式内容回缩(表格列放宽/setext 前重排)时 item 保持旧高=空白残留,直到换流式项 reset;②ledger 轨 note 对 d<0 只 rebase 不配对(:157)——压缩卡/工具横幅回缩时上方内容下坠无补偿。修复需高度引擎域专项设计(帽回改与『已上屏永不回改』既有裁决冲突,需用户裁断语义:回缩时同步缩帽+视口跟随 vs 维持空白)。
   - 2026-09-30 用户裁决（听agent建议）：先不急，并入 #442 高度引擎二期系统性解决——帽回改语义与 R2 分片增量化同域设计，B/A 裁决推迟到二期设计时定
   - 迁入依据：用户裁决 2026-10-02 选 A（维持空白——帽不回改+视口不跟随）：缺口两路径（帽轨恒 null/ledger 负 d 不配对）经裁断定为接受现状；4h 重度使用零负向高度事件实证为据；如日后遇到「回缩后大片空白」不适可凭本卡重开升 B（journal §7.8.2）（backlog.sh migrate 2026-10-02）
+
+## §8 #501 DSH 验收根修——流式正文结构性不可见（part 出生过桥）
+
+
+**用户定罪（2026-10-02 真机验收）**：DSH 会话流式输出「一次性跳出来」；Web 端同期思考/正文均流式。修正初判（「服务器思考期不发数据」不成立——那 20s 是 turn1 被中断后用户打字的间隙）。
+
+**地面真相方法学**：自建原始 WS 客户端（纯标准库，握手 /api/remote.mux + Cookie + `{"type":"open","streamId":"f:<sid>","endpoint":"session/follow","payload":{"args":{"request":{"address":…,"assistantStream":true}}}}`）订阅同一会话抓 940 帧：线面健康——`block-start`(空种子,chunk.index=块序号) → reasoning-delta×145(4.4-6.5s) → text block-start → text-delta×778(6.5-19.7s) → block-end×2 → usage → finish → assistant/message(全量终态)。transcript(session/page) 只记终态事件，流式 chunk 不落档。附：/api/events.mux 是 0.1.1 双流端点（0.2.x 404/空回），0.1.2+ 单 WS = /api/remote.mux。
+
+**根因链（全链证据闭环）**：① #230（2026-08-26，正确防线）零信息 part 一律不注册——DSH block-start 空种子照章丢弃；② part 只能由 flush 的 applyDelta idx<0 兜底在**热视图**出生（bus 一直携带累积全文，live=4 实证）；③ B案 UI 读 structuralParts=热视图快照、仅在**结构事件**过桥——DSH 流式期零结构事件（纯 delta 线面）→ 出生永不过桥 → PartContent 组合件从未存在（B3 探针全程静默）→ 完结 assistant/message 才带来首个含文本结构事件 → +5675px 整段砸出。SSE 不受影响：part.updated 携累积文本=流式期不断过桥。reasoning 可见属巧合：text block-start 自身是结构事件，其 dispatch 尾捎带把已出生的 reasoning part 过桥（8.18s [B2-struct] publish cause=MessagePartUpdated 但 msgs 列表无 text part）。
+
+**修复（根因级，一处）**：flushPendingDeltas 增 part 出生检测（update 前触及消息 part id 基线 → update 后出现新 id）→ `publishStructural("part-birth")`。出生是结构事实（列表条目新增），每 part 一次低频；纯文本增长仍只走 bus——「delta 批结构性静默」不变量不破（B6 回归锚测试保持绿）。
+
+**真机验证（13:14 E2E，TLS 1.3 prompt）**：`part-birth` 过桥 ×2（reasoning 0.15s / text 5.3s）；**shard-reg 流式期注册**（A2.5 首次在 DSH 线真实生效——此前文本 part 不在 renderItems，资格判定恒空）；B3 5.4s 即燃；MDResize 421→1586+px ~66px 步长持续增长；CML-tick=0；完结换装干净（无重复/脏行，视觉查重通过）。单测 3850/0/0，OFF 臂 15 skip（Assume 纪律）。
+
+**遗留认知**：思考期 app 呈折叠单行预览（live 更新）与 Web 展开形态不同——既有 ReasoningBlock 设计，非本缺陷范畴。beta 旗标已提升，下一 beta 版本携带本修复。

@@ -324,4 +324,69 @@ class MessageEventHandlerStructuralPartsTest {
 
         assertTrue(structuralEmissions.get() > baseline)
     }
+
+    @Test
+    fun `delta flush births unregistered part bridges structural once`() {
+        motive("#501 DSH 线面形态：block-start 空种子被 #230 丢弃、无任何已注册 part——首个 delta 批 applyDelta 兜底出生的 part 必须立即过桥结构视图，否则 B案 UI 在完结前看不到正文（真机定罪：正文完结整段砸出）")
+        // DSH 形态：消息存在但 parts 为空（block-start 空种子被 #230 丢弃）
+        handler.upsertMessages(
+            "s1",
+            listOf(MessageWithParts(
+                Message.Assistant(
+                    id = "m1",
+                    sessionId = "s1",
+                    parentId = "",
+                    time = TimeInfo(created = 1000L),
+                    modelId = "test-model",
+                ),
+                emptyList(),
+            )),
+            MergeStrategy.SSE_PRIORITY,
+        )
+        val baseline = structuralEmissions.get()
+
+        delta("# TC", partId = "m1_text_ord_1")
+        handler.forceFlushDeltas()
+
+        // 出生即过桥：结构性视图包含新 part（UI 可渲染其 PartContent）
+        assertTrue(structuralEmissions.get() > baseline)
+        assertEquals(
+            "# TC",
+            (lastStructural?.get("m1")?.firstOrNull { it.id == "m1_text_ord_1" } as Part.Text).text,
+        )
+
+        // 出生后纯文本增长：结构性静默不破（增长只走 bus）
+        val afterBirth = structuralEmissions.get()
+        delta("P handshake", partId = "m1_text_ord_1")
+        handler.forceFlushDeltas()
+        assertEquals(afterBirth, structuralEmissions.get())
+        assertEquals("# TCP handshake", StreamingDeltaBus.live.value["m1_text_ord_1"]?.text)
+    }
+
+    @Test
+    fun `two parts born in one flush bridge with single structural emission`() {
+        motive("#501 出生过桥的低频性：同批多 part 出生（reasoning+text 并行）只发一次结构事件——组合侧每轮一次而非每 part 一次")
+        handler.upsertMessages(
+            "s1",
+            listOf(MessageWithParts(
+                Message.Assistant(
+                    id = "m1",
+                    sessionId = "s1",
+                    parentId = "",
+                    time = TimeInfo(created = 1000L),
+                    modelId = "test-model",
+                ),
+                emptyList(),
+            )),
+            MergeStrategy.SSE_PRIORITY,
+        )
+        val baseline = structuralEmissions.get()
+
+        delta("think", partId = "m1_reasoning_ord_0", field = "reasoning")
+        delta("answer", partId = "m1_text_ord_1")
+        handler.forceFlushDeltas()
+
+        assertEquals(baseline + 1, structuralEmissions.get())
+        assertEquals(2, lastStructural?.get("m1")?.size)
+    }
 }

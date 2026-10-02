@@ -485,6 +485,17 @@ class MessageEventHandler @Inject constructor(
             }
         }
 
+        // #501 part 出生检测基准：本批触及消息在 update 前的 part id 集。DSH
+        // 线面 block-start 空种子被 #230 零信息丢弃后，part 只能由下方 applyDelta
+        // idx<0 兜底在热视图出生——出生是结构事实（列表条目新增），与纯文本
+        // 增长（走 bus，结构性静默）必须区分对待。
+        val birthBaseline: Map<String, Set<String>> =
+            if (dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
+                effective.map { it.messageId }.toSet().associateWith { id ->
+                    _parts.value[id]?.mapTo(mutableSetOf()) { it.id } ?: mutableSetOf()
+                }
+            } else emptyMap()
+
         _parts.update { current ->
             // #97（M-15）：原实现批内每 delta 都整份 Map 拷贝（updated + (...)）——
             // O(N×M)。改为一次 toMutableMap，批内按 messageId 聚合就地更新。
@@ -507,12 +518,22 @@ class MessageEventHandler @Inject constructor(
         // #442 B案 节奏收编：触及消息的累积全文发布引擎域快通道（键=落位
         // part.id；值与热视图同字符串实例零拷贝）——UI 消费端（PartContent 两
         // 分支）以 live 覆盖参数，重组收敛到 item 内部。本发布**替代**了
-        // `_parts` 对 UI 主列表的每 flush 发射（structuralParts 不动）。
+        // `_parts` 对 UI 主列表的每 flush 发射（无 part 出生时 structuralParts
+        // 不动）。
         if (dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
             for (messageId in effective.map { it.messageId }.toSet()) {
                 dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
                     .publishParts(_parts.value[messageId])
             }
+            // #501 出生过桥：本批有新 part id 落位 → structuralParts 过桥一次。
+            // DSH 流式期零结构事件（纯 delta 线面），出生不过桥则 B案 UI 在完结
+            // assistant/message 前看不到该 part——正文整段流式期不可见、完结才
+            // 整段砸出（真机定罪 2026-10-02）。出生每 part 一次（低频），纯文本
+            // 增长仍只走 bus——「delta 批结构性静默」不变量不破。
+            val born = birthBaseline.any { (id, before) ->
+                _parts.value[id]?.any { it.id !in before } == true
+            }
+            if (born) publishStructural("part-birth")
         }
 
         // SSE 双写：#97（H-6）增量落盘——本批 delta 只追加到对应 part 行
