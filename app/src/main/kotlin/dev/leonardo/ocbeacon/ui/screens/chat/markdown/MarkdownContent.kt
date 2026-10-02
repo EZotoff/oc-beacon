@@ -763,8 +763,26 @@ internal fun MarkdownContent(
     // #471③ 归一化同源）——完结切全量终态会与冻结 shard items 双渲染（内容
     // 重复）；async 终态预热也一并跳过（无用功）。
     val shardHold = shardCtl != null && shardCtl.hasPublished()
+    // #504 换装桥检测：DSH 换代（合成 part.id→权威 seq id）经 key(part.id) 销毁
+    // pilot 子树，#472 本地保持记忆丢失 + 异步终态 Loading 占位 = 完结闪塌
+    //（真机 8754px→200px 260ms）。内容门命中（stash 与终态同文档，尾差≤512）
+    // = 刚流式渲染过的同文——下方改走同步解析首帧全高（一次性 ~10ms 主线程，
+    // 换装用户注视帧可接受；异步路径的 84ms 冷滑防线场景不在此）。
+    val swapBridged by remember(markdown, asyncParse, overrideState, shardHold) {
+        androidx.compose.runtime.mutableStateOf(
+            overrideState == null && asyncParse && !shardHold &&
+                markdown.length > ASYNC_PARSE_MIN_CHARS &&
+                CompletionHandoff.takeIfMatches(markdown).also { hit ->
+                    // [504-forensic] 换装桥判定取证（DEBUG-only）——miss 时吐指纹长
+                    // 度/前缀关系，终结「为何不命中」的猜测循环
+                    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG && !hit) {
+                        CompletionHandoff.forensicProbe(markdown)
+                    }
+                }
+        )
+    }
     val asyncTerminal: com.mikepenz.markdown.model.MarkdownState? =
-        if (overrideState == null && asyncParse && !shardHold && markdown.length > ASYNC_PARSE_MIN_CHARS) {
+        if (overrideState == null && asyncParse && !shardHold && !swapBridged && markdown.length > ASYNC_PARSE_MIN_CHARS) {
             rememberAsyncMarkdownState(markdown, isUser)
         } else {
             null
@@ -796,6 +814,12 @@ internal fun MarkdownContent(
             freeze = holdPilotTerminal && !shardHold,
             shard = shardCtl,
         )
+        // #504 换装指纹登记：pilot 活跃期持续记录归一化终帧（remember(markdown)
+        // 单次归一化 + 直写单槽）——换代后新组合凭此命中换装桥（见 swapBridged）。
+        // dispose 侧无需挂钩：末次登记即终帧指纹（Compose onDispose 派发次序
+        // 恒晚于新节点组合，dispose-stash 不可用——类头注①）。
+        val pilotFrameNormalized = remember(markdown) { normalizeForStreaming(markdown) }
+        CompletionHandoff.noteActive(pilotFrameNormalized)
         androidx.compose.foundation.layout.Column {
             // #437 崩溃修复：非前缀重建（resetKey++）换 state 实例的同一帧，
             // 库 Markdown 内部 collectAsState 对流实例的记忆可能残留旧 snapshot
@@ -845,8 +869,15 @@ internal fun MarkdownContent(
     // 且 ≥200 字符有 registry 预解析覆盖）。
     val markdownState = overrideState ?: asyncTerminal ?: if (asyncParse) {
         if (markdown.length > ASYNC_PARSE_MIN_CHARS) {
-            // #472:常规此处已被 asyncTerminal 覆盖;防御保留(条件变动时兜底)
-            rememberAsyncMarkdownState(markdown, isUser)
+            if (swapBridged) {
+                // #504 换装桥：内容门命中=刚流式渲染过的同文换代——同步解析
+                // 首帧全高（normalizeForRender 与终态同源，视觉恒等），免异步
+                // Loading 占位闪塌
+                rememberSyncMarkdownState(markdown, isUser)
+            } else {
+                // #472:常规此处已被 asyncTerminal 覆盖;防御保留(条件变动时兜底)
+                rememberAsyncMarkdownState(markdown, isUser)
+            }
         } else {
             // #428:小文本同步解析——remember 内联调用库的非 suspend 入口
             // parseMarkdown(纯 CPU 计算,≤[ASYNC_PARSE_MIN_CHARS] 有界 1-3ms),

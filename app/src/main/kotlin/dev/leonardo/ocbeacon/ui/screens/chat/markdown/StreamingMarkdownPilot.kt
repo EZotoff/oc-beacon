@@ -47,6 +47,85 @@ internal class PilotStreamingState(
 )
 
 /**
+ * #504（2026-10-02 真机定罪）完结换装闪塌：DSH 合成 id→权威 seq id 换代经
+ * `key(item.group.part.id)` 销毁 pilot 子树 → #472 本地保持记忆丢失 + 异步
+ * 终态 State.Loading 占位（实测 8754px→200px 塌缩 260ms）。
+ *
+ * 桥=**活跃内容指纹**（多槽 LRU×4——reasoning/text 多部件并行流式各自登记，单槽 last-writer-wins 会被推理块终态抢占（真机 20:53 定罪 stash=1165/inc=3988））：pilot 渲染期每次内容更新登记归一化终帧
+ * （主线程组合期直写 @Volatile——CML-tick 同款纪律，非快照零重组成本）；换代
+ * 后新组合以 [completionHandoffMatches] 内容门查指纹，命中=「刚流式渲染过的
+ * 同文」→ MarkdownContent 换装帧改走同步解析首帧全高。
+ *
+ * 为什么指纹而非状态实例交接：①Compose 派发次序——旧节点 onDispose 在 apply
+ * 后、新节点 remember 在组合中内联，dispose 侧 stash 恒慢一拍（首验 miss 实
+ * 证）；②库 StreamingMarkdownState 对新收集器零重放（次验 hold 渲染空态
+ * 200px 实证）——实例复用两条路都不通，指纹门+同步解析是最小可靠面。
+ */
+internal object CompletionHandoff {
+    /** 多槽 LRU（容量 4）：reasoning/text 等多部件并行流式各自登记（真机 20:53
+     * 定罪：单槽 last-writer-wins 被推理块终态抢占，正文指纹丢失 → 换装 miss）。 */
+    private val slots = object : LinkedHashMap<String, String>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean = size > 4
+    }
+
+    /** pilot 组合期登记（remember(markdown) 归一化后直写——每内容变更一次；主线程组合期，非快照零重组成本）。 */
+    fun noteActive(normalizedContent: String) {
+        slots[normalizedContent] = normalizedContent
+    }
+
+    /** 换装帧查询：任一槽内容门命中=刚流式渲染过的同文。 */
+    fun takeIfMatches(content: String): Boolean =
+        slots.keys.any { completionHandoffMatches(it, content) }
+
+    /** [504-forensic] miss 取证（DEBUG-only）：各槽长度/前缀关系——终结猜测。 */
+    fun forensicProbe(incomingRaw: String) {
+        val inc = normalizeForStreaming(incomingRaw)
+        val desc = if (slots.isEmpty()) "槽空" else slots.keys.joinToString(";") { st ->
+            "slot=" + st.length + " pfx=" + inc.startsWith(st)
+        }
+        android.util.Log.w("504-forensic", "miss: inc=" + inc.length + " " + desc)
+    }
+
+    /** 测试缝：单例跨用例隔离。 */
+    fun resetForTest() {
+        slots.clear()
+    }
+}
+
+/**
+ * #504 交接内容门（纯函数，单测锚）：stash 侧存归一化形态、取用侧对原文
+ * 归一化后比对——两侧同变换（[normalizeForStreaming]）保证 DSH 换装
+ * 「流式终帧 vs 权威 seq 文本」在归一化坐标下命中。**尾差容错**：pilot 终帧
+ * 可落后终态数字符（末批 delta 未入终帧/扣留尾，真机实测 2 字符）——严格
+ * 相等会恒 miss（首验即未命中）；前缀相等且缺口 ≤[COMPLETION_HANDOFF_TAIL_TOLERANCE_CH]
+ * 视为同文档（hold 渲染旧帧，终态就绪原子补齐）。分歧文档（中段分叉）或
+ * 大缺口恒 miss（宁缺勿错配）。
+ */
+internal fun completionHandoffMatches(stashedNormalized: String?, incomingRaw: String): Boolean {
+    if (stashedNormalized.isNullOrEmpty()) return false
+    val incoming = normalizeForStreaming(incomingRaw)
+    if (incoming == stashedNormalized) return true
+    if (kotlin.math.abs(incoming.length - stashedNormalized.length) > COMPLETION_HANDOFF_TAIL_TOLERANCE_CH) {
+        return false
+    }
+    // 公共前缀 + 尾部重写松弛（真机取证 19:58：gap=16 但 prefix=false——完结
+    // 内容对流式终帧的**尾部区域**有 ~16 字符改写，非纯追加，startsWith 恒
+    // false）。分叉点落在两串末 [COMPLETION_HANDOFF_TAIL_REWRITE_CH] 内=同文档
+    // 尾部改写（围栏闭合/末段修正族）；中段分叉（公共前缀远短于两串）恒 miss。
+    var i = 0
+    val n = minOf(stashedNormalized.length, incoming.length)
+    while (i < n && stashedNormalized[i] == incoming[i]) i++
+    return i >= stashedNormalized.length - COMPLETION_HANDOFF_TAIL_REWRITE_CH &&
+        i >= incoming.length - COMPLETION_HANDOFF_TAIL_REWRITE_CH
+}
+
+/** #504 尾差容错上限：换装缺口（终态−终帧）正常 ≤ 末批 delta 量级；超此=不同文档。 */
+internal const val COMPLETION_HANDOFF_TAIL_TOLERANCE_CH = 512
+
+/** #504 尾部重写松弛：分叉点须落在两串末此字符数内（围栏闭合/末段修正族改写面）。 */
+internal const val COMPLETION_HANDOFF_TAIL_REWRITE_CH = 256
+
+/**
  * 前缀差分 append 包装（spec §1）+ #437 安全放行闸接线。
  *
  * Part.Text.text 仍以整串快照到达（STREAM_FLUSH_INTERVAL_MS 批 flush 产物），在此与库状态内部的

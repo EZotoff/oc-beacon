@@ -321,3 +321,19 @@ B1 spec 批（R1-R9 裁决+bus 形态+对账 cadence+STREAM_DELTA_BUS dev 开关
 **验证（18:55 E2E，2000 字长答 37s）**：shard fire/shard-reg/prefix compose 全零；part-birth=2（两 part 正常过桥）；B3 文本 override 2.3s 即燃；MDResize 152→9552px 全程 ~66px 步长连续增长无跳变；完结换装干净；结构事件 13 个（正常量级）。全量单测 3856/0 失败/6 skip（分片旗标语义测试臂——Assume 纪律，预期行为）。
 
 **根修方向（#503 卡片承载）**：毕业发布与条目生命周期解耦——fire 幂等去重（回收期 graduation 冻结/冷启不重播已发布区间）。
+
+## §11 #504 DSH 完结换装闪塌根修——换装指纹桥（五轮取证迭代）
+
+
+**症状（用户定罪 19:02/19:24/19:31/19:44/19:52/20:52 六轮日志取证）**：DSH 长答完结换装瞬间流式卡（8754~13820px）塌成 200px 占位、102~260ms 后回弹全高。根因：合成 part.id（dsh-tXs1_text_ord_1）→权威 seq id 换代经 `key(item.group.part.id)` 销毁 pilot 子树，#472 完结保持的本地 pilotEverRendered 记忆随节点丢失 → 新组合走 rememberAsyncMarkdownState 的 State.Loading 占位。
+
+**五轮取证迭代（每轮真机 miss 证据 → 设计修正）**：
+1. dispose-stash 交接 → 恒 miss：**Compose 派发次序**——旧节点 onDispose 在 apply 后、新节点 remember 组合中内联，stash 恒慢一拍。→ 改**活跃指纹登记**（pilot 渲染期直写）。
+2. 状态实例 seed + #472 hold → hold 渲染空态 200px：库 **StreamingMarkdownState 对新收集器零重放**（freeze 后无发射）。→ 弃实例交接，改**指纹门 + 换装帧同步解析**（rememberSyncMarkdownState——normalizeForRender 与终态同源视觉恒等，一次性 ~10ms 主线程，非异步冷滑场景）。
+3. 严格相等门 → miss（pilot 终帧落后终态 2 字符：末批 delta/扣留尾）。→ 尾差容错 512。
+4. prefix 容错 → miss（forensic：`stash=3742 inc=3758 gap=16 prefix=false head-eq200=true`——完结内容对**尾部区域**改写 ~16 字符（围栏闭合族）非纯追加）。→ **公共前缀 + 尾部重写松弛 256**：分叉点须落两串末 256 字符内=同文档尾部改写；中段分叉恒 miss。
+5. 单槽指纹 → miss（forensic：`stash=1165 inc=3988`——**推理块终态抢占槽位**，reasoning/text 多部件并行流式 last-writer-wins 互踩）。→ **多槽 LRU×4** 全槽遍历。
+
+**验证**：全量单测 3863/0/0（含 +7 交接门用例：尾部改写命中/中段分叉 miss/缺口上限/空槽/归一化等价/尾差容错）。[504-forensic] 取证探针 DEBUG-only 永久保留（keep-probes 裁决）——miss 自动吐各槽长度/前缀关系。最终换装 E2E 被当夜无线 adb 频繁闪断阻断（装机都失败×2），留用户自然使用验收；探针自证任何残余 miss。
+
+**架构注记**：SSE 路径 part.id 恒定无此症（换装零换代）——指纹桥是 DSH 合成 id 体系的专有补偿；若未来 DSH 改为 part id 稳定（或映射层吸收换代），本桥可整体退役。
