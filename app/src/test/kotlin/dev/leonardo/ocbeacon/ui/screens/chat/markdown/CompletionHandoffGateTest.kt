@@ -44,7 +44,7 @@ class CompletionHandoffGateTest {
 
     @Test
     fun `长文中段分叉不命中（宁缺勿错配）`() {
-        motive("安全门：中段分叉=不同文档——分叉点远早于尾部松弛区，公共前缀远短于两串，恒 miss")
+        motive("#505 后语义收窄：全文异构（分叉带宽贯穿——前缀锚之外连后缀锚也无公共区）=不同文档，恒 miss；中段**小**分叉由头尾锚用例覆盖")
         val head = "shared prefix ".repeat(80)
         val a = head + "document A unique middle ".repeat(60)
         val b = head + "document B DIFFERENT middle ".repeat(60)
@@ -75,5 +75,34 @@ class CompletionHandoffGateTest {
         val stashKey = normalizeForStreaming(rawA)
         assertTrue(stashKey == normalizeForStreaming(rawB))
         assertTrue(completionHandoffMatches(stashKey, rawB))
+    }
+
+    @Test
+    fun `中段小缺口命中（真机 turn 30 形态）- #505 头尾锚`() {
+        motive("#505 真机定罪：流式累积 3724 vs 终态 3734，中段 10 字重复短语被旧 endsWith 去重误杀 → startsWith 恒 false → miss → 200px 占位闪塌。首尾各留 ≥256 干净区=同文档换装残余形态，命中（门只选解析策略不选内容，误命中代价≈10ms 同步解析）")
+        val head = "调度器在绑定瞬间评估节点容量与亲和性权重。".repeat(20)   // 620
+        val hole = "这十个字会被误杀！！".repeat(2)                      // 20
+        val tail = "资源上限减去已分配量得到可调度余量的完整公式。".repeat(20) // 620
+        val doc = head + hole + tail
+        val stashed = head + tail   // 中段洞：pfx=620 sfx=620 gap=-20
+        assertTrue(completionHandoffMatches(normalizeForStreaming(stashed), doc))
+    }
+
+    @Test
+    fun `中段小多余命中（重投形态，stash 多字）- #505`() {
+        motive("反向形态：累积比重投多 10 字（重复投递未被去重的假想残余）——头尾锚对称覆盖；两误判方向都由完结权威替换自愈，门只需识别同文档")
+        val head = "调度器在绑定瞬间评估节点容量与亲和性权重。".repeat(20)
+        val mid = "这十个字是重复投递！！"
+        val tail = "资源上限减去已分配量得到可调度余量的完整公式。".repeat(20)
+        val doc = head + mid + tail
+        val stashed = head + mid + mid + tail   // stash 多 10 字：pfx/sfx 干净
+        assertTrue(completionHandoffMatches(normalizeForStreaming(stashed), doc))
+    }
+
+    @Test
+    fun `首部脏不命中（前缀锚破坏）- #505`() {
+        motive("安全门保留：开篇即异（共享后缀再长也枉然）——换装残余不可能改写文档开头，首 256 内分叉=真异构")
+        val tail = "共享的结尾段足够长以通过后缀锚的检验区域要求。".repeat(30)
+        assertFalse(completionHandoffMatches(normalizeForStreaming("甲" + tail), "乙" + tail))
     }
 }

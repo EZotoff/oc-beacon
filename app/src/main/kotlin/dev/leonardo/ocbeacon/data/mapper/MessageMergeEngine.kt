@@ -649,8 +649,15 @@ internal object MessageMergeEngine {
      *   delta 必为过期重放或服务器截断残留（2026-08-30 真机 E2E 实证：模型
      *   尾部自重复被服务器截断，滞留 delta 走本分支 endsWith 不命中 → 盲拼接
      *   → 尾段渲染两遍）。Tool part 无终态语义，不受影响。
-     * - part 已注册且流式中：文本追加（Text/Reasoning 均有 endsWith 去重——
-     *   批内重叠 delta 不重复拼接；#266 起 Reasoning 与 Text 对齐，不再盲拼接）
+     * - part 已注册且流式中：文本原样追加（#505 撤 endsWith 去重）。去重是
+     *   SSE 时代防御遗产，考古无已文档化的保护场景（#266 真机案例「尾段非
+     *   全文后缀」它自己都没接住，靠终态守卫收口；OpenCode 实测 delta 丢失
+     *   而非重复投递；DSH WS 抓包实测 delta 流==权威转写逐字节），却有实证
+     *   误杀：模型输出的合法重复短语（恰等于累积尾部）被当重复投递丢弃 →
+     *   累积文本中段缺口 → #504 换装门前缀断裂 → 完结 200px 占位闪塌
+     *   （2026-10-02 真机 turn 30：10 字重复 → 3724 vs 3734 miss）。
+     *   真重复与真重投在本地不可区分；两类误判都在完结权威替换时自愈，
+     *   而误杀会额外击穿换装门——两害相权取原样追加。
      * - part 未注册（空 started 被 #230 丢弃 / 事件丢失）：按 [kind] 重建——
      *   #223 已验证的 idx<0 兜底机制，首个非空 delta 即重建注册。重建前的
      *   过期判定（#265 守卫）**收窄到终态包含**：仅当同 kind 已有终态 part
@@ -678,14 +685,10 @@ internal object MessageMergeEngine {
             }
             if (isTerminal) return parts
             val newPart = when (part) {
-                is Part.Text -> {
-                    if (part.text.endsWith(delta)) part  // 去重
-                    else part.copy(text = part.text + delta)
-                }
-                is Part.Reasoning -> {
-                    if (part.text.endsWith(delta)) part  // #266：与 Text 对齐去重
-                    else part.copy(text = part.text + delta)
-                }
+                // #505：endsWith(delta) 命中≠重复投递——模型重复短语同形，
+                // 误杀即中段内容丢失（KDoc 详见上方）。原样追加。
+                is Part.Text -> part.copy(text = part.text + delta)
+                is Part.Reasoning -> part.copy(text = part.text + delta)
                 else -> part
             }
             messageParts[idx] = newPart

@@ -36,11 +36,14 @@ class MessageMergeEngineTest {
     }
 
     @Test
-    fun `applyDelta endsWith dedup does not double-append overlapping delta`() {
-        // 48ms 批内同 part 多次 delta 可能携带重叠后缀——endsWith 去重（铁律②配套）
+    fun `applyDelta 恰等于尾部的重复短语照常追加 - #505`() {
+        // #505 真机 turn 30 定罪：模型 10 字重复短语恰等于累积尾部，旧 endsWith
+        // 去重误判重复投递丢弃 → 累积中段缺口 → 换装门前缀断裂 → 完结 200px
+        // 占位闪塌。DSH WS 抓包实证 delta 流==权威转写逐字节（重复即真重复）；
+        // 真重复与真重投本地不可区分，两误判都由完结权威替换自愈——原样追加。
         val parts = listOf(text("p1", text = "你好世界"))
         val out = MessageMergeEngine.applyDelta(parts, "p1", "s1", "m1", "text", "世界")
-        assertEquals("你好世界", (out[0] as Part.Text).text)
+        assertEquals("你好世界世界", (out[0] as Part.Text).text)
     }
 
     @Test
@@ -132,11 +135,12 @@ class MessageMergeEngineTest {
     }
 
     @Test
-    fun `applyDelta reasoning endsWith dedup mirrors text branch - #266`() {
-        // 顺带项：reasoning 注册 append 与 text 同款 endsWith 去重（此前盲拼接）
+    fun `applyDelta reasoning 重复短语同样原样追加 - #505`() {
+        // #266 曾与 Text 对齐去重；#505 两分支一并撤销（误杀面同构：
+        // 推理流式重复短语丢弃=思考文本中段缺口）。
         val parts = listOf(reasoning("p1", text = "思考过程"))
         val out = MessageMergeEngine.applyDelta(parts, "p1", "s1", "m1", "reasoning", "过程")
-        assertEquals("思考过程", (out[0] as Part.Reasoning).text)
+        assertEquals("思考过程过程", (out[0] as Part.Reasoning).text)
     }
 
     @Test

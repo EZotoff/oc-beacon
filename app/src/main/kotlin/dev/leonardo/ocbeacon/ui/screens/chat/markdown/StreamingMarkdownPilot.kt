@@ -77,11 +77,29 @@ internal object CompletionHandoff {
     fun takeIfMatches(content: String): Boolean =
         slots.keys.any { completionHandoffMatches(it, content) }
 
-    /** [504-forensic] miss 取证（DEBUG-only）：各槽长度/前缀关系——终结猜测。 */
+    /** [504-forensic] miss 取证（DEBUG-only，#505 升级）：最优槽的前缀/后缀
+     *  公共长度 + 缺口 + 分叉点上下文采样——miss 形态当场可判（尾差/中段洞/
+     *  全文异构），终结逐轮猜测。 */
     fun forensicProbe(incomingRaw: String) {
         val inc = normalizeForStreaming(incomingRaw)
-        val desc = if (slots.isEmpty()) "槽空" else slots.keys.joinToString(";") { st ->
-            "slot=" + st.length + " pfx=" + inc.startsWith(st)
+        val desc = if (slots.isEmpty()) "槽空" else {
+            var best: String? = null
+            var bestI = -1
+            for (st in slots.keys) {
+                var i = 0
+                val n = minOf(st.length, inc.length)
+                while (i < n && st[i] == inc[i]) i++
+                if (i > bestI) { bestI = i; best = st }
+            }
+            val st = best!!
+            var s = 0
+            val m = minOf(st.length, inc.length)
+            while (s < m - bestI && st[st.length - 1 - s] == inc[inc.length - 1 - s]) s++
+            val ctx = inc.substring(maxOf(0, bestI - 20).coerceAtMost(bestI),
+                minOf(inc.length, bestI + 20))
+                .replace("\n", "\\n")
+            "slot=" + st.length + " pfxLen=" + bestI + " sfxLen=" + s +
+                " gap=" + (inc.length - st.length) + " ctx=@" + bestI + " " + ctx
         }
         android.util.Log.w("504-forensic", "miss: inc=" + inc.length + " " + desc)
     }
@@ -98,8 +116,15 @@ internal object CompletionHandoff {
  * 「流式终帧 vs 权威 seq 文本」在归一化坐标下命中。**尾差容错**：pilot 终帧
  * 可落后终态数字符（末批 delta 未入终帧/扣留尾，真机实测 2 字符）——严格
  * 相等会恒 miss（首验即未命中）；前缀相等且缺口 ≤[COMPLETION_HANDOFF_TAIL_TOLERANCE_CH]
- * 视为同文档（hold 渲染旧帧，终态就绪原子补齐）。分歧文档（中段分叉）或
- * 大缺口恒 miss（宁缺勿错配）。
+ * 视为同文档（hold 渲染旧帧，终态就绪原子补齐）。
+ *
+ * #505 头尾锚容错：流式累积与权威文本可存在**中段小分叉**（换装前残余：
+ * 归一化跨快照变换差、传输层字符差异等）——首尾各留 ≥[COMPLETION_HANDOFF_ANCHOR_CH]
+ * 干净区且缺口在容忍内即同文档。真机 turn 30 定罪：中段 10 字缺口使
+ * startsWith 恒 false → miss → 200px 占位闪塌。安全边界：本门只选解析策略
+ * （同步/异步），不选内容——误命中代价=一次 ~10ms 主线程同步解析，无正确性
+ * 风险（宁缺勿错配的「错配」后果已由内容恒取 markdown 参数消除）。全文异构
+ * （前缀锚或后缀锚破坏）恒 miss。
  */
 internal fun completionHandoffMatches(stashedNormalized: String?, incomingRaw: String): Boolean {
     if (stashedNormalized.isNullOrEmpty()) return false
@@ -111,12 +136,21 @@ internal fun completionHandoffMatches(stashedNormalized: String?, incomingRaw: S
     // 公共前缀 + 尾部重写松弛（真机取证 19:58：gap=16 但 prefix=false——完结
     // 内容对流式终帧的**尾部区域**有 ~16 字符改写，非纯追加，startsWith 恒
     // false）。分叉点落在两串末 [COMPLETION_HANDOFF_TAIL_REWRITE_CH] 内=同文档
-    // 尾部改写（围栏闭合/末段修正族）；中段分叉（公共前缀远短于两串）恒 miss。
+    // 尾部改写（围栏闭合/末段修正族）；中段分叉交由下方头尾锚裁决。
     var i = 0
     val n = minOf(stashedNormalized.length, incoming.length)
     while (i < n && stashedNormalized[i] == incoming[i]) i++
-    return i >= stashedNormalized.length - COMPLETION_HANDOFF_TAIL_REWRITE_CH &&
+    if (i >= stashedNormalized.length - COMPLETION_HANDOFF_TAIL_REWRITE_CH &&
         i >= incoming.length - COMPLETION_HANDOFF_TAIL_REWRITE_CH
+    ) return true
+    // #505 头尾锚：中段小分叉——前缀与后缀各留干净区即同文档（后缀扫描止于
+    // 前缀边界，防共享前缀重复计数）。分叉带宽 > 两串任意一端锚区=真异构 miss。
+    if (i < COMPLETION_HANDOFF_ANCHOR_CH) return false
+    var s = 0
+    while (s < n - i &&
+        stashedNormalized[stashedNormalized.length - 1 - s] == incoming[incoming.length - 1 - s]
+    ) s++
+    return s >= COMPLETION_HANDOFF_ANCHOR_CH
 }
 
 /** #504 尾差容错上限：换装缺口（终态−终帧）正常 ≤ 末批 delta 量级；超此=不同文档。 */
@@ -124,6 +158,10 @@ internal const val COMPLETION_HANDOFF_TAIL_TOLERANCE_CH = 512
 
 /** #504 尾部重写松弛：分叉点须落在两串末此字符数内（围栏闭合/末段修正族改写面）。 */
 internal const val COMPLETION_HANDOFF_TAIL_REWRITE_CH = 256
+
+/** #505 头尾锚干净区：中段分叉命中需首/尾各留 ≥ 此字符数的公共区——两锚
+ *  皆在=分叉隔离在中带（同文档换装残余形态）；任一锚破坏=真异构。 */
+internal const val COMPLETION_HANDOFF_ANCHOR_CH = 256
 
 /**
  * 前缀差分 append 包装（spec §1）+ #437 安全放行闸接线。
