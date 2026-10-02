@@ -92,10 +92,11 @@
 ## P1 — 核心功能需求
 
 
-- [ ] **#508 展开反射锚定归一分支丢一个 item 高度——中位小 item 构型展开恒 −1024px 视口跳变（违「卡钉住」裁决）** `chat` `scroll`
+- [~] **#508 展开反射锚定归一分支丢一个 item 高度——中位小 item 构型展开恒 −1024px 视口跳变（违「卡钉住」裁决）** `chat` `scroll`
   - #466 normalizeExpandAnchor 链尽 fall-through 丢弃越界折算的整 item 高度：逆布局可见链只含锚 item 自身（新侧已滚过不可见），rawTarget=fiso+H 超锚 item 旧尺寸时返回 (锚idx, fiso+H−旧尺寸)，目标位恒短一个 item 高；实测展开位移 = H−锚item尺寸（与 fiso 无关，本例 1335−2359=−1024 两次复现同值），卡头 y1995→1074、上方条目逐出、~790px 空白带不自愈
   - 触发构型：中位 fii>0 且锚 item 尺寸 < fiso+H（T9 真机矩阵 2359px 分片条目首踩）；作者原设计场景 fii==0 半贴底时 item0 为流式巨轮恒大于 fiso+H，折叠分支从未真跑过——现有单测 normalizeCrossesIntoNewwardItem 把 (0,273) 错值钉成预期（注释称数学等价，实丢 747px）
   - 修复须辨卡片宿主 item：宿主=锚 item 时增长同遍落地 (fii,fiso+H) 恒合法（fiso≤尺寸 ⇔ fiso+H≤尺寸+H），无需预折；宿主在上方 item 时才需向旧侧链折算且用增长后尺寸——方向/尺寸双修正，BottomPinnedExpandSkipTest 三用例需重写
+  - 根修完成（2026-10-03 07:46 真机三连试验）：normalizeExpandAnchor 重写为宿主感知——折叠方向转旧侧(idx 递增，逆布局折叠正方向)+宿主容量+H+宿主未知按锚兜底；CML itemsIndexed 逐 item 提供 LocalCardExpandHostKey；单测重写（旧 normalizeCrossesIntoNewwardItem 把 (0,273) 错值钉成预期已纠正，新增 T9 数值化回归钉子与 host>锚 AP 不变量双例）。真机验证：触发构型（item15 增长前 2359 < rawTarget 2716/3586 两档深度）下 host=15=锚 → LRef 原样写 off=2716/3586（旧码会写 357/1227 造成 2359px 跳变），卡头 Y 三例 1307/2177/1930 全纹丝不动，零空白带；收起镜像 1381=2716−1335 精确不变。commit 待推
 
 - [~] **#504 DSH 完结换装闪塌——seq 换装重键 Markdown 状态致 200px 占位 260ms（#504）** `dsh` `streaming` `completion` `regression`
   - 真机定罪（19:02:33 帧级）：流式卡 8754px → MessageRemoved+seq 换装 → 新 part id（dsh-tXs1_text_ord_1→seq-N_text_ord_1）重键 Markdown 记忆 → 8KB 文本异步解析先以 200px 占位合成 → 260ms 后回弹 8778px。用户所见「结束时出现一次」的塌-弹。SSE 路径 part id 恒定无此症——DSH 合成 id→权威 id 换装特有，#485 完结闪灭家族的 DSH 变种。

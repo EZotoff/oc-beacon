@@ -509,3 +509,11 @@ MDResize: card=b21bbd95-272 h=9597 d=9397    ← 100ms 回弹
 - T15：流式中途 BACK 退出（07:24:50 Busy 中）→ 服务器列表层导航回 DSH-3080 → 重入会话：7 轮全量在场、T15 轮 500 字完整（含结语句）、re-follow 落底、零死区；导航踩坑记录：BACK 栈到服务器列表层、连接按钮行 [会话@380|断开@893] 有居中死区、矩阵会话实挂 DSH-3080 条目（3081 未 reverse）
 - 观察项（非阻塞）：①07:17:07 LEAP off 2067→1713 dOff=−354 无手势无 RESIZE 配对（读历史中分片组合邻域，未配对偏移变化，量级 354px，无用户可见级证据不立卡）；②07:26:17 冷载 504-forensic miss inc=21648 槽空（重启后历史快照整装到达无流式槽，内容渲染已验证完整，冷载已知模式）；③uiautomator 陈旧树两形态：IME 焦点扰动后整树只剩框架节点（换窗口自愈）、裁剪容器子树暴露幻影布局坐标（bounds 不可作展开/收起判据，以 MDResize/episode 日志为准）
 - 测试设置已还原：screen_off_timeout=60000、svc power stayon false（07:32）
+
+## §19 #508 根修落地：normalizeExpandAnchor 宿主感知重写（单测+真机三连验证）
+
+- 修复形态：①折叠链方向翻转——filter{index≥anchorFii}.sortedBy{index}（向旧侧=逆布局折叠正方向；原向新侧过滤致链恒只含锚 item 自身）；②宿主容量 +H——normalizeExpandAnchor(itemsOldward, rawTarget, hostIndex, hostGrowth)，宿主=锚时 fiso≤S ⇔ fiso+H≤S+H 恒不折叠（T9 触发构型即此），宿主在上方按增长后容量折算保绝对位不变量；③宿主未知(-1)按链首（锚）兜底——现存反射路径唯一消费域=turn 条目块恒有 LocalCardExpandHostKey 供给，横幅走裸 AV 不经此
+- 供给 plumbing：ChatMessageList itemsIndexed Provider 增 LocalCardExpandHostKey provides entry.key（与 LocalInStreamingTurn 同点）；CardExpandReveal 组合层读入（LaunchedEffect 协程内不可读 CompositionLocal——首编译失败教训）
+- 单测：BottomPinnedExpandSkipTest 归一节全重写——T9 数值化回归钉子（2359/1993/1335 → (7,3328) 非 (7,969)）、host>锚 boost 双例（含无 boost 过冲 (10,100) vs 有 boost (9,600) 的反向钉子）、宿主未知兜底、链尽 clamp、零尺寸占位；全量 testDevDebugUnitTest --rerun 绿
+- 真机（07:46-07:48，app-dev-debug 40MB 装机）：试验1 fii=15 fiso=1381 rawTarget=2716>item15 增长前 2359（触发构型）host=15 → LRef off=2716 原样 → 卡头 1307→1307；试验2 fiso=2251 rawTarget=3586 更深触发区 → 2177→2177；试验3 fii=13 host=13 → 1930→1930；收起镜像 1381=2716−1335 精确；三例零空白带
+- 边界说明：host>锚 折叠路径真机未直接命中——本会话宿主 item（2359px 分片条目）高于视口，卡头可见与锚在其下方 item 几何互斥；该路径由单测 AP 不变量锁定，扩展随机矩阵（短轮小 item）自然覆盖
