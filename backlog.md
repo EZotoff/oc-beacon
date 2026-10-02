@@ -75,6 +75,7 @@
   - 真机定罪（19:02:33 帧级）：流式卡 8754px → MessageRemoved+seq 换装 → 新 part id（dsh-tXs1_text_ord_1→seq-N_text_ord_1）重键 Markdown 记忆 → 8KB 文本异步解析先以 200px 占位合成 → 260ms 后回弹 8778px。用户所见「结束时出现一次」的塌-弹。SSE 路径 part id 恒定无此症——DSH 合成 id→权威 id 换装特有，#485 完结闪灭家族的 DSH 变种。
   - 修法：PartContent 文本分支完结桥接——bus live 清除瞬间不立即跌回 part.text（异步占位），保留渲染上一帧 live 全文（与终态文本一致）至终态 Markdown 解析完成原子交接。零闪塌零额外解析。
   - 修复落地（2026-10-02 深夜，五轮真机取证迭代）：①Compose 派发次序定罪（旧节点 onDispose 恒晚于新节点 remember）→dispose-stash 改活跃指纹登记；②库 StreamingMarkdownState 对新收集器零重放定罪（hold 渲染空态 200px）→状态实例交接改指纹门+换装帧同步解析（rememberSyncMarkdownState，normalizeForRender 同源视觉恒等，一次性 ~10ms 主线程）；③严格相等恒 miss 定罪（pilot 终帧落后终态 2 字符）→尾差容错 512；④prefix=false 定罪（完结对尾部区域 ~16 字符改写非纯追加）→公共前缀+尾部重写松弛 256（分叉点须落两串末 256 内，中段分叉恒 miss）；⑤单槽 last-writer-wins 定罪（推理块终态 1165 抢占正文 3988 指纹）→多槽 LRU×4 全槽遍历。全量 3863/0/0（+7 交接门用例）；[504-forensic] 取证探针 DEBUG-only 永久保留（keep-probes 裁决），miss 自动吐槽况。最终换装 E2E 被当夜无线闪断阻断——留用户自然使用验收，探针自证。
+  - 真机终验通过（21:33，K8s 2500字长答）：换装帧  首测即全高——零 200px 桩、零回弹（修复前形态 h=200 d=200→d=10330 回弹）；换装时刻零 forensic miss（指纹桥命中）；同步解析成本无感知帧损。#501-#504 四连修全部真机闭环。
 
 ## P2 — 优化与锦上添花
 
