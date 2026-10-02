@@ -308,3 +308,16 @@ B1 spec 批（R1-R9 裁决+bus 形态+对账 cadence+STREAM_DELTA_BUS dev 开关
 **修复（静止采纳 + 陈旧度守卫）**：`shouldAdoptExternalPosition(read, prev, framesSinceLastSet)`——读位连续两帧静止 **且** lastSet 陈旧（≥2 帧引擎无 set 写入；守卫防误毁引擎 pending 未消费窗口的保护——set 请求时即写 lastSet、消费前读位=旧位静止，裸静止判定会把旧位错立为基线=「上方内容闪烁消失」根修回归口）⇒ 采纳为配对基线，落回正常求值（帽释放当帧生效）。FlushTaskMemory 增 prev 读位 + 帧序 + lastSetFrame 戳记（applyPairedShift 写 set 与采纳两处）。
 
 **验证**：相位级测试（mockk LazyListState 确定性驱动三帧死锁转换）——帧1 阅读位 set → 帧2 yield 观察（帽不动）→ 帧3 **采纳+帽 685→1128 当帧释放**（旧行为此处永久 yield）；pending 近帧保护回归锚。纯函数矩阵 4 用例（静止采纳/移动不采纳/近帧 set 不采纳/无观测不采纳）。全量 3856/0/0。真机三轮 E2E（长文流式+手势）：帽全程健康推进、无回归、无 adopt 误触发；有机配方（用户手指的精确甩量）待用户自然使用复测。
+
+## §10 #503 流式尾段重建循环——A2 冻结分片毕业 fire 回卷（旗标稳定化）
+
+
+**用户定罪（2026-10-02 验收）**：「输出到快结束的时候一直在重建循环」。定罪证据（turn 18, 18:45:46-55 尾段）：9 次 `MDPilot shard fire`（origin 回滚重冻结：2313×2/2629×2/2911）+ turn 条目回收重组对（shard-unreg 46.689→shard-reg 47.769）。回卷循环链：fire → broker 发布 → 条目 churn（StreamChunk 插入+A2.5 prefix 翻转+尾块重切）→ LazyColumn 条目回收 → pilot 冷启（coldStartPlan 重播）→ 再 fire。每循环一次全量条目重建=用户所见。
+
+**诊断旁支（记录备查）**：同轮另有视口 0↔7 弹跳 24 LEAP（全部 inProgress=true）；ChatScrollController 侧 MSGEFFECT fire 仅出现于轮前（autoOn=true 时），27.693 autoOn 正确解除后 **GUARD reanchor 与 MSGEFFECT 全静默（零开火）**——弹跳非二者所为；引擎配对 set 全部指向阅读锚 (7,x+Δ)（#502 采纳后的正常阅读补偿）。疑弹跳为条目 churn 的副作用（LazyColumn 重锚），pilot 关闭后待复测，若仍在另立卡片。
+
+**稳定化（本提交落地）**：STREAM_SHARD_PILOT=false（dev + beta 下一构建）。冻结分片是性能优化（#442 A2），关闭=回退单容器流式；#501 part-birth（DELTA_BUS 旗标）与 #502 静止采纳均独立不受影响。
+
+**验证（18:55 E2E，2000 字长答 37s）**：shard fire/shard-reg/prefix compose 全零；part-birth=2（两 part 正常过桥）；B3 文本 override 2.3s 即燃；MDResize 152→9552px 全程 ~66px 步长连续增长无跳变；完结换装干净；结构事件 13 个（正常量级）。全量单测 3856/0 失败/6 skip（分片旗标语义测试臂——Assume 纪律，预期行为）。
+
+**根修方向（#503 卡片承载）**：毕业发布与条目生命周期解耦——fire 幂等去重（回收期 graduation 冻结/冷启不重播已发布区间）。

@@ -94,8 +94,10 @@ android {
             buildConfigField("boolean", "STABLE_REVEAL_PILOT", "true")
             // #442 B6/A4 判定矩阵：-POCBEACON_STREAM_FLAGS_OFF=true 构建旗标全关基线
             val streamFlagsOff = (project.findProperty("OCBEACON_STREAM_FLAGS_OFF") as? String)?.toBoolean() ?: false
-            // #442 R2 分片唤醒（spec 2026-10-01-442-r2-shard-awakening）：dev 先行
-            buildConfigField("boolean", "STREAM_SHARD_PILOT", "!$streamFlagsOff")
+            // #503（2026-10-02 真机定罪）：毕业 fire 回卷循环（fire→条目churn→条目回收
+            //→pilot 冷启→origin 回滚重冻结→再 fire，9 fire/9s）——流式尾段重建循环。
+            // 关闭冻结分片（性能优化，回退=单容器流式；#501 正文修复在 DELTA_BUS 不受影响）
+            buildConfigField("boolean", "STREAM_SHARD_PILOT", "false")
             // #442 B案 节奏收编（spec 2026-10-02-442-b-cadence-incorporation）：dev 先行
             buildConfigField("boolean", "STREAM_DELTA_BUS", "!$streamFlagsOff")
             // 2026-08-13 用户决策：dev 测试构建 versionCode 用 Unix 时间戳——
@@ -116,7 +118,8 @@ android {
             buildConfigField("boolean", "STABLE_REVEAL_PILOT", "true")
             // #442 R2 分片 + B案节奏收编：2026-10-02 用户裁决提升 beta
             //（dev 泡机+双臂单测+真机矩阵后；stable 再晚一批观察）
-            buildConfigField("boolean", "STREAM_SHARD_PILOT", "true")
+            // #503：SHARD 因毕业回卷循环降回 false（下一 beta 构建携带；DELTA_BUS 保留）
+            buildConfigField("boolean", "STREAM_SHARD_PILOT", "false")
             buildConfigField("boolean", "STREAM_DELTA_BUS", "true")
         }
         create("stable") {
