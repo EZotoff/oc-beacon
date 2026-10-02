@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.text.AnnotatedString
@@ -1042,12 +1043,26 @@ private fun rememberSyncMarkdownState(content: String, isUser: Boolean): Markdow
 @Composable
 internal fun StreamShardContent(markdown: String, textColor: Color) {
     val parsed = remember(markdown) { parseMarkdown(markdown) }
-    MarkdownContent(
-        markdown = "",
-        textColor = textColor,
-        isUser = false,
-        preParsedState = parsed,
-    )
+    // [507-shard] #507 消失取证：冻结块组合事实（文本量）+ 实测高度
+    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+        android.util.Log.w("507-shard", "shardContent len=" + markdown.length)
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .onSizeChanged { size ->
+                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                    android.util.Log.w("507-shard", "shardContent h=" + size.height + "px len=" + markdown.length)
+                }
+            }
+    ) {
+        MarkdownContent(
+            markdown = "",
+            textColor = textColor,
+            isUser = false,
+            preParsedState = parsed,
+        )
+    }
 }
 
 @Composable

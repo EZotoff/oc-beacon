@@ -399,10 +399,18 @@ internal fun buildChatEntries(
         // #442 A2：流式分片（broker 发布命中 turn 的任一 part）——先于其他分片
         // 路径（键族互斥）；完结后持续有效（spec 完结持续性：StreamChunk 保留
         // 不迁 TurnSegmentPlan，尾块同键换终态渲染）
+        // #507 根修：查找以 turnKey 直查。turnGroups 是**结构缓存**（id 生命周期
+        // 签名，ChatMessageList），流式宿主 ChatMessage 捕获于消息创建时刻——
+        // parts 尚空（part 出生在后续 delta 批，签名不变缓存永不刷新）→ 组
+        // parts 恒空 → 旧查找恒 miss → #g 条目零发射 → 毕业内容无处渲染
+        // （真机定罪：fire 后 2000+ 字消失，vg2 探针 groupParts 空）。发布方
+        // PublishedShards.turnKey 与本处 turnKey 同源（注册期=条目键），直查
+        // 绕开 parts 引用新鲜度；组遍历降为兜底。
         val turnShards = if (streamShards.isNotEmpty()) {
-            (turnGroups[rawIndex] ?: listOf(msg)).firstNotNullOfOrNull { cm ->
-                cm.parts.firstNotNullOfOrNull { streamShards[it.id] }
-            }
+            streamShards.values.firstOrNull { it.turnKey == turnKey }
+                ?: streamShards.values.firstOrNull { pub ->
+                    (turnGroups[rawIndex] ?: listOf(msg)).any { cm -> cm.parts.any { it.id == pub.partId } }
+                }
         } else null
         if (turnShards != null && turnShards.shards.isNotEmpty()) {
             // #246 逆文档序（尾片先入列）：尾块 Turn 保原键（锚/帽物主/跳转/槽位

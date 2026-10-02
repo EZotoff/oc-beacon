@@ -433,3 +433,37 @@ MDResize: card=b21bbd95-272 h=9597 d=9397    ← 100ms 回弹
 - 全量单测绿×2（旗标改后分片测试臂真正执行）；新增：Machine 宽限/事务性 3 用例、Broker fire 回执 3 处断言、swapStableKey 4 用例、整装块时长 2 用例。
 - STREAM_SHARD_PILOT dev=true（根修已验证，交用户自然使用验收）；beta/stable 保持 false。
 
+
+## ## 15. #507 流式毕业内容消失——turnGroups 结构缓存空 parts 阻断 #g 条目发射（2026-10-03 凌晨，diagnosing-bugs 技能全流程）
+
+### 症状（用户报告）
+
+流式输出过程中所有内容突然没掉、然后又突然正常输出，前文流式输出全部消失不见；卡片展开收起不稳定。
+
+### 反馈回路（Phase 1-2）
+
+- /tmp/vanish_loop.sh：长文轮 → logcat → 按 fire 时刻断言条目 churn（MM-DD 日期正则踩坑一轮）；RED 2/2 确定性。
+- fire_snap.sh：fire 触发连拍——**消失是持续态**（6 帧 2.5s 流式区文字覆盖仅 8%）。
+- 语义树 dump（fire+2.5s）：全树 15 节点，当前轮 2000+ 字内容零存在；上滚/下滚均找不到——排除视口跳变与 0 高渲染。
+- mp4 录屏（分辨率/码率/pkill 三轮坑）+ zai 视频工具 400 失败——连拍+像素覆盖+语义树三件套替代定案。
+
+### 根因（Phase 3-4：vg/vg2 两轮探针）
+
+- fire 后尾卡塌至 96px（d=-4970）且 **StreamShardContent/StreamPrefix 从未组合**（507-shard 前身探针 0 次）。
+- vg2 探针（含 msg.id 轮）定罪：`turnShards=false msg=dsh-t47s1 grpN=1 groupParts=`（空）——流式宿主在 turnGroups 里的 parts 恒空。
+- 机制：turnGroups 是**结构缓存**（id 生命周期签名，ChatMessageList:324-343「内容（parts）变化不重建 Map」）——流式宿主 ChatMessage 捕获于消息创建时刻，parts 尚空（part 出生在后续 delta 批，签名不变）→ #g 条目生成的发布查找走 cm.parts 恒 miss → 冻结条目零发射 → 毕业内容无处渲染。渲染管道（renderableTurns miss 分支修正陈旧引用）看得见 parts——**两管道视野分裂**，B案时期无人读结构管道的流式 parts 故隐形。
+- 尾块切片（shardPartIdx，走 renderableTurns）正常发生——切片了却没发射，用户看到「只剩尾巴在输出」。
+
+### 修复（Phase 5）
+
+发布查找改 **turnKey 直查**（PublishedShards.turnKey 与条目键同源，注册期写入），组遍历降兜底——绕开整类 parts 引用陈旧性。回归测试 StreamShardEntryEmissionTest：结构缓存空 parts 场景**红→绿**；全量单测绿×2。
+
+### 真机终验
+
+毕业①`507-shard len=2179 h=5065px`、毕业②`len=2093 h=4796px`——冻结条目全高组合；fire+1.2s 截图视觉裁决：满屏连续正文（3PC 章节多段完整），零空白零缺失。
+
+### 教训
+
+- 结构缓存（按 id 签名）与内容引用新鲜度是两个正交维度——「缓存不重建但引用会被修正」的契约只对走修正分支的管道成立；新消费方（A2 条目生成）读缓存原始引用=踩陈旧地雷。
+- 身份直查（turnKey）优于遍历匹配（parts）——发布方自带稳定身份时，永远用身份找。
+
