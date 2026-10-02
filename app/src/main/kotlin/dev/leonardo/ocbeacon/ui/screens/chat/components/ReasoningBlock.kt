@@ -21,13 +21,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.draw.clipToBounds
+
+
+
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import dev.leonardo.ocbeacon.ui.theme.LocalChatDensity
@@ -316,21 +315,14 @@ internal fun ReasoningBlock(
                         Column {
                         // #432(卡族垂直节奏一致):顶部 6dp 顶距移除——工具卡展开区
                         // 顶边零距,思考卡多 6dp 使两族展开态首行不同高。
-                        // 2026-08-16（用户反馈调整）：高度上限从半屏收紧为固定值——
-                        // 思考内容是长 Markdown，半屏上限下总是顶满（其他工具卡片
-                        // 内容短、实际远达不到半屏上限），视觉上显著高于其他卡片。
-                        // 240.dp 与多数工具卡片展开态的实际视觉高度一致。
-                        val reasoningScrollState = rememberScrollState()
-                        // clipToBounds：同 #234 二轮防御——滚动容器默认不裁剪溢出绘制
-                        // 卡内 fling 泄漏拦截上提至 item 级通用守卫(cardFlingLeakGuard,
-                        // ChatMessageList 挂载——覆盖 item 内全部卡内滚动容器),此处
-                        // 局部拦截移除(五轮两度定罪见守卫 KDoc)。
+                        // 2026-10-02 #506:撤 2026-08-16 的 240.dp 上限+内滚窗——
+                        // 内容其实完整可达,但隐形滚动(无滚动条提示/流式不跟随)
+                        // 使用户感知「展示不全」(真机 t34 定罪:展开只露 7/16 条
+                        // 目,末行切半)。展开动作=「看全部」的显式意图,直接给全
+                        // 内容高度;同域最新用户投诉 supersede 旧裁决。同时消灭
+                        // 嵌套滚动容器(fling 泄漏面)与流式跟随问题。
                         Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 240.dp)
-                                .clipToBounds()
-                                .verticalScroll(reasoningScrollState)
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             // 2026-08-16（部分复制）：SelectionContainer 包裹内容——
                             // 用户可选中任意片段复制（与 ReadToolCard 一致），

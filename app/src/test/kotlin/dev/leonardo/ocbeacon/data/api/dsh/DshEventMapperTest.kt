@@ -207,6 +207,45 @@ class DshEventMapperTest {
     }
 
     @Test
+    fun `block-start patches predecessor terminal time - #506`() {
+        // #506 真机定罪（t32 抓包）：DSH 把 reasoning 的 block-end 压到整流结束
+        // 才发（思考 22:10:56 完，block-end 22:12:03.9 才到）→ time.end 迟到 67s
+        // → 思考卡计时拖着跑满正文流式全程。块严格顺序（零交错实证）⇒ 后继块
+        // 启动即前驱块完成——block-start(N) 顺手发 ordinal=N-1 补丁；TimePatch 端
+        // end==null first-write-wins，晚到的真实 block-end 自然让位。
+        val mapped = DshEventMapper.mapSessionEvent(
+            "fixture-0001",
+            sessionEvent(
+                "assistant/chunk",
+                """{"turn":5,"step":1,"chunk":{"type":"block-start","index":1,"blockType":"text"}}""",
+            ),
+        )
+        val events = eventsOf(mapped)
+        val patch = events.filterIsInstance<SseEvent.MessagePartTimePatch>().single()
+        assertEquals("dsh-t5s1", patch.messageId)
+        assertEquals("fixture-0001", patch.sessionId)
+        assertEquals(0L, patch.ordinal)
+        assertEquals(1788109999000L, patch.endMs)
+        // part 播种事件不受影响（同帧共存）
+        assertTrue(events.any { it is SseEvent.MessagePartUpdated })
+    }
+
+    @Test
+    fun `first block-start emits no predecessor patch - #506`() {
+        // 首块（N=0）无前驱——不发补丁，只播种 part。
+        val mapped = DshEventMapper.mapSessionEvent(
+            "fixture-0001",
+            sessionEvent(
+                "assistant/chunk",
+                """{"turn":5,"step":1,"chunk":{"type":"block-start","index":0,"blockType":"reasoning"}}""",
+            ),
+        )
+        val events = eventsOf(mapped)
+        assertEquals(1, events.size)
+        assertTrue(events.single() is SseEvent.MessagePartUpdated)
+    }
+
+    @Test
     fun `usage chunk is ignored for 276 session usage`() {
         val m = mappedFrames("dsh/mux-frames-extra.jsonl")[10]
         assertEquals(listOf(DshMappedEvent.Ignored(DshIgnoreReason.CHUNK_USAGE)), m.mapped)

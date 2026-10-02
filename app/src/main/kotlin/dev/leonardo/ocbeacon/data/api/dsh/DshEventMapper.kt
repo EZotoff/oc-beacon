@@ -1712,7 +1712,23 @@ object DshEventMapper {
                         text = "", time = Part.Text.Time(start = time),
                     )
                 }
-                listOf(DshMappedEvent.Sse(SseEvent.MessagePartUpdated(part)))
+                val events = mutableListOf(DshMappedEvent.Sse(SseEvent.MessagePartUpdated(part)))
+                // #506：后继块启动 ⇒ 前驱块已完成——就地发前驱终态补丁。DSH 块
+                // 严格顺序（t31/t32 抓包零交错实证），但 block-end 被服务端压到
+                // 整流结束才发（t32：思考 22:10:56 完，block-end 22:12:03.9 才到）
+                // → time.end 迟到全程 → 思考卡计时拖着跑满正文流式。TimePatch 端
+                // end==null first-write-wins，晚到的真实 block-end 自然让位。
+                if (index > 0L) {
+                    events.add(DshMappedEvent.Sse(
+                        SseEvent.MessagePartTimePatch(
+                            sessionId = sessionId,
+                            messageId = messageId,
+                            ordinal = index - 1,
+                            endMs = time,
+                        )
+                    ))
+                }
+                events
             }
             "text-delta" -> listOf(
                 DshMappedEvent.Sse(

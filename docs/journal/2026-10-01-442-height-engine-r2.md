@@ -377,3 +377,27 @@ MDResize: card=b21bbd95-272 h=9597 d=9397    ← 100ms 回弹
 - 「宁缺勿错配」的门设计前提（内容恒取 markdown 参数）使容错方向安全化——先问「错配后果是什么」再定门的松紧。
 - fuzzy 去重（endsWith）对纯追加流是纯害：每次「恰好重复」都是误杀。判定重复投递需要序号/身份，内容形状判定必错。
 
+
+## ## 13. #506 思考卡计时拖满全程 + 展开内容困在 240dp 隐形滚动窗（2026-10-02 深夜二段）
+
+### 双症状定罪（用户报告，真机 t33/t34 复现）
+
+**① 计时不随思考结束停下**：WS 抓包（t32）铁证——DSH 把 reasoning 的 block-end **压到整流结束才发**（思考内容 22:10:56 完，block-end 22:12:03.9 才到，与 text block-end 同毫秒），#453 的 TimePatch 机制没错但补丁迟到 67s → time.end 缺席 → `isReasoningStreaming(partEnded=false ∧ hasValidAnchor=true)` 恒真 → 计时拖满正文流式全程。
+
+**② 展开内容展示不全**：内容数据完整可达（t34 卡滚到底「结语」与末行俱在——首查被 dump 正则长度过滤误导以为截断），但锁在 240dp 内滚窗：无滚动条提示、流式不跟随、末行切半贴文章标题——用户感知「展示不全」。
+
+### 修复
+
+1. **前驱终态补丁**（DshEventMapper.mapChunk）：block-start(N) 顺手发 TimePatch(ordinal=N-1, endMs=块启动时刻)。依据：DSH 块严格顺序（t31/t32 抓包零交错实证）⇒ 后继启动即前驱完成；TimePatch 端 end==null first-write-wins，晚到的真实 block-end 自然让位；首块（N=0）无前缀不发。链式归纳覆盖全部块（每块由其后继终态化，末块由自身 block-end）。
+2. **展开全高**（ReasoningBlock）：撤 240dp heightIn + verticalScroll + clipToBounds——展开动作=「看全部」显式意图，直接给全内容高度；supersede 2026-08-16 240dp 裁决（同域最新用户投诉）。副产品：消灭卡内嵌套滚动容器（fling 泄漏面）与流式跟随问题。
+
+### 验证（真机 t35）
+
+- 单测：DshEventMapperTest +2（block-start(N) 发前驱补丁/首块不发）；全量绿。
+- 计时：logcat 铁证——TimePatch 于 22:40:52.343 **流中**（正文刚起步）dispatch + B2-struct publish（changed=true 语义）= reasoning part 即时终态化 → partEnded → tick 静态化。
+- 展示：t35 卡展开 dump——768 字 reasoning 自首段（User wants a plan first…）至末行（Brief plan then article…）一整块连续呈现，末行可见零滚动。
+
+### 残余（登记未实施）
+
+完结换代（删 dsh-t{N}s1 合成消息 + 上权威 seq 消息，不同 message id 不走 mergePart）后思考卡时长消失：转写块无 time 字段（实测 message.content 仅 type/text），跨消息时间迁移需 temporal join，用户未报、留待裁决。
+
