@@ -104,11 +104,31 @@ internal object CompletionHandoff {
         android.util.Log.w("504-forensic", "miss: inc=" + inc.length + " " + desc)
     }
 
+    /**
+     * #509（2026-10-03 真机定罪）重灌检测：当前 markdown 是否为某登记指纹的
+     * **短前缀**（余量 >[REPLAY_HOLD_MARGIN_CH]）。毕业重灌（DSH 权威转写以
+     * delta 序列重放，实测 4→5→15→…→1182ch 跨 ~380ms）的每个中间态都是终文
+     * 的前缀——配合调用侧的槽位卫（pilotEverRendered，本槽刚流式渲染过）即
+     * 构成「重灌在途」判据。真重生成走 asyncParse=false 流式分支不经此门
+     * （调用侧以 asyncParse 门 freeze，重生成不被冻结）。
+     */
+    fun replayHoldCandidate(markdown: String): Boolean {
+        val inc = normalizeForStreaming(markdown)
+        if (inc.isEmpty()) return false
+        return slots.keys.any { st ->
+            st.length > inc.length + REPLAY_HOLD_MARGIN_CH && st.startsWith(inc)
+        }
+    }
+
     /** 测试缝：单例跨用例隔离。 */
     fun resetForTest() {
         slots.clear()
     }
 }
+
+/** #509 重灌保持余量：指纹比当前 markdown 至少长此值才视为「重灌在途」而非
+ *  正常尾批补齐（与 #504 尾容错 512 同源取半）。 */
+internal const val REPLAY_HOLD_MARGIN_CH = 256
 
 /**
  * #504 交接内容门（纯函数，单测锚）：stash 侧存归一化形态、取用侧对原文

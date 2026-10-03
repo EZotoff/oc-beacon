@@ -97,6 +97,8 @@
   - 机制链（B2 12:21:38.5-39.2 全取证）：Idle 后 pilot 卸载（len=1178→4）→ 塌缩 → path=preParsed chunked=false ×8+（len 620-2672）+ entries n=142 全量重组合 + 表格同步重解析 430ms → 弹回；#472 preParsed 快路径未覆盖表格条目（表格需分段渲染态重建）
   - 缓冲区疑虑已排除（用户问题正面回答）：数据级到达-渲染深度纯文本 max=26 字/p95=8、表格轮 max=65 字——管线无积压；爆发感全部来自本毕业塌缩窗（表格中流分段渲染正常：RESIZE p50 +66px 平滑）
   - 修复方向候选：a) 流式期预解析冻结形态表格（复用流式已解析态）；b) 交换保持——旧内容挂至新条目量测就绪（防塌缩窗，跨淡入）；c) #429 式 loading 过渡兜底。另需修 journal §26 的 TurnFin 全称表述（文本轮正当位移≠表格轮无缺陷）
+  - 修复 v1+v2 已落地（单测绿+真机路径验证）：①replayHold——重灌中间态（4→5→15…前缀形态）期 pilot 分支保持+freeze 冻结旧内容（CompletionHandoff.replayHoldCandidate 纯函数+5 单测，LRU 防污 guard）；②换装桥长度门移除——takeIfMatches 命中轮任意长度走 asyncTerminal（Default 线程解析）+holdPilotTerminal 保持，主线程零解析（消除 syncSmall 的 350ms parseBlocking）。真机 v2a 实证 asyncTerminal 路径启用且零异常
+  - 残余（未全愈，需深度裁决）：表格轮毕业仍有 350-700ms 空槽——v2a 定罪链：TurnFin(39.57)→h 2571→0(39.61)→asyncTerminal 渲染(39.96)→h 120→2595(40.28)；ItemP 证据=u_seq/t_seq 条目在毕业时刻 enter(39.61)/leave(40.31) 双重建——条目子树整体销毁使一切组合内保持机制（pilotEverRendered/remember 态）失效。属 #485(REST 快照归并)+#504(id 换代)身份翻覆族：合成→权威→REST 刷新链上消息 id/键翻覆引发 LazyColumn 重排湍流，锚链（#440 槽位锚→user id）随翻覆漂移。候选深修=内容指纹锚（user 文本 hash 抗 id 翻覆，需防碰撞）或数据层身份稳定化——重大手术另启批次裁决
 
 - [~] **#508 展开反射锚定归一分支丢一个 item 高度——中位小 item 构型展开恒 −1024px 视口跳变（违「卡钉住」裁决）** `chat` `scroll`
   - #466 normalizeExpandAnchor 链尽 fall-through 丢弃越界折算的整 item 高度：逆布局可见链只含锚 item 自身（新侧已滚过不可见），rawTarget=fiso+H 超锚 item 旧尺寸时返回 (锚idx, fiso+H−旧尺寸)，目标位恒短一个 item 高；实测展开位移 = H−锚item尺寸（与 fiso 无关，本例 1335−2359=−1024 两次复现同值），卡头 y1995→1074、上方条目逐出、~790px 空白带不自愈

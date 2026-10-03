@@ -597,3 +597,10 @@ MDResize: card=b21bbd95-272 h=9597 d=9397    ← 100ms 回弹
 - 但同窗揪出真缺陷 #509：表格轮 TurnFin 毕业换装塌缩窗——B2 全取证链：Idle(21:38.57)→pilot 卸载→h 2197→182(d=−2015)→430ms（preParsed chunked=false ×8+ 重解析+entries n=142 全量重组合）→h 182→2221(d=+2039)；R2 早前表格轮同签名（h2670→182 d=−2488）2/2 复现；S6 纯文本（持续正增长无塌缩）与 B3 60 行代码块（无塌缩）免疫——表格解析路径专属，#472 preParsed 未覆盖
 - 用户观感映射：贴底跟随时表格轮完结=整屏内容消失 ~0.4s 再弹回=「一会儿便秘、一会儿大段突然出现」的确切来源（非稳态缓冲）；表格中流分段渲染本身正常（RESIZE p50 +66px 平滑落地，#429/#430 机制工作）
 - §26 勘误：TurnFin 大步「属输出驱动正当位移」的表述仅适用于文本轮；表格轮存在本缺陷
+
+## §28 #509 修复第一波：replayHold + 换装桥全长度化（残余身份翻覆族如实挂起）
+
+- 修复①replayHold（B2 重灌变体）：毕业重灌（权威转写 delta 重放）中间态恒为终文前缀——CompletionHandoff.replayHoldCandidate（短前缀判定，余量 256）+MarkdownContent 槽位卫（pilotEverRendered 经 swapStableKey 跨换装存活）+freeze 冻结 + noteActive 防污（重灌残帧不得灌入 LRU 挤出真指纹）+5s 壁钟帽；asyncParse 门保证真重生成永不被冻
+- 修复②换装桥长度门移除（fix3 变体主因之一）：syncSmall 路径的主线程 parseBlocking 对表格轮 =350ms 阻塞（1484ch 实测）——takeIfMatches 命中轮任意长度改走 asyncTerminal（Default 线程解析+pilot 保持到就绪），主线程零解析；真机 v2a 实证 asyncTerminal 路径启用、Loading 占位被保持机制吸收、零异常
+- 残余定罪（v2a 全链）：表格轮毕业 350-700ms 空槽仍在——ItemP 证据 u_seq/t_seq 条目毕业时刻双重建（enter 39.61/leave 40.31），条目子树销毁 bypass 一切组合内保持；属 #485+#504 身份翻覆族（合成→权威→REST 刷新三段 id 翻覆），#440 槽位锚锚 user id 亦随翻覆漂移。深修候选=内容指纹锚/数据层身份稳定化——重大手术另行裁决，本波不冒进
+- 全量单测绿（CompletionHandoffGateTest 新增 5 用例红→绿）；编译两轮绿；真机装机两轮（无线 adb 通道——USB 断开后 wireless 接管，serial 变 adb-e69a99d8-yzT17Y._adb-tls-connect）

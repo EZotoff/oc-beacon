@@ -772,7 +772,10 @@ internal fun MarkdownContent(
     val swapBridged by remember(markdown, asyncParse, overrideState, shardHold) {
         androidx.compose.runtime.mutableStateOf(
             overrideState == null && asyncParse && !shardHold &&
-                markdown.length > ASYNC_PARSE_MIN_CHARS &&
+                // #509：长度门移除——内容门本身即正确性判据；<2048 的换装命中
+                // （表格轮真机定罪：1484ch 原子换装，syncSmall 主线程解析 350ms+
+                // 测量 310ms 期间槽位空白 670ms）同样需要 asyncTerminal+pilot 保持
+                // 的无缝换装。未命中小文档维持 syncSmall（1-3ms 有界）。
                 CompletionHandoff.takeIfMatches(markdown).also { hit ->
                     // [504-forensic] 换装桥判定取证（DEBUG-only）——miss 时吐指纹长
                     // 度/前缀关系，终结「为何不命中」的猜测循环
@@ -784,6 +787,11 @@ internal fun MarkdownContent(
     }
     val asyncTerminal: com.mikepenz.markdown.model.MarkdownState? =
         if (overrideState == null && asyncParse && !shardHold && !swapBridged && markdown.length > ASYNC_PARSE_MIN_CHARS) {
+            rememberAsyncMarkdownState(markdown, isUser)
+        } else if (overrideState == null && asyncParse && !shardHold && swapBridged) {
+            // #509：换装命中轮任意长度都建 async 终态——holdPilotTerminal 保持
+            // pilot（旧内容持续可见）直到 Default 线程解析完成，切换帧直接渲染
+            // Success 终态首帧全高（主线程零解析，Loading 占位帧从构造上不出现）
             rememberAsyncMarkdownState(markdown, isUser)
         } else {
             null
@@ -798,8 +806,31 @@ internal fun MarkdownContent(
     var pilotEverRendered by remember { androidx.compose.runtime.mutableStateOf(false) }
     val holdPilotTerminal = StreamingMarkdownPilot.enabled &&
         pilotTerminalHold(pilotEverRendered, asyncTerminalPending)
+    // #509 重灌保持（2026-10-03 真机定罪）：毕业重灌期（DSH 权威转写以 delta
+    // 序列重放，实测 4→5→15→…→1182ch 跨 ~380ms）消息 completed 位翻转后
+    // asyncParse=true——上面三个保持条件全不成立（asyncTerminal=null 因 len<
+    // 2048）→分支切 fallback 同步渲染 4 字存根=塌缩 430ms（B2: h2197→182→2221）。
+    // 重灌判据=本槽刚流式渲染过（pilotEverRendered，slot 级 remember 经
+    // swapStableKey 跨换装存活）+ 当前 markdown 是登记指纹的短前缀（重灌中间
+    // 态恒为终文前缀）。保持=pilot 分支不退场+freeze 冻结旧内容，重灌追平
+    // （前缀余量 ≤256）自然释放。5s 壁钟帽防重灌中途夭折的永久冻结；真重生成
+    // 在 asyncParse=false 流式分支，replayHold 不参与 freeze（重生成不被冻）。
+    var replayHoldSinceMs by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    val replayCandidate = StreamingMarkdownPilot.enabled && pilotEverRendered &&
+        shardCtl == null && CompletionHandoff.replayHoldCandidate(markdown)
+    val replayHold = if (replayCandidate) {
+        if (replayHoldSinceMs == 0L) replayHoldSinceMs = android.os.SystemClock.elapsedRealtime()
+        android.os.SystemClock.elapsedRealtime() - replayHoldSinceMs < 5_000
+    } else {
+        replayHoldSinceMs = 0L
+        false
+    }
+    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG && replayHold) {
+        android.util.Log.w("A11yDiag", "path=replayHold len=" + markdown.length)
+    }
     if (streamingPilotEligible(overrideState != null, asyncParse, isUser) && StreamingMarkdownPilot.enabled ||
         holdPilotTerminal ||
+        replayHold ||
         shardHold
     ) {
         // #437：pilotState.state 只收 SafePrefixGate 放行的定案内容；
@@ -812,15 +843,19 @@ internal fun MarkdownContent(
         // 已跳过，holdPilotTerminal 恒 false——防御性 && !shardHold）。
         val pilotState = rememberPilotStreamingMarkdownState(
             markdown,
-            freeze = holdPilotTerminal && !shardHold,
+            // #509：replayHold 期同样冻结（重灌中间态不进 pilot 差分）；asyncParse
+            // 门保证真重生成（流式态 asyncParse=false）永不被此冻结。
+            freeze = (holdPilotTerminal || (replayHold && asyncParse)) && !shardHold,
             shard = shardCtl,
         )
         // #504 换装指纹登记：pilot 活跃期持续记录归一化终帧（remember(markdown)
         // 单次归一化 + 直写单槽）——换代后新组合凭此命中换装桥（见 swapBridged）。
         // dispose 侧无需挂钩：末次登记即终帧指纹（Compose onDispose 派发次序
         // 恒晚于新节点组合，dispose-stash 不可用——类头注①）。
+        // #509：replayHold 期不登记——重灌中间态（4→5→15…）会以内容为键灌入
+        // LRU 槽，挤出真正的终帧指纹（自毁判据）。
         val pilotFrameNormalized = remember(markdown) { normalizeForStreaming(markdown) }
-        CompletionHandoff.noteActive(pilotFrameNormalized)
+        if (!replayHold) CompletionHandoff.noteActive(pilotFrameNormalized)
         androidx.compose.foundation.layout.Column {
             // #437 崩溃修复：非前缀重建（resetKey++）换 state 实例的同一帧，
             // 库 Markdown 内部 collectAsState 对流实例的记忆可能残留旧 snapshot

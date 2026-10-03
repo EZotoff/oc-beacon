@@ -105,4 +105,50 @@ class CompletionHandoffGateTest {
         val tail = "共享的结尾段足够长以通过后缀锚的检验区域要求。".repeat(30)
         assertFalse(completionHandoffMatches(normalizeForStreaming("甲" + tail), "乙" + tail))
     }
+
+    // ===== #509 replayHoldCandidate（重灌在途检测）=====
+
+    @Test
+    fun `重灌中间态是指纹短前缀则保持 - #509`() {
+        motive("毕业重灌的每个中间态都是终文前缀：4 字存根 vs 1178 字指纹 → 保持判定成立，pilot 分支不退场")
+        CompletionHandoff.resetForTest()
+        val doc = "虚构编程语言对比表格如下，逐列说明类型系统与并发模型的取舍。".repeat(40)
+        CompletionHandoff.noteActive(normalizeForStreaming(doc))
+        val stub = doc.substring(0, 4)
+        assertTrue(CompletionHandoff.replayHoldCandidate(stub))
+    }
+
+    @Test
+    fun `重灌追平（余量不足）则释放 - #509`() {
+        motive("markdown 长到指纹 -256 以内（尾批补齐量级）不再是重灌中间态——保持释放，freeze 解除")
+        CompletionHandoff.resetForTest()
+        val doc = "段落正文持续累积直到超过余量阈值以上的长度才会被视为仍在重灌途中。".repeat(30)
+        CompletionHandoff.noteActive(normalizeForStreaming(doc))
+        assertFalse(CompletionHandoff.replayHoldCandidate(doc.substring(0, doc.length - 256)))
+        assertTrue(CompletionHandoff.replayHoldCandidate(doc.substring(0, doc.length - 257)))
+    }
+
+    @Test
+    fun `非前缀短文不保持（真异构小文本）- #509`() {
+        motive("全新内容（不共享前缀）即使很短也不是重灌——门必须前缀命中才保持")
+        CompletionHandoff.resetForTest()
+        CompletionHandoff.noteActive(normalizeForStreaming("甲".repeat(600)))
+        assertFalse(CompletionHandoff.replayHoldCandidate("乙".repeat(4)))
+    }
+
+    @Test
+    fun `空 markdown 不保持 - #509`() {
+        motive("空串短路——part 尚未有内容的瞬间不做保持判定")
+        CompletionHandoff.resetForTest()
+        CompletionHandoff.noteActive(normalizeForStreaming("内容".repeat(300)))
+        assertFalse(CompletionHandoff.replayHoldCandidate(""))
+    }
+
+    @Test
+    fun `无指纹（槽空）不保持 - #509`() {
+        motive("冷组合/进程重启后无登记指纹：无从判定重灌，走默认路径")
+        CompletionHandoff.resetForTest()
+        assertFalse(CompletionHandoff.replayHoldCandidate("任意开头文本"))
+    }
 }
+
