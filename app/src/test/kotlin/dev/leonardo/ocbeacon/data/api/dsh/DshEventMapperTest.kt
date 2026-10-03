@@ -743,11 +743,12 @@ class DshEventMapperTest {
                 """{"turn":3,"step":2,"message":{"role":"assistant","content":[{"type":"reasoning","text":"why"},{"type":"text","text":"answer body"}]},"usage":{"inputTokens":10,"outputTokens":5}}""",
             ),
         )
-        // 桥接拆除 → 消息 → reasoning part → text part
+        // 桥接原地换名（#509）→ 消息 → reasoning part → text part
         assertEquals(4, mapped.size)
-        val removed = (mapped[0] as DshMappedEvent.Sse).event as SseEvent.MessageRemoved
-        assertEquals("fixture-0001", removed.sessionId)
-        assertEquals("dsh-t3s2", removed.messageId) // 同 turn/step 的实况流式宿主被整装替换
+        val swapped = (mapped[0] as DshMappedEvent.Sse).event as SseEvent.MessageIdSwapped
+        assertEquals("fixture-0001", swapped.sessionId)
+        assertEquals("dsh-t3s2", swapped.fromId) // 同 turn/step 的实况流式宿主被原地换名
+        assertEquals("seq-fixture-0001-100", swapped.toId)
         val msg = (mapped[1] as DshMappedEvent.Sse).event as SseEvent.MessageUpdated
         val assistant = msg.info as Message.Assistant
         assertEquals("seq-fixture-0001-100", assistant.id)
@@ -756,11 +757,14 @@ class DshEventMapperTest {
         assertEquals(5, assistant.tokens!!.output)
         assertEquals(15, assistant.tokens!!.total)
         val reasoning = ((mapped[2] as DshMappedEvent.Sse).event as SseEvent.MessagePartUpdated).part as Part.Reasoning
-        assertEquals("seq-fixture-0001-100_reasoning_ord_0", reasoning.id)
+        // #509：权威 part id 用流式宿主前缀派生（跨实况/历史同源——与流式 part 同
+        // id 原位合并）；messageId 仍指权威 seq id
+        assertEquals("dsh-t3s2_reasoning_ord_0", reasoning.id)
+        assertEquals("seq-fixture-0001-100", reasoning.messageId)
         assertEquals("why", reasoning.text)
         assertEquals(1788109999000L, reasoning.time!!.end) // 整装即终态（#266 迟到 delta 守卫）
         val text = ((mapped[3] as DshMappedEvent.Sse).event as SseEvent.MessagePartUpdated).part as Part.Text
-        assertEquals("seq-fixture-0001-100_text_ord_1", text.id)
+        assertEquals("dsh-t3s2_text_ord_1", text.id)
         assertEquals("answer body", text.text)
     }
 
@@ -1501,7 +1505,9 @@ class DshEventMapperTest {
         )
         val parts = eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>()
         val f = parts.single().part as Part.File
-        assertEquals("seq-s1-30_file_ord_0", f.id)
+        // #509：file part id 同 text/reasoning 契约用流式宿主前缀（跨毕业稳定）
+        assertEquals("dsh-t1s2_file_ord_0", f.id)
+        assertEquals("seq-s1-30", f.messageId)
         assertEquals("application/pdf", f.mime)
         assertEquals("spec.pdf", f.filename)
         assertEquals("https://x/spec.pdf", f.url)

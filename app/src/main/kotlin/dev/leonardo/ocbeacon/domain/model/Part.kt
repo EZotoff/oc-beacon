@@ -324,3 +324,31 @@ sealed class Part {
         @SerialName("messageID") override val messageId: String
     ) : Part()
 }
+
+/**
+ * #509：part 归属消息换名（毕业换装）——[Part.messageId] 字段改写为新消息 id，
+ * **id 不动**（part 身份与其一切 id 键控缓存跨换装连续）。编译器穷尽 when
+ * 保证新增子类不遗漏。仅 [dev.leonardo.ocbeacon.data.repository.handler.MessageEventHandler]
+ * 的 MessageIdSwapped 原地换名路径调用。
+ */
+fun Part.rekeyed(messageId: String): Part = when (this) {
+    is Part.Text -> copy(messageId = messageId)
+    is Part.Reasoning -> copy(messageId = messageId)
+    is Part.Tool -> copy(messageId = messageId)
+    is Part.Shell -> copy(messageId = messageId)
+    is Part.StepStart -> copy(messageId = messageId)
+    is Part.StepFinish -> copy(messageId = messageId)
+    is Part.File -> copy(messageId = messageId)
+    is Part.Snapshot -> copy(messageId = messageId)
+    is Part.Patch -> copy(messageId = messageId)
+    is Part.Subtask -> copy(messageId = messageId)
+    is Part.Compaction -> copy(messageId = messageId)
+    is Part.Retry -> copy(messageId = messageId)
+    is Part.Agent -> copy(messageId = messageId)
+    is Part.Permission -> copy(messageId = messageId)
+    is Part.Question -> copy(messageId = messageId)
+    is Part.Abort -> copy(messageId = messageId)
+    is Part.SessionTurn -> copy(messageId = messageId)
+    is Part.Deliverables -> copy(messageId = messageId)
+    is Part.Unknown -> copy(messageId = messageId)
+}

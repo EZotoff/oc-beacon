@@ -989,11 +989,12 @@ object DshEventMapper {
             )
         )
         // #356 echo→持久原子换装：RPC 提交的持久回显（source=user-rpc.rpccdId，
-        // MessageSourceMap 契约）补发 pending-<rpcId> 拆除——本地 echo 气泡与
-        // 持久消息同批到达同批折叠（handleMessageRemoved 幂等：echo 不在为 no-op，
-        // 历史/重放路径天然安全）。
+        // MessageSourceMap 契约）把本地 pending-<rpcId> echo 气泡**原地换名**为持久
+        // 消息（#509：MessageIdSwapped 替代 MessageRemoved 拆除——行不离开列表，
+        // u_ 条目不销毁重建；消费端仍登记 #490 台账，迟到的竞态播种照旧被丢弃；
+        // echo 不在为幂等 no-op，历史/重放路径天然安全）。
         data.obj("source")?.str("rpcId")?.takeIf { it.isNotBlank() }?.let { rpcId ->
-            events += DshMappedEvent.Sse(SseEvent.MessageRemoved(sessionId, "pending-$rpcId"))
+            events += DshMappedEvent.Sse(SseEvent.MessageIdSwapped(sessionId, "pending-$rpcId", id))
         }
         // #378 转录实体接线（压缩摘要表面载体，实录 seq-5392）：
         // - source.compactionId → CompactionSurfaceBound——摘要的 user/message
@@ -1167,8 +1168,19 @@ object DshEventMapper {
         val events = mutableListOf<DshMappedEvent>()
         val turn = data.long("turn")
         val step = data.long("step")
+        // #509：毕业换装=原地换名（MessageIdSwapped）而非 MessageRemoved 拆除——
+        // 消费端单同步块内把宿主行（含 parts）原子改名为权威 id，消除「权威行
+        // 已到、parts 未到」的 P5-3 过滤空窗（t_ 条目销毁重建→槽位记忆归零→
+        // asyncTerminal Loading≈0px 空白的根因）。
+        // part id 前缀=流式宿主 id（**跨实况/历史同源派生**：宿主行在场则与流式
+        // part 同 id 原位合并；历史 fold 无宿主播种也按同前缀派生，与 Room 存量
+        // 行幂等合并）——part 身份自首帧起永久稳定，id 键控缓存（预解析注册表/
+        // 分片账本/换装指纹）跨毕业连续。无 turn/step（畸形/旧事件）回落 seq 前缀。
+        val partIdPrefix = if (turn != null && step != null) streamingMessageId(turn, step) else id
         if (turn != null && step != null) {
-            events += DshMappedEvent.Sse(SseEvent.MessageRemoved(sessionId, streamingMessageId(turn, step)))
+            events += DshMappedEvent.Sse(
+                SseEvent.MessageIdSwapped(sessionId, streamingMessageId(turn, step), id)
+            )
         }
         // (2026-09-12 消息层扁平化 (a)) 模型路由：DSH 把 provider/model 放在
         // data.message.source（实况：{"kind":"model","provider":"...","model":"..."}，
@@ -1236,7 +1248,7 @@ object DshEventMapper {
                     events += DshMappedEvent.Sse(
                         SseEvent.MessagePartUpdated(
                             Part.Reasoning(
-                                id = PartIdContract.derive(id, "reasoning", i.toLong()),
+                                id = PartIdContract.derive(partIdPrefix, "reasoning", i.toLong()),
                                 sessionId = sessionId,
                                 messageId = id,
                                 text = block.str("text") ?: "",
@@ -1250,7 +1262,7 @@ object DshEventMapper {
                     events += DshMappedEvent.Sse(
                         SseEvent.MessagePartUpdated(
                             Part.Text(
-                                id = PartIdContract.derive(id, "text", i.toLong()),
+                                id = PartIdContract.derive(partIdPrefix, "text", i.toLong()),
                                 sessionId = sessionId,
                                 messageId = id,
                                 text = block.str("text") ?: "",
@@ -1264,7 +1276,7 @@ object DshEventMapper {
                 "tool-call", "tool-result" -> Unit
                 // 2026-09-01（Task 3c 卡片缺口）：file/image ContentBlock → Part.File
                 //（与 user/message 同款；DSH attachment 字节拉取留待 session.attachment 接线）。
-                "file", "image" -> events += mapFileBlock(sessionId, id, i, block)
+                "file", "image" -> events += mapFileBlock(sessionId, id, i, block, partIdPrefix)
                 else -> AppLogger.w(TAG, "assistant/message 未支持的内容块: " + block.str("type"))
             }
         }
@@ -1568,7 +1580,7 @@ object DshEventMapper {
      * octet-stream；source 保真 attachment/原文供后续 session.attachment 接线
      *（url 为 null 时既有图片缩略图链不渲染——字节拉取 = 后续任务，数据不再丢）。
      */
-    private fun mapFileBlock(sessionId: String, msgId: String, index: Int, block: JsonObject): DshMappedEvent.Sse {
+    private fun mapFileBlock(sessionId: String, msgId: String, index: Int, block: JsonObject, partIdPrefix: String = msgId): DshMappedEvent.Sse {
         val attachment = block.obj("attachment")
         val mime = block.str("mime") ?: attachment?.str("mediaType") ?: "application/octet-stream"
         val filename = block.str("filename") ?: attachment?.str("name")
@@ -1576,7 +1588,8 @@ object DshEventMapper {
         return DshMappedEvent.Sse(
             SseEvent.MessagePartUpdated(
                 Part.File(
-                    id = PartIdContract.derive(msgId, "file", index.toLong()),
+                    // #509：part id 前缀=流式宿主（跨毕业稳定，同 text/reasoning 契约）
+                    id = PartIdContract.derive(partIdPrefix, "file", index.toLong()),
                     sessionId = sessionId,
                     messageId = msgId,
                     mime = mime,

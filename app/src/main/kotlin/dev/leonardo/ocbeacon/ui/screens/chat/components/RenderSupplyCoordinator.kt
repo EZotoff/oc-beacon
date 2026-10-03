@@ -129,6 +129,35 @@ internal class RenderSupplyCoordinator(
         _recentStreamedTurnKeys.value = _recentStreamedTurnKeys.value + turnKey
     }
 
+    /**
+     * #509 预解析暖场：流末对刚毕业 turn 的长文本 part 立即后台预解析。
+     *
+     * 背景：毕业换装（分片树→整卡树重组）后新树首个 PartContent 组合若预解析
+     * 未就绪则走 asyncTerminal Loading≈0px——表格轮实测 350-700ms 空白残余。
+     * part id 已跨毕业稳定（宿主前缀，DSH mapper #509 契约），此处以流末终态
+     * 文本预热 [RenderReadinessRegistry]：新树组合时 preParsed 即命中、首帧全高。
+     * （块级 block-end 早于流末到达，解析在换装重组前已有头跑——表格 1484ch
+     * 实测 ~90ms Default 线程完成。）
+     *
+     * 陈旧安全：仅喂当前快照文本，与后续权威终态 part 同 id 同文（DSH 转写逐字
+     * 节一致，#505 抓包实证）；权威真分歧时 mergePart 换文，消费侧 preParsed 门
+     * 按 partId 命中——与既有滚动预热同一权衡（静态 part 集合）。
+     */
+    fun preParseStreamedTurnParts(parts: List<dev.leonardo.ocbeacon.domain.model.Part.Text>) {
+        for (p in parts) {
+            // 终态门（block-end 已落 time.end）= 内容已定格——权威转写与流式文本
+            // 逐字节一致（#505 抓包实证）的最安全子集；未终态 part 不暖场（换装
+            // 后走 asyncTerminal 既有路径，不冒陈旧渲染风险）。
+            if (p.time?.end == null) continue
+            // 与 MessageCardAssistant 消费门同阈值（PREPARSE_MIN_CHARS）；Pending
+            // 才启动（Parsing=在途勿双发，Parsed/Failed 已有终态——onWorldArrived 同款）
+            if (p.text.length < PREPARSE_MIN_CHARS || p.synthetic == true || p.ignored == true) continue
+            if (registry.current(p.id) is RenderReadiness.Pending) {
+                registry.preParse(p.id, p.text, parseScope, parseDispatcher = parseDispatcher)
+            }
+        }
+    }
+
     // ===== #258 Stage B：到达扫描（数据到达即抢先分段——修计划时机错位）=====
 
     /**

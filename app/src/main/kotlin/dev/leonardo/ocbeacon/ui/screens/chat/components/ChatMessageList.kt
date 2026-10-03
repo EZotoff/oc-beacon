@@ -794,7 +794,6 @@ fun ChatMessageList(
     // #258 Stage B：历史长 turn 分段计划（到达扫描产物）。
     val segmentPlans by renderSupply.segmentPlans.collectAsState()
 
-    val lastStreamingMsgId = remember { mutableStateOf<String?>(null) }
     // [DEBUG-hflick] #437 十三轮仪器：计划锚键序列上一次快照（PLAN diff 探针用）
     val hflickPrevPlanKeys = remember { mutableStateOf<List<String>?>(null) }
     // #442 R2 分片唤醒（A2）：流式 shard 发布表（broker 单例快照——pilot 深处
@@ -961,16 +960,33 @@ fun ChatMessageList(
     val chatEntriesForPreparse = androidx.compose.runtime.rememberUpdatedState(chatEntries)
     // 流式结束瞬间记录 turn key（延迟分片——防视口内 key 裂变闪跳；
     // 由协调器的窗口清理负责释放）。
-    LaunchedEffect(streamingMsgId) {
-        if (streamingMsgId == null && lastStreamingMsgId.value != null) {
-            val found = displayItems.indexOfFirst { (_, m) -> m.message.id == lastStreamingMsgId.value }
-            if (found >= 0) {
-                val (ri, m) = displayItems[found]
-                val tk = chatEntryKey(turnGroups, ri, m, turnAnchors)
-                renderSupply.noteStreamTurnEnded(tk)
-            }
+    // #509：改为**随流捕获锚定键**——毕业换装（MessageIdSwapped）会把流式宿主行
+    // 原地改名为权威 id，流末按旧实现记的 lastStreamingMsgId 回查 displayItems
+    // 会落空（id 已换），recent-streamed 排除失效 → 刚毕业 turn 立即成分段候选。
+    // 锚定 t_ 键（user 消息 id）跨换名稳定：随流持续刷新、流末取末值。
+    var lastStreamingTurnKey by remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var lastStreamingTurnParts by remember { androidx.compose.runtime.mutableStateOf<List<Part.Text>>(emptyList()) }
+    if (streamingMsgId != null) {
+        val sIdx = displayItems.indexOfFirst { (_, m) -> m.message.id == streamingMsgId }
+        if (sIdx >= 0) {
+            val (sRi, _) = displayItems[sIdx]
+            lastStreamingTurnKey = chatEntryKey(turnGroups, sRi, displayItems[sIdx].second, turnAnchors)
+            // #509 预解析暖场素材：轮内全部 Text part（流末即终态——毕业权威
+            // 转写与流式逐字节一致，#505 抓包实证；part id 宿主前缀跨毕业稳定）
+            lastStreamingTurnParts = (turnGroups[sRi] ?: emptyList()).flatMap { it.parts }
+                .filterIsInstance<Part.Text>()
         }
-        lastStreamingMsgId.value = streamingMsgId
+    }
+    LaunchedEffect(streamingMsgId) {
+        val endedKey = lastStreamingTurnKey
+        if (streamingMsgId == null && endedKey != null) {
+            renderSupply.noteStreamTurnEnded(endedKey)
+            // #509 预解析暖场：毕业换装后分片树→整卡树重组，新树首个 PartContent
+            // 组合若预解析未就绪则走 asyncTerminal Loading≈0px（表格轮 350-700ms
+            // 空白残余）。流末对轮内长文本 part 立即后台预解析——新树组合时
+            // preParsed 即命中、首帧全高（块级 block-end 早于流末，解析有头跑）。
+            renderSupply.preParseStreamedTurnParts(lastStreamingTurnParts)
+        }
     }
 
     // 当前可见问题（msgId 驱动，与 Room 全量列表的 JumpTarget.msgId 匹配高亮）。

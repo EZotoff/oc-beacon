@@ -121,6 +121,27 @@ sealed class SseEvent {
         val messageId: String
     ) : SseEvent()
 
+    /**
+     * #509：消息 id 原地换名（毕业换装）——合成 id（流式宿主 dsh-t 前缀、乐观
+     * 播种 pending- 前缀）与权威 id（seq- 前缀）是同一逻辑消息的两个 wire 拼法。
+     *
+     * 语义：消费端（MessageEventHandler.handleMessageIdSwapped）在**单个同步块**
+     * 内把 fromId 行（含 parts）原子改名为 toId——消息行不离开列表、parts 不
+     * 离开热视图（part.id 保持不变），LazyColumn 条目与全部 part-id 键控缓存
+     * （预解析注册表/分片账本/换装指纹）跨换装连续。fromId 行缺席时幂等 no-op
+     * （历史 fold 无 chunk 播种、重入时 Room 已是权威 id）。toId 既有行在场
+     * （resync 双源）时并入语义（fromId 行撤下、parts 归并）。
+     *
+     * 对比 [MessageRemoved]：真删除（用户删除/撤销/表面折叠）仍走 Removed——
+     * swap 只表达「同一消息换了权威拼写」，不得吞掉真删改（设计约束 #509-1）。
+     */
+    @Serializable
+    data class MessageIdSwapped(
+        val sessionId: String,
+        val fromId: String,
+        val toId: String
+    ) : SseEvent()
+
     // Part 事件 —— 流式内容
     @Serializable
     data class MessagePartUpdated(val part: Part) : SseEvent()

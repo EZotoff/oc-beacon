@@ -44,6 +44,11 @@ class MessageEventHandler @Inject constructor(
         val handled = when (event) {
             is SseEvent.MessageUpdated -> { handleMessageUpdated(event); true }
             is SseEvent.MessageRemoved -> { handleMessageRemoved(event); true }
+            // #509：合成 id→权威 id 的原地换名（毕业换装）——行不离开列表、
+            // part.id 不变，消除 remove+add 的列表成员空窗（P5-3 过滤把「权威
+            // 行已到、parts 未到」的中间态整轮过滤 → turn 组瞬空 → t_ 条目销毁
+            // → 全部槽位记忆归零 → asyncTerminal Loading≈0px 空白 350-700ms）。
+            is SseEvent.MessageIdSwapped -> { handleMessageIdSwapped(event); true }
             is SseEvent.MessagePartUpdated -> { handleMessagePartUpdated(event); true }
             is SseEvent.MessagePartDelta -> { handleMessagePartDelta(event); true }
             is SseEvent.MessagePartRemoved -> { handleMessagePartRemoved(event); true }
@@ -846,15 +851,119 @@ class MessageEventHandler @Inject constructor(
         // 时延批 upsert 无顺序保证（真机：upsert 事务晚 167ms 提交重插已删行 → 幽灵
         // 复活挂屏 6 分钟）。改记入待删队列：先从合并缓冲撤下未写行（该行从未落库），
         // 删除由单写协程在既有写入之后串行执行。
+        withdrawPendingUpsertAndEnqueueDelete(event.sessionId, event.messageId)
+        persistWakeups.trySend(Unit)
+    }
+
+    /**
+     * #437 写序原语（handleMessageRemoved / #509 handleMessageIdSwapped 共用）：
+     * 合并缓冲撤下 [messageId] 的未写快照（该行从未落库）+ 待删队列登记（删除由
+     * 单写协程在既有写入之后串行执行——后到 upsert 不得重插已删行）。
+     */
+    private fun withdrawPendingUpsertAndEnqueueDelete(sessionId: String, messageId: String) {
         synchronized(pendingUpsertsLock) {
-            val byMsg = pendingUpserts[event.sessionId]
-            if (byMsg?.remove(event.messageId) != null && pendingUpsertCount > 0) {
+            val byMsg = pendingUpserts[sessionId]
+            if (byMsg?.remove(messageId) != null && pendingUpsertCount > 0) {
                 pendingUpsertCount--
                 if (pendingUpsertCount == 0) oldestPendingUpsertAt = 0L
             }
-            pendingDeletes.getOrPut(event.sessionId) { HashSet() }.add(event.messageId)
+            pendingDeletes.getOrPut(sessionId) { HashSet() }.add(messageId)
         }
+    }
+
+    /**
+     * #509：消息 id 原地换名（[SseEvent.MessageIdSwapped]——DSH 毕业换装）。
+     *
+     * 合成 id（流式宿主 `dsh-t{turn}s{step}` / 乐观播种 `pending-<rpcId>`）与权威
+     * id（`seq-…`）是同一逻辑消息的两个 wire 拼法。旧路径把它们表达为
+     * MessageRemoved(合成) + MessageUpdated(权威)：两次独立 StateFlow 更新之间
+     * 存在「权威行在场、parts 未到」的中间态——P5-3 过滤把该中间态整轮过滤 →
+     * turn 组瞬时为空 → t_ 条目从列表消失又重现 → LazyColumn 销毁重建条目子树
+     * → 全部组合内记忆（pilotEverRendered/async 终态/预解析消费门）归零 →
+     * 新树 asyncTerminal Loading≈0px 空白 350-700ms（表格轮真机定罪）。
+     *
+     * 本路径在同一 handler 调用内**背靠背同步**完成改名（消息行原位换 id + parts 键
+     * 换名 + [Part.rekeyed] 改写归属，part.id 不动；两次 StateFlow 写之间无挂起点
+     * ——观察者经 dispatcher 派发恢复，只见终态），零列表成员空窗；part id 跨毕业
+     * 连续使预解析注册表/分片账本/换装指纹全部免失键。
+     *
+     * 幂等与边界：
+     * - fromId 行缺席（历史 fold 无 chunk 播种 / 重入已权威 / 重复事件）→ no-op；
+     * - toId 行已在场（resync 双源：Room 已按权威 id 播种 + 实况重放又建宿主行）
+     *   → 并入语义：fromId 行撤下、parts 归并（等价旧 remove+add 终态，无空窗）；
+     * - pending-* fromId 无条件登记 #490 台账（换名即拆除——行缺席的竞态败者
+     *   播种随后到达时被 handleMessageUpdated 丢弃）；
+     * - toId 命中 #378 遮蔽区间（迟到的被压缩消息毕业）→ 跳过（紧随的
+     *   MessageUpdated 由台账拦截，不重加）。
+     */
+    internal fun handleMessageIdSwapped(event: SseEvent.MessageIdSwapped) {
+        val sessionId = event.sessionId
+        // #490：pending-* 换名=拆除（含行缺席 no-op 的竞态落序——无条件登记）
+        if (event.fromId.startsWith("pending-")) {
+            recordPreDemolishedEcho(event.fromId)
+        }
+        // #378：换入目标被表面折叠遮蔽——不换名（防迟到的被压缩消息借毕业回魂）
+        val toSeq = DshMessageId.seqOf(event.toId)
+        if (toSeq != null && isShadowed(sessionId, toSeq)) {
+            if (BuildConfig.DEBUG) {
+                AppLogger.d(TAG, "[swap] drop shadowed target " + event.toId.take(16))
+            }
+            return
+        }
+        // 48ms 批窗内滞留的 fromId delta：换名后 _parts[fromId] 已撤，flush 的
+        // idx<0 兜底会在旧键下重建孤儿 part——就地丢弃（其后紧随的权威终态
+        // part 全文必含其内容，#265 守卫同语义）。
+        synchronized(pendingLock) {
+            if (pendingDeltas.isNotEmpty()) {
+                pendingDeltas.removeAll { it.messageId == event.fromId }
+            }
+        }
+        var applied = false
+        var renamedIsAssistant = false
+        _messages.update { current ->
+            val msgs = current[sessionId]?.toMutableList() ?: return@update current
+            val fromIdx = msgs.indexOfFirst { it.id == event.fromId }
+            if (fromIdx < 0) return@update current  // 幂等 no-op（已换/从未在场）
+            if (msgs.any { it.id == event.toId }) {
+                // 双源并入：toId 行保留（Room 权威种子），fromId 行撤下
+                msgs.removeAt(fromIdx)
+            } else {
+                val row = msgs[fromIdx]
+                msgs[fromIdx] = when (row) {
+                    is Message.User -> row.copy(id = event.toId)
+                    is Message.Assistant -> row.copy(id = event.toId)
+                    else -> return@update current  // 未建模形态不换名（防御）
+                }
+                renamedIsAssistant = row is Message.Assistant
+            }
+            applied = true
+            current + (sessionId to msgs)
+        }
+        if (!applied) return
+        _parts.update { current ->
+            val fromParts = current[event.fromId] ?: return@update current
+            val rekeyed = fromParts.map { it.rekeyed(event.toId) }
+            val existingTo = current[event.toId].orEmpty()
+            val merged = if (existingTo.isEmpty()) rekeyed
+            else MessageMergeEngine.mergePartsList(existingTo, rekeyed)
+            (current - event.fromId) + (event.toId to merged)
+        }
+        assistantMessageIds.remove(event.fromId)
+        // 双源并入分支的 toId 行已由其自身 handleMessageUpdated 注册过集合；纯换名
+        // 分支补注册换名后的 Assistant。
+        if (renamedIsAssistant) assistantMessageIds.add(event.toId)
+        // Room 写序（同 handleMessageRemoved）：fromId 撤缓冲 + 待删；换名后的行随
+        // persistSseUpdate 以 toId 落盘。
+        withdrawPendingUpsertAndEnqueueDelete(sessionId, event.fromId)
+        persistSseUpdate(sessionId, listOf(event.toId))
         persistWakeups.trySend(Unit)
+        if (BuildConfig.DEBUG) {
+            AppLogger.w(
+                TAG,
+                "[swap] " + event.fromId.take(16) + " -> " + event.toId.takeLast(12) +
+                    " parts=" + _parts.value[event.toId]?.size + " (#509 原地换名)",
+            )
+        }
     }
 
     // ============ #378 表面区间折叠（surfaceOp.replace 消费面） ============

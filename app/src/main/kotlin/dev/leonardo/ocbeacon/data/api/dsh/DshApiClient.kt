@@ -1275,7 +1275,7 @@ class DshApiClient @Inject constructor(
         // #356 echo 播种：受理即返回 admission → ChatRepositoryImpl 现有本地播种链
         // 上屏（web PendingSubmissionBubble 对位）；id=pending-<requestId>，
         // 持久 user/message（source=user-rpc.rpcId）到达时 mapper 补发
-        // MessageRemoved 原子换装（幂等）。V011 无 requestId → 维持 null 无 echo。
+        // MessageIdSwapped 原地换名（#509，幂等）。V011 无 requestId → 维持 null 无 echo。
         return requestId?.let { rid ->
             dev.leonardo.ocbeacon.data.api.message.PromptAdmission(
                 id = "pending-$rid",
