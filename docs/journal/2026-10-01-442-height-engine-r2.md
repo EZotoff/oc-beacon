@@ -610,3 +610,12 @@ MDResize: card=b21bbd95-272 h=9597 d=9397    ← 100ms 回弹
 - 三协议底层确认：失效面（key 锚不稳定 id + L3 REST 刷新重分配）协议无关，churn 强度 DSH 3 段>V2 1-2 段>V1 1 段（pending- 乐观播种）
 - 用户裁决：方案 B（数据层身份稳定化）；方案 A 暂缓。前置修复 35b9365d 已合入
 - handoff 全文：docs/specs/2026-10-03-509-identity-stabilization-handoff.md（自含三层前因后果/证据链时间戳/主战场文件地图/四条硬性设计约束/风险清单/#485 高风险邻区警示/仪器化验收标准/环境备忘）——供压缩后新会话直接开工
+
+## ## §30 #509 方案B 落地：原地换名（MessageIdSwapped）+ 宿主前缀 part id + 流末预解析（commit 45c9d9bb）
+
+- **handoff 证据复核修正**：v2a 取证重解（fix.log 13:41 窗）推翻「t_ 键漂移」读法——t_ 键毕业时本已稳定（shard-unreg/RESIZE 同键；#440 锚扛住；ItemP enter/leave 是视口进出+跨轮截断键碰撞）。真根因=MessageRemoved(宿主)+MessageUpdated(权威) 两次独立 StateFlow 更新间的「权威行在场、parts 未到」中间态被 P5-3 过滤整轮滤除 → turn 组瞬空 → 条目子树销毁 → pilotEverRendered 归零 → 新树 asyncTerminal Loading≈0px 空白 350-700ms
+- **三件套修复**：①SseEvent.MessageIdSwapped（mapper 毕业点发：assistant 宿主 dsh-t{t}s{s}→seq、user pending-rpcId→seq；handler 同调用背靠背同步改名，part.id 不动，幂等/resync 并入/#490 台账/#378 遮蔽守卫/批窗 delta 清洗/写序辅助共用）②权威 part id 宿主前缀派生（跨实况/历史同源=重入幂等合并；messageId 仍指 seq 行）③流末锚定键随流捕获（旧 lastStreamingMsgId 换名后回查落空）+ preParseStreamedTurnParts 暖场（终态门 time.end≠null + PREPARSE_MIN_CHARS + Pending-only）
+- **否决记录**：pilotEverRendered||swapBridged 豁免门不可行——freeze 的全新 pilot=空内容非旧内容（rememberPilotStreamingMarkdownState 首跑 LaunchedEffect freeze 早退）
+- **真机验收（houji 无线 adb / DSH-3080 矩阵会话）**：两轮表格（t75s1 913ch/t76s1 1220ch）swap→TurnFin→pilot hold=true→平滑 +24/+90px→asyncTerminal 130ms 无缝接管；全程零负向 RESIZE、毕业窗零 ItemP；user pending 换名 30ms 原地；退出重进 Room 零孤儿零重复（-689/-697/-706 各恰 2 part 行宿主前缀；全会话 HAVING>1 双份检测=0；旧构建遗留轮 resync 自然收敛）；V1 原生轮单调全正向零 swap
+- **残余如实记账**：分片短轮（t78s1 51ch）毕业 chunk→full 条目键 #cN 后缀翻转 → 104ms/304px 小塌弹——#422/#442 分片域既有设计（渲染树统一但条目键模态切换仍翻），非本修复引入亦非其回归；表格轮（用户主诉）完全免疫（未入分片）
+- code-review 两轴：Standards 采纳 5 处（常量化/写序辅助提取/!!/FQ 名/assertNull）；Spec 四疑点均有实证（L3 刷新真机 18:23:58 窗过、原子性=派发型观察者语义、delta 清洗与旧 isStaleDelta 等价、Room 遗留已查证）
