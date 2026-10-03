@@ -568,3 +568,13 @@ MDResize: card=b21bbd95-272 h=9597 d=9397    ← 100ms 回弹
 - Q4 重建风暴 PASS：静默流式 30s 窗 ChunkDiag=0、ItemP 每桶 2-4、Skipped=0、GC=0、Chatty=0；交互窗 ChunkDiag=0（ItemP 40=滚动自然churn）
 - V1 协议面（整弧零覆盖，本轮补）：导航 Host-4199→lighthouse 会话；curl 注入轮 wire 窃听定案——12s 窗仅 server.connected+心跳，零消息事件（服务端不广播外部注入轮，app 无辜；SSE 连接健康）；改 App 原生 UI 发送→wire 14 个 message.part.delta 真流式+busy/idle 闭环→app 状态事件+REST reconcile→问答双落库（答 "Lighthouses are promises cast in light…"）——v1 原生全路径闭环；v1 流式节奏 RESIZE p50=0.18s max=0.64s
 - 环境注：uimode night no（RC-7 残留）曾使 Q 帧分析处浅色主题——已还原 night yes；导航仍受 a11y 陈旧树/MIUI 进程击杀困扰，本轮以 debug intent 直连 3080 与几何直点化解
+
+## §25 N 通知/定位/插话/深扫矩阵：4 PASS + 1 仪器受阻（含锁屏根因与设置禁改裁决）
+
+- 用户裁决落地：真机测试期禁改一切系统设置（锁屏超时/无线调试/uimode）——已入长期记忆；替代方案=前台守卫 ESC 输入保活（仅 ocbeacon 前台时注入，不打扰用户用机）
+- 自动锁屏根因定案（PowerManagerService 日志全量）：七次 60 秒型=我的阶段收尾还原命令；四次 10 秒型=锁屏界面专属 activityTimeoutWM=10000（仅 keyguard 态存在，解锁态实测 -1；06:55 样本在 AOD 时段外，排除 AOD 驱动）；app 侧仅标准 FLAG_KEEP_SCREEN_ON 无辜
+- N1 通知链路 FULL PASS：curl 发 400 字轮→HOME 后台化→SessionNotifCoord「Response ready」→系统通知（opencode_tasks 高重要级通道，「就绪 · 会话名」+提问预览）→点按直达矩阵会话→内容完整渲染——deep-link 路由正确
+- N2 快速定位 PASS：底部「快速定位」→问题索引面板（Q53+ 时间戳）→点 Q54 视口精确跳转该轮（问题+思考卡+答案标题同屏）
+- N3 复制芯片：渲染存在性由多份独立 dump 确认（消息详情/复制芯片在轮脚出现）；交互验证仪器受阻（捕获窗中不可稳定定位），非阻塞
+- N4 steer 插话 PASS：1200 字轮 Busy 中输入+长按发送位（input swipe 同点 850ms）→Busy 中 POST /api/session/prompt（steer 触发）→插话 'quick steer probe ok' 落库 1 part + 量子纠缠主轮 2 parts 完整——插话不搅扰原轮
+- N5 全量深扫 PASS：22 上扫+26 下扫共 48 屏，画面变化 41/48（余为端部夹钳重复帧），亮像素带 2.1-15.5% 分布多样，零全空白屏（零渲染空洞）；首次扫描为无效测量——N4 遗留 IME 开启致滑在键盘上列表不动（mInputShown true→BACK 关闭后复测通过；深浅主题墨水口径亦需对应反转）
