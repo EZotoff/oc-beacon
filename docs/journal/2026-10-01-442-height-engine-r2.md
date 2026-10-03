@@ -619,3 +619,15 @@ MDResize: card=b21bbd95-272 h=9597 d=9397    ← 100ms 回弹
 - **真机验收（houji 无线 adb / DSH-3080 矩阵会话）**：两轮表格（t75s1 913ch/t76s1 1220ch）swap→TurnFin→pilot hold=true→平滑 +24/+90px→asyncTerminal 130ms 无缝接管；全程零负向 RESIZE、毕业窗零 ItemP；user pending 换名 30ms 原地；退出重进 Room 零孤儿零重复（-689/-697/-706 各恰 2 part 行宿主前缀；全会话 HAVING>1 双份检测=0；旧构建遗留轮 resync 自然收敛）；V1 原生轮单调全正向零 swap
 - **残余如实记账**：分片短轮（t78s1 51ch）毕业 chunk→full 条目键 #cN 后缀翻转 → 104ms/304px 小塌弹——#422/#442 分片域既有设计（渲染树统一但条目键模态切换仍翻），非本修复引入亦非其回归；表格轮（用户主诉）完全免疫（未入分片）
 - code-review 两轴：Standards 采纳 5 处（常量化/写序辅助提取/!!/FQ 名/assertNull）；Spec 四疑点均有实证（L3 刷新真机 18:23:58 窗过、原子性=派发型观察者语义、delta 清洗与旧 isStaleDelta 等价、Room 遗留已查证）
+
+## ## §31 审计驱动清理批次：pilot 即终态 + 三补偿族退役（28154286，五项用户裁决全落地）
+
+- **审计触发与量化**：用户质询「迭代只增不减、根因修复应优雅」——三线并行审计（状态生命周期/冗余排查/高度引擎闭环）+ 弧线量化（#435 起 +6343/−1296，5:1）。结论：补偿层存在归因两个上游疾病（D1 身份断裂/#509 已修；D2 冷解析昂贵）；D1 死后减法条件首次成立
+- **D2 根修=pilot 即终态**：shardHold「完结不切渲染器」语义泛化到一切幸存 pilot 槽。毕业不再切换终态渲染器——内容全同零增量（权威转写=流式帧逐字节）、真变走原生前缀差分/非前缀宽限重建。#472 的 2026-09-28「pilot 永不退场→清空回灌」定罪正式解除：该症根因是归一化坐标错位（#471③ 前移后终帧=流式帧，前缀恒一致——本批真机 retained=true 帧 len 不变实证）
+- **三补偿族退役（症状修复随根因死亡而死亡）**：#504 CompletionHandoff 换装指纹桥全族（桥存在前提=节点死亡，节点不再死亡）；#472 pilotTerminalHold+freeze 参数（保持窗判据消亡）；#509 wave-1 replayHold（触发条件全路径不可达）。合计 −948/+84
+- **HeldTailReveal 正式退役**（4 文件 ~390 行）：visible 恒 false 自 2026-09-25 裁决、48ms 轮询空转至今；heldTail State 暴露一并退役（探针改纯记忆续存）。**swapStableKey 退役**：三协议恒等，key(part.id) 回归
+- **审计两 Gap 补口**：handleMessageRemoved 补 bus 清理（A）；markSessionIdle 终态化后撤 bus live 覆盖（B，中断路径）。13 处 48ms→100ms 注释更正
+- **T2-a 短轮残余（104ms 塌弹）顺带根治**：真机复现短轮（70ch）毕业 retained=true、平滑 +24px、零负向——回溯定因：旧终态切换机制（swapBridged→asyncTerminal 条件创建竞态）本身即塌弹制造者；渲染器不再切换后构造性消失
+- **真机验收矩阵全绿**：DSH 表格轮（pilot/卡片双连续——MDResize 宿主id→seqid 同节点 d=+24 连续）+ 短轮 + 重入（冷节点正确走 syncSmall）+ V1（retained=true 单调全正向，V1 同受益）；三协议全程负向 RESIZE=0；全量单测绿
+- **高度引擎审计结论存档**：ScrollCompensation/PreRenderCoordinator/StepGroupHeightLedger/ScrollIsland 全闭环（单写者验证：registerFlushTask 全库唯一调用点，旁路全在 R5 豁免表）；StreamingGrowLedger/HeightReserve 闭环（onDetach 驱动 forget）；RenderReadiness 有界泄漏（列表级 GC 兜底）与 CompletionHandoff 无失效设计随本批退役消解
+- 残余边界如实：分片长文轮（>2000ch 触发 StreamingSplitMachine）的 #g 条目族本就设计完结持续（键稳定）；Coordinator 内部到达扫描的 turnKey 回退公式与锚定键失配（既有、仅影响 recent-streamed 排除的到达扫描路径）——立卡待察
