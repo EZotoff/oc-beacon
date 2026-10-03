@@ -91,13 +91,21 @@ internal object StreamingShardBroker {
         registrations.remove(partId)
     }
 
+    /** 已发布但未注册（完结/回收重组合）part 的兜底控制器缓存——身份稳定
+     *  （2026-10-03 审计不变量修复：原每次调用新建实例，违反类头「controller
+     *  身份稳定」契约；消费侧 remember(part.id) 缓解但裸调用面仍暴露）。 */
+    private val fallbackControllers = HashMap<String, ControllerImpl>()
+
     /** PartContent 组合期查控制器：注册在案（流式）**或已有发布**（完结/回收
      *  重组合——shardHold 渲染持续性需要；fire 对未注册 no-op）可得；否则
      *  null（pilot 走原路径）。 */
     fun controllerFor(partId: String): ShardController? {
         if (!StreamingShardPilot.enabled) return null
         registrations[partId]?.let { return it.controller }
-        shards[partId]?.let { return ControllerImpl(it.turnKey, partId) }
+        shards[partId]?.let {
+            return fallbackControllers.getOrPut(partId) { ControllerImpl(it.turnKey, partId) }
+        }
+        fallbackControllers.remove(partId)
         return null
     }
 
@@ -140,6 +148,7 @@ internal object StreamingShardBroker {
         override fun onRebuild() {
             if (shards.containsKey(partId)) {
                 shards = shards - partId
+                fallbackControllers.remove(partId)
             }
         }
     }
@@ -149,11 +158,13 @@ internal object StreamingShardBroker {
     fun clearAll() {
         registrations.clear()
         shards = emptyMap()
+        fallbackControllers.clear()
     }
 
     /** 测试缝：全清（单例跨用例隔离）。 */
     fun resetForTest() {
         registrations.clear()
         shards = emptyMap()
+        fallbackControllers.clear()
     }
 }

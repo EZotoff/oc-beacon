@@ -359,8 +359,6 @@ internal fun MarkdownContent(
     markdown: String,
     textColor: Color,
     isUser: Boolean,
-    @Suppress("UNUSED_PARAMETER") customFontSize: String? = null,
-    @Suppress("UNUSED_PARAMETER") immediate: Boolean = false,
     // 2026-08-12 根治：跳转预渲染——外部（MessageCardUser）创建的 MarkdownState
     //（用于 await 解析完成信号）；null = 内部自建（常规渲染路径）。
     overrideState: MarkdownState? = null,
@@ -382,10 +380,8 @@ internal fun MarkdownContent(
     //（PartContent 按 part.id 从 broker 查得；null=原路径零改造）。
     shardCtl: ShardController? = null,
 ) {
-    // 注意：customFontSize 和 immediate 保留是为了调用点兼容性
-    //（PartContent / ReasoningBlock 仍传入它们），但有意不使用
-    // ——排版/密度现在由 LocalChatDensity 驱动，且 Mikepenz Markdown
-    // 同步解析，因此 immediate 标志无效果。
+    //（customFontSize/immediate 两死参数已随 2026-10-03 清理批次退役——
+    // 排版/密度由 LocalChatDensity 驱动，解析策略由分支自身决定。）
     //
     // 2026-08-22 滚动巨帧根治：归一化从组合路径移除——原 remember{} 在主线程
     // 对全文跑正则+切段（20K 字符级多条批量 = vsync→input 90ms 巨帧，真机
@@ -757,9 +753,8 @@ internal fun MarkdownContent(
     // 回退 = flavor 的 STREAMING_MD_PILOT 置 false。
     // #461：准入收为 streamingPilotEligible 纯函数——静态文本(asyncParse=true)
     // 不得误入(空 state 靠逐帧 append 填充,ε 窗竞态 → H=0 僵尸展开态)。
-    // #472 完结换装无缝:async 终态源提升到固定组合位(条件创建在稳定位置,
-    // hold 期与切换后同一实例——切换帧不再二次 remember 重解析)。完结前
-    // (asyncParse=false)不创建,流式路径零额外成本。
+    //（#472/#504 完结换装桥接机制已随「pilot 即终态」退役 2026-10-03——
+    // 见下方 pilotRetained 注释；本注释块保留流式准入语义。）
     // #442 A2：已分片（broker 有发布）的 part 完结后**保持 pilot**（终帧=终态，
     // #471③ 归一化同源）——完结切全量终态会与冻结 shard items 双渲染（内容
     // 重复）；async 终态预热也一并跳过（无用功）。

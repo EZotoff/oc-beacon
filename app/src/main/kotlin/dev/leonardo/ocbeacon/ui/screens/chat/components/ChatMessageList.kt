@@ -1180,6 +1180,8 @@ fun ChatMessageList(
     val turnGroupsForPreparse = androidx.compose.runtime.rememberUpdatedState(turnGroups)
     val streamingMsgIdForPreparse = androidx.compose.runtime.rememberUpdatedState(streamingMsgId)
     val renderableTurnsForPreparse = androidx.compose.runtime.rememberUpdatedState(renderableTurns)
+    //（2026-10-03 审计遗留修复：协调器 turnKey 与 chatEntryKey 锚定式同源——桥接槽位锚）
+    val turnAnchorsForPreparse = androidx.compose.runtime.rememberUpdatedState(turnAnchors)
     // #258 Stage B：世界到达驱动——进场页/前置页 prepend/loadAround 到达即扫，
     // 裂变带外的长 turn 在可组合性建立前完成分段（视口快照取当下值）。
     LaunchedEffect(displayItems, turnGroups, renderableTurns, bannerCount) {
@@ -1194,6 +1196,7 @@ fun ChatMessageList(
                 bannerCount = bannerCount,
                 streamingMsgId = streamingMsgIdForPreparse.value,
                 renderableTurns = renderableTurnsForPreparse.value,
+                turnAnchors = turnAnchorsForPreparse.value,
             ),
         )
     }
@@ -1216,6 +1219,7 @@ fun ChatMessageList(
                     entries = chatEntriesForPreparse.value,
                     bannerCount = bannerCount,
                     streamingMsgId = streamingMsgIdForPreparse.value,
+                    turnAnchors = turnAnchorsForPreparse.value,
                 ),
             )
         }

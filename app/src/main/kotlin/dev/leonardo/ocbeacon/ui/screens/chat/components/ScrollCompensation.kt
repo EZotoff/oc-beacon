@@ -189,6 +189,11 @@ internal class StreamingGrowLedger {
         entries.remove(entryKey)
     }
 
+    /** 节点复用换 itemKey（同 entryKey）：基线清零重学——防旧基线首测伪增量。 */
+    fun relearnBaseline(entryKey: Any) {
+        entries[entryKey]?.baseline = 0
+    }
+
     /** 用户滚动让位:弃配全部未决增量(位置神圣;引擎 steady 同款语义)。 */
     fun rebaseAll() {
         entries.values.forEach { it.pending = 0f }
@@ -259,6 +264,17 @@ private class StreamingGrowElement(
     }
 
     override fun update(node: StreamingGrowNode) {
+        //（2026-10-03 审计修复：节点复用换键——旧 entryKey 不清账=泄漏+陈旧
+        // pending；itemKey 换代而 entryKey 不变=旧基线首测伪 Δ（审计「一次假
+        // Δ 自愈」项的根治）。换键即清账/重学基线，与 onDetach 同语义。）
+        val oldLedger = node.ledger
+        val oldEntryKey = node.entryKey
+        if (oldLedger != null && oldEntryKey != null && oldEntryKey != entryKey) {
+            oldLedger.forget(oldEntryKey)
+        }
+        if (oldLedger === ledger && oldEntryKey == entryKey && node.itemKey != itemKey) {
+            ledger.relearnBaseline(entryKey)
+        }
         node.ledger = ledger
         node.entryKey = entryKey
         node.itemKey = itemKey

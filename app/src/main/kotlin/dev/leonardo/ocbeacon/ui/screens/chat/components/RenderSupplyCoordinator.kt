@@ -125,6 +125,17 @@ internal class RenderSupplyCoordinator(
     }
 
     /** 流式结束瞬间记录 turn key（由 Compose 桥以当时快照算出 key 后调用）。 */
+    /** turnKey 单一公式（与 chatEntryKey 锚定式同源）：锚 user id 优先，
+     *  回退组首消息 id（开放尾组）再回退自身。 */
+    private fun anchoredTurnKey(
+        turnAnchors: Map<Int, String>,
+        rawIndex: Int,
+        groups: Map<Int, List<ChatMessage>>,
+        msg: ChatMessage,
+    ): String = "t_" + (turnAnchors[rawIndex]
+        ?: groups[rawIndex]?.firstOrNull()?.message?.id
+        ?: msg.message.id)
+
     fun noteStreamTurnEnded(turnKey: String) {
         _recentStreamedTurnKeys.value = _recentStreamedTurnKeys.value + turnKey
     }
@@ -182,7 +193,7 @@ internal class RenderSupplyCoordinator(
         val fissionTail = (lastDisplay + FISSION_SAFE_MARGIN).coerceAtMost(items.size - 1)
 
         // 先重查既有 pending（上轮巨型解析可能已齐）。
-        materializePendingSegments(items, groups, fissionHead, fissionTail)
+        materializePendingSegments(items, groups, fissionHead, fissionTail, world.turnAnchors)
 
 
         val chunkPlanPartIds = _chunkPlans.value.keys
@@ -199,7 +210,7 @@ internal class RenderSupplyCoordinator(
             if (!msg.isAssistant) continue
             val turnMsgs = groups[rawIdx] ?: listOf(msg)
             if (streamingNow != null && turnMsgs.any { it.message.id == streamingNow }) continue
-            val turnKey = "t_" + (turnMsgs.firstOrNull()?.message?.id ?: msg.message.id)
+            val turnKey = anchoredTurnKey(world.turnAnchors, rawIdx, groups, msg)
             if (turnKey in _segmentPlans.value || turnKey in pendingSegmentSkeletons) continue
             if (turnKey in _recentStreamedTurnKeys.value) continue
             // 旧路径优先：已有 MdChunkPlan 提交 part 的 turn 不再分段。
@@ -213,7 +224,7 @@ internal class RenderSupplyCoordinator(
             ) ?: continue
             val giants = skeleton.cuts.filterIsInstance<TurnSegmentSkeleton.GiantHole>()
             if (giants.isEmpty()) {
-                if (commitSegmentPlan(skeleton.buildPlan(emptyList()), items, groups, fissionHead, fissionTail)) {
+                if (commitSegmentPlan(skeleton.buildPlan(emptyList()), items, groups, fissionHead, fissionTail, world.turnAnchors)) {
                     budget--
                 }
             } else {
@@ -235,7 +246,7 @@ internal class RenderSupplyCoordinator(
                         registry.preParse(g.partId, g.text, parseScope, parseDispatcher = parseDispatcher)
                     }
                 }
-                materializePendingSegments(items, groups, fissionHead, fissionTail)
+                materializePendingSegments(items, groups, fissionHead, fissionTail, world.turnAnchors)
             }
         }
     }
@@ -249,11 +260,12 @@ internal class RenderSupplyCoordinator(
         groups: Map<Int, List<ChatMessage>>,
         fissionHead: Int,
         fissionTail: Int,
+        turnAnchors: Map<Int, String> = emptyMap(),
     ) {
         if (pendingSegmentSkeletons.isEmpty()) return
         val done = mutableListOf<String>()
         for ((turnKey, skeleton) in pendingSegmentSkeletons.toList()) {
-            val di = resolveTurnKeyDisplayIndex(turnKey, items, groups)
+            val di = resolveTurnKeyDisplayIndex(turnKey, items, groups, turnAnchors)
             if (di < 0) {
                 done += turnKey // 所属 turn 已不在列表——真正丢弃
                 continue
@@ -277,7 +289,7 @@ internal class RenderSupplyCoordinator(
                     as? State.Success
                 succ?.let { computeChunkPlan(g.partId, succ, CHUNK_MIN_CHARS, CHUNK_TARGET_CHARS) }
             }
-            if (commitSegmentPlan(skeleton.buildPlan(giantPlans), items, groups, fissionHead, fissionTail)) {
+            if (commitSegmentPlan(skeleton.buildPlan(giantPlans), items, groups, fissionHead, fissionTail, turnAnchors)) {
                 done += turnKey
             }
         }
@@ -294,8 +306,9 @@ internal class RenderSupplyCoordinator(
         groups: Map<Int, List<ChatMessage>>,
         fissionHead: Int,
         fissionTail: Int,
+        turnAnchors: Map<Int, String> = emptyMap(),
     ): Boolean {
-        val di = resolveTurnKeyDisplayIndex(plan.turnKey, items, groups)
+        val di = resolveTurnKeyDisplayIndex(plan.turnKey, items, groups, turnAnchors)
         if (di < 0) return true
         if (di in fissionHead..fissionTail) return false
         _segmentPlans.value = _segmentPlans.value + (plan.turnKey to plan)
@@ -309,14 +322,14 @@ internal class RenderSupplyCoordinator(
         return true
     }
 
-    /** turnKey → 当前 display index（turn 首消息 id 锚定；不在列表 → -1）。 */
+    /** turnKey → 当前 display index（锚定公式同源；不在列表 → -1）。 */
     private fun resolveTurnKeyDisplayIndex(
         turnKey: String,
         items: List<Pair<Int, ChatMessage>>,
         groups: Map<Int, List<ChatMessage>>,
+        turnAnchors: Map<Int, String> = emptyMap(),
     ): Int = items.indexOfFirst { (ri, m) ->
-        val firstId = groups[ri]?.firstOrNull()?.message?.id ?: m.message.id
-        "t_" + firstId == turnKey
+        anchoredTurnKey(turnAnchors, ri, groups, m) == turnKey
     }
 
     /**
@@ -350,7 +363,7 @@ internal class RenderSupplyCoordinator(
             val multiMsgTurn = turnMsgs.isMultiMessageTurn()
             for (cm in turnMsgs) {
                 // #258 Stage B：本 turn 的段分片状态（旧 MdChunkPlan 装配抑制——双计划互斥）。
-                val turnKeyNow = "t_" + (turnMsgs.firstOrNull()?.message?.id ?: cm.message.id)
+                val turnKeyNow = anchoredTurnKey(world.turnAnchors, rawIdx, groups, msg)
                 val segmentPlanned = turnKeyNow in _segmentPlans.value || turnKeyNow in pendingSegmentSkeletons
                 for (part in cm.parts) {
                     if (part is Part.Text &&
@@ -448,7 +461,7 @@ internal class RenderSupplyCoordinator(
                     if (di !in items.indices) continue
                     val (ri, m) = items[di]
                     add(if (m.isUser) "u_" + m.message.id
-                        else "t_" + (groups[ri]?.firstOrNull()?.message?.id ?: m.message.id))
+                        else anchoredTurnKey(world.turnAnchors, ri, groups, m))
                 }
             }
             _recentStreamedTurnKeys.value =
@@ -490,7 +503,7 @@ internal class RenderSupplyCoordinator(
         if (pendingSegmentSkeletons.isNotEmpty() && !jumpActiveOrSettling) {
             val fissionHeadB = (firstDisplay - FISSION_SAFE_MARGIN).coerceAtLeast(0)
             val fissionTailB = (lastDisplay + FISSION_SAFE_MARGIN).coerceAtMost(items.size - 1)
-            materializePendingSegments(items, groups, fissionHeadB, fissionTailB)
+            materializePendingSegments(items, groups, fissionHeadB, fissionTailB, world.turnAnchors)
         }
         if (pendingChunkPlans.isNotEmpty() && !jumpActiveOrSettling) {
             // F1：partId → 所属消息 → turn 首 key → 当前 display index
@@ -628,4 +641,8 @@ internal class RenderSupplyWorld(
     val streamingMsgId: String?,
     /** #258 Stage B：displayIndex 对齐的预计算渲染序列（到达扫描分段用）。 */
     val renderableTurns: List<RenderableTurn?> = emptyList(),
+    /** #440 槽位锚（computeTurnAnchors）——协调器 turnKey 与 chatEntryKey/
+     *  buildChatEntries/noteStreamTurnEnded 同源（锚定公式），否则锚定轮与
+     *  recent-streamed/segmentPlans 键失配（2026-10-03 审计遗留修复）。 */
+    val turnAnchors: Map<Int, String> = emptyMap(),
 )

@@ -187,7 +187,6 @@ private fun PartContentInner(
                             markdown = liveText ?: part.text,
                             textColor = textColor,
                             isUser = isUser,
-                            immediate = !isUser,
                             overrideState = markdownStateOverride,
                             preParsedState = preParsedState,
                             asyncParse = asyncParse,

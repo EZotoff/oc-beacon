@@ -332,7 +332,6 @@ internal fun ReasoningBlock(
                                     markdown = text,
                                     textColor = textColor.copy(alpha = AlphaTokens.MUTED),
                                     isUser = false,
-                                    customFontSize = "small",
                                     // #461 根修(2026-09-29):历史思考文本不得走流式 pilot——
                                     // StreamingMarkdownState 初始空靠逐帧 append 填充,在
                                     // CardExpandReveal ε/展开窗内与 settle 竞态 → 600ms 内
