@@ -530,3 +530,18 @@ MDResize: card=b21bbd95-272 h=9597 d=9397    ← 100ms 回弹
 - R8 全随机综合：33 动作 200s（随机发轮短/工具/富格式 + 展开/收起/滚动/FAB/打字），异常增量 0；再获一例 host>锚 大卡折叠 fii=0 pinned=true +H=1335 host=9 norm->9:737（AP 核账 598+737=1335 精确）；5 个 pin FAIL 全为测量伪影（两例同签名无新 episode=滚走空测、±18px 点击抖动命中相邻卡）
 - 终验 DB：8/8 内容探针（跨 R1/R2/R3/R6/R8）、会话 98 parts、8 个工具执行说明全在
 - 测试工程沉淀：①anomaly 模式禁用 AndroidRuntime（input/uiautomator 子进程 RuntimeInit uid2000 自产噪声 139 行）；②a11y 陈旧树三态（整树只剩 chrome/裁剪容器幻影 bounds/首匹配换卡）——自愈=换窗口 BACK+重进，内容核验以 Room 直查（run-as 拉库+wal+shm）为准；③markdown 表格渲染后竖线语法不进 a11y 树，内容探针走 DB
+
+## §21 RC 竞态条件专项矩阵（用户裁决全面审查）：RC-1~RC-9 全 PASS
+
+- 审计起点：代码级梳理展开集时序（animating=true 先于 settle——「settle 期滚走致 host 不可见」被 cancel-on-scroll 结构性闭死）+ 枚举 8+1 竞态面
+- RC-1 双卡并发 PASS（更 tight 变体：同轮同 item 双卡——T9b2 轮思考卡+工具卡 80ms 间隔连点，两集重叠窗口均 completed，第二集锚精确链上第一集增长 fiso 2916=1581+1335，零异常；跨 item 并发展开因会话几何（卡间距>视口）不可达，风险面与同 item 变体结构等价）
+- RC-2 settle 期滚动取消：shell 注入不可达（binder 时延 272ms > episode 窗 250ms，单命令串联亦无法命中）——如实标注；路径有单测+生产真实 fling 恒覆盖；「展开后滑动被吞」理论撤回（grep 模式 'ScrollDiag gesture=true' 漏配 '(15688):' 的计数伪影，三例「静默手势」全部平反）
+- fold_probe 附加收获：两例 host≠锚+真实尺寸 item 折叠（fii=11 fiso=594/1102 host=13 → (13,467)/(13,975)）dy=0 完美钉住——#508 修复三构型（宿主=锚/零占位链/实尺寸链）全验证收官；此前对 close+2f 锚表示的 701px 疑点判为算术误读（契约级真相=钉住）
+- RC-3 流式中展开历史卡 PASS（dy=0、他轮流式 RESIZE 持续、零异常）
+- RC-4 流式中分页 PASS-with-note（会话无更旧页可载、分页未实际触发；顶位停留期 RESIZE=0 系探针只见视口的盲区而非停摆——回底内容完整零异常）
+- RC-5 三连发 2.6s 间隔 PASS（SSE 队列无交叉污染，三轮问+答全在 102→108 parts）
+- RC-6 后台化 PASS（HOME 后流式持续——后台期 RESIZE +2，回前台内容完整、贴底恢复）
+- RC-7 uiMode 深浅切换×流式 PASS（双向切换零异常内容完整）
+- RC-8 IME 视口压缩×贴底流式 PASS（键盘期 RESIZE +6=压缩视口下流式持续渲染，收起恢复）
+- RC-9 旋转×流式 PASS（manifest 未锁旋转；强制横竖切换流式中，Activity 存活无重建、RESIZE 51 次贯穿、内容探针 ViewModel/配置变更全在、零异常）
+- 不可达面清单（如实）：双指多点触控（input 无多指注入）、来电（侵入性）、SSE 断线重连（#486 watch 卡用户裁决「复发再战勿主动开工」）
