@@ -604,3 +604,9 @@ MDResize: card=b21bbd95-272 h=9597 d=9397    ← 100ms 回弹
 - 修复②换装桥长度门移除（fix3 变体主因之一）：syncSmall 路径的主线程 parseBlocking 对表格轮 =350ms 阻塞（1484ch 实测）——takeIfMatches 命中轮任意长度改走 asyncTerminal（Default 线程解析+pilot 保持到就绪），主线程零解析；真机 v2a 实证 asyncTerminal 路径启用、Loading 占位被保持机制吸收、零异常
 - 残余定罪（v2a 全链）：表格轮毕业 350-700ms 空槽仍在——ItemP 证据 u_seq/t_seq 条目毕业时刻双重建（enter 39.61/leave 40.31），条目子树销毁 bypass 一切组合内保持；属 #485+#504 身份翻覆族（合成→权威→REST 刷新三段 id 翻覆），#440 槽位锚锚 user id 亦随翻覆漂移。深修候选=内容指纹锚/数据层身份稳定化——重大手术另行裁决，本波不冒进
 - 全量单测绿（CompletionHandoffGateTest 新增 5 用例红→绿）；编译两轮绿；真机装机两轮（无线 adb 通道——USB 断开后 wireless 接管，serial 变 adb-e69a99d8-yzT17Y._adb-tls-connect）
+
+## §29 #509 深修 handoff 落档（方案 B 裁决）
+
+- 三协议底层确认：失效面（key 锚不稳定 id + L3 REST 刷新重分配）协议无关，churn 强度 DSH 3 段>V2 1-2 段>V1 1 段（pending- 乐观播种）
+- 用户裁决：方案 B（数据层身份稳定化）；方案 A 暂缓。前置修复 35b9365d 已合入
+- handoff 全文：docs/specs/2026-10-03-509-identity-stabilization-handoff.md（自含三层前因后果/证据链时间戳/主战场文件地图/四条硬性设计约束/风险清单/#485 高风险邻区警示/仪器化验收标准/环境备忘）——供压缩后新会话直接开工
