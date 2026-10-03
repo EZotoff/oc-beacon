@@ -334,9 +334,10 @@ internal fun MessageCardAssistant(
                                 if (item.group.part.id == renderableTurn.lastStepDividerBeforePartId) {
                                     StepDivider(0)
                                 }
-                                // #507:派生 part 用换装稳定键（kind+ordinal）——DSH
-                                // 完结换代(dsh-tXs1→seq-…)子树不换血；非派生 id 原样。
-                                key(PartIdContract.swapStableKey(item.group.part.id)) {
+                                //（#507 swapStableKey 已随 #509 方案B 退役 2026-10-03：
+                                // part id 自首帧永久稳定——宿主前缀跨毕业不变，
+                                // 换装稳定键在全协议恒等，回归 key(part.id) 本键。）
+                                key(item.group.part.id) {
                                 // 滚动预解析消费：长文本 part 取 Parsed state（与驱动端
                                 // key 约定：partId；阈值一致 ≥200 字符）。
                                 // 2026-08-20 滚动卡顿根因修复：原 current() 走快照 Map 读
@@ -506,7 +507,7 @@ internal fun MessageCardAssistant(
  * 独立子 composable：内部 ticker（2026-08-15 用户要求：1s → 300ms，
  * 秒级小数进度感）更新自身 state——重组范围仅限
  * 本 Text，不触发整个 footer Row 重组（原实现 ticker state 在 footer 级，
- * 与 48ms SSE flush 叠加导致 ~30 次/s footer 重组）。
+ * 与 100ms SSE flush 叠加导致 ~10 次/s footer 重组）。
  */
 @Composable
 private fun StreamingElapsedText(startMs: Long) {
@@ -873,8 +874,8 @@ internal fun ChunkAssistantItems(
                     if (item.group.part.id == renderableTurn.lastStepDividerBeforePartId) {
                         StepDivider(0)
                     }
-                    // #507:派生 part 用换装稳定键（kind+ordinal）——同平铺分支。
-                    key(PartIdContract.swapStableKey(item.group.part.id)) {
+                    //（#507 swapStableKey 已退役——同平铺分支，key(part.id) 本键。）
+                    key(item.group.part.id) {
                     val part = item.group.part
                     val preParsed = (part as? Part.Text)
                         ?.takeIf { it.text.length >= 200 && it.synthetic != true && it.ignored != true && !it.text.contains("User has answered") }

@@ -642,7 +642,7 @@ internal object MessageMergeEngine {
     // ============ delta 应用（自 flushPendingDeltas 内联块抽出，#234）============
 
     /**
-     * 将单个 delta 应用到消息的 part 列表（48ms 批处理 flush 的每条目变换）。
+     * 将单个 delta 应用到消息的 part 列表（100ms 批处理 flush 的每条目变换）。
      *
      * - part 已注册且**终态**（ended 全量值已落位，time.end 非空）：丢弃——
      *   #266 终态守卫。ended 是官方 replayable full-value boundary，其后到达的

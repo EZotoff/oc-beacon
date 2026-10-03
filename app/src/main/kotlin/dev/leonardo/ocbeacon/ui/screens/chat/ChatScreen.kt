@@ -942,7 +942,7 @@ fun ChatScreen(
                             compactionEntriesForSession.mapNotNull { it.messageId }.toSet()
                         }
                         // [#437 卡顿诊断批次] 滚动期 UI 快照冻结：流式中 messageState.messages
-                        // 每 48ms 新实例 → rawMessages/displayItems/chatEntries 全链重算 +
+                        // 每 100ms 新实例 → rawMessages/displayItems/chatEntries 全链重算 +
                         // LazyColumn 全可见 item 重组（组合风暴落在滚动帧 = 非贴底滑动卡顿）。
                         // ScrollHold 已在 pilot 层挡 append，此处把同一语义补到快照层：
                         // holding 期间派生冻结在最近快照（实例相等 → 下游 remember 全命中 →
@@ -971,7 +971,7 @@ fun ChatScreen(
                         val jkHold = !dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled &&
                             dev.leonardo.ocbeacon.ui.screens.chat.markdown.JankHoldGate.enabled &&
                             dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingScrollHold.holding
-                        // messageState 一并冻结（二十四世轮终修）：否则其每 48ms 新实例
+                        // messageState 一并冻结（二十四世轮终修）：否则其每 100ms 新实例
                         // 经传参旁路触发 ChatMessageList 整体重组（三千行函数体重跑），
                         // 冻结 rawMessages 无效的实证正源于此洞——滚动期快照静止语义补全。
                         val jkMsgState = if (jkHold && jkFrozenStateRef[0] != null) {
@@ -1047,7 +1047,7 @@ fun ChatScreen(
                                 ) { pair -> syntheticEventIdentityKey(pair.second) },
                             )
                             // #452 四点计时 P-display：displayItems 差量写入后规模
-                            //（size 变化才打——流式期 rawMessages 每 48ms 新实例，
+                            //（size 变化才打——流式期 rawMessages 每 100ms 新实例，
                             // 无门控会以 ~20/s 刷屏，见 MsgDiag 移除教训）。
                             if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
                                 displayItemsState.size != lastDisplayLogSize[0]

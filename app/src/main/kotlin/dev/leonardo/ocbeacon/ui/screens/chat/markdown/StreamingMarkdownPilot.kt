@@ -35,153 +35,21 @@ object StreamingMarkdownPilot {
 }
 
 /**
- * pilot 揭露状态（#437）：库状态 + 扣留尾部。
+ * pilot 揭露状态（#437）：库状态本体。
  *
- * [heldTail] = 快照中未放行部分（差终止符尾部）——去路恒两条：
- * 毕业（闭合→放行）或完结 EOF 全量 flush（完结切 preParsedState/async
- * 分支渲染整串，一字不丢）。阶段 B 降亮区（锁高+呼吸光标）消费此值。
+ * 扣留尾部（快照未放行部分）的去路恒两条：毕业（闭合→放行）或完结 EOF 全量
+ * flush（完结切 preParsedState/async 分支渲染整串，一字不丢）——「降亮区呈现」
+ * 第三去路已随 [HeldTailReveal] 退役（2026-10-03 用户裁决；#437 阶段 B 的
+ * 超龄揭示自 2026-09-25「未闭合构造零输出」裁决后即恒关闭，48ms 轮询空转）。
  */
 internal class PilotStreamingState(
     val state: StreamingMarkdownState,
-    val heldTail: State<String>,
 )
 
-/**
- * #504（2026-10-02 真机定罪）完结换装闪塌：DSH 合成 id→权威 seq id 换代经
- * `key(item.group.part.id)` 销毁 pilot 子树 → #472 本地保持记忆丢失 + 异步
- * 终态 State.Loading 占位（实测 8754px→200px 塌缩 260ms）。
- *
- * 桥=**活跃内容指纹**（多槽 LRU×4——reasoning/text 多部件并行流式各自登记，单槽 last-writer-wins 会被推理块终态抢占（真机 20:53 定罪 stash=1165/inc=3988））：pilot 渲染期每次内容更新登记归一化终帧
- * （主线程组合期直写 @Volatile——CML-tick 同款纪律，非快照零重组成本）；换代
- * 后新组合以 [completionHandoffMatches] 内容门查指纹，命中=「刚流式渲染过的
- * 同文」→ MarkdownContent 换装帧改走同步解析首帧全高。
- *
- * 为什么指纹而非状态实例交接：①Compose 派发次序——旧节点 onDispose 在 apply
- * 后、新节点 remember 在组合中内联，dispose 侧 stash 恒慢一拍（首验 miss 实
- * 证）；②库 StreamingMarkdownState 对新收集器零重放（次验 hold 渲染空态
- * 200px 实证）——实例复用两条路都不通，指纹门+同步解析是最小可靠面。
- */
-internal object CompletionHandoff {
-    /** 多槽 LRU（容量 4）：reasoning/text 等多部件并行流式各自登记（真机 20:53
-     * 定罪：单槽 last-writer-wins 被推理块终态抢占，正文指纹丢失 → 换装 miss）。 */
-    private val slots = object : LinkedHashMap<String, String>(8, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean = size > 4
-    }
+//（#504 CompletionHandoff 换装指纹桥已全族退役 2026-10-03：「pilot 即终态」
+//（#509 方案B 二期）使幸存 pilot 槽跨毕业连续，换装帧不再切换终态渲染器——
+// 指纹登记/内容门/取证探针失去消费方。历史与判据档案：journal §28/§30/§31。）
 
-    /** pilot 组合期登记（remember(markdown) 归一化后直写——每内容变更一次；主线程组合期，非快照零重组成本）。 */
-    fun noteActive(normalizedContent: String) {
-        slots[normalizedContent] = normalizedContent
-    }
-
-    /** 换装帧查询：任一槽内容门命中=刚流式渲染过的同文。 */
-    fun takeIfMatches(content: String): Boolean =
-        slots.keys.any { completionHandoffMatches(it, content) }
-
-    /** [504-forensic] miss 取证（DEBUG-only，#505 升级）：最优槽的前缀/后缀
-     *  公共长度 + 缺口 + 分叉点上下文采样——miss 形态当场可判（尾差/中段洞/
-     *  全文异构），终结逐轮猜测。 */
-    fun forensicProbe(incomingRaw: String) {
-        val inc = normalizeForStreaming(incomingRaw)
-        val desc = if (slots.isEmpty()) "槽空" else {
-            var best: String? = null
-            var bestI = -1
-            for (st in slots.keys) {
-                var i = 0
-                val n = minOf(st.length, inc.length)
-                while (i < n && st[i] == inc[i]) i++
-                if (i > bestI) { bestI = i; best = st }
-            }
-            val st = best!!
-            var s = 0
-            val m = minOf(st.length, inc.length)
-            while (s < m - bestI && st[st.length - 1 - s] == inc[inc.length - 1 - s]) s++
-            val ctx = inc.substring(maxOf(0, bestI - 20).coerceAtMost(bestI),
-                minOf(inc.length, bestI + 20))
-                .replace("\n", "\\n")
-            "slot=" + st.length + " pfxLen=" + bestI + " sfxLen=" + s +
-                " gap=" + (inc.length - st.length) + " ctx=@" + bestI + " " + ctx
-        }
-        android.util.Log.w("504-forensic", "miss: inc=" + inc.length + " " + desc)
-    }
-
-    /**
-     * #509（2026-10-03 真机定罪）重灌检测：当前 markdown 是否为某登记指纹的
-     * **短前缀**（余量 >[REPLAY_HOLD_MARGIN_CH]）。毕业重灌（DSH 权威转写以
-     * delta 序列重放，实测 4→5→15→…→1182ch 跨 ~380ms）的每个中间态都是终文
-     * 的前缀——配合调用侧的槽位卫（pilotEverRendered，本槽刚流式渲染过）即
-     * 构成「重灌在途」判据。真重生成走 asyncParse=false 流式分支不经此门
-     * （调用侧以 asyncParse 门 freeze，重生成不被冻结）。
-     */
-    fun replayHoldCandidate(markdown: String): Boolean {
-        val inc = normalizeForStreaming(markdown)
-        if (inc.isEmpty()) return false
-        return slots.keys.any { st ->
-            st.length > inc.length + REPLAY_HOLD_MARGIN_CH && st.startsWith(inc)
-        }
-    }
-
-    /** 测试缝：单例跨用例隔离。 */
-    fun resetForTest() {
-        slots.clear()
-    }
-}
-
-/** #509 重灌保持余量：指纹比当前 markdown 至少长此值才视为「重灌在途」而非
- *  正常尾批补齐（与 #504 尾容错 512 同源取半）。 */
-internal const val REPLAY_HOLD_MARGIN_CH = 256
-
-/**
- * #504 交接内容门（纯函数，单测锚）：stash 侧存归一化形态、取用侧对原文
- * 归一化后比对——两侧同变换（[normalizeForStreaming]）保证 DSH 换装
- * 「流式终帧 vs 权威 seq 文本」在归一化坐标下命中。**尾差容错**：pilot 终帧
- * 可落后终态数字符（末批 delta 未入终帧/扣留尾，真机实测 2 字符）——严格
- * 相等会恒 miss（首验即未命中）；前缀相等且缺口 ≤[COMPLETION_HANDOFF_TAIL_TOLERANCE_CH]
- * 视为同文档（hold 渲染旧帧，终态就绪原子补齐）。
- *
- * #505 头尾锚容错：流式累积与权威文本可存在**中段小分叉**（换装前残余：
- * 归一化跨快照变换差、传输层字符差异等）——首尾各留 ≥[COMPLETION_HANDOFF_ANCHOR_CH]
- * 干净区且缺口在容忍内即同文档。真机 turn 30 定罪：中段 10 字缺口使
- * startsWith 恒 false → miss → 200px 占位闪塌。安全边界：本门只选解析策略
- * （同步/异步），不选内容——误命中代价=一次 ~10ms 主线程同步解析，无正确性
- * 风险（宁缺勿错配的「错配」后果已由内容恒取 markdown 参数消除）。全文异构
- * （前缀锚或后缀锚破坏）恒 miss。
- */
-internal fun completionHandoffMatches(stashedNormalized: String?, incomingRaw: String): Boolean {
-    if (stashedNormalized.isNullOrEmpty()) return false
-    val incoming = normalizeForStreaming(incomingRaw)
-    if (incoming == stashedNormalized) return true
-    if (kotlin.math.abs(incoming.length - stashedNormalized.length) > COMPLETION_HANDOFF_TAIL_TOLERANCE_CH) {
-        return false
-    }
-    // 公共前缀 + 尾部重写松弛（真机取证 19:58：gap=16 但 prefix=false——完结
-    // 内容对流式终帧的**尾部区域**有 ~16 字符改写，非纯追加，startsWith 恒
-    // false）。分叉点落在两串末 [COMPLETION_HANDOFF_TAIL_REWRITE_CH] 内=同文档
-    // 尾部改写（围栏闭合/末段修正族）；中段分叉交由下方头尾锚裁决。
-    var i = 0
-    val n = minOf(stashedNormalized.length, incoming.length)
-    while (i < n && stashedNormalized[i] == incoming[i]) i++
-    if (i >= stashedNormalized.length - COMPLETION_HANDOFF_TAIL_REWRITE_CH &&
-        i >= incoming.length - COMPLETION_HANDOFF_TAIL_REWRITE_CH
-    ) return true
-    // #505 头尾锚：中段小分叉——前缀与后缀各留干净区即同文档（后缀扫描止于
-    // 前缀边界，防共享前缀重复计数）。分叉带宽 > 两串任意一端锚区=真异构 miss。
-    if (i < COMPLETION_HANDOFF_ANCHOR_CH) return false
-    var s = 0
-    while (s < n - i &&
-        stashedNormalized[stashedNormalized.length - 1 - s] == incoming[incoming.length - 1 - s]
-    ) s++
-    return s >= COMPLETION_HANDOFF_ANCHOR_CH
-}
-
-/** #504 尾差容错上限：换装缺口（终态−终帧）正常 ≤ 末批 delta 量级；超此=不同文档。 */
-internal const val COMPLETION_HANDOFF_TAIL_TOLERANCE_CH = 512
-
-/** #504 尾部重写松弛：分叉点须落在两串末此字符数内（围栏闭合/末段修正族改写面）。 */
-internal const val COMPLETION_HANDOFF_TAIL_REWRITE_CH = 256
-
-/** #505 头尾锚干净区：中段分叉命中需首/尾各留 ≥ 此字符数的公共区——两锚
- *  皆在=分叉隔离在中带（同文档换装残余形态）；任一锚破坏=真异构。 */
-internal const val COMPLETION_HANDOFF_ANCHOR_CH = 256
 
 /**
  * 前缀差分 append 包装（spec §1）+ #437 安全放行闸接线。
@@ -193,7 +61,7 @@ internal const val COMPLETION_HANDOFF_ANCHOR_CH = 256
  *
  * #437：stableReveal 开启时，差分出的全量 delta 先经 SafePrefixGate——
  * 只有定案前缀（空行毕业的闭合构造 + 纯文字安全后缀）进入 append；
- * 扣留尾部经 [PilotStreamingState.heldTail] 暴露给降亮区。放行流单调
+ * 扣留尾部经毕业/EOF flush 释放（降亮区呈现已退役）。放行流单调
  * 不回退（gate 不变量），与 #435 高度引擎「锚即意图」配对天然兼容。
  *
  * - 非前缀（重生成/编辑）→ prev 置空 + released 清零 + resetKey++ 经 key()
@@ -285,20 +153,8 @@ internal fun streamingPilotEligible(
     isUser: Boolean,
 ): Boolean = !hasOverrideState && !asyncParse && !isUser
 
-/**
- * #472(2026-09-30)完结换装无缝判定(纯函数,单测锚):pilot 曾渲染(流式输出过
- * 内容)且 async 终态未就绪(State.Loading)时,完结帧保持 pilot 终帧渲染。
- *
- * 根因(真机定罪):完结(asyncParse 翻转)令 pilot 整树 dispose,>2048 字符
- * 正文切 [rememberAsyncMarkdownState] 首帧 Loading≈0 高、Default 线程解析
- * 完成后 Success 弹回全高——RESIZE 1105→865→1580(41ms 两连跳,用户主诉
- * 「轮次刚完成的一瞬高度变化」)。保持 pilot 终帧+async 并行预热,Success
- * 后无缝切换;残余归一化差(流中原文 vs 完结变换)由高度引擎帽配对吸收。
- */
-internal fun pilotTerminalHold(
-    pilotEverRendered: Boolean,
-    asyncTerminalPending: Boolean,
-): Boolean = pilotEverRendered && asyncTerminalPending
+//（#472 pilotTerminalHold 已随「pilot 即终态」语义退役 2026-10-03：完结不再
+// 切换终态渲染器，保持窗判据（async 终态在途）不复存在——档案 journal §31。）
 
 /** #472 非前缀宽限窗:数据层摆动(reconciler 竞态/完结 sync 重组)在此窗内冻结保树。 */
 internal const val NON_PREFIX_GRACE_MS = 300L
@@ -330,7 +186,6 @@ internal object JankHoldGate {
 @Composable
 internal fun rememberPilotStreamingMarkdownState(
     markdown: String,
-    freeze: Boolean = false,
     /** #442 R2 分片唤醒（A2）：注册在案的流式大文本 part 携带控制器——毕业
      *  时机由 [StreamingSplitMachine] 决策，Fire 时切尾重建（#H4 快速重灌）+
      *  发布冻结块。null（未注册/开关关）= 原路径零改造。 */
@@ -366,7 +221,8 @@ internal fun rememberPilotStreamingMarkdownState(
     // gate 放行长度（相对快照坐标）；非前缀重建时清零
     var released by remember { mutableIntStateOf(0) }
     val state = key(resetKey) { rememberStreamingMarkdownState() }
-    val held = remember { mutableStateOf("") }
+    //（heldTail State 已随降亮区退役——探针改为跨 LaunchedEffect 续存的纯记忆）
+    val lastHeldLenRef = remember { intArrayOf(-1) }
     // #437 §4：非前缀风暴探测（重建限频——冻结放行，旧串回来即恢复）
     val flap = remember { FlapDetector(now = { android.os.SystemClock.elapsedRealtime() }) }
     var lastStormCount by remember { mutableIntStateOf(0) }
@@ -381,9 +237,6 @@ internal fun rememberPilotStreamingMarkdownState(
         // 为全坐标（sliceOrigin + released 换算）。coerce 防御非前缀缩短窗的
         // 越界（随后 startsWith 判负 → 既有重建路径接管）。
         val eff = normalized.substring(sliceOrigin.coerceAtMost(normalized.length))
-        // #472 完结桥接期冻结:pilot 终帧即终点——async 在途的新快照(完结
-        // sync/part 重组的非前缀串)一律不进 pilot,换装交给终态路径
-        if (freeze) return@LaunchedEffect
         // 滚动/惯性中：暂缓增长增量（prev 不动，settle 后整段一次追平=一次重排版）
         if (StreamingScrollHold.holding && p != null && eff.length > p.length) {
             return@LaunchedEffect
@@ -466,7 +319,7 @@ internal fun rememberPilotStreamingMarkdownState(
                         AppLogger.w("MDPilot", "flap suppress #" + flap.stormCount +
                             " — nonPrefix storm, rebuild frozen")
                     }
-                    held.value = ""
+                    lastHeldLenRef[0] = -1
                 } else {
                     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                         // #H1 取证增强（2026-09-30）：raw（归一化前）尾部同报——
@@ -482,7 +335,7 @@ internal fun rememberPilotStreamingMarkdownState(
                     sliceOrigin = 0
                     prev = null
                     released = 0
-                    held.value = ""
+                    lastHeldLenRef[0] = -1
                     fastRefeed = true // #H4：重建再铺开走快速重灌
                     resetKey++
                 }
@@ -583,18 +436,19 @@ internal fun rememberPilotStreamingMarkdownState(
             // 对齐 MDPgate 毕业窗 ±50ms）。同帧收缩后，延迟原本要防的「净高
             // 先减一帧触达列表」由帽协议承接——增量当帧被帽裁掉，flush 单出口
             // 只放行净增长（trueHeight−reserved），列表永不见负增量。
-            // #471③ 验收探针（DEBUG-only）：heldTail 长度变化（毕业交接时刻）
-            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG && newHeld.length != held.value.length) {
+            // #471③ 验收探针（DEBUG-only）：扣留长度变化（毕业交接时刻）——
+            // 降亮区已退役，纯观测无渲染消费方
+            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG && newHeld.length != lastHeldLenRef[0]) {
                 AppLogger.i(
                     "MDPilot",
-                    "held size " + held.value.length + " -> " + newHeld.length +
+                    "held size " + lastHeldLenRef[0] + " -> " + newHeld.length +
                         " (released=" + released + ")",
                 )
+                lastHeldLenRef[0] = newHeld.length
             }
-            held.value = newHeld
         }
     }
-    return PilotStreamingState(state, held)
+    return PilotStreamingState(state)
 }
 
 /** gate 放行观测日志（#437 阶段 D 仪器最小版：放行量/扣留量）。 */

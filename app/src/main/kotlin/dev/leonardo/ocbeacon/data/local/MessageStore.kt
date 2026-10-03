@@ -46,7 +46,7 @@ class MessageStore @Inject constructor(
 
     /**
      * #97（H-6）：SSE delta 增量落盘——按 part 追加文本（O(delta) 写），
-     * 替代原每 48ms 批整条消息 JSON 编码 + 全行重写（写放大 ~20/s）。
+     * 替代原每 100ms 批整条消息 JSON 编码 + 全行重写（写放大 ~10/s）。
      * 消息骨架（元数据）由调用方随请求传入（handler 持有内存最新状态）；
      * delta 追加到 part 行，ended 时由 [upsertMessages] 全量覆盖最终文本。
      */

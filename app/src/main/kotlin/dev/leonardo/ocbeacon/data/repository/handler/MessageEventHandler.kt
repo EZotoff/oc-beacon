@@ -838,6 +838,10 @@ class MessageEventHandler @Inject constructor(
         if (event.messageId.startsWith("pending-")) {
             recordPreDemolishedEcho(event.messageId)
         }
+        // bus 清理先于热视图移除（part ids 仅此刻可得——pruneReverted 同款；
+        // 2026-10-03 审计 Gap A 补口：不清则 live 覆盖残留到会话级清理）
+        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
+            .clearParts(_parts.value[event.messageId].orEmpty().map { it.id })
         _messages.update { current ->
             val sessionMessages = current[event.sessionId]?.filter { it.id != event.messageId }
             if (sessionMessages != null) current + (event.sessionId to sessionMessages) else current
@@ -1585,6 +1589,9 @@ class MessageEventHandler @Inject constructor(
             }
             if (changed) updated else current
         }
+        //（2026-10-03 审计 Gap B 补口：中断/REST 空闲终态化后撤销 bus live 覆盖
+        //——与 MessagePartTimePatch 终态路径同款，防陈旧 live 残留到会话级清理）
+        changedIds?.forEach { clearTerminalLiveParts(it) }
     }
 }
 

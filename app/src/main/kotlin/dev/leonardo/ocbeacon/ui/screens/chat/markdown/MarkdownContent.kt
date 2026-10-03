@@ -764,98 +764,33 @@ internal fun MarkdownContent(
     // #471③ 归一化同源）——完结切全量终态会与冻结 shard items 双渲染（内容
     // 重复）；async 终态预热也一并跳过（无用功）。
     val shardHold = shardCtl != null && shardCtl.hasPublished()
-    // #504 换装桥检测：DSH 换代（合成 part.id→权威 seq id）经 key(part.id) 销毁
-    // pilot 子树，#472 本地保持记忆丢失 + 异步终态 Loading 占位 = 完结闪塌
-    //（真机 8754px→200px 260ms）。内容门命中（stash 与终态同文档，尾差≤512）
-    // = 刚流式渲染过的同文——下方改走同步解析首帧全高（一次性 ~10ms 主线程，
-    // 换装用户注视帧可接受；异步路径的 84ms 冷滑防线场景不在此）。
-    val swapBridged by remember(markdown, asyncParse, overrideState, shardHold) {
-        androidx.compose.runtime.mutableStateOf(
-            overrideState == null && asyncParse && !shardHold &&
-                // #509：长度门移除——内容门本身即正确性判据；<2048 的换装命中
-                // （表格轮真机定罪：1484ch 原子换装，syncSmall 主线程解析 350ms+
-                // 测量 310ms 期间槽位空白 670ms）同样需要 asyncTerminal+pilot 保持
-                // 的无缝换装。未命中小文档维持 syncSmall（1-3ms 有界）。
-                CompletionHandoff.takeIfMatches(markdown).also { hit ->
-                    // [504-forensic] 换装桥判定取证（DEBUG-only）——miss 时吐指纹长
-                    // 度/前缀关系，终结「为何不命中」的猜测循环
-                    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG && !hit) {
-                        CompletionHandoff.forensicProbe(markdown)
-                    }
-                }
-        )
-    }
-    val asyncTerminal: com.mikepenz.markdown.model.MarkdownState? =
-        if (overrideState == null && asyncParse && !shardHold && !swapBridged && markdown.length > ASYNC_PARSE_MIN_CHARS) {
-            rememberAsyncMarkdownState(markdown, isUser)
-        } else if (overrideState == null && asyncParse && !shardHold && swapBridged) {
-            // #509：换装命中轮任意长度都建 async 终态——holdPilotTerminal 保持
-            // pilot（旧内容持续可见）直到 Default 线程解析完成，切换帧直接渲染
-            // Success 终态首帧全高（主线程零解析，Loading 占位帧从构造上不出现）
-            rememberAsyncMarkdownState(markdown, isUser)
-        } else {
-            null
-        }
-    val asyncTerminalState = asyncTerminal?.state?.collectAsState()?.value
-    val asyncTerminalReady = asyncTerminalState != null && asyncTerminalState !is State.Loading
-    // #472 验收轮回归收窄(2026-09-28 真机定罪):hold 只桥接 async 终态在途
-    // (>2048 的 Loading 间隙)。≤2048 完结无终态不保持——立即走同步解析路径
-    // (首帧全高无闪);旧语义 ready 恒 false 使 pilot 永不退场,完结 part
-    // 重组(sync/MessagePartUpdated)的非前缀砸进 pilot 静默重建 → 清空+回灌闪烁
-    val asyncTerminalPending = asyncTerminal != null && !asyncTerminalReady
+    // #509 方案B 二期（2026-10-03 用户裁决）：**pilot 即终态**——shardHold 的
+    // 「完结不切渲染器」语义泛化到一切幸存 pilot 槽（pilotEverRendered 槽位
+    // 记忆，#509 原地换名后跨毕业存活）。毕业/完结（asyncParse 翻转）不再切换
+    // 终态渲染器：内容全同时零增量（权威转写=流式帧逐字节），内容真变时走
+    // pilot 原生前缀差分/非前缀宽限重建——两层补偿（#504 换装指纹桥 + #472
+    // async 保持窗）随之全族退役。节点滚出视口销毁后冷组合走下方终态路径
+    // （pilotEverRendered=false 天然回冷）。
+    //（2026-09-28 #472 收窄的「pilot 永不退场 → 清空+回灌闪烁」定罪在此解除：
+    // 该症根因是归一化坐标错位使完结全文对 pilot 恒非前缀——#471③ 前移后
+    // 终帧=流式帧，完结内容前缀一致（#509 方案B 真机两轮表格 hold 帧零 delta
+    // 实证）。）
     var pilotEverRendered by remember { androidx.compose.runtime.mutableStateOf(false) }
-    val holdPilotTerminal = StreamingMarkdownPilot.enabled &&
-        pilotTerminalHold(pilotEverRendered, asyncTerminalPending)
-    // #509 重灌保持（2026-10-03 真机定罪）：毕业重灌期（DSH 权威转写以 delta
-    // 序列重放，实测 4→5→15→…→1182ch 跨 ~380ms）消息 completed 位翻转后
-    // asyncParse=true——上面三个保持条件全不成立（asyncTerminal=null 因 len<
-    // 2048）→分支切 fallback 同步渲染 4 字存根=塌缩 430ms（B2: h2197→182→2221）。
-    // 重灌判据=本槽刚流式渲染过（pilotEverRendered，slot 级 remember 经
-    // swapStableKey 跨换装存活）+ 当前 markdown 是登记指纹的短前缀（重灌中间
-    // 态恒为终文前缀）。保持=pilot 分支不退场+freeze 冻结旧内容，重灌追平
-    // （前缀余量 ≤256）自然释放。5s 壁钟帽防重灌中途夭折的永久冻结；真重生成
-    // 在 asyncParse=false 流式分支，replayHold 不参与 freeze（重生成不被冻）。
-    var replayHoldSinceMs by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
-    val replayCandidate = StreamingMarkdownPilot.enabled && pilotEverRendered &&
-        shardCtl == null && CompletionHandoff.replayHoldCandidate(markdown)
-    val replayHold = if (replayCandidate) {
-        if (replayHoldSinceMs == 0L) replayHoldSinceMs = android.os.SystemClock.elapsedRealtime()
-        android.os.SystemClock.elapsedRealtime() - replayHoldSinceMs < 5_000
-    } else {
-        replayHoldSinceMs = 0L
-        false
-    }
-    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG && replayHold) {
-        android.util.Log.w("A11yDiag", "path=replayHold len=" + markdown.length)
-    }
+    val pilotRetained = StreamingMarkdownPilot.enabled && pilotEverRendered
     if (streamingPilotEligible(overrideState != null, asyncParse, isUser) && StreamingMarkdownPilot.enabled ||
-        holdPilotTerminal ||
-        replayHold ||
+        pilotRetained ||
         shardHold
     ) {
-        // #437：pilotState.state 只收 SafePrefixGate 放行的定案内容；
-        // 扣留尾部（heldTail）超龄后由降亮区呈现（锁高裁剪+呼吸光标，
-        // 高度流=低频量子，与 #435 引擎配对兼容）。回退 = STABLE_REVEAL_PILOT
+        // #437：pilotState.state 只收 SafePrefixGate 放行的定案内容；扣留尾部
+        // 经毕业/EOF flush 释放（降亮区已退役）。回退 = STABLE_REVEAL_PILOT
         // 置 false（gate 旁路，pilot 原行为）。
         pilotEverRendered = true
-        // shardHold 期不得冻结：pilot 即终点（内容=尾块终态），最终 EOF flush
-        // 必须放行；freeze 只服务 #472 async 桥接（shardHold 下 asyncTerminal
-        // 已跳过，holdPilotTerminal 恒 false——防御性 && !shardHold）。
+        // freeze 恒 false：#472 async 桥接窗已退役（无切换帧可桥），shard 冷续
+        // 的 EOF flush 亦须放行——冻结语义全消。
         val pilotState = rememberPilotStreamingMarkdownState(
             markdown,
-            // #509：replayHold 期同样冻结（重灌中间态不进 pilot 差分）；asyncParse
-            // 门保证真重生成（流式态 asyncParse=false）永不被此冻结。
-            freeze = (holdPilotTerminal || (replayHold && asyncParse)) && !shardHold,
             shard = shardCtl,
         )
-        // #504 换装指纹登记：pilot 活跃期持续记录归一化终帧（remember(markdown)
-        // 单次归一化 + 直写单槽）——换代后新组合凭此命中换装桥（见 swapBridged）。
-        // dispose 侧无需挂钩：末次登记即终帧指纹（Compose onDispose 派发次序
-        // 恒晚于新节点组合，dispose-stash 不可用——类头注①）。
-        // #509：replayHold 期不登记——重灌中间态（4→5→15…）会以内容为键灌入
-        // LRU 槽，挤出真正的终帧指纹（自毁判据）。
-        val pilotFrameNormalized = remember(markdown) { normalizeForStreaming(markdown) }
-        if (!replayHold) CompletionHandoff.noteActive(pilotFrameNormalized)
         androidx.compose.foundation.layout.Column {
             // #437 崩溃修复：非前缀重建（resetKey++）换 state 实例的同一帧，
             // 库 Markdown 内部 collectAsState 对流实例的记忆可能残留旧 snapshot
@@ -873,18 +808,11 @@ internal fun MarkdownContent(
                 modifier = Modifier.fillMaxWidth(),
             )
             }
-            if (StreamingMarkdownPilot.stableReveal) {
-                val held by pilotState.heldTail
-                HeldTailReveal(
-                    tail = held,
-                    textStyle = typography.paragraph.copy(fontFamily = null),
-                )
-            }
         }
-        // #477 探针：分支取证（DEBUG-only）
+        // #477 探针：分支取证（DEBUG-only；retained=完结保持（pilot 即终态））
         if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-            android.util.Log.w("A11yDiag", "path=pilot hold=" + holdPilotTerminal +
-                " ready=" + asyncTerminalReady + " len=" + markdown.length)
+            android.util.Log.w("A11yDiag", "path=pilot retained=" + pilotRetained +
+                " len=" + markdown.length)
         }
         return
     }
@@ -903,25 +831,18 @@ internal fun MarkdownContent(
     // remember 内联执行（1-3ms 有界,无跨线程等待=非 runBlocking 家族）,
     // 首测即终高,占位帧从构造上消失;大文本保持异步（84ms 冷滑巨帧防线,
     // 且 ≥200 字符有 registry 预解析覆盖）。
-    val markdownState = overrideState ?: asyncTerminal ?: if (asyncParse) {
-        if (markdown.length > ASYNC_PARSE_MIN_CHARS) {
-            if (swapBridged) {
-                // #504 换装桥：内容门命中=刚流式渲染过的同文换代——同步解析
-                // 首帧全高（normalizeForRender 与终态同源，视觉恒等），免异步
-                // Loading 占位闪塌
-                rememberSyncMarkdownState(markdown, isUser)
-            } else {
-                // #472:常规此处已被 asyncTerminal 覆盖;防御保留(条件变动时兜底)
-                rememberAsyncMarkdownState(markdown, isUser)
-            }
+    //（此路径仅在 pilot 未保留时到达：冷重入/跳转/视口回收的全新节点——
+    // #509 后幸存节点毕业不落此（pilot 即终态）。）
+    val asyncTerminal: com.mikepenz.markdown.model.MarkdownState? =
+        if (overrideState == null && asyncParse && !shardHold &&
+            markdown.length > ASYNC_PARSE_MIN_CHARS
+        ) {
+            rememberAsyncMarkdownState(markdown, isUser)
         } else {
-            // #428:小文本同步解析——remember 内联调用库的非 suspend 入口
-            // parseMarkdown(纯 CPU 计算,≤[ASYNC_PARSE_MIN_CHARS] 有界 1-3ms),
-            // 首组合首测即终高。异步路径(与库 rememberMarkdownState 的效果路径)
-            // 首帧恒 State.Loading 占位——大卡收起闭合帧原子重组时以短高入测、
-            // 解析回填帧二次重排(真机 #s1 条目 199→467,+268px 跳变)即其泄露。
-            rememberSyncMarkdownState(markdown, isUser)
+            null
         }
+    val markdownState = overrideState ?: asyncTerminal ?: if (asyncParse) {
+        rememberSyncMarkdownState(markdown, isUser)
     } else {
         // 流式/同步路径：归一化保留在此分支（流式单条增量成本可控）
         val normalizedForLib = remember(markdown, isUser) { normalizeForRender(markdown, isUser) }
@@ -936,7 +857,6 @@ internal fun MarkdownContent(
         val src = when {
             overrideState != null -> "override"
             asyncTerminal != null -> "asyncTerminal"
-            asyncParse && markdown.length > ASYNC_PARSE_MIN_CHARS -> "asyncInline"
             asyncParse -> "syncSmall"
             else -> "libStreaming"
         }

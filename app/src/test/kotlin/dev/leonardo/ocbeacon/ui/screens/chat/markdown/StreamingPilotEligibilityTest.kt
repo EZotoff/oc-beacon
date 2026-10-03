@@ -21,31 +21,9 @@ class StreamingPilotEligibilityTest {
 
     // ============ #472 完结换装无缝:pilot 终帧保持判定 ============
     //
-    // 根因(真机定罪):流式完结(asyncParse 翻转)pilot 整树 dispose,>2048 字符
-    // 正文切异步解析首帧 State.Loading≈0 高→Success 弹回全高——RESIZE
-    // 1105→865→1580(41ms 两连跳)。修复:pilot 曾渲染且 async 终态未就绪时
-    // 保持 pilot 终帧(async 并行预热),Success 后无缝切换。
-
-    @Test
-    fun `pilot ever rendered with async pending holds terminal frame`() {
-        assertTrue(pilotTerminalHold(pilotEverRendered = true, asyncTerminalPending = true))
-    }
-
-    @Test
-    fun `async ready or no terminal releases hold`() {
-        // #472 验收轮回归定罪(2026-09-28 真机):≤2048 完结无 async 终态,
-        // 旧语义 (ever && !ready) 的 ready 恒 false → pilot 永保持 → 完结
-        // part 重组(sync/MessagePartUpdated)的非前缀砸进 pilot 静默重建
-        // (resetKey++)→ 内容清空+限速回灌 = 「闪烁清空再恢复」。hold 只桥接
-        // async Loading 间隙;≤2048 完结即走同步解析路径(首帧全高,无闪)。
-        assertFalse(pilotTerminalHold(pilotEverRendered = true, asyncTerminalPending = false))
-    }
-
-    @Test
-    fun `never rendered never holds`() {
-        assertFalse(pilotTerminalHold(pilotEverRendered = false, asyncTerminalPending = true))
-        assertFalse(pilotTerminalHold(pilotEverRendered = false, asyncTerminalPending = false))
-    }
+    //（pilotTerminalHold 三用例已随「pilot 即终态」退役 2026-10-03：完结不再
+    // 切换终态渲染器，保持窗判据不复存在——幸存槽恒保持（pilotEverRendered），
+    // 冷节点恒走终态路径。档案 journal §31。）
 
     // ============ #472 验收轮回归:非前缀宽限冻结(数据层摆动不重建) ============
 

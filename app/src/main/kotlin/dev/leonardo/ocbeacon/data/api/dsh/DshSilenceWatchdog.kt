@@ -15,7 +15,7 @@ package dev.leonardo.ocbeacon.data.api.dsh
  * - 虚拟时钟注入（nowMs），全部时序可测（DshSilenceWatchdogTest）。
  *
  * 阈值 110s：报告建议 90-120s 折中；显著大于 DSH 健康 streaming 的帧间隔
- * （48ms 批处理上限）且小于「用户可感知卡死即离开」的典型窗口。
+ * （100ms 批处理上限）且小于「用户可感知卡死即离开」的典型窗口。
  */
 internal class DshSilenceWatchdog(
     private val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
