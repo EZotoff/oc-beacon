@@ -631,3 +631,12 @@ MDResize: card=b21bbd95-272 h=9597 d=9397    ← 100ms 回弹
 - **真机验收矩阵全绿**：DSH 表格轮（pilot/卡片双连续——MDResize 宿主id→seqid 同节点 d=+24 连续）+ 短轮 + 重入（冷节点正确走 syncSmall）+ V1（retained=true 单调全正向，V1 同受益）；三协议全程负向 RESIZE=0；全量单测绿
 - **高度引擎审计结论存档**：ScrollCompensation/PreRenderCoordinator/StepGroupHeightLedger/ScrollIsland 全闭环（单写者验证：registerFlushTask 全库唯一调用点，旁路全在 R5 豁免表）；StreamingGrowLedger/HeightReserve 闭环（onDetach 驱动 forget）；RenderReadiness 有界泄漏（列表级 GC 兜底）与 CompletionHandoff 无失效设计随本批退役消解
 - 残余边界如实：分片长文轮（>2000ch 触发 StreamingSplitMachine）的 #g 条目族本就设计完结持续（键稳定）；Coordinator 内部到达扫描的 turnKey 回退公式与锚定键失配（既有、仅影响 recent-streamed 排除的到达扫描路径）——立卡待察
+
+## ## §32 审计遗留收尾批（f3b4f886）：协调器键统一 + 三处不变量/死码修复
+
+- **协调器键失配根修**（§31 立卡待察项）：RenderSupplyCoordinator 四处 turnKey 构造（到达扫描/视口扫描/recent 清窗/resolve）原用回退公式（组首消息 id），与 chatEntryKey/buildChatEntries/noteStreamTurnEnded 的锚定公式失配——锚定轮（DSH 全部轮次）的 recent-streamed 排除与 segmentPlans 命中在协调器内部恒 miss，刚流完的 turn 在到达扫描中被误判可分段。修法：turnAnchors 进 RenderSupplyWorld（rememberUpdatedState 桥）+ anchoredTurnKey 助手四处统一 + materialize/commit/resolve 透传
+- **死参数退役**：MarkdownContent customFontSize/immediate（签名+三调用点）——注释自认「有意不使用」的兼容位随清理批次拆除
+- **StreamingShardBroker 兜底控制器身份缓存**：controllerFor 对已发布未注册 part 原每次新建 ControllerImpl（违反类头身份稳定契约，消费侧 remember(part.id) 仅缓解裸调用面）；fallbackControllers 缓存 + onRebuild/clearAll/resetForTest 同步清
+- **StreamingGrowLedger 换键双守卫**：节点复用换 entryKey→清旧账（原为泄漏+陈旧 pending）；换 itemKey 同 entryKey→relearnBaseline（原一次假 Δ 自愈项根治）
+- 真机回归：表格轮（t82s1）retained=true 平滑 +24px 零负向；重入走到达扫描新键路径无异常；全量单测绿
+- **审计账本清零**：§31 遗留项（协调器失配）已修；RenderReadiness 有界泄漏为列表级 GC 兜底的已记录权衡（不动）；至此三线审计全部可执行项落地
