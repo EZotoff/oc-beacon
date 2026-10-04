@@ -511,6 +511,51 @@ class RenderSupplyCoordinatorTest {
             env.coordinator.pendingSkeletonCount,
         )
     }
+    // ===== 2026-10-04 覆盖审计补口：preParseStreamedTurnParts 四门（#509 预解析暖场）=====
+
+    private fun streamedTurnPart(
+        key: String,
+        len: Int = 250,
+        end: Long? = 2L,
+        synthetic: Boolean? = null,
+        ignored: Boolean? = null,
+    ) = Part.Text(
+        id = key, sessionId = "s", messageId = "m",
+        text = "x".repeat(len), synthetic = synthetic, ignored = ignored,
+        time = Part.Text.Time(start = 1L, end = end),
+    )
+
+    @Test
+    fun `preParse 终态门 - time end 未落的流中 part 不暖场`() {
+        val env = Env()
+        env.coordinator.preParseStreamedTurnParts(listOf(streamedTurnPart("pp-unfinished", end = null)))
+        assertNeverParsed(env, "pp-unfinished")
+    }
+
+    @Test
+    fun `preParse 长度门 - 低于 200 字阈值跳过`() {
+        val env = Env()
+        env.coordinator.preParseStreamedTurnParts(listOf(streamedTurnPart("pp-short", len = 150)))
+        assertNeverParsed(env, "pp-short")
+    }
+
+    @Test
+    fun `preParse synthetic 与 ignored 门 - 非权威载荷跳过`() {
+        val env = Env()
+        env.coordinator.preParseStreamedTurnParts(listOf(
+            streamedTurnPart("pp-syn", synthetic = true),
+            streamedTurnPart("pp-ign", ignored = true),
+        ))
+        assertNeverParsed(env, "pp-syn")
+        assertNeverParsed(env, "pp-ign")
+    }
+
+    @Test
+    fun `preParse happy - 终态长文本暖场命中 Parsed`() {
+        val env = Env()
+        env.coordinator.preParseStreamedTurnParts(listOf(streamedTurnPart("pp-ok")))
+        awaitParsedBlocking(env, "pp-ok")
+    }
 }
 
 private fun userMsg(i: Int) = ChatMessage(

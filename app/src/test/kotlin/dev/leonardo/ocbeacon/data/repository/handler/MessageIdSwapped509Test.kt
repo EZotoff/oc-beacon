@@ -197,4 +197,30 @@ class MessageIdSwapped509Test {
         assertNull("旧键不得被滞留 delta 复活", handler.parts.value[hostId])
         assertEquals(1, handler.parts.value[authId]!!.size)
     }
+
+    // ===== 2026-10-04 覆盖审计补口：toSeq 遮蔽守卫（#378 换名路径交叉）=====
+
+    @Test
+    fun `swap 目标命中遮蔽区间被丢弃 - 迟到毕业不借换名回魂`() = runTest {
+        val handler = MessageEventHandler(null)
+        // 表面折叠台账先行：seq 600..700 已被权威区间替换覆盖（authId 的 seq=673 落区间内）
+        handler.handle(
+            SseEvent.SurfaceRangeReplaced(
+                sessionId = sid, startSeq = 600, endSeq = 700,
+                byMessageId = "seq-s1-800", seq = 800,
+            ),
+            "srv",
+        )
+        handler.handleMessageUpdated(SseEvent.MessageUpdated(hostRow()))
+        handler.handleMessagePartUpdated(SseEvent.MessagePartUpdated(streamedPart()))
+
+        handler.handleMessageIdSwapped(swap(to = authId))
+
+        // 守卫生效：fromId 行原样保留、不换名（换名会将被压缩的权威 seq 行借壳复活）
+        val rows = handler.messages.value[sid]!!
+        assertEquals(listOf(hostId), rows.map { it.id })
+        // parts 键也保持 hostId（未执行 _parts 键换名）
+        assertEquals(1, handler.parts.value[hostId]!!.size)
+        assertNull(handler.parts.value[authId])
+    }
 }

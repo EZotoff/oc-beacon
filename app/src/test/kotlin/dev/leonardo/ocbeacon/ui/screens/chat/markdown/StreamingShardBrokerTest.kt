@@ -100,4 +100,32 @@ class StreamingShardBrokerTest {
         assertNull(ctl.coldStartPlan())
         assertFalse(StreamingShardBroker.shards.containsKey("p_a"))
     }
+
+    // ===== 2026-10-04 覆盖审计补口：fallback 控制器身份缓存与 clearAll =====
+
+    @Test
+    fun `fallback 控制器缓存身份稳定且随 shards 失效移除`() {
+        StreamingShardBroker.register("t1", "p1") { }
+        val ctl = StreamingShardBroker.controllerFor("p1")!!
+        assertTrue(ctl.fire(listOf(FrozenChunk(0, 4)), listOf("abcd"), 4))
+        StreamingShardBroker.unregister("p1")
+        // 已发布未注册：兜底可得且身份稳定（2026-10-03 不变量修复）
+        val fb1 = StreamingShardBroker.controllerFor("p1")
+        val fb2 = StreamingShardBroker.controllerFor("p1")
+        assertNotNull(fb1)
+        assertSame(fb1, fb2)
+        // 发布撤除（onRebuild）后 shards 无此 part → 缓存必须被移除，不得返回僵尸控制器
+        fb1!!.onRebuild()
+        assertNull(StreamingShardBroker.controllerFor("p1"))
+    }
+
+    @Test
+    fun `clearAll 清空 registrations 与 shards（会话切换防跨会话陈旧）`() {
+        StreamingShardBroker.register("t1", "p1") { }
+        StreamingShardBroker.controllerFor("p1")!!
+            .fire(listOf(FrozenChunk(0, 4)), listOf("abcd"), 4)
+        StreamingShardBroker.clearAll()
+        assertNull("clearAll 后未注册不得有控制器", StreamingShardBroker.controllerFor("p1"))
+    }
+
 }
