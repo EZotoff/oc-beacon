@@ -96,6 +96,7 @@
   - mock LLM(12语料×7画像+5%断流)→v1-e2e:4299→真机随机化驱动器（10h 挂钟，2026-10-04 09:30 发车）；review.sh 每2h签名台账+死亡复活+过deadline终盘自动收割（cron automation-3e10101d）
   - 覆盖审计补口五组单测已落：Part.rekeyed 19子类契约/GrowLedger.relearnBaseline+伪增量对照/broker fallback缓存移除+clearAll/preParseStreamedTurnParts四门/swap遮蔽守卫；全量绿
   - 判读基线：#484 健康线（10h 零负向d 零RESETKEY）；终盘产物 human-sim-10h/reports/final_report.md（review.sh --final 自动生成台账节）
+  - 终盘 PASS（21:00 收割）：10h 挂钟/有效 8.7h/全部巡检节签名全零/201 轮/app 零真实崩溃；两起崩溃风暴均为驱动基建陷阱已根修存档（journal §6 + review_log 两事故节）——留 verify 待用户验收
 
 - [~] **#510 审计驱动清理批次：pilot 即终态 + 三补偿族退役（#509 二期五项裁决）——渲染栈 −948 行** `chat` `refactor`
   - 用户质询只增不减触发全面审计：D2 根修=pilot 即终态（毕业不切渲染器，shardHold 语义泛化）；CompletionHandoff/pilotTerminalHold+freeze/replayHold/HeldTailReveal/swapStableKey 五族退役；bus 两 Gap 补口；13 处注释更正。真机三协议负向 RESIZE=0、短轮 104ms 残余构造性消失（28154286）
