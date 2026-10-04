@@ -110,7 +110,11 @@ class SupervisorDetailViewModel @Inject constructor(
         if (replyStateStore.phase(serverId, item.id) == SupervisorReplyStateStore.Phase.IN_FLIGHT) return
         replyStateStore.markInFlight(serverId, item.id)
         viewModelScope.launch {
-            repository.sendReply(serverId, item.root, BeaconReply.text(trimmed, explicitItemID = item.id))
+            repository.sendReply(
+                serverId,
+                item.root,
+                BeaconReply.text(trimmed, explicitItemID = item.id, question = item.question, sessionTitle = item.sessionLabel),
+            )
                 .onSuccess { replyStateStore.markSent(serverId, item.id) }
                 .onFailure { replyStateStore.markFailed(serverId, item.id) }
         }

@@ -110,6 +110,9 @@ class SupervisorDetailViewModelTest {
             repository.sendReply(eq("server-1"), eq("/work/oc-beacon"), capture(replySlot))
         }
         assertEquals("ship it", replySlot.captured.text)
+        assertEquals("att_1", replySlot.captured.explicitItemID)
+        assertEquals("Choose the release path", replySlot.captured.question)
+        assertEquals("ses_1", replySlot.captured.sessionTitle)
         assertFalse(viewModel.uiState.value.replyInFlight)
         assertFalse(viewModel.uiState.value.replyFailed)
     }

@@ -8,8 +8,8 @@ import org.junit.Test
 class BeaconReplyTest {
 
     @Test
-    fun `text envelope carries correlation fields and omits nulls`() {
-        val json = BeaconReply.text("use Qdrant", explicitItemID = "att_1")
+    fun `text envelope carries correlation and comprehension fields and omits nulls`() {
+        val json = BeaconReply.text("use Qdrant", explicitItemID = "att_1", question = "Use which DB?", sessionTitle = "retrieval architecture")
             .envelopeJson(clientMessageID = "0198abcd-7f12-7abc-9abc-abcdefabcdef")
 
         assertTrue(json.contains("\"v\":1"))
@@ -17,8 +17,21 @@ class BeaconReplyTest {
         assertTrue(json.contains("\"kind\":\"text\""))
         assertTrue(json.contains("\"text\":\"use Qdrant\""))
         assertTrue(json.contains("\"explicitItemID\":\"att_1\""))
+        assertTrue(json.contains("\"question\":\"Use which DB?\""))
+        assertTrue(json.contains("\"sessionTitle\":\"retrieval architecture\""))
+        assertTrue(json.contains("\"note\":\""))
         assertFalse(json.contains("index"))
         assertFalse(json.contains("contextTag"))
+    }
+
+    @Test
+    fun `blank comprehension context is omitted, transport note always present`() {
+        val json = BeaconReply.text("yes", explicitItemID = "att_1", question = "   ", sessionTitle = "")
+            .envelopeJson("id-1")
+
+        assertFalse(json.contains("\"question\""))
+        assertFalse(json.contains("\"sessionTitle\""))
+        assertTrue(json.contains("\"note\":\""))
     }
 
     @Test

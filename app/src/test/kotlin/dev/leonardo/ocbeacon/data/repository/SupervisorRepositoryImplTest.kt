@@ -211,7 +211,9 @@ class SupervisorRepositoryImplTest {
         assertEquals("text", envelope["kind"]!!.jsonPrimitive.content)
         assertEquals("skip", envelope["text"]!!.jsonPrimitive.content)
         assertEquals("att_x", envelope["explicitItemID"]!!.jsonPrimitive.content)
+        assertTrue(envelope.containsKey("note"))
         assertTrue(!envelope.containsKey("index") && !envelope.containsKey("contextTag"))
+        assertTrue(!envelope.containsKey("question") && !envelope.containsKey("sessionTitle"))
     }
 
     @Test
