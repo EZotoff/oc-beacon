@@ -32,6 +32,7 @@ PROGRESS = os.path.join(BASE, "reports", "progress.json")
 BLOCKLIST = re.compile(
     r"删除|移除|断开|清除|重置|注销|退出登录|卸载|清空|编辑服务器|删除服务器|语言|language|"
     r"翻译|主题|theme|dark|夜间|切换服务器|sign.?out|delete|remove|disconnect|reset|clear|"
+    r"附件|attachment|安全访问|文件选择|选择文件"
     r"导出|导入|备份|还原全部|注销账户", re.I)
 
 PROMPTS = [
@@ -148,13 +149,37 @@ def entry():
        "--es", "debug_url", f"http://127.0.0.1:{PORT}",
        "--es", "debug_name", "e2e-v1-4299",
        "--es", "debug_server_type", "opencode")
-    for _ in range(15):
-        time.sleep(1)
+    def marker_or_ui_ok():
         r = sh("logcat", "-d")
         if "NavGraph: Debug channel → SessionList" in (r.stdout or ""):
+            return True
+        return screen_state(dump_xml()) in ("chat", "list")
+    for _ in range(15):
+        time.sleep(1)
+        if marker_or_ui_ok():
             log("entry OK → SessionList")
             return True
-    log("entry FAIL（15s 无 SessionList 标志）")
+    # 逃脱序列：外来 Activity（MIUI 文件选择器等）可能占住本 task 顶层，
+    # am start 的 cold start 被 transition.abort 吞掉——BACK 关它后重启一次
+    for _ in range(2):
+        sh("shell", "input", "keyevent", "KEYCODE_BACK"); time.sleep(1.2)
+    sh("shell", "am", "start", "-n", ACT,
+       "--es", "debug_url", f"http://127.0.0.1:{PORT}",
+       "--es", "debug_name", "e2e-v1-4299",
+       "--es", "debug_server_type", "opencode")
+    for _ in range(10):
+        time.sleep(1)
+        if marker_or_ui_ok():
+            log("entry OK（逃脱外来 Activity 后）")
+            return True
+    sh("shell", "input", "keyevent", "KEYCODE_HOME"); time.sleep(1)
+    sh("shell", "am", "start", "-n", ACT)
+    for _ in range(8):
+        time.sleep(1)
+        if screen_state(dump_xml()) in ("chat", "list"):
+            log("entry OK（HOME 逃生后）")
+            return True
+    log("entry FAIL（逃脱序列耗尽——外来 Activity 占屏）")
     return False
 
 def goto_list_from_anywhere():
