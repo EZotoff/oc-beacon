@@ -131,6 +131,32 @@ def screen_state(root):
         pass
     return "other"
 
+def foreign_top() -> str:
+    """宿主侧解析顶层 Activity：非本包/非桌面 即返回其组件名（空串=正常）。"""
+    try:
+        r = sh("shell", "dumpsys", "activity", "activities", timeout=15)
+        m = re.search(r"topResumedActivity=ActivityRecord\{[^}]* u0 (\S+)", r.stdout or "")
+        top = m.group(1) if m else ""
+    except Exception:
+        return ""
+    if not top or PKG in top or "launcher" in top.lower() or "miui.home" in top:
+        return ""
+    return top
+
+def escape_foreign_if_any():
+    """外来顶层（文件选择器等）→ BACK 关闭 + 重启拉回；成功返回 True。"""
+    top = foreign_top()
+    if not top: return False
+    log("外来顶层 Activity：" + top + "——执行逃脱")
+    action("escape_foreign", top=top[:60])
+    for _ in range(2):
+        sh("shell", "input", "keyevent", "KEYCODE_BACK"); time.sleep(1.2)
+        if not foreign_top(): return True
+    sh("shell", "am", "start", "-n", ACT); time.sleep(2.5)
+    if not foreign_top() and screen_state(dump_xml()) in ("chat", "list"):
+        return True
+    return False
+
 def dismiss_dialogs(root=None):
     root = root or dump_xml()
     if root is None: return False
@@ -144,6 +170,7 @@ def dismiss_dialogs(root=None):
 def entry():
     sh("reverse", f"tcp:{PORT}", f"tcp:{PORT}")
     sh("shell", "am", "force-stop", PKG)
+    sh("logcat", "-c")
     time.sleep(1.5)
     sh("shell", "am", "start", "-n", ACT,
        "--es", "debug_url", f"http://127.0.0.1:{PORT}",
@@ -289,6 +316,10 @@ def exploratory_tap(root):
         t = ((n.get("text") or "") + " " + (n.get("content-desc") or "")).strip()
         if not t: t = "(blank)"
         if BLOCKLIST.search(t): continue
+        # 输入栏禁区（y>2280）：附件外层容器无 desc 走不进文本黑名单（16:07 陷阱实证），
+        # 该区只允许动作路径按精确 desc 定位点击
+        c = center(n.get("bounds", ""))
+        if c and c[1] > 2280: continue
         cand.append((n, t))
     if not cand: return
     n, t = rng.choice(cand)
@@ -336,6 +367,13 @@ def health():
         return
     r = sh("shell", "pidof", PKG)
     if not r.stdout.strip():
+        # 假阴性双检（无障碍子系统被 dump 风暴打挂时 pidof 会空返——16:07 实证）：
+        # 间隔 10s 两次皆空 且 顶层不是外来 Activity 才判死；外来顶层走逃脱
+        time.sleep(10)
+        r2 = sh("shell", "pidof", PKG)
+        if r2.stdout.strip(): return
+        if foreign_top():
+            escape_foreign_if_any(); return
         if state["started"] and time.time() - state["started"] > 60:
             log("app 进程不在——崩溃或被杀，取证并重启")
             screenshot("app_gone")
@@ -530,6 +568,7 @@ def main():
         n += 1
         try:
             wake_check()
+            escape_foreign_if_any()
             flow = pick_flow()
             action("flow", n=n, flow=flow, elapsed_min=round((time.time() - state["started"]) / 60, 1))
             {"chat": flow_chat, "switch": flow_switch, "newsession": flow_newsession,
