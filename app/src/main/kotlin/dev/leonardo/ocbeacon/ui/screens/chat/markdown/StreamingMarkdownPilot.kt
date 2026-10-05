@@ -13,26 +13,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.mikepenz.markdown.model.StreamingMarkdownState
 import com.mikepenz.markdown.model.rememberStreamingMarkdownState
-import dev.leonardo.ocbeacon.BuildConfig
 import dev.leonardo.ocbeacon.logging.AppLogger
 import kotlinx.coroutines.delay
 
-/**
- * #265 流式 Markdown 增量解析试点开关。
- *
- * spec：docs/specs/2026-08-30-streaming-markdown-state-pilot-design.md §5——
- * dev flavor 默认开（先行 A/B），beta/stable 关闭；回退 = 对应 flavor 的
- * buildConfigField 置 false 一行，或 revert 接线 commit。
- *
- * #437 [stableReveal]：两级安全放行闸（spec
- * docs/specs/2026-09-25-437-streaming-md-stable-reveal-design.md）——
- * 前缀差分与 state.append 之间的 SafePrefixGate，只把定案内容交给库，
- * 从源头消除 L4 不稳定尾回溯重释义（跳变主源）。回退 = 置 false 一行。
- */
-object StreamingMarkdownPilot {
-    val enabled: Boolean = BuildConfig.STREAMING_MD_PILOT
-    val stableReveal: Boolean = BuildConfig.STABLE_REVEAL_PILOT
-}
+//（#499 过渡装备退役 2026-10-06：STREAMING_MD_PILOT / STABLE_REVEAL_PILOT 旗标
+// 三 flavor 全 true 后撤除——pilot 路径即唯一路径，无旗标回退开关。开关期设计
+// 档案：#265 spec docs/specs/2026-08-30-streaming-markdown-state-pilot-design.md、
+// #437 spec docs/specs/2026-09-25-437-streaming-md-stable-reveal-design.md。）
 
 /**
  * pilot 揭露状态（#437）：库状态本体。
@@ -59,7 +46,7 @@ internal class PilotStreamingState(
  * org.jetbrains:markdown 0.7.9 的 StreamingMarkdownFile，只重解析不稳定尾部，
  * 稳定块 ASTNode 实例跨 append 复用。
  *
- * #437：stableReveal 开启时，差分出的全量 delta 先经 SafePrefixGate——
+ * #437：差分出的全量 delta 先经 SafePrefixGate——
  * 只有定案前缀（空行毕业的闭合构造 + 纯文字安全后缀）进入 append；
  * 扣留尾部经毕业/EOF flush 释放（降亮区呈现已退役）。放行流单调
  * 不回退（gate 不变量），与 #435 高度引擎「锚即意图」配对天然兼容。
@@ -236,7 +223,6 @@ internal fun rememberPilotStreamingMarkdownState(
     var lastBigReleaseAt by remember { mutableLongStateOf(0L) }
     // #H4：非前缀重建后的再铺开走快速重灌（免壁钟限速）；首跑保持限速铺开
     var fastRefeed by remember { mutableStateOf(false) }
-    val gate = StreamingMarkdownPilot.stableReveal
     LaunchedEffect(normalized, state, StreamingScrollHold.holding, terminal) {
         val p = prev
         // #442 A2 分片切尾：差分/放行在尾坐标（eff）上进行——machine 与 broker
@@ -254,52 +240,47 @@ internal fun rememberPilotStreamingMarkdownState(
             // 首跑（含重建后的新实例）：整串作为初始增量（gate 后定案前缀）
             p == null -> {
                 if (eff.isNotEmpty()) {
-                    if (gate) {
-                        // 2026-09-27 首跑多帧铺开（真机取证：多消息 turn 的后续段
-                        // 全量到达无 delta 流，首跑单帧巨量 append 1136-2087ch——
-                        // 单帧 GC/解析压力集中且打穿帽揭示量子化节奏。改为逐帧铺开
-                        // + #438① 大放行壁钟限速（与增量分支同语义），视觉节奏由帽
-                        //（≤800px 首亮+1600px/500ms 步进）+限速共同接管。
-                        // #H4（2026-09-30）：RESETKEY 重建后的再铺开改快速重灌
-                        //（4× 批量/帧、免壁钟限速）——重建限速重铺 4.4s 是「坍缩并
-                        // 重建」主诉的可感知重建段（节奏见 [refeedPacing]）。
-                        // #442 A2 冷续单帧：item 回收重组合（sliceOrigin 继承、
-                        // fastRefeed=false）的尾块内容一次性入树——静态内容不得
-                        // 限速重铺；Fire 重建仍走 #H4 快灌。
-                        val pacing = if (fastRefeed || sliceOrigin <= 0) refeedPacing(fastRefeed)
-                        else RefeedPacing(Int.MAX_VALUE, 0L)
-                        var rel = 0
-                        while (rel < eff.length) {
-                            val d = SafePrefixGate.releaseDelta(eff, rel, pacing.chunkCh)
-                            if (d.newReleased <= rel) {
-                                // gate 拒绝（扣留中）——后续增量/EOF 接管；
-                                // #518① 终态无后续：拒绝即全量放行（一次追平）
-                                if (terminal && rel < eff.length) {
-                                    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-                                        AppLogger.i("MDPilot", "terminal reveal first +" + (eff.length - rel) + "ch total=" + eff.length)
-                                    }
-                                    appendAndTrace(state, eff.substring(rel))
-                                    rel = eff.length
+                    // 2026-09-27 首跑多帧铺开（真机取证：多消息 turn 的后续段
+                    // 全量到达无 delta 流，首跑单帧巨量 append 1136-2087ch——
+                    // 单帧 GC/解析压力集中且打穿帽揭示量子化节奏。改为逐帧铺开
+                    // + #438① 大放行壁钟限速（与增量分支同语义），视觉节奏由帽
+                    //（≤800px 首亮+1600px/500ms 步进）+限速共同接管。
+                    // #H4（2026-09-30）：RESETKEY 重建后的再铺开改快速重灌
+                    //（4× 批量/帧、免壁钟限速）——重建限速重铺 4.4s 是「坍缩并
+                    // 重建」主诉的可感知重建段（节奏见 [refeedPacing]）。
+                    // #442 A2 冷续单帧：item 回收重组合（sliceOrigin 继承、
+                    // fastRefeed=false）的尾块内容一次性入树——静态内容不得
+                    // 限速重铺；Fire 重建仍走 #H4 快灌。
+                    val pacing = if (fastRefeed || sliceOrigin <= 0) refeedPacing(fastRefeed)
+                    else RefeedPacing(Int.MAX_VALUE, 0L)
+                    var rel = 0
+                    while (rel < eff.length) {
+                        val d = SafePrefixGate.releaseDelta(eff, rel, pacing.chunkCh)
+                        if (d.newReleased <= rel) {
+                            // gate 拒绝（扣留中）——后续增量/EOF 接管；
+                            // #518① 终态无后续：拒绝即全量放行（一次追平）
+                            if (terminal && rel < eff.length) {
+                                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                    AppLogger.i("MDPilot", "terminal reveal first +" + (eff.length - rel) + "ch total=" + eff.length)
                                 }
-                                break
+                                appendAndTrace(state, eff.substring(rel))
+                                rel = eff.length
                             }
-                            if (pacing.minIntervalMs > 0 && d.newReleased - rel >= pacing.chunkCh) {
-                                val wait = lastBigReleaseAt + pacing.minIntervalMs -
-                                    android.os.SystemClock.elapsedRealtime()
-                                if (wait > 0) delay(wait)
-                                lastBigReleaseAt = android.os.SystemClock.elapsedRealtime()
-                            }
-                            if (d.delta.isNotEmpty()) appendAndTrace(state, d.delta)
-                            rel = d.newReleased
-                            if (rel < eff.length) withFrameNanos { }
+                            break
                         }
-                        released = rel
-                        logGate(eff, 0, released)
-                        fastRefeed = false
-                    } else {
-                        appendAndTrace(state, eff)
-                        released = eff.length
+                        if (pacing.minIntervalMs > 0 && d.newReleased - rel >= pacing.chunkCh) {
+                            val wait = lastBigReleaseAt + pacing.minIntervalMs -
+                                android.os.SystemClock.elapsedRealtime()
+                            if (wait > 0) delay(wait)
+                            lastBigReleaseAt = android.os.SystemClock.elapsedRealtime()
+                        }
+                        if (d.delta.isNotEmpty()) appendAndTrace(state, d.delta)
+                        rel = d.newReleased
+                        if (rel < eff.length) withFrameNanos { }
                     }
+                    released = rel
+                    logGate(eff, 0, released)
+                    fastRefeed = false
                 }
                 prev = eff.take(released) // 放行前缀（#471③ 差分基准）
             }
@@ -360,49 +341,44 @@ internal fun rememberPilotStreamingMarkdownState(
                 }
             }
             eff.length > p.length -> {
-                if (gate) {
-                    // #438①（2026-09-27 壁钟限速）：catch-up/突发到达期 gate 按
-                    // 400ch/批 释放过快（R9 真机实证 442ms 聚 7 批=单 note
-                    // d=6236px，中继缓冲突发下观感即「整块一次性出」）。大放行
-                    //（≥[BIG_RELEASE_CH]）间隔下限 [BIG_RELEASE_MIN_INTERVAL_MS]——
-                    // 与到达解耦、只约束大批；正常流式小批（<200ch）直通不受影响。
-                    val from = released
-                    while (released < eff.length) {
-                        // #438①：每批喂 [BIG_RELEASE_CH]（含空行毕业段——原不受
-                        // 批预算约束的漏洞）；批 ≥ 阈值即触发壁钟间隔
-                        val d = SafePrefixGate.releaseDelta(eff, released, BIG_RELEASE_CH)
-                        if (d.newReleased <= released) {
-                            // #518① 终态：gate 拒绝即全量放行（无后续增量可等）
-                            if (terminal && released < eff.length) {
-                                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-                                    AppLogger.i("MDPilot", "terminal reveal +" + (eff.length - released) + "ch total=" + eff.length)
-                                }
-                                appendAndTrace(state, eff.substring(released))
-                                released = eff.length
+                // #438①（2026-09-27 壁钟限速）：catch-up/突发到达期 gate 按
+                // 400ch/批 释放过快（R9 真机实证 442ms 聚 7 批=单 note
+                // d=6236px，中继缓冲突发下观感即「整块一次性出」）。大放行
+                //（≥[BIG_RELEASE_CH]）间隔下限 [BIG_RELEASE_MIN_INTERVAL_MS]——
+                // 与到达解耦、只约束大批；正常流式小批（<200ch）直通不受影响。
+                val from = released
+                while (released < eff.length) {
+                    // #438①：每批喂 [BIG_RELEASE_CH]（含空行毕业段——原不受
+                    // 批预算约束的漏洞）；批 ≥ 阈值即触发壁钟间隔
+                    val d = SafePrefixGate.releaseDelta(eff, released, BIG_RELEASE_CH)
+                    if (d.newReleased <= released) {
+                        // #518① 终态：gate 拒绝即全量放行（无后续增量可等）
+                        if (terminal && released < eff.length) {
+                            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                AppLogger.i("MDPilot", "terminal reveal +" + (eff.length - released) + "ch total=" + eff.length)
                             }
-                            break
+                            appendAndTrace(state, eff.substring(released))
+                            released = eff.length
                         }
-                        if (d.newReleased - released >= BIG_RELEASE_CH) {
-                            val wait = lastBigReleaseAt + BIG_RELEASE_MIN_INTERVAL_MS -
-                                android.os.SystemClock.elapsedRealtime()
-                            if (wait > 0) delay(wait)
-                            lastBigReleaseAt = android.os.SystemClock.elapsedRealtime()
-                        }
-                        if (d.delta.isNotEmpty()) appendAndTrace(state, d.delta)
-                        released = d.newReleased
+                        break
                     }
-                    logGate(eff, from, released)
-                } else {
-                    appendAndTrace(state, eff.substring(p.length))
-                    released = eff.length
+                    if (d.newReleased - released >= BIG_RELEASE_CH) {
+                        val wait = lastBigReleaseAt + BIG_RELEASE_MIN_INTERVAL_MS -
+                            android.os.SystemClock.elapsedRealtime()
+                        if (wait > 0) delay(wait)
+                        lastBigReleaseAt = android.os.SystemClock.elapsedRealtime()
+                    }
+                    if (d.delta.isNotEmpty()) appendAndTrace(state, d.delta)
+                    released = d.newReleased
                 }
+                logGate(eff, from, released)
                 prev = eff.take(released) // 放行前缀（#471③ 差分基准）
             }
             else -> prev = eff.take(released) // 等长：无增量（#471③ 基准统一）
         }
         // #442 A2：毕业时机决策（全坐标；quiescent=!holding——滚动期不毕业，
         // 滑动 p90 窗口零毕业成本）。首跑铺开完成（prev!=null）后才参与。
-        if (shard != null && gate && prev != null) {
+        if (shard != null && prev != null) {
             val act = shardMachine.onBatch(
                 normalized,
                 sliceOrigin + released,
@@ -453,7 +429,7 @@ internal fun rememberPilotStreamingMarkdownState(
                 else -> {}
             }
         }
-        if (gate && prev != null) {
+        if (prev != null) {
             val newHeld = normalized.substring(
                 (sliceOrigin + released).coerceIn(0, normalized.length)
             )

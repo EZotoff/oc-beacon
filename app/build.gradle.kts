@@ -88,10 +88,8 @@ android {
             manifestPlaceholders["appLabel"] = "OC Beacon Dev"
             // GitHub 分发渠道保留应用内自更新
             buildConfigField("boolean", "ENABLE_AUTO_UPDATE", "true")
-            // #265 流式 Markdown 增量解析试点：dev 先行 A/B（回退=置 false 一行）
-            buildConfigField("boolean", "STREAMING_MD_PILOT", "true")
-            // #437 两级安全放行闸（stable reveal）：dev 先行（回退=置 false 一行）
-            buildConfigField("boolean", "STABLE_REVEAL_PILOT", "true")
+            //（#499 退役 2026-10-06：STREAMING_MD_PILOT / STABLE_REVEAL_PILOT 三 flavor
+            // 全 true 后撤旗——pilot 路径即唯一路径；历史开关期见 #265/#437 spec）
             // #442 B6/A4 判定矩阵：-POCBEACON_STREAM_FLAGS_OFF=true 构建旗标全关基线
             val streamFlagsOff = (project.findProperty("OCBEACON_STREAM_FLAGS_OFF") as? String)?.toBoolean() ?: false
             // #503（2026-10-02 真机定罪）：毕业 fire 回卷循环（fire→条目churn→条目回收
@@ -112,10 +110,6 @@ android {
             manifestPlaceholders["appLabel"] = "OC Beacon Beta"
             // GitHub 分发渠道保留应用内自更新
             buildConfigField("boolean", "ENABLE_AUTO_UPDATE", "true")
-            // 2026-09-30 用户裁决放行（#437 收口）：廿余轮定量证据 + 铁律 10-14 收编
-            buildConfigField("boolean", "STREAMING_MD_PILOT", "true")
-            // #437 稳定揭示（依赖 STREAMING_MD_PILOT）
-            buildConfigField("boolean", "STABLE_REVEAL_PILOT", "true")
             // #442 R2 分片 + B案节奏收编：2026-10-02 用户裁决提升 beta
             //（dev 泡机+双臂单测+真机矩阵后；stable 再晚一批观察）
             // SHARD 回升 beta（2026-10-06 用户裁决「先都发 beta」）：#503 回卷循环
@@ -129,9 +123,6 @@ android {
             manifestPlaceholders["appLabel"] = "@string/app_name"
             // Google Play 渠道：政策禁止 REQUEST_INSTALL_PACKAGES 自更新，禁用
             buildConfigField("boolean", "ENABLE_AUTO_UPDATE", "false")
-            // 2026-09-30 用户裁决放行（#437 收口）：与 beta 同批
-            buildConfigField("boolean", "STREAMING_MD_PILOT", "true")
-            buildConfigField("boolean", "STABLE_REVEAL_PILOT", "true")
             // #442 R2 分片 + B案节奏收编：stable 待观察后随下一批提升
             //（beta 先行裁决 2026-10-02；回退=beta/stable 翻 false 一行）
             buildConfigField("boolean", "STREAM_SHARD_PILOT", "false")

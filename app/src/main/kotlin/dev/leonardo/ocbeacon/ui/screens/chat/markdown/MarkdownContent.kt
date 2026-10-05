@@ -772,12 +772,11 @@ internal fun MarkdownContent(
         return
     }
 
-    // #265 P0-a 试点分支（spec §4）：开关开启、非用户消息、无外部覆写态且
-    // 非 asyncParse 时，流式渲染走 StreamingMarkdownState 前缀差分 append。
+    // #265 P0-a（spec §4；#499 退役旗标后为唯一路径）：非用户消息、无外部覆写态
+    // 且非 asyncParse 时，流式渲染走 StreamingMarkdownState 前缀差分 append。
     // #471③ 归一化前移（终帧=流式帧）：pilot 内部先归一化（与完结渲染同源
     // 逐字节一致）再前缀差分——流中即见最终形态（tex 围栏/真复选框），
     // 完结换装无归一化重排跳变。
-    // 回退 = flavor 的 STREAMING_MD_PILOT 置 false。
     // #461：准入收为 streamingPilotEligible 纯函数——静态文本(asyncParse=true)
     // 不得误入(空 state 靠逐帧 append 填充,ε 窗竞态 → H=0 僵尸展开态)。
     //（#472/#504 完结换装桥接机制已随「pilot 即终态」退役 2026-10-03——
@@ -798,14 +797,13 @@ internal fun MarkdownContent(
     // 终帧=流式帧，完结内容前缀一致（#509 方案B 真机两轮表格 hold 帧零 delta
     // 实证）。）
     var pilotEverRendered by remember { androidx.compose.runtime.mutableStateOf(false) }
-    val pilotRetained = StreamingMarkdownPilot.enabled && pilotEverRendered
-    if (streamingPilotEligible(overrideState != null, asyncParse, isUser) && StreamingMarkdownPilot.enabled ||
+    val pilotRetained = pilotEverRendered
+    if (streamingPilotEligible(overrideState != null, asyncParse, isUser) ||
         pilotRetained ||
         shardHold
     ) {
         // #437：pilotState.state 只收 SafePrefixGate 放行的定案内容；扣留尾部
-        // 经毕业/EOF flush 释放（降亮区已退役）。回退 = STABLE_REVEAL_PILOT
-        // 置 false（gate 旁路，pilot 原行为）。
+        // 经毕业/EOF flush 释放（降亮区已退役）。
         pilotEverRendered = true
         // freeze 恒 false：#472 async 桥接窗已退役（无切换帧可桥），shard 冷续
         // 的 EOF flush 亦须放行——冻结语义全消。
