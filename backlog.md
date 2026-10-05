@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#522**（2026-10-06 #521 DSH TODO 冷进补灌——journal t）。
+**编号**：全局递增，不回收。下一编号：**#523**（2026-10-06 #522 B案升 stable 后余留装备清扫——Jank）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
@@ -90,31 +90,16 @@
   - 预判保留：app 内 legacy 兜底（exchangeToken/token 持久化/输入 UI=回落链末级，服务无插件服务器）。开工时先列影响面清单请裁决再动手。
   - spec：docs/specs/2026-10-05-512-dsh-password-login-design.md（§K 批次④）；实现证据：docs/journal/2026-10-05-512-dsh-password-login.md
 
-- [~] **#495 TODO 入口空态泄漏（V2/DSH）——todoCapable 死状态与 #85 登记矛盾** `dsh`
-  - FAB TODO 入口无能力位门控；ChatViewModel.todoCapable 探测全仓无消费（死状态）；V2/DSH 入口常驻但 TodoSheet 恒空态（DSH getSessionTodos 恒空表=探测成功）。
-  - v1-v2-differences #85 明文要求 V2 隐藏 Todo 入口未落地——2026-09-07 审计 E-1 漏网项；修法=入口挂能力位。
-  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D1
-  - 2026-10-06 勘误：DSH 面判断错误——「DSH 无 todo 域」不成立（0.2.0 dsh-tool-todo 存在；todo/write 帧事件 app 已映射 live 渲染；审计 D1「恒空表」实为客户端桩行为）。已修正（a后续commit）：DshServerAdapter 静态声明 TODOS + getSessionTodos 恢复空表降级，DSH 入口恢复显示；冷进补灌缺口另立 #521。V1/V2 面不受影响。
-  - 2026-10-06 真机 E2E 三服务器全 PASS：V1 菜单含 TODO / V2-beta 菜单无 TODO（智能体/Shell/排队队列）/ DSH 菜单含 TODO（含目标、无 Shell）——三腿条目集与能力位模型逐项吻合。证据 journal 同批。
-
-- [~] **#494 DSH 权限预设下拉夺焦点收键盘——与 #361「菜单不得收键盘」裁决冲突** `keyboard`
-  - PermissionPresetSelector 用默认 DropdownMenu（focusable=true）→ DSH 输入框聚焦时点权限 pill 键盘收起；同屏 busy 气泡已按 #361 显式 focusable=false 保键盘。
-  - 仅 DSH 渲染该控件 → 同类轻量选择两套键盘策略按端不同（用户键盘不一致感知的真正近亲）；修法=同款焦点策略或非夺焦点容器。
-  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D5
-  - 2026-10-06 真机 E2E 全 PASS：DSH 会话 mInputShown 全程 true（聚焦/点pill开下拉/选档/选后四点采样）+ 下拉与键盘同屏视觉双证 + 工作区写入选档生效后还原。证据 journal 同批。
-
 - [ ] **#493 模型抽屉键盘保持——切模型不收键盘（三端共享改造）** `keyboard`
   - 真机实测三端一致为「收起→抽屉→回弹」（ModalBottomSheet 独立窗口必夺焦点）；2026-09-30 用户裁决基准=不收键盘。
   - 实现方向：换主窗口内非模态呈现（Popup(focusable=false) 容器或布局内 BottomSheet），保留返回键/点外关闭、scrim、75% 固定高、#379/#405 手势隔离语义；共享组件=三端同改（影响面已裁决）。
   - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §一
 
-- [~] **#489 FileViewer 语法高亮 span 多染一字符（PhraseLocation.end exclusive 语义误用 end+1）** `ui` `bug`
-  - 高亮影响面调研副产物（2026-09-30）：highlights 库 PhraseLocation.end 为 exclusive 语义（官方 README emphasis(13,25)→ExampleClass 占 13..24 + NumericLiteralLocator 测试双证），HighlightBuilder.kt:39 的 end+1 使每个高亮短语尾部多染 1 字符
-  - 证据链与修复建议见 docs/research/2026-09-30-code-syntax-highlighting-impact-analysis.md §1.1.d；修复=去掉 +1（一行）+ 对照既有单测；注意与聊天域高亮组件（#488）的防御写法保持同语义
-  - 2026-10-06 真机 E2E：V2 read 工具卡→⧉→FileViewerOverlay 打开 ~/.bashrc，四色 shell 高亮实证（注释灰/关键字橙/字符串蓝/默认白）渲染路径无回归；1字符级精度由单测差分断言钉死。证据 journal 2026-10-06-pre500-cards-batch
-  - 仪器可断言面已全部覆盖，余肉眼拍板项：日常使用中高亮短语尾字符观感。
-
 ## P3 — 观察与低价值改进
+
+- [ ] **#522 B案升 stable 后余留装备清扫——JankHoldGate A/B 开关 + STREAM_DELTA_BUS 旗标退役（#499 余留范围）** `chore` `refactor`
+  - 前置：STREAM_SHARD_PILOT / STREAM_DELTA_BUS 升 stable 并观察一批——当前 stable 均 false，JankHold 冻结链在 stable 仍是承重活体（B案开=旁路），现退役会回归 stable 流式滚动组合风暴。
+  - 清扫面：JankHoldGate system-prop A/B、ChatScreen jkHold 冻结链（含 B3 埋点）、STREAM_DELTA_BUS 旗标与旁路分支；probe 按 keep-probes 裁决保留。#499 于 2026-10-06 完成范围内部迁移，余留拆本卡。
 
 - [ ] **#520 soak 判读签名扩充：流中 MDPilot append 静默 × MDResize d=h 爆发耦合判别（冻结渲染形态）** `soak` `streaming` `infra`
   - #511 收口裁决 A 的尾项（2026-10-06）：#484 签名集（零负向 d/零 RESETKEY）对爆发式正向形态失明——#513 冻结渲染（d=h 单步满高+流中零渐进）在 10-04 soak 全程在场未被抓
@@ -125,11 +110,6 @@
   - MainActivity launchMode=standard（manifest 实证）；疑点：standard 模式下复用顶层实例不回调 onNewIntent，而新实例路径亦未处理——需源码定位送达路径。
   - 影响面：自动化脚本未先 force-stop 时静默失效；debug-entry.sh 冷启动已规避。附：adbd 会把 ShellService 命令行（含 --es debug_token）回显进 logcat，注 token 后须 logcat -c 清洗。
   - 勘误（2026-09-30 盘点）：「新实例路径亦未处理」疑点过时——MainActivity:291 onNewIntent 已实现且 :298 调 handleDebugProfileIntent（onCreate 路径 :184 亦有）；真因待定罪=manifest 默认 standard 复用顶层实例不回调 onNewIntent 与实证吻合，为何未走新实例 onCreate 需真机送达路径取证；修法候选=singleTop（动 manifest 需评估返回栈语义）
-
-- [~] **#499 cleanup**
-  - 摘要补全（2026-09-30 盘点，正文原落 journal §7.7）：过渡装备清扫——JankHold/STREAMING_MD_PILOT 等 B案后死代码整体退役（probe 按 keep-probes 裁决保留）；前置=#442 验收+旗标提升后执行；#510 已退役五族不含此二者（五文件仍有引用）
-  - 2026-10-06 范围内实施（b933d882）：STREAMING_MD_PILOT/STABLE_REVEAL_PILOT 两旗标+死分支已退役（全量 3904 绿）。范围修正：JankHoldGate 与 STREAM_DELTA_BUS 仍承重——stable 均 false（B案未升 stable），JankHold 冻结链在 stable 活体；待 SHARD/DELTA_BUS 升 stable 后再清余下。证据 journal 2026-10-06-pre500-cards-batch
-  - 2026-10-06 真机流式烟雾（V2 长文轮）PASS：MDPilot 流动/RESETKEY=0/唯一负向 d 定性推理卡完结收缩（非流式卡、与 TurnFin 同刻）/TurnFin 落账/终态渲染完好。证据 journal 同批。
 
 - [ ] **#498 render**
   - 摘要补全（2026-09-30 盘点，正文原落 journal）：CJK 粗体闭界——闭界星号后紧跟 CJK 字符（如 **……。**学）渲染为字面星号；服务端原文+markdown 库 flanking 行为，旧路径同渲染非回归（journal 2026-10-01-442 §7）

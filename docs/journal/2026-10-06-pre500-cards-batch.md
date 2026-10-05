@@ -1,6 +1,6 @@
 # pre500-cards-batch（2026-10-06）
 
-> 状态：进行中
+> 状态：已完结（2026-10-06 用户裁决关卡：#489/#494/#495/#499 迁移入册；余留面拆 #521 冷进补灌 / #522 B案升 stable 后清扫）
 > 关联：（spec 路径，若有）·（issue 编号，若有）
 > 来源：用户反馈 / grilling / E2E / 顺带发现
 
@@ -90,3 +90,42 @@ V1（静态）/V2（探测折入）两面不受勘误影响。教训：能力位
 ### 环境痕迹（如实记录）
 - V2 用户既有会话新增两条测试消息：打招呼问候（SQL 指南轮，正文含 6 节+2 Kotlin 代码块+1 表格）+ 微信MCP排查（read .bashrc 轮）；宿主 /home/leonardo 根目录 6 分钟窗内零新文件（模型未落盘）
 - DSH live 会话权限档测毕已还原「完全访问」
+
+## 已完结卡片迁入（2026-10-06）
+
+### **#489 FileViewer 语法高亮 span 多染一字符（PhraseLocation.end exclusive 语义误用 end+1）** `ui` `bug`
+  - 高亮影响面调研副产物（2026-09-30）：highlights 库 PhraseLocation.end 为 exclusive 语义（官方 README emphasis(13,25)→ExampleClass 占 13..24 + NumericLiteralLocator 测试双证），HighlightBuilder.kt:39 的 end+1 使每个高亮短语尾部多染 1 字符
+  - 证据链与修复建议见 docs/research/2026-09-30-code-syntax-highlighting-impact-analysis.md §1.1.d；修复=去掉 +1（一行）+ 对照既有单测；注意与聊天域高亮组件（#488）的防御写法保持同语义
+  - 2026-10-06 真机 E2E：V2 read 工具卡→⧉→FileViewerOverlay 打开 ~/.bashrc，四色 shell 高亮实证（注释灰/关键字橙/字符串蓝/默认白）渲染路径无回归；1字符级精度由单测差分断言钉死。证据 journal 2026-10-06-pre500-cards-batch
+  - 仪器可断言面已全部覆盖，余肉眼拍板项：日常使用中高亮短语尾字符观感。
+  - 迁入依据：用户裁决（2026-10-06）：无大 UI 改动，AI 侧全面系统性真机 E2E 通过即关卡——本卡仪器面（FileViewer 四色高亮渲染无回归）+ 单测差分断言（end exclusive 语义钉死）双覆盖（backlog.sh migrate 2026-10-06）
+
+### **#494 DSH 权限预设下拉夺焦点收键盘——与 #361「菜单不得收键盘」裁决冲突** `keyboard`
+  - PermissionPresetSelector 用默认 DropdownMenu（focusable=true）→ DSH 输入框聚焦时点权限 pill 键盘收起；同屏 busy 气泡已按 #361 显式 focusable=false 保键盘。
+  - 仅 DSH 渲染该控件 → 同类轻量选择两套键盘策略按端不同（用户键盘不一致感知的真正近亲）；修法=同款焦点策略或非夺焦点容器。
+  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D5
+  - 2026-10-06 真机 E2E 全 PASS：DSH 会话 mInputShown 全程 true（聚焦/点pill开下拉/选档/选后四点采样）+ 下拉与键盘同屏视觉双证 + 工作区写入选档生效后还原。证据 journal 同批。
+  - 迁入依据：用户裁决（2026-10-06）：AI 侧真机 E2E 全 PASS 即关卡——mInputShown 四采样点全 true 仪器级断言 + 下拉/键盘同屏视觉双证 + 选档生效闭环（backlog.sh migrate 2026-10-06）
+
+### **#495 TODO 入口空态泄漏（V2/DSH）——todoCapable 死状态与 #85 登记矛盾** `dsh`
+  - FAB TODO 入口无能力位门控；ChatViewModel.todoCapable 探测全仓无消费（死状态）；V2/DSH 入口常驻但 TodoSheet 恒空态（DSH getSessionTodos 恒空表=探测成功）。
+  - v1-v2-differences #85 明文要求 V2 隐藏 Todo 入口未落地——2026-09-07 审计 E-1 漏网项；修法=入口挂能力位。
+  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D1
+  - 2026-10-06 勘误：DSH 面判断错误——「DSH 无 todo 域」不成立（0.2.0 dsh-tool-todo 存在；todo/write 帧事件 app 已映射 live 渲染；审计 D1「恒空表」实为客户端桩行为）。已修正（a后续commit）：DshServerAdapter 静态声明 TODOS + getSessionTodos 恢复空表降级，DSH 入口恢复显示；冷进补灌缺口另立 #521。V1/V2 面不受影响。
+  - 2026-10-06 真机 E2E 三服务器全 PASS：V1 菜单含 TODO / V2-beta 菜单无 TODO（智能体/Shell/排队队列）/ DSH 菜单含 TODO（含目标、无 Shell）——三腿条目集与能力位模型逐项吻合。证据 journal 同批。
+  - 迁入依据：用户裁决（2026-10-06）：AI 侧真机 E2E 三服务器全 PASS 即关卡——V1 含 TODO/V2-beta 无 TODO/DSH 含 TODO（勘误后），条目集与能力位模型逐项吻合；冷进补灌余留面已拆 #521（backlog.sh migrate 2026-10-06）
+
+### **#499 cleanup**
+  - 摘要补全（2026-09-30 盘点，正文原落 journal §7.7）：过渡装备清扫——JankHold/STREAMING_MD_PILOT 等 B案后死代码整体退役（probe 按 keep-probes 裁决保留）；前置=#442 验收+旗标提升后执行；#510 已退役五族不含此二者（五文件仍有引用）
+  - 2026-10-06 范围内实施（b933d882）：STREAMING_MD_PILOT/STABLE_REVEAL_PILOT 两旗标+死分支已退役（全量 3904 绿）。范围修正：JankHoldGate 与 STREAM_DELTA_BUS 仍承重——stable 均 false（B案未升 stable），JankHold 冻结链在 stable 活体；待 SHARD/DELTA_BUS 升 stable 后再清余下。证据 journal 2026-10-06-pre500-cards-batch
+  - 2026-10-06 真机流式烟雾（V2 长文轮）PASS：MDPilot 流动/RESETKEY=0/唯一负向 d 定性推理卡完结收缩（非流式卡、与 TurnFin 同刻）/TurnFin 落账/终态渲染完好。证据 journal 同批。
+  - 迁入依据：用户裁决（2026-10-06）：AI 侧真机 E2E 流式烟雾 PASS 即关卡——范围内实施（STREAMING_MD_PILOT/STABLE_REVEAL_PILOT 退役+全量 3904 单测+流式零回归）；余留范围（JankHoldGate/STREAM_DELTA_BUS 待 B案升 stable）拆新卡承接（backlog.sh migrate 2026-10-06）
+
+## 批次完结（2026-10-06，用户裁决原文）
+
+> 「只要你侧过没问题就可以，这次没什么涉及UI的大改动，如果你进行全面、系统性的端到端测试没问题的话，就可以关卡了」
+
+- 关卡依据：AI 侧全面系统性真机 E2E（三服务器×FAB 断言 / dumpsys 键盘仪器断言 / 流式烟雾日志判读 / FileViewer 高亮视觉）+ 全量单测 3904 绿。
+- 迁移：#489 / #494 / #495 / #499（迁移依据各见卡片迁移行）。
+- 余留拆卡：#521（DSH TODO 冷进补灌——#495 勘误副产物）、#522（B案升 stable 后 JankHoldGate/STREAM_DELTA_BUS 清扫——#499 余留范围）。
+- 本批 commits：4eb9b0b9 / 61fdcbe7 / 5af71b8c / b933d882 / 0426a303（勘误）/ 2e9c417b / da63be35 / 05f115a7。
