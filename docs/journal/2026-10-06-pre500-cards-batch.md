@@ -38,3 +38,23 @@
 ### 验证状态
 - 编译/单测：全绿（compileDevDebugKotlin ×3、定向 3 组、全量 3904）。
 - 真机 E2E：待跑（设备在线性待查）；#494/#495 属仪器可断言面（dump 验证入口消失/键盘状态），#489 属肉眼色块面。
+
+## #495 DSH 面勘误（2026-10-06，用户质询触发）
+
+**用户问：「DSH 为啥没有 TODO？理论上应该需要 TODO吧」——用户判断正确，我的 DSH 面决策错误。**
+
+错误根源：实施时信任了审计 D1 与卡片摘要的「DSH getSessionTodos 恒空表」表述，把它当成服务器侧事实——实际那只是**客户端桩**的行为（DshApiClient.getSessionTodos = emptyList()），我未对服务器源码核实「DSH 是否有 todo 域」就下了「无此域」结论。
+
+源码实证（live 0.2.0-rc.2 brew 树）：
+- `dsh/node_modules/@deepseek-ai/dsh-tool-todo`（dsh package.json:90 依赖）存在；其文档注释明说「每次调用向 session 追加 todo/write 快照，replay last-write-wins，**UIs render from session events**」，注册 todos session projection（todosProjectionSchema/apply/view）。
+- app 侧早已接通 live：DshEventMapper.kt:741 `"todo/write" -> mapTodoWrite` → SseEvent.TodoUpdated → EventDispatcher → sessionTodos → TodoSheet。**DSH 流式期 TODO 面板本来就工作**。
+- 真实缺口=冷进 hydrate：服务器无 REST 端点（api-session-controller 零 todo 路由），DshHistoryFolder 不折 todo 事件——冷进会话 TodoSheet 空到下一次 todo/write。
+
+修正（commit「fix: #495 勘误」）：
+- DshServerAdapter.privateFeatures 静态声明 TODOS（入口恢复显示）；
+- getSessionTodos 恢复空表降级（V1 常量降级家族归位，注释改勘误说明）；
+- 派生网 DSH 断言翻正（assertTrue TODOS）+ DshApiClientTest 家族测试恢复含空表行（132/132 绿）；
+- ServerFeature.TODOS 文档更新；
+- 冷进补灌另立 **#521**（journal 折叠方向）。
+
+V1（静态）/V2（探测折入）两面不受勘误影响。教训：能力位「服务器有没有某域」的结论必须锚服务器源码，客户端降级桩不是证据。

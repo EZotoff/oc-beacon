@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#521**（2026-10-06 #520 soak 判读签名扩充：流中 MDPilot a）。
+**编号**：全局递增，不回收。下一编号：**#522**（2026-10-06 #521 DSH TODO 冷进补灌——journal t）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
@@ -76,6 +76,10 @@
 
 ## P2 — 优化与锦上添花
 
+- [ ] **#521 DSH TODO 冷进补灌——journal todo/write 快照折叠（live 已渲染，历史面缺口）** `dsh` `session`
+  - DSH 有 todo 域（0.2.0 dsh-tool-todo；todo/write 帧事件经 DshEventMapper:741 live 渲染 TodoUpdated）；wire 事件溯源无 REST hydrate 端点——冷进会话 TodoSheet 空到下一次写。
+  - 修法方向：DshHistoryFolder 折叠 journal 内 last todo/write 快照 → EventDispatcher.hydrateTodos（V1 REST hydrate 同位）。#495 勘误副产物（2026-10-06）。
+
 - [ ] **#519 DSH 完结换装后思考卡消失——权威消息 content 无 reasoning part，流中思考内容完结即蒸发** `dsh` `streaming` `completion`
   - 真机（2026-10-06 quicksort 轮）：流中 reasoning part（dsh-t1s1_reasoning_ord_0，443 字节 payload）正常渲染+计时；完结 seq 换装后权威消息（seq-...b7e40eebd）parts 仅 3 个 text（4564/390/4555 字符）零 reasoning——思考卡随换装消失，重进亦无。与 #501（正文换装砸出）同族的 reasoning 面：流中可见完结即失
   - 待查：DSH 服务器权威 content 是否本就不含 reasoning（服务器侧形状）vs app 端 DshEventMapper 换装丢弃；对照 DSH 0.2.0 wire 文档 block 序列
@@ -90,6 +94,7 @@
   - FAB TODO 入口无能力位门控；ChatViewModel.todoCapable 探测全仓无消费（死状态）；V2/DSH 入口常驻但 TodoSheet 恒空态（DSH getSessionTodos 恒空表=探测成功）。
   - v1-v2-differences #85 明文要求 V2 隐藏 Todo 入口未落地——2026-09-07 审计 E-1 漏网项；修法=入口挂能力位。
   - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D1
+  - 2026-10-06 勘误：DSH 面判断错误——「DSH 无 todo 域」不成立（0.2.0 dsh-tool-todo 存在；todo/write 帧事件 app 已映射 live 渲染；审计 D1「恒空表」实为客户端桩行为）。已修正（a后续commit）：DshServerAdapter 静态声明 TODOS + getSessionTodos 恢复空表降级，DSH 入口恢复显示；冷进补灌缺口另立 #521。V1/V2 面不受影响。
 
 - [~] **#494 DSH 权限预设下拉夺焦点收键盘——与 #361「菜单不得收键盘」裁决冲突** `keyboard`
   - PermissionPresetSelector 用默认 DropdownMenu（focusable=true）→ DSH 输入框聚焦时点权限 pill 键盘收起；同屏 busy 气泡已按 #361 显式 focusable=false 保键盘。
