@@ -153,10 +153,13 @@
   - 真机实证（2026-10-02，dev debug 包）：app 已前台时 am start --es debug_url http://127.0.0.1:3080 --es debug_server_type dsh，am 提示 intent delivered to top-most instance，但 handleDebugProfileIntent 未执行——无 Debug channel requested 日志、服务器不切换；force-stop 后冷启动同参数立即生效。
   - MainActivity launchMode=standard（manifest 实证）；疑点：standard 模式下复用顶层实例不回调 onNewIntent，而新实例路径亦未处理——需源码定位送达路径。
   - 影响面：自动化脚本未先 force-stop 时静默失效；debug-entry.sh 冷启动已规避。附：adbd 会把 ShellService 命令行（含 --es debug_token）回显进 logcat，注 token 后须 logcat -c 清洗。
+  - 勘误（2026-09-30 盘点）：「新实例路径亦未处理」疑点过时——MainActivity:291 onNewIntent 已实现且 :298 调 handleDebugProfileIntent（onCreate 路径 :184 亦有）；真因待定罪=manifest 默认 standard 复用顶层实例不回调 onNewIntent 与实证吻合，为何未走新实例 onCreate 需真机送达路径取证；修法候选=singleTop（动 manifest 需评估返回栈语义）
 
 - [ ] **#499 cleanup**
+  - 摘要补全（2026-09-30 盘点，正文原落 journal §7.7）：过渡装备清扫——JankHold/STREAMING_MD_PILOT 等 B案后死代码整体退役（probe 按 keep-probes 裁决保留）；前置=#442 验收+旗标提升后执行；#510 已退役五族不含此二者（五文件仍有引用）
 
 - [ ] **#498 render**
+  - 摘要补全（2026-09-30 盘点，正文原落 journal）：CJK 粗体闭界——闭界星号后紧跟 CJK 字符（如 **……。**学）渲染为字面星号；服务端原文+markdown 库 flanking 行为，旧路径同渲染非回归（journal 2026-10-01-442 §7）
 
 - [ ] **#497 子会话底栏三形态分裂 + DSH composer 异步挂载焦点扰动** `subagent`
   - 子会话底栏：V1/V2 整块空白（无任何说明）vs DSH 只读提示行/可输入 composer——同意图三形态；readOnlyHintVisible 现要求 subagentsSupported，V1/V2 不给提示行。
@@ -211,6 +214,7 @@
   - 2026-10-02 #470 帽回改 B/A 用户裁决落章：选 A（维持空白——帽不回改+视口不跟随；4h 零负向实证为据，遇「回缩后大片空白」不适再立卡升 B）。同轮补测流式中点停止 E2E（journal §7.8.1）：中断链全绿（abort 请求→interrupted/step.failed→FSM Idle→终态过桥→bus 清除→「已中断」状态行+部分正文保留+零 FATAL）；观察项=session.execution.interrupted 事件未映射（无 UX 影响，可随 #459 顺带）。至此 #442 唯一用户裁决类残留=旗标提升 beta/stable（发版裁决）
   - 2026-10-02 旗标提升 beta 执行完毕（用户裁决）：STREAM_SHARD_PILOT+STREAM_DELTA_BUS beta=true（ad9cb70a）；发 v0.4.0-beta（force-bump=minor 开新线避 v0.3.1-beta 历史 tag 碰撞；release.sh python 派发器顺手修复 4bded7f9）。#442 至此仅剩用户验收（dev 日常使用）→ migrate；stable 旗标随下一批
   - 2026-10-02 v0.4.0-beta 发布完成（§6 验证全绿：APK/版本/签名/说明）：首次 CI 撞 lint 门禁四错（间距令牌×3/remember Unit/组合期 StateFlow.value——本地漏跑 lintDevDebug 预检教训），aae6b576 清零后 tag 重指发布。beta 渠道自此带 R2 分片+B案重组根修+A2.5；#442 仅剩用户验收→migrate；stable 旗标下一批
+  - 旗标现状注记（2026-09-30 盘点）：beta STREAM_SHARD_PILOT 随 #503 稳定化自 v0.4.0-beta 发布态回退 false；现 dev=true/beta=false/stable=false（DELTA_BUS dev+beta=true）。beta 重提升+stable 首提=同一发版裁决，门控 #503 根修验收
 
 - [ ] **#464 UI 暖态下列表/卡片点击偶发失效(冷启可靠)** `chat-ui`
   - 2026-09-29 #461/#462 取证副产物:force-stop 冷启后输入 tap 可靠命中(会话行/卡标题),同一 app 暖运行数分钟后点击同坐标零效果(无日志无 UI 变化,vibrator 反馈存在=命中可点击元素但未触发业务);两次独立取证会话复现,冷启后恢复。疑点:点击消费被某 overlay/焦点态拦截或状态门;影响面=自动化测试可靠性,人工使用未报告。待真机复现窗定罪(diagnosing-bugs 流程),暂无用户主诉不阻塞。
