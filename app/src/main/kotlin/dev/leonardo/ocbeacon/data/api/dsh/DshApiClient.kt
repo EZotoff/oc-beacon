@@ -1012,7 +1012,10 @@ class DshApiClient @Inject constructor(
         )
     }
 
-    override suspend fun getSessionTodos(conn: ServerConnection, sessionId: String): List<TodoItem> = emptyList()
+    // #495：DSH 无 todo 域——诚实失败而非空表常量（本家族其余成员保持 V1 常量
+    // 降级先例；唯此方法喂能力探测，空表成功会让 FAB TODO 入口以恒空态泄漏）。
+    override suspend fun getSessionTodos(conn: ServerConnection, sessionId: String): List<TodoItem> =
+        throw UnsupportedServerCapability("getSessionTodos", conn.serverType.name)
 
     override suspend fun backgroundSession(conn: ServerConnection, sessionId: String): Boolean = false
 

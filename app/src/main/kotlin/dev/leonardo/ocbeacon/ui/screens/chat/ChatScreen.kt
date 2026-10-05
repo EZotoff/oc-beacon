@@ -647,7 +647,6 @@ fun ChatScreen(
     val sessionTodos by viewModel.sessionTodos.collectAsStateWithLifecycle()
     // #313：队列计数（FAB 菜单角标）——sheet 内容另在 QUEUE 分支采集（同一源）
     val queueItemsForFab by viewModel.queueItems.collectAsStateWithLifecycle()
-    val todoCapable by viewModel.todoCapable.collectAsStateWithLifecycle()
     val taskUi by viewModel.taskUiState.collectAsStateWithLifecycle()
     var toolbarSheet by remember { mutableStateOf<ChatToolbarEntry?>(null) }
     // #286：目标状态（GoalSheet 数据源 + FAB/菜单项角标）
