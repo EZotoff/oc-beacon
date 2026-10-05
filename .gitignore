@@ -91,3 +91,4 @@ scripts/regression/.env
 human-sim-10h/logs/
 human-sim-10h/evidence/
 human-sim-10h/reports/
+human-sim-10h/mockllm/node_modules/

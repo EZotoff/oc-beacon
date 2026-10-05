@@ -32,7 +32,7 @@ NFILES=$(echo "$FILES" | grep -c . || true)
 
 # 3) 签名扫描（#484 判读集；两种负向 d 格式都必须扫）
 scan() { grep -aE "$1" $FILES 2>/dev/null | head -"${2:-5}"; }
-cnt() { grep -acE "$1" $FILES 2>/dev/null | paste -sd+ | bc 2>/dev/null || echo 0; }
+cnt() { grep -acE "$1" $FILES 2>/dev/null | awk '{s+=$NF} END {print s+0}'; }  # -c 多文件带文件名前缀，awk 取末段求和
 NEG_MD=$(cnt 'MDResize card=[^ ]* h=[0-9]+ d=-')
 NEG_RS=$(cnt 'RESIZE t=[0-9]+ key=t_[^ ]+ h [0-9]+->[0-9]+ \(d=-')
 RESETK=$(cnt 'RESETKEY')
