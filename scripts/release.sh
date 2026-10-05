@@ -67,6 +67,10 @@ log()  { printf '\033[36m[release]\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m[release][warn]\033[0m %s\n' "$*"; }
 die()  { printf '\033[31m[release][error]\033[0m %s\n' "$*" >&2; exit 1; }
 
+# python 派发（2026-10-02 发版实战：本机仅 python3——脚本原裸调 python 中断）
+PY_BIN="$(command -v python3 || command -v python || true)"
+py()  { [ -n "$PY_BIN" ] || die "python3/python 均不可用"; "$PY_BIN" "$@"; }
+
 run() {
   if $DRY_RUN; then
     log "[dry-run] $*"
@@ -362,7 +366,7 @@ fi
 # 3. 执行变更
 # =============================================================================
 # 3.1 version.properties
-run python - "$VERSION_FILE" "$NEW_VERSION_CODE" "$NEW_VERSION_NAME" <<'PYEOF'
+run py - "$VERSION_FILE" "$NEW_VERSION_CODE" "$NEW_VERSION_NAME" <<'PYEOF'
 import sys
 path, code, name = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(path, 'w', encoding='utf-8', newline='') as f:
@@ -387,7 +391,7 @@ if [ "$FLAVOR" = "stable" ]; then
       TMP_ENTRY="$(mktemp)"
       printf '%s' "$ENTRY" > "$TMP_ENTRY"
       # 在第一个 "## [" 之前插入新条目；幂等：目标版本已存在则不重复插入
-      python - "$CHANGELOG_FILE" "$TMP_ENTRY" <<'PYEOF'
+      py - "$CHANGELOG_FILE" "$TMP_ENTRY" <<'PYEOF'
 import sys
 path, entry_path = sys.argv[1], sys.argv[2]
 with open(entry_path, encoding='utf-8') as f:

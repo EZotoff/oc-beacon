@@ -242,7 +242,6 @@
     <string name="chat_delete_message_message">This removes the message from the server session. This cannot be undone.</string>
     <string name="chat_message_deleted">Message deleted</string>
     <string name="chat_message_delete_failed">Failed to delete message</string>
-    <string name="chat_msg_tail_summary">%1$d steps · %2$d tools</string>
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">tokens/s</string>
     <!-- 2026-09-12 消息层扁平化 批3：统计弹窗（sessionStats + 逐轮明细） -->
@@ -298,6 +297,7 @@
     <string name="chat_retry">Retry #%1$d: %2$s</string>
     <string name="chat_error_view_page">Page</string>
     <string name="chat_error_view_code">Code</string>
+    <string name="math_block_badge">Formula</string>
     <string name="chat_save_image">Save image</string>
     <string name="chat_image_saved">Image saved</string>
     <string name="chat_image_save_failed">Failed to save image</string>

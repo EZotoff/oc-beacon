@@ -45,10 +45,11 @@ import dev.leonardo.ocbeacon.ui.screens.chat.scroll.PreDrawFlushTask
  * - 收缩(Δ<0)一律不配对(旧 COMP 行为保持:全揭示 rebase)。防单帧大 Δ 跳变
  *   由 gate 放行量子化承担(≤400ch/批)。
  *
- * ## 48ms 节奏的结构性继承
+ * ## 批节奏的结构性继承（cadence = [STREAM_FLUSH_INTERVAL_MS]，终审 S4 收编引擎域）
  *
- * 账本输入 = 48ms 批处理(MessageEventHandler.scheduleFlush)驱动的 measure;
- * flush 派发节奏 = 48ms 批节奏。无任何额外定时器层。
+ * 账本输入 = 数据层批处理(MessageEventHandler.scheduleFlush，周期消费引擎域常量)
+ * 驱动的 measure;flush 派发节奏 = 批节奏。无任何额外定时器层。
+ * （历史值 48ms → 100ms（#437 cadence 快赢）；文档漂移已随 #442 批次 C 修正。）
  */
 // [VTRACE 2026-09-26] flush 任务的上一帧视口位（变化检测用；主线程独占）
 private var vtraceLastFii = Int.MIN_VALUE
@@ -116,6 +117,32 @@ internal fun shouldYieldPairing(
     readFii != lastSetFii || readFiso != lastSetFiso
 }
 
+/**
+ * #502：divergence 静止判定——读位与上一帧 yield 检查点观测值相同 **且** lastSet
+ * 已陈旧（连续 ≥2 帧引擎无 set 写入）⇒ 已定居的外部滚动（用户手势停下的新位
+ * 置 / 外部显式意图消费后的落点），**不是**引擎待消费 pending。此时须采纳为新
+ * 配对基线恢复正常求值：否则让位永久化——lastSet 仅由 applyPairedShift 写，引
+ * 擎因让位不 apply ⇒ 读位永 ≠ lastSet ⇒ 每帧作废帽释放计划 ⇒ 帽冻结在旧值
+ * （min(真高, 冻结帽高) + clipToBounds = 流式消息被裁剪在视口一小块固定区域，
+ * 完结换装 reset 才全量展示——真机定罪 2026-10-02：上翻阅读期间引擎 set(7,393)
+ * → 甩回底 (0,0) → yield×1448 / reserved 冻 685 达 12s / 真高涨至 4303）。
+ *
+ * 陈旧度守卫（防回归口）：引擎 set 是请求时即写 lastSet（measure 消费前），
+ * pending 未消费窗口内读位=旧位且静止——裸静止判定会误采纳旧位毁掉 pending
+ * 保护（「上方内容闪烁消失」根修回归）。只认「引擎近期确无 set」的静止。
+ *
+ * 「上一帧」为 null（首批/无历史）⇒ 不采纳（保持一帧让位观察期——真 pending
+ * 消费中或 fling 刚 settle，下一帧即达稳态）。
+ */
+internal fun shouldAdoptExternalPosition(
+    readFii: Int,
+    readFiso: Int,
+    prevFii: Int?,
+    prevFiso: Int?,
+    framesSinceLastSet: Long,
+): Boolean = prevFii != null && prevFiso != null &&
+    readFii == prevFii && readFiso == prevFiso && framesSinceLastSet >= 2
+
 
 /**
  * 每列表单一流式账本(ChatMessageList remember;主线程专用——measure/flush 均在 UI 线程)。
@@ -160,6 +187,11 @@ internal class StreamingGrowLedger {
     /** 节点离树(回收/流式结束/条件关闭):清账目——重入走冷启动,杜绝陈旧基线伪增量。 */
     fun forget(entryKey: Any) {
         entries.remove(entryKey)
+    }
+
+    /** 节点复用换 itemKey（同 entryKey）：基线清零重学——防旧基线首测伪增量。 */
+    fun relearnBaseline(entryKey: Any) {
+        entries[entryKey]?.baseline = 0
     }
 
     /** 用户滚动让位:弃配全部未决增量(位置神圣;引擎 steady 同款语义)。 */
@@ -232,6 +264,17 @@ private class StreamingGrowElement(
     }
 
     override fun update(node: StreamingGrowNode) {
+        //（2026-10-03 审计修复：节点复用换键——旧 entryKey 不清账=泄漏+陈旧
+        // pending；itemKey 换代而 entryKey 不变=旧基线首测伪 Δ（审计「一次假
+        // Δ 自愈」项的根治）。换键即清账/重学基线，与 onDetach 同语义。）
+        val oldLedger = node.ledger
+        val oldEntryKey = node.entryKey
+        if (oldLedger != null && oldEntryKey != null && oldEntryKey != entryKey) {
+            oldLedger.forget(oldEntryKey)
+        }
+        if (oldLedger === ledger && oldEntryKey == entryKey && node.itemKey != itemKey) {
+            ledger.relearnBaseline(entryKey)
+        }
         node.ledger = ledger
         node.entryKey = entryKey
         node.itemKey = itemKey
@@ -323,6 +366,18 @@ private fun HeightReserveState.resetIfOwnerChanged(itemKey: Any) {
     }
 }
 
+/**
+ * #442 R2 分片唤醒（A2）：毕业换装帧强制重立基线——reserved/trueHeight 归
+ * 未初始化（换装帧 measure 直通真高），itemKey 保持（帽所有权与尾块 item
+ * 连续，不动 resetIfOwnerChanged 语义）。不 reset 的话「帽不回改」会使尾块
+ * item 永久虚高已冻结前缀的高度（#470 墙的毕业形态）。调用点：ShardController
+ * .fire 的 onFire 钩子（发布同协程步先行——换装帧原子见三者）。
+ */
+internal fun HeightReserveState.hardReset() {
+    reserved = -1
+    trueHeight = -1
+}
+
 /** 释放决策（纯函数，单测缝）。null=本帧不释放（未初始化/无增量/手势持帽）。 */
 internal data class ReserveReleasePlan(val delta: Int, val scrollPaired: Boolean)
 
@@ -388,15 +443,38 @@ internal fun resolvePairedTarget(
 }
 
 /**
+ * flush 任务跨帧记忆（#438 R-2 接线层产物化）：上批配对 set 目标位——
+ * [shouldYieldPairing] 让位判定的持久侧。生命周期 = task 实例生命周期
+ * （同一 task 跨帧保留；新 task 无历史记忆——见 FlushTaskMemoryTest）。
+ */
+internal class FlushTaskMemory {
+    var lastSetFii: Int? = null
+    var lastSetFiso: Int? = null
+
+    /** #502：上一帧 yield 检查点读位——divergence 静止判定（采纳外部定居位）的观测侧。 */
+    var prevFii: Int? = null
+    var prevFiso: Int? = null
+
+    /** #502：flush 帧序（divergence 检查点递增）——lastSet 陈旧度计算基准。 */
+    var frameSeq: Long = 0L
+
+    /** #502：lastSet 写入时的帧序（applyPairedShift 写 set 与 #502 采纳写基线两处戳记）。 */
+    var lastSetFrame: Long = -1L
+}
+
+/**
  * 流式家族 flush 任务(#435):挂 PreRenderCoordinator 单点(ChatMessageList 常驻注册,
  * 空账本零成本早退;无宿主=预览/单测降级为零配对,与旧通道无泵降级一致)。
  *
- * 顺序:空账早退 → 用户滚动弃配(位置神圣) → 统一规则求值 → applyPairedPreRenderShift
- * (引擎配对执行器:配对到全额)。免派发分支(贴底跟随族/读历史)从构造上零派发
+ * #442 批次 C 深拆（终审 S2）：单 lambda 八职责 → 独立相位函数，每职责接线级
+ * 表征测试钉行为（FlushTaskPhasesTest / FlushTaskMemoryTest）。行为与日志签名集
+ * 逐字节不变（#484/#492 判读依赖）。
+ *
+ * 顺序: 帽相(reservePhase) → 观测(vtraceTick) → 静止写点 → 空账早退 →
+ * 用户滚动弃配(位置神圣) → 让位判定 → 统一规则求值 → 单出口执行+拒绘
+ * (applyPairedShift)。免派发分支(贴底跟随族/读历史)从构造上零派发
  * ——震荡根源(无贴底豁免的 dispatch)在此消失。
  */
-
-
 internal fun streamingGrowFlushTask(
     listState: LazyListState,
     ledger: StreamingGrowLedger,
@@ -404,139 +482,183 @@ internal fun streamingGrowFlushTask(
     /** #438 R-1：数据侧 key 投影（index → chatEntries key）——越窗落点的键锚兜底。 */
     dataKeyAt: ((Int) -> Any?)? = null,
 ): PreDrawFlushTask {
-    // #438 R-2（2026-09-28 让位防御死接线根修，#438/#442 调研双源互证）：
-    // lastSetFii/lastSetFiso 原声明在下方 lambda 体内——flush 每帧调用，每次
-    // 重置 null → shouldYieldPairing 的「外部 pending 让位」分支（cb733d80 引入）
-    // 在生产从未生效。提到工厂体：闭包捕获，记忆生命周期=task 实例生命周期
-    // （同一 task 跨帧保留；新 task 实例无历史记忆——见 FlushTaskMemoryTest）。
-    // 注意 pendingReserveRelease 仍留在 lambda 内：它是单帧内帽→set 的传递
-    // 载体，每帧新计划，跨帧保留反而是 bug。
-    var lastSetFii: Int? = null
-    var lastSetFiso: Int? = null
+    val mem = FlushTaskMemory()
     return PreDrawFlushTask {
-    var pendingReserveRelease: ReserveReleasePlan? = null
-    // [#437 引擎①] 一帧缓冲帽释放：measure 相已得真高（增量当帧被帽裁掉不可见），
-    // 此处单事务原子施加。reject-draw 对 item 层重绘无效（VDRAW 实证），故不依赖。
-    if (reserve != null) {
-        // 对齐随态（二十四世刀锋修正）：翻转仅允许在「追平态」（reserved==trueHeight
-        // 时 place 偏移=0，两种对齐像素等价=零位移翻转）或「手势进行中」（拖拽自身
-        // 掩盖一次性位移）。贴底跟随期 fiso 在 0~20 抖动，无条件切换会在 8px 刀锋上
-        // 高频翻转＝振荡闪烁；滚动 settle 批量 append 若落在底对齐态＝大推+补偿大闪。
-        val wantBottom = listState.firstVisibleItemIndex == 0 &&
-            listState.firstVisibleItemScrollOffset < 8
-        if (reserve.alignBottom != wantBottom &&
-            (reserve.reserved == reserve.trueHeight || listState.isScrollInProgress)
-        ) {
-            if (BuildConfig.DEBUG) {
-                AppLogger.d(
-                    "RESERVE",
-                    "align-flip bottom=" + wantBottom +
-                        " caughtUp=" + (reserve.reserved == reserve.trueHeight) +
-                        " overflow=" + (reserve.trueHeight - reserve.reserved) +
-                        " fiso=" + listState.firstVisibleItemScrollOffset,
-                )
-            }
-            reserve.alignBottom = wantBottom
+        // pendingReserveRelease 是单帧内「帽相 → 单出口」的传递载体：每帧新计划，
+        // 跨帧保留反而是 bug（与 mem 的跨帧记忆分工——#438 R-2 注释详见
+        // FlushTaskMemory 头注）。
+        var pendingReserveRelease = reservePhase(listState, reserve)
+        vtraceTick(listState)
+        // R3 单信号源写点（唯一）：滚动/惯性期置「活跃」，settle 置「静止」——
+        // 消费者（pilot append 暂缓/快照冻结/ledger rebaseAll/帽持帽）全部只读。
+        dev.leonardo.ocbeacon.ui.screens.chat.markdown.ScrollQuiescence.onScrollStateChanged(listState.isScrollInProgress)
+        if (!ledger.hasPending && pendingReserveRelease == null) return@PreDrawFlushTask true
+        if (BuildConfig.DEBUG) {
+            // [SGR-435 验收七轮·仪表化] flush 相进入取证（含弃配分支可辨）
+            AppLogger.d(
+                "SGR-435",
+                "flush t=" + android.os.SystemClock.elapsedRealtime() +
+                    " fii=" + listState.firstVisibleItemIndex +
+                    " fiso=" + listState.firstVisibleItemScrollOffset +
+                    " ip=" + listState.isScrollInProgress,
+            )
         }
-        if (BuildConfig.DEBUG && reserve.trueHeight != sgrLastTrue) {
-            sgrLastTrue = reserve.trueHeight
-            AppLogger.d("RESERVE", "flush reserved=" + reserve.reserved + " true=" + reserve.trueHeight)
+        if (listState.isScrollInProgress) {
+            ledger.rebaseAll()
+            return@PreDrawFlushTask true
         }
-        val plan = reserveReleasePlan(
-            reserved = reserve.reserved,
-            trueHeight = reserve.trueHeight,
-            firstVisibleIndex = listState.firstVisibleItemIndex,
-            firstVisibleOffset = listState.firstVisibleItemScrollOffset,
-            isScrollInProgress = listState.isScrollInProgress,
-            // vd9 实证：条目增删窗口内 firstOrNull 与 firstVisibleItemIndex 短暂错位
-            // 导致锚键误判（该配对的释放落 paired=false）——按 index 反查锚键。
-            growthIndex = listState.layoutInfo.visibleItemsInfo
-                .firstOrNull { it.key == reserve.itemKey }?.index,
-        )
-        // [R1-A2] 单出口：帽 plan 延后与 ledger 配对合并为同帧单次滚动 set——
-        // 原先帽 set 先落、ledger set 覆盖（requestPosition 覆盖写非叠加），同帧
-        // 双补偿只活一笔；合并后两笔叠加一次原子生效。
-        if (plan != null) {
-            pendingReserveRelease = plan
-        } else if (reserve.reserved < 0 && reserve.trueHeight >= 0) {
-            androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
-                reserve.reserved = reserve.trueHeight
-            }
-        }
-    }
-    // [VTRACE 2026-09-26] 逐帧视口轨迹（仅变化时打点）——任何来回跳动在时间线上
-    // 直接可读（pair/drop/MSGEFFECT/GUARD/BANNER 行给出成因；用户裁决：精细分析
-    // 用日志而非录屏抽帧，瞬态闪烁录屏易漏采）。
-    run {
         val fii = listState.firstVisibleItemIndex
         val fiso = listState.firstVisibleItemScrollOffset
-        if (fii != vtraceLastFii || fiso != vtraceLastFiso) {
-            // 二十四世轮终修：观测者效应——滚动中 fiso 逐帧变化，无门限=每帧一条
-            // logcat 写（主线程 I/O）计入帧成本。限频：纯 fiso 变化 ≥200ms 一条；
-            // fii 跃迁（item 边界，分析关键）即时打。
-            val now = android.os.SystemClock.elapsedRealtime()
-            val fiiJump = fii != vtraceLastFii
-            if (fiiJump || now - vtraceLastLogAt >= 200) {
-                vtraceLastLogAt = now
+        val infos = listState.layoutInfo.visibleItemsInfo
+        // 新bug根修：外部 pending 未消费（读位≠上批目标）→ 让位（配对覆盖写会抵消显式意图）
+        mem.frameSeq++
+        if (shouldYieldPairing(fii, fiso, mem.lastSetFii, mem.lastSetFiso)) {
+            if (shouldAdoptExternalPosition(fii, fiso, mem.prevFii, mem.prevFiso, mem.frameSeq - mem.lastSetFrame)) {
+                // #502：静止且 lastSet 陈旧 = 已定居的外部位置（非待消费 pending）——
+                // 采纳为配对基线，落回正常求值（帽释放计划当帧生效，防永久让位）
+                mem.lastSetFii = fii
+                mem.lastSetFiso = fiso
+                mem.lastSetFrame = mem.frameSeq
                 if (BuildConfig.DEBUG) {
-                    AppLogger.d(
-                        "VTRACE",
-                        "t=" + now +
-                            " fii=" + fii + " fiso=" + fiso + " ip=" + listState.isScrollInProgress
-                    )
+                    AppLogger.d("SGR-435", "adopt(external-settled) t=" + android.os.SystemClock.elapsedRealtime() +
+                        " fii=" + fii + ",fiso=" + fiso + " — 外部滚动已定居，重立配对基线（#502 防永久让位）")
                 }
+            } else {
+                ledger.rebaseAll()
+                pendingReserveRelease = null
+                if (BuildConfig.DEBUG) {
+                    AppLogger.d("SGR-435", "yield(external-pending) t=" + android.os.SystemClock.elapsedRealtime() +
+                        " read(fii=" + fii + ",fiso=" + fiso + ") last(fii=" + mem.lastSetFii + ",fiso=" + mem.lastSetFiso + ")")
+                }
+                mem.prevFii = fii
+                mem.prevFiso = fiso
+                return@PreDrawFlushTask true
             }
-            vtraceLastFii = fii
-            vtraceLastFiso = fiso
+        }
+        mem.prevFii = fii
+        mem.prevFiso = fiso
+        val ledgerTotal = ledger.takePaired(fii, fiso) { ik -> infos.firstOrNull { it.key == ik }?.index ?: -1 }
+        // [R1-A2] 单出口：帽配对 shift 与 ledger 配对 shift 同帧叠加，单事务一次 set。
+        val pendingPlan = pendingReserveRelease
+        val reserveShift = if (pendingPlan?.scrollPaired == true) pendingPlan.delta.toFloat() else 0f
+        val total = reserveShift + ledgerTotal
+        // 二十四世轮审查（B4 观测者效应）：贴底跟随时此分支每 flush 一条 logcat——限频 500ms
+        if (BuildConfig.DEBUG && total == 0f && infos.isNotEmpty() &&
+            android.os.SystemClock.elapsedRealtime() - sgrDropLastLogAt >= 500
+        ) {
+            sgrDropLastLogAt = android.os.SystemClock.elapsedRealtime()
+            AppLogger.d(
+                "SGR-435",
+                "drop(append/reading-away) t=" + android.os.SystemClock.elapsedRealtime() +
+                    " fii=" + fii + " fiso=" + fiso
+            )
+        }
+        return@PreDrawFlushTask applyPairedShift(listState, reserve, dataKeyAt, mem, ledgerTotal, pendingPlan, total)
+    }
+}
+
+/**
+ * 职责簇①②（帽相，#442 批次 C 拆出）：对齐随态翻转 + 释放计划计算 + 首帧初始化。
+ *
+ * 返回本帧待释放计划（null=无增量/手势持帽/未初始化）；首帧（reserved<0 且已有
+ * 真高）原子直通 trueHeight。计划由调用方（单出口 applyPairedShift）延迟合并
+ * ——不在此处施加。
+ */
+private fun reservePhase(listState: LazyListState, reserve: HeightReserveState?): ReserveReleasePlan? {
+    if (reserve == null) return null
+    // [#437 引擎①] 一帧缓冲帽释放：measure 相已得真高（增量当帧被帽裁掉不可见），
+    // 此处单事务原子施加。reject-draw 对 item 层重绘无效（VDRAW 实证），故不依赖。
+    // 对齐随态（二十四世刀锋修正）：翻转仅允许在「追平态」（reserved==trueHeight
+    // 时 place 偏移=0，两种对齐像素等价=零位移翻转）或「手势进行中」（拖拽自身
+    // 掩盖一次性位移）。贴底跟随期 fiso 在 0~20 抖动，无条件切换会在 8px 刀锋上
+    // 高频翻转＝振荡闪烁；滚动 settle 批量 append 若落在底对齐态＝大推+补偿大闪。
+    val wantBottom = listState.firstVisibleItemIndex == 0 &&
+        listState.firstVisibleItemScrollOffset < 8
+    if (reserve.alignBottom != wantBottom &&
+        (reserve.reserved == reserve.trueHeight || listState.isScrollInProgress)
+    ) {
+        if (BuildConfig.DEBUG) {
+            AppLogger.d(
+                "RESERVE",
+                "align-flip bottom=" + wantBottom +
+                    " caughtUp=" + (reserve.reserved == reserve.trueHeight) +
+                    " overflow=" + (reserve.trueHeight - reserve.reserved) +
+                    " fiso=" + listState.firstVisibleItemScrollOffset,
+            )
+        }
+        reserve.alignBottom = wantBottom
+    }
+    if (BuildConfig.DEBUG && reserve.trueHeight != sgrLastTrue) {
+        sgrLastTrue = reserve.trueHeight
+        AppLogger.d("RESERVE", "flush reserved=" + reserve.reserved + " true=" + reserve.trueHeight)
+    }
+    val plan = reserveReleasePlan(
+        reserved = reserve.reserved,
+        trueHeight = reserve.trueHeight,
+        firstVisibleIndex = listState.firstVisibleItemIndex,
+        firstVisibleOffset = listState.firstVisibleItemScrollOffset,
+        isScrollInProgress = listState.isScrollInProgress,
+        // vd9 实证：条目增删窗口内 firstOrNull 与 firstVisibleItemIndex 短暂错位
+        // 导致锚键误判（该配对的释放落 paired=false）——按 index 反查锚键。
+        growthIndex = listState.layoutInfo.visibleItemsInfo
+            .firstOrNull { it.key == reserve.itemKey }?.index,
+    )
+    // [R1-A2] 单出口：帽 plan 延后与 ledger 配对合并为同帧单次滚动 set——
+    // 原先帽 set 先落、ledger set 覆盖（requestPosition 覆盖写非叠加），同帧
+    // 双补偿只活一笔；合并后两笔叠加一次原子生效。
+    if (plan != null) {
+        return plan
+    }
+    if (reserve.reserved < 0 && reserve.trueHeight >= 0) {
+        androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
+            reserve.reserved = reserve.trueHeight
         }
     }
-    // R3 单信号源写点（唯一）：滚动/惯性期置「活跃」，settle 置「静止」——
-    // 消费者（pilot append 暂缓/快照冻结/ledger rebaseAll/帽持帽）全部只读。
-    dev.leonardo.ocbeacon.ui.screens.chat.markdown.ScrollQuiescence.onScrollStateChanged(listState.isScrollInProgress)
-    if (!ledger.hasPending && pendingReserveRelease == null) return@PreDrawFlushTask true
-    if (BuildConfig.DEBUG) {
-        // [SGR-435 验收七轮·仪表化] flush 相进入取证（含弃配分支可辨）
-        AppLogger.d(
-            "SGR-435",
-            "flush t=" + android.os.SystemClock.elapsedRealtime() +
-                " fii=" + listState.firstVisibleItemIndex +
-                " fiso=" + listState.firstVisibleItemScrollOffset +
-                " ip=" + listState.isScrollInProgress,
-        )
-    }
-    if (listState.isScrollInProgress) {
-        ledger.rebaseAll()
-        return@PreDrawFlushTask true
-    }
+    return null
+}
+
+/**
+ * 职责③（观测，#442 批次 C 拆出）：[VTRACE] 逐帧视口轨迹（仅变化时打点）——
+ * 任何来回跳动在时间线上直接可读（pair/drop/MSGEFFECT/GUARD/BANNER 行给出
+ * 成因；用户裁决：精细分析用日志而非录屏抽帧，瞬态闪烁录屏易漏采）。
+ */
+private fun vtraceTick(listState: LazyListState) {
     val fii = listState.firstVisibleItemIndex
     val fiso = listState.firstVisibleItemScrollOffset
-    val infos = listState.layoutInfo.visibleItemsInfo
-    // 新bug根修：外部 pending 未消费（读位≠上批目标）→ 让位（配对覆盖写会抵消显式意图）
-    if (shouldYieldPairing(fii, fiso, lastSetFii, lastSetFiso)) {
-        ledger.rebaseAll()
-        pendingReserveRelease = null
-        if (BuildConfig.DEBUG) {
-            AppLogger.d("SGR-435", "yield(external-pending) t=" + android.os.SystemClock.elapsedRealtime() +
-                " read(fii=" + fii + ",fiso=" + fiso + ") last(fii=" + lastSetFii + ",fiso=" + lastSetFiso + ")")
+    if (fii != vtraceLastFii || fiso != vtraceLastFiso) {
+        // 二十四世轮终修：观测者效应——滚动中 fiso 逐帧变化，无门限=每帧一条
+        // logcat 写（主线程 I/O）计入帧成本。限频：纯 fiso 变化 ≥200ms 一条；
+        // fii 跃迁（item 边界，分析关键）即时打。
+        val now = android.os.SystemClock.elapsedRealtime()
+        val fiiJump = fii != vtraceLastFii
+        if (fiiJump || now - vtraceLastLogAt >= 200) {
+            vtraceLastLogAt = now
+            if (BuildConfig.DEBUG) {
+                AppLogger.d(
+                    "VTRACE",
+                    "t=" + now +
+                        " fii=" + fii + " fiso=" + fiso + " ip=" + listState.isScrollInProgress
+                )
+            }
         }
-        return@PreDrawFlushTask true
+        vtraceLastFii = fii
+        vtraceLastFiso = fiso
     }
-    val ledgerTotal = ledger.takePaired(fii, fiso) { ik -> infos.firstOrNull { it.key == ik }?.index ?: -1 }
-    // [R1-A2] 单出口：帽配对 shift 与 ledger 配对 shift 同帧叠加，单事务一次 set。
-    val pendingPlan = pendingReserveRelease
-    val reserveShift = if (pendingPlan?.scrollPaired == true) pendingPlan.delta.toFloat() else 0f
-    val total = reserveShift + ledgerTotal
-    // 二十四世轮审查（B4 观测者效应）：贴底跟随时此分支每 flush 一条 logcat——限频 500ms
-    if (BuildConfig.DEBUG && total == 0f && infos.isNotEmpty() &&
-        android.os.SystemClock.elapsedRealtime() - sgrDropLastLogAt >= 500
-    ) {
-        sgrDropLastLogAt = android.os.SystemClock.elapsedRealtime()
-        AppLogger.d(
-            "SGR-435",
-            "drop(append/reading-away) t=" + android.os.SystemClock.elapsedRealtime() +
-                " fii=" + fii + " fiso=" + fiso
-        )
-    }
+}
+
+/**
+ * 职责⑦⑧（单出口执行器+拒绘，#442 批次 C 拆出）：帽释放与 ledger 配对同帧
+ * 单事务施加。返回值 = PreDrawFlushTask 拒绘契约。
+ */
+private fun applyPairedShift(
+    listState: LazyListState,
+    reserve: HeightReserveState?,
+    dataKeyAt: ((Int) -> Any?)?,
+    mem: FlushTaskMemory,
+    ledgerTotal: Float,
+    pendingPlan: ReserveReleasePlan?,
+    total: Float,
+): Boolean {
     if (total != 0f || pendingPlan != null) {
         // #437 验收五轮（用户裁决，对齐 #427 引擎先例）：渲染前计算目标位+
         // 反射 requestPosition 写入待定区，由下一遍 measure 原子消费——与
@@ -546,7 +668,11 @@ internal fun streamingGrowFlushTask(
         // 溢出沿可见 items 向 index 增大换算（reverseLayout 视觉向上）。
         // #438 R-1：换用纯函数（越窗 dataKeyAt 兜底；行为=旧逻辑+投影扩展）
         val (targetFii, targetFiso, targetKey) = resolvePairedTarget(
-            fii, fiso, total.toInt(), infos, dataKeyAt,
+            fii = listState.firstVisibleItemIndex,
+            fiso = listState.firstVisibleItemScrollOffset,
+            total = total.toInt(),
+            visible = listState.layoutInfo.visibleItemsInfo,
+            dataKeyAt = dataKeyAt,
         )
         var writtenReserve = false
         androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
@@ -557,26 +683,36 @@ internal fun streamingGrowFlushTask(
             }
             if (total != 0f) {
                 LazyListReflection.requestScrollToItemNoCancel(listState, targetFii, targetFiso, targetKey)
-                lastSetFii = targetFii
-                lastSetFiso = targetFiso
+                mem.lastSetFii = targetFii
+                mem.lastSetFiso = targetFiso
+                // #502：set 写入帧戳记——divergence 陈旧度守卫的基准（pending 未消费
+                // 窗口内读位=旧位静止，近帧 set 不采纳防误毁 pending 保护）
+                mem.lastSetFrame = mem.frameSeq
             }
         }
         if (BuildConfig.DEBUG && (total != 0f || writtenReserve)) {
+            // [#492 检测网 2026-10-01] total==0 时下方 guard 不派发滚动——旧日志恒打印
+            // set(fii=7,fiso=0)（resolvePairedTarget 穿零高横幅落到的幻影目标）曾误导
+            // 两轮定罪；nodis 标记后判读可直接区分「算了没派」与「真派发」。
+            val setPart = if (total != 0f) {
+                "set(fii=" + targetFii + ",fiso=" + targetFiso + ")"
+            } else {
+                "(nodis target-fii=" + targetFii + ")"
+            }
             AppLogger.d(
                 "SGR-435",
                 "release t=" + android.os.SystemClock.elapsedRealtime() +
                     " capd=" + (pendingPlan?.delta ?: 0) + " led=" + ledgerTotal.toInt() +
-                    " set(fii=" + targetFii + ",fiso=" + targetFiso + ")" +
+                    " " + setPart +
                     " h->" + (if (writtenReserve) reserve?.trueHeight.toString() else "-"),
             )
         }
         // [终审 P1 修复] false=拒绘（PreRenderCoordinator 契约）。ledger 派发帧必须拒绘
         // ——StreamingGrowNode 直报真高（无裁剪），「新高度+旧偏移」中间帧全靠拒绘挡
         // （I1′ 契约）；帽路径画增长前态（旧帽高布局）无需拒绘。原 total!=0f 方向写反。
-        return@PreDrawFlushTask ledgerTotal == 0f
+        return ledgerTotal == 0f
     }
-    true
-    } // PreDrawFlushTask lambda（#438 R-2：lastSet 记忆在工厂体，见函数头注释）
+    return true
 }
 
 // --- 反射:绕过官方 requestScrollToItem 的 scroll{} 互斥锁取消机制 ---
@@ -696,6 +832,16 @@ internal object LazyListReflection {
                 }
                 @Suppress("UNCHECKED_CAST")
                 (p.invalidatorField.get(state) as MutableState<Unit>).value = Unit
+                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                    // [#492 检测网 2026-10-01] 反射通道派发审计：此处为引擎滚动的
+                    // 唯一反射出口——凡真派发必留痕，与 SGR-435 release 行对照可辨
+                    // 「日志声称派发 vs 实际派发」的歧义。
+                    AppLogger.d(
+                        "LRef",
+                        "set idx=" + index + " off=" + scrollOffset +
+                            " key=" + (key?.toString()?.take(20) ?: "null"),
+                    )
+                }
                 return
             } catch (t: Throwable) {
                 // IllegalAccessException / IllegalArgumentException / ClassCastException 等
@@ -703,6 +849,9 @@ internal object LazyListReflection {
             }
         }
         // 降级:官方 API。语义差异 = 通过 scroll{} 互斥锁取消 fling,可接受。
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+            AppLogger.d("LRef", "set-fallback idx=" + index + " off=" + scrollOffset)
+        }
         state.requestScrollToItem(index, scrollOffset)
     }
 }

@@ -160,4 +160,31 @@ class StreamingGrowLedgerTest {
         l.note("cmp_v1:t_x", "t_x", 168)
         assertEquals(96f, l.takePaired(1, 60) { 1 })
     }
+
+    // ===== 2026-10-04 覆盖审计补口：relearnBaseline（ScrollCompensation 换键双守卫之一）=====
+
+    @Test
+    fun `relearnBaseline 同 entryKey 换 itemKey 首测静默重学（防伪增量）`() {
+        val l = StreamingGrowLedger()
+        l.note("e1", "i1", 300)           // 冷启静默基线 300
+        l.note("e1", "i1", 420)           // +120 真增长
+        assertEquals(120f, l.takePaired(1, 60) { if (it == "i1") 1 else -1 })
+        // 槽位复用换 itemKey：基线清零重学 → 新 item 首测不产生配对增量
+        l.relearnBaseline("e1")
+        l.note("e1", "i2", 500)
+        assertEquals("换 item 后首测应为静默新基线，零配对", 0f,
+            l.takePaired(1, 60) { if (it == "i2") 1 else -1 })
+        // 后续真增长照常配对（重学未废账本）
+        l.note("e1", "i2", 560)
+        assertEquals(60f, l.takePaired(1, 60) { if (it == "i2") 1 else -1 })
+    }
+
+    @Test
+    fun `无 relearn 时换 itemKey 首测伪增量（对照组——守卫存在理由）`() {
+        val l = StreamingGrowLedger()
+        l.note("e1", "i1", 300)
+        l.note("e1", "i2", 500)           // 旧基线照搬 → +200 伪增量
+        assertEquals(200f, l.takePaired(1, 60) { if (it == "i2") 1 else -1 })
+    }
+
 }

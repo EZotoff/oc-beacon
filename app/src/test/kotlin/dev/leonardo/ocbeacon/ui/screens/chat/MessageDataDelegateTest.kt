@@ -90,6 +90,7 @@ class MessageDataDelegateTest {
         val chatRepository = mockk<ChatRepository>(relaxed = true).also {
             every { it.getMessagesFlow(any()) } returns messagesFlow
             every { it.getAllPartsMap() } returns partsFlow
+            every { it.getStructuralPartsMap() } returns partsFlow
             every { it.getActiveToolProgressForSession(any()) } returns progressFlow
             every { it.getSessionsSnapshot() } returns emptyList()
         }
@@ -157,6 +158,7 @@ class MessageDataDelegateTest {
         val chatRepo = mockk<ChatRepository>(relaxed = true).also {
             every { it.getMessagesFlow(any()) } returns messagesFlow
             every { it.getAllPartsMap() } returns partsFlow
+            every { it.getStructuralPartsMap() } returns partsFlow
             every { it.getActiveToolProgressForSession(any()) } returns progressFlow
             every { it.getSessionsSnapshot() } returns emptyList()
         }
@@ -186,6 +188,7 @@ class MessageDataDelegateTest {
         val chatRepo = mockk<ChatRepository>(relaxed = true).also {
             every { it.getMessagesFlow(any()) } returns messagesFlow
             every { it.getAllPartsMap() } returns partsFlow
+            every { it.getStructuralPartsMap() } returns partsFlow
             every { it.getActiveToolProgressForSession(any()) } returns progressFlow
             every { it.getSessionsSnapshot() } returns emptyList()
         }

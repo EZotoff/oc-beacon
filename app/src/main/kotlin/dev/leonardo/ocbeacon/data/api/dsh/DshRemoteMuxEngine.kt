@@ -112,6 +112,16 @@ class DshRemoteMuxEngine(
     }
 
     /**
+     * #441 深究批次（2026-09-30）：prompt 受理回执 → 哨兵播种。来源链
+     * DshApiClient → DshRpcClient.notifyPromptAdmitted → registry 钩子 →
+     * SseConnectionManager 帧源路由 → 此处。覆盖「空闲期假活+用户发言」
+     * 的期望门无源形态（activityFlow 事件驱动，帧死永不亮）。
+     */
+    fun onRequestSent() {
+        silenceWatchdog.onRequestSent()
+    }
+
+    /**
      * #441-A2：follow 逻辑流结束（End/StreamError）处理器——当前代 muxLoop 装载
      * （清理 followed 幂等集，使事件驱动的补开/#333 聚焦请求可重开该会话流）。
      */

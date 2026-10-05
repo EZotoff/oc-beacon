@@ -134,11 +134,11 @@ class WorkspaceViewModel @Inject constructor(
                         _uiState.update { it.copy(loadingDirs = it.loadingDirs - path) }
                         // #276 终验 V4：DSH host.listDirectory 无类型判别（协议级
                         // 补偿）——条目缺省全按 directory 可展开（DshApiClient 映射），
-                        // 对非目录路径的展开失败（闭集错误码 directory-unreadable）
+                        // 对非目录路径的展开失败（闭集错误码 directory-picker/unreadable，#458：0.2.0 斜杠码）
                         // 即单次探测信号：节点转标 file 叶并随树缓存（不再可展开，
                         // 避免重复探测）。仅此错误码转标——真实目录的瞬时网络/服务
                         // 失败不误降级。
-                        if (e is DshApiError && e.code == DshRpcErrorCode.DirectoryUnreadable) {
+                        if (e is DshApiError && e.code == DshRpcErrorCode.DirectoryPickerUnreadable) {
                             _uiState.update { state ->
                                 state.copy(rootNodes = state.rootNodes.demoteToFile(path))
                             }

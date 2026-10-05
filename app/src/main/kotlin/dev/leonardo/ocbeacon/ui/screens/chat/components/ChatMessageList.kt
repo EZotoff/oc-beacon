@@ -97,6 +97,7 @@ import dev.leonardo.ocbeacon.ui.screens.chat.dialog.PermissionCard
 import dev.leonardo.ocbeacon.ui.screens.chat.dialog.QuestionCard
 import dev.leonardo.ocbeacon.ui.screens.chat.components.AlwaysConfirmDialog
 import dev.leonardo.ocbeacon.ui.screens.chat.scroll.PreRenderCoordinator
+import dev.leonardo.ocbeacon.ui.screens.chat.util.cardFlingLeakGuard
 import dev.leonardo.ocbeacon.ui.screens.chat.util.rememberSafeFlingBehavior
 import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.InjectionLabelKind
 import dev.leonardo.ocbeacon.ui.screens.chat.rowmodel.RowCapabilities
@@ -150,9 +151,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 // #227：压缩尾部兜底分割线的展开表键随认领策略外移
 // CompactionDividerPolicy.TAIL_EXPANSION_KEY（C4）。
 
-/** #422 历史懒加载:大组分片淡入时长(ms)——直出+淡入档(介于 AppMotion SHORT/MEDIUM)。 */
-private const val SG_BODY_FADE_MS = 220
-
 private val BACKGROUND_SYNTHETIC_MARKERS = listOf(
     "User requested that active blocking work be moved to the background",
     "active blocking work be moved to the background",
@@ -204,6 +202,9 @@ private fun BannerReveal(
     onExpandDeparture: () -> Unit,
     streamingActive: Boolean,
     visible: Boolean,
+    /** [#492 检测网] 横幅身份（传出实高探针日志用）——revealed 高度在 CardExpandReveal
+     *  层（动画），内层内容 Box 探针量不到；空串=不探。 */
+    diagKey: String = "",
     content: @Composable () -> Unit,
 ) {
     CompositionLocalProvider(
@@ -211,7 +212,52 @@ private fun BannerReveal(
         LocalCardExpandDeparture provides onExpandDeparture,
         LocalInStreamingTurn provides streamingActive,
     ) {
-        CardExpandReveal(visible = visible) { content() }
+        Box(
+            modifier = if (BuildConfig.DEBUG && diagKey.isNotEmpty()) {
+                Modifier.bannerHeightDiag(diagKey)
+            } else Modifier
+        ) {
+            CardExpandReveal(visible = visible) { content() }
+        }
+    }
+}
+
+// [#492 检测网] 增长时钟：任意 turn item 高度变化（RESIZE）打点；SilentShift 据此
+// 区分「物理跟随」（流式增长推送内容，伴随 RESIZE 批次）与「真静默滑移」
+// （无任何高度事件的位移——2026-10-01 两例 -40/-26px 家族）。
+internal object GrowthClock {
+    @Volatile var lastAt = 0L
+}
+
+// [#492 广域检测网 2026-10-01] item 存在性账本（DEBUG-only）：进场/离场各一条。
+// 动机：低于锚的条目插拔（条件横幅出现/消失、chunk 裂变、分页）会位移锚内容
+// 而 fii/fiso 纹丝不动——此前所有探针都看不见，唯一签名即存在性变化。
+@Composable
+private fun ItemPresenceDiag(itemKey: Any) {
+    if (BuildConfig.DEBUG) {
+        DisposableEffect(itemKey) {
+            AppLogger.d("ItemP", "enter key=" + itemKey.toString().take(28))
+            onDispose { AppLogger.d("ItemP", "leave key=" + itemKey.toString().take(28)) }
+        }
+    }
+}
+
+// [#492 广域检测网 2026-10-01] 横幅臂高度变化探针（DEBUG-only）。动机：横幅在
+// reverseLayout 底部（低于锚），揭示/收起重排会整体推移消息内容而 fiso 冻结——
+// 2026-10-01 两例 -40/-26px 无触摸滑移的头号几何候选；此前 RESIZE 只盖 turn 臂。
+@Composable
+private fun Modifier.bannerHeightDiag(itemKey: String): Modifier {
+    if (!BuildConfig.DEBUG) return this
+    val last = remember { mutableStateOf(-1) }
+    return this.onSizeChanged { s ->
+        if (last.value >= 0 && s.height != last.value) {
+            AppLogger.w(
+                "ItemH",
+                "key=" + itemKey.take(24) + " h " + last.value + "->" + s.height +
+                    " (d=" + (s.height - last.value) + ")",
+            )
+        }
+        last.value = s.height
     }
 }
 
@@ -276,7 +322,8 @@ fun ChatMessageList(
         }
     }) {
     // turnGroups 缓存（v6）：消息 id 序列未变时复用上次 Map，消除流式期间
-    // 每 48ms 全量重建（~2000 entry/轮）的分配压力（GC 卡顿根因之一）。
+    // 每批节奏（STREAM_FLUSH_INTERVAL_MS=100ms）全量重建（~2000 entry/轮）的
+    // 分配压力（GC 卡顿根因之一）。
     // 安全前提：renderableTurns 的 miss 分支（流式/新消息）用最新 msg 引用替换
     // turn 内同 id 的旧引用 —— 流式 turn 永不冻结（历史回归 37d9a6ac 的教训）。
     // 此处仅按结构（id 序列）缓存；内容（parts）变化不重建 Map —— 同 id 的
@@ -427,13 +474,13 @@ fun ChatMessageList(
 
     // 预计算 assistant 显示项的全部渲染数据。
     // 单个 remember 块 —— 仅在 rawMessages/displayItems 变化时运行，而非组合期间。
-    // 缓存优化（2026-08）：流式期间数据层每 48ms 全量重建消息列表（即使只有最后
-    // 一条在变），若 renderableTurns 全量重算 → 新实例 → @Immutable 相等性失效 →
+    // 缓存优化（2026-08）：流式期间数据层每批节奏（100ms）全量重建消息列表（即使
+    // 只有最后一条在变），若 renderableTurns 全量重算 → 新实例 → @Immutable 相等性失效 →
     // LazyColumn 可见 item 全量重组 → 滚动卡顿。这里按消息 id + 内容指纹缓存：
     // 指纹覆盖流式追加（Text/Reasoning 尾部）、工具输出注入（Running/Completed
     // output 尾部）与消息级时间/错误字段；内容未变的消息复用缓存实例 → 重组只落
     // 在变化消息上。相比早期"activeTools 非空整体禁用缓存"的实现（工具运行期间
-    // 每 48ms 全量重算 → 工具调用时滑动卡顿），工具活跃时其他消息仍命中缓存。
+    // 每批全量重算 → 工具调用时滑动卡顿），工具活跃时其他消息仍命中缓存。
     val renderableCache = remember { HashMap<String, Pair<Int, RenderableTurn>>() }
     val renderableTurns: List<RenderableTurn?> = remember(rawMessages, displayItems, turnGroups) {
         val streamingId = streamingMsgId
@@ -472,18 +519,9 @@ fun ChatMessageList(
 
     // ===== #423 批次十三:结构裂变全量退役(用户裁决「大数据量加速而非拆分」) =====
     // 全部步组走 CardExpandReveal 统一引擎(渲染前计算+反射位移——钉位铁律
-    // 全局一致,大小组无别);大内容加速=引擎空闲预热(CardExpandReveal
-    // PREWARM_IDLE_MS),而非 #422 条目拆分懒加载。映射恒空 →
-    // buildChatEntries 裂变分支休眠(发射机保留,死代码清理另行批次);
-    // REPIN 重锚修正器同批退役(引擎自证钉位,不留补偿族)。
-    val expandedStepGroups: Map<String, dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem.StepGroup> = emptyMap()
-
-
-    // ===== #423 SGB 埋点:结构裂变观测(仅 DEBUG;窗口门控,常态零行) =====
-    // 批次十三:裂变退役 → SPLIT/SNAP 效应移除;两探针保留供休眠的 Head 渲染
-    // 分支引用(sgSwapAtMs 恒 0 = 窗口永闭,零日志)。
-    val sgSwapAtMs = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
-    val sgHeadTopY = remember { androidx.compose.runtime.mutableIntStateOf(Int.MIN_VALUE) }
+    // #422 清理批次(2026-09-28):裂变发射机/expandedStepGroups 映射/SGB 埋点
+    // 整体退役——expandedStepGroups 恒空致裂变分支休眠已久(#426 死代码),
+    // 统一渲染树后 Head/Body 条目族不复存在。
     // #435 流式增长账本：流式家族(消息/工具横幅/压缩卡)高度增长统一并入高度
     // 引擎配对体系——measure 相记账 Δ → pre-draw flush 单点按统一规则派发(锚即
     // 意图:贴底跟随族/读历史免派发,尾段阅读 +Δ 同帧配对)。取代 COMP 家族三补偿器
@@ -741,6 +779,13 @@ fun ChatMessageList(
     val sharedJumpPhase = remember { MutableStateFlow<JumpPhase>(JumpPhase.Idle) }
     // 渲染就绪注册表（原声明位置上移——协调器构造依赖）。
     val renderReadiness = remember { RenderReadinessRegistry() }
+    // #442 A2：列表离树清空 broker（会话切换防跨会话陈旧堆积；导航重叠窗的
+    // 罕见重分片由新列表 pilot 重新武装自愈——见 broker.clearAll KDoc）。
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.clearAll()
+        }
+    }
     val renderSupply = remember {
         RenderSupplyCoordinator(renderReadiness, coroutineScope, sharedJumpPhase)
     }
@@ -749,9 +794,55 @@ fun ChatMessageList(
     // #258 Stage B：历史长 turn 分段计划（到达扫描产物）。
     val segmentPlans by renderSupply.segmentPlans.collectAsState()
 
-    val lastStreamingMsgId = remember { mutableStateOf<String?>(null) }
     // [DEBUG-hflick] #437 十三轮仪器：计划锚键序列上一次快照（PLAN diff 探针用）
     val hflickPrevPlanKeys = remember { mutableStateOf<List<String>?>(null) }
+    // #442 R2 分片唤醒（A2）：流式 shard 发布表（broker 单例快照——pilot 深处
+    // 发布 → 此处消费）。发布只在滚动静止时发生（Fire 门 quiescent），与
+    // JankHoldGate 冻结窗不冲突。
+    // [CML-tick] #442 B案判据探针（DEBUG-only，随 probe 保留纪律永久保留）：
+    // 本函数体（~2800 行装配主体）重执行计数——每 25 次打一行（普通数组非
+    // 快照写，零重组副作用）。根因二判读：流式稳态老世界 ~10/s（每 flush 新
+    // rawMessages 实例驱动整函数体重跑），B案后 ≈结构性事件率（<<1/s）。
+    val cmlTick = remember { longArrayOf(0L) }
+    cmlTick[0]++
+    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG && cmlTick[0] % 25L == 0L) {
+        dev.leonardo.ocbeacon.logging.AppLogger.d(
+            "CML-tick",
+            "n=" + cmlTick[0] + " t=" + android.os.SystemClock.elapsedRealtime() +
+                " raw=" + System.identityHashCode(rawMessages) +
+                " disp=" + displayItems.size +
+                " cp=" + System.identityHashCode(chunkPlans) +
+                " sp=" + System.identityHashCode(segmentPlans) +
+                " rk=" + System.identityHashCode(recentStreamedTurnKeys) +
+                " tp=" + System.identityHashCode(toolProgress),
+        )
+    }
+
+    val streamShards = dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.shards
+    // #442 A2.5 资格泛化：turnKey → 分片 part 的 renderItem 位置 k（推理先行轮
+    // k>0）。值相等 Map 作 chatEntries remember 键——纯文本增长期 k 不变（结构
+    // 性派生），零额外重建；B案后 renderableTurns 亦结构性稳定。
+    val shardPartIdx: Map<String, Int> = remember(renderableTurns, streamShards) {
+        if (streamShards.isEmpty()) emptyMap() else {
+            val m = HashMap<String, Int>()
+            displayItems.forEachIndexed { displayIdx, pair ->
+                val (rawIndex, msg) = pair
+                if (!msg.isUser) {
+                    val rt = renderableTurns[displayIdx] ?: return@forEachIndexed
+                    val idx = rt.renderItems.indexOfFirst { item ->
+                        val pid = (item as? dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem.GroupedParts)
+                            ?.group?.let { it as? dev.leonardo.ocbeacon.ui.screens.chat.tools.PartGroup.Single }
+                            ?.part?.id
+                        pid != null && streamShards.containsKey(pid)
+                    }
+                    if (idx > 0) {
+                        m[chatEntryKey(turnGroups, rawIndex, msg, turnAnchors)] = idx
+                    }
+                }
+            }
+            m
+        }
+    }
     // ===== 2026-08-20 fling 巨帧根治：分片发射表（消息区 entries）=====
     // entries = displayItems 经 chunkPlans 展开（巨型 turn → N 个 chunk item）。
     // 双向索引是 LazyColumn index ↔ displayItems index 的单一真相源。
@@ -765,8 +856,8 @@ fun ChatMessageList(
     // 修复：displayItems.size 是快照读（建立失效依赖）且值比较——条目数
     // 变化必重建；同 size 的内容替换（pending-* 换装）由 item 级 get(i)
     // 快照依赖自愈，turnGroups（id 序列变 → Map 值变）兜底。
-    val chatEntries = remember(displayItems.size, turnGroups, turnAnchors, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans) {
-        // [DEBUG-jk] #437 卡顿诊断：chatEntries 全量重建计时——确证「48ms 快照重组
+    val chatEntries = remember(displayItems.size, turnGroups, turnAnchors, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans, streamShards, shardPartIdx) {
+        // [DEBUG-jk] #437 卡顿诊断：chatEntries 全量重建计时——确证「批快照重组
         // 风暴」归因（每行含耗时/规模/滚动状态）；确证并固化冻结修复后整块移除。
         val jkT0 = android.os.SystemClock.elapsedRealtime()
         dev.leonardo.ocbeacon.debug.RaceProbe.probe {
@@ -776,7 +867,7 @@ fun ChatMessageList(
                 " streaming=" + (streamingMsgId != null) +
                 " recentN=" + recentStreamedTurnKeys.size
         }
-        buildChatEntries(displayItems, turnGroups, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans, turnAnchors = turnAnchors)
+        buildChatEntries(displayItems, turnGroups, streamingMsgId, chunkPlans, recentStreamedTurnKeys, segmentPlans, turnAnchors = turnAnchors, streamShards = streamShards, shardPartIdx = shardPartIdx)
             .also { ents ->
                 if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                     dev.leonardo.ocbeacon.logging.AppLogger.d(
@@ -855,12 +946,6 @@ fun ChatMessageList(
         onDispose { PreRenderCoordinator.unregisterFlushTask(sgrFlushTask) }
     }
 
-    // ===== #430 大组硬切换锚定(已撤,待重做) =====
-    // 尝试把展开后的 StepGroupHead 钉回视口上部;五轮真机迭代均在反向布局
-    // scrollToItem/dispatchRawDelta 语义上落错位(实测视口被甩到无关区域,
-    // 比不锚更糟——展开内容反而不见)。撤除;大组无锚定(折叠行随展开飞出)
-    // 维持 #422 已知缺口,随 L3 AST 切片批次以 layoutInfo 键匹配方案重做。
-    // 教训:反向布局滚动语义必须先写校准单测再上真机。
     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
         androidx.compose.runtime.LaunchedEffect(displayItems) {
             val tail = displayItems.lastOrNull()?.second?.message
@@ -875,16 +960,33 @@ fun ChatMessageList(
     val chatEntriesForPreparse = androidx.compose.runtime.rememberUpdatedState(chatEntries)
     // 流式结束瞬间记录 turn key（延迟分片——防视口内 key 裂变闪跳；
     // 由协调器的窗口清理负责释放）。
-    LaunchedEffect(streamingMsgId) {
-        if (streamingMsgId == null && lastStreamingMsgId.value != null) {
-            val found = displayItems.indexOfFirst { (_, m) -> m.message.id == lastStreamingMsgId.value }
-            if (found >= 0) {
-                val (ri, m) = displayItems[found]
-                val tk = chatEntryKey(turnGroups, ri, m, turnAnchors)
-                renderSupply.noteStreamTurnEnded(tk)
-            }
+    // #509：改为**随流捕获锚定键**——毕业换装（MessageIdSwapped）会把流式宿主行
+    // 原地改名为权威 id，流末按旧实现记的 lastStreamingMsgId 回查 displayItems
+    // 会落空（id 已换），recent-streamed 排除失效 → 刚毕业 turn 立即成分段候选。
+    // 锚定 t_ 键（user 消息 id）跨换名稳定：随流持续刷新、流末取末值。
+    var lastStreamingTurnKey by remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var lastStreamingTurnParts by remember { androidx.compose.runtime.mutableStateOf<List<Part.Text>>(emptyList()) }
+    if (streamingMsgId != null) {
+        val sIdx = displayItems.indexOfFirst { (_, m) -> m.message.id == streamingMsgId }
+        if (sIdx >= 0) {
+            val (sRi, _) = displayItems[sIdx]
+            lastStreamingTurnKey = chatEntryKey(turnGroups, sRi, displayItems[sIdx].second, turnAnchors)
+            // #509 预解析暖场素材：轮内全部 Text part（流末即终态——毕业权威
+            // 转写与流式逐字节一致，#505 抓包实证；part id 宿主前缀跨毕业稳定）
+            lastStreamingTurnParts = (turnGroups[sRi] ?: emptyList()).flatMap { it.parts }
+                .filterIsInstance<Part.Text>()
         }
-        lastStreamingMsgId.value = streamingMsgId
+    }
+    LaunchedEffect(streamingMsgId) {
+        val endedKey = lastStreamingTurnKey
+        if (streamingMsgId == null && endedKey != null) {
+            renderSupply.noteStreamTurnEnded(endedKey)
+            // #509 预解析暖场：毕业换装后分片树→整卡树重组，新树首个 PartContent
+            // 组合若预解析未就绪则走 asyncTerminal Loading≈0px（表格轮 350-700ms
+            // 空白残余）。流末对轮内长文本 part 立即后台预解析——新树组合时
+            // preParsed 即命中、首帧全高（块级 block-end 早于流末，解析有头跑）。
+            renderSupply.preParseStreamedTurnParts(lastStreamingTurnParts)
+        }
     }
 
     // 当前可见问题（msgId 驱动，与 Room 全量列表的 JumpTarget.msgId 匹配高亮）。
@@ -939,12 +1041,21 @@ fun ChatMessageList(
                         val dIdx = idx - lastIdx
                         val dOff = off - lastOff
                         if (kotlin.math.abs(dIdx) > 1 || kotlin.math.abs(dOff) > 350) {
-                            AppLogger.w(
-                                "ScrollDiag",
-                                "LEAP idx " + lastIdx + "->" + idx + " (dIdx=" + dIdx + ") off " +
-                                    lastOff + "->" + off + " (dOff=" + dOff + ") inProgress=" +
-                                    listState.isScrollInProgress + " total=" + listState.layoutInfo.totalItemsCount
-                            )
+                            // [#492 检测网 2026-10-01] px=穿越 items 实际像素（零高横幅
+                            // 使 dIdx 大而视觉零变化——LEAP-Z 降 D 级，真跳变（px 或 dOff
+                            // >350）保持 W 级；判读勿再被 dIdx=7 噪声误导）。
+                            val lo = minOf(lastIdx, idx)
+                            val hi = maxOf(lastIdx, idx)
+                            var crossedPx = 0
+                            listState.layoutInfo.visibleItemsInfo.forEach { v ->
+                                if (v.index > lo && v.index <= hi) crossedPx += v.size
+                            }
+                            val severe = kotlin.math.abs(dOff) > 350 || crossedPx > 350
+                            val leapMsg = (if (severe) "LEAP " else "LEAP-Z ") + "idx " + lastIdx + "->" + idx +
+                                " (dIdx=" + dIdx + ") px=" + crossedPx + " off " +
+                                lastOff + "->" + off + " (dOff=" + dOff + ") inProgress=" +
+                                listState.isScrollInProgress + " total=" + listState.layoutInfo.totalItemsCount
+                            if (severe) AppLogger.w("ScrollDiag", leapMsg) else AppLogger.d("ScrollDiag", leapMsg)
                         }
                     }
                     lastIdx = idx
@@ -978,13 +1089,14 @@ fun ChatMessageList(
                 )
             }.collect { (fii, fiso, ip) ->
                 if (fii != vptFii || fiso != vptFiso || ip != vptIp) {
-                    val anchorKey = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.key
+                    val anchorInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull()
                     AppLogger.d(
                         "VPT",
                         "t=" + android.os.SystemClock.elapsedRealtime() +
                             " fii=" + fii + " fiso=" + fiso +
                             " d=" + (if (vptFiso >= 0) fiso - vptFiso else 0) +
-                            " ip=" + ip + " anchor=" + (anchorKey?.toString()?.take(14) ?: "null") +
+                            " ip=" + ip + " anchor=" + (anchorInfo?.key?.toString()?.take(14) ?: "null") +
+                            " asize=" + (anchorInfo?.size ?: -1) +
                             " pend=" + streamingLedger.hasPending
                     )
                     vptFii = fii
@@ -1068,6 +1180,8 @@ fun ChatMessageList(
     val turnGroupsForPreparse = androidx.compose.runtime.rememberUpdatedState(turnGroups)
     val streamingMsgIdForPreparse = androidx.compose.runtime.rememberUpdatedState(streamingMsgId)
     val renderableTurnsForPreparse = androidx.compose.runtime.rememberUpdatedState(renderableTurns)
+    //（2026-10-03 审计遗留修复：协调器 turnKey 与 chatEntryKey 锚定式同源——桥接槽位锚）
+    val turnAnchorsForPreparse = androidx.compose.runtime.rememberUpdatedState(turnAnchors)
     // #258 Stage B：世界到达驱动——进场页/前置页 prepend/loadAround 到达即扫，
     // 裂变带外的长 turn 在可组合性建立前完成分段（视口快照取当下值）。
     LaunchedEffect(displayItems, turnGroups, renderableTurns, bannerCount) {
@@ -1082,6 +1196,7 @@ fun ChatMessageList(
                 bannerCount = bannerCount,
                 streamingMsgId = streamingMsgIdForPreparse.value,
                 renderableTurns = renderableTurnsForPreparse.value,
+                turnAnchors = turnAnchorsForPreparse.value,
             ),
         )
     }
@@ -1104,6 +1219,7 @@ fun ChatMessageList(
                     entries = chatEntriesForPreparse.value,
                     bannerCount = bannerCount,
                     streamingMsgId = streamingMsgIdForPreparse.value,
+                    turnAnchors = turnAnchorsForPreparse.value,
                 ),
             )
         }
@@ -1412,7 +1528,7 @@ fun ChatMessageList(
                     // #378：原 itemsIndexed 内容抽出的消息条目渲染体（逻辑零变更——仅承载
                     // 点迁移；卡内嵌分派见 itemsIndexed lambda）。
                     @Composable
-                    fun renderTranscriptEntry(entry: ChatEntry) {
+                    fun renderTranscriptEntry(entry: ChatEntry, suppressBottomGap: Boolean = false) {
                         when (entry) {
                             is ChatEntry.Chunk -> {
                                 val displayItemIndex = entry.displayIndex
@@ -1431,7 +1547,7 @@ fun ChatMessageList(
                                         // 的越界绘制防御，见 Turn 分支注释）
                                         .clipToBounds()
                                         .let { m ->
-                                            if (entry.isLast) m.padding(bottom = messageSpacing) else m
+                                            if (entry.isLast && !suppressBottomGap) m.padding(bottom = messageSpacing) else m
                                         }
                                         .onSizeChanged { size ->
                                             if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
@@ -1527,7 +1643,7 @@ fun ChatMessageList(
                                         .fillMaxWidth()
                                         .clipToBounds()
                                         .let { m ->
-                                            if (entry.isLast) m.padding(bottom = messageSpacing) else m
+                                            if (entry.isLast && !suppressBottomGap) m.padding(bottom = messageSpacing) else m
                                         }
                                 ) {
                                     // [perf-flng] #258 Stage B 分段组合成本取证（DEBUG-only）。
@@ -1582,7 +1698,7 @@ fun ChatMessageList(
                                 val chatMessage = msg
                                 Box(
                                     modifier = Modifier.fillMaxWidth().let { m ->
-                                        if (entry.isLast) m.padding(bottom = messageSpacing) else m
+                                        if (entry.isLast && !suppressBottomGap) m.padding(bottom = messageSpacing) else m
                                     }
                                 ) {
                                     // [perf-flng] #258 组合成本取证（DEBUG-only）
@@ -1625,99 +1741,91 @@ fun ChatMessageList(
                                     }
                                 }
                             }
-                            // ===== #422 历史懒加载:大组展开态的拆分条目 =====
-                            is ChatEntry.StepGroupHead -> {
-                                // 折叠行头(气泡顶部):共享 StepGroupFoldRow(点击收起)
-                                // #sgt 尾行 pinEligible=false:与 #sgh 同 stateKey,
-                                // 双写会让重锚测到 60px 外的尾行(批次七)
-                                val isHeadRow = entry.key.endsWith("#sgh")
+                            is ChatEntry.StreamChunk -> {
+                                // #442 R2 分片唤醒（A2）：冻结块渲染——归一化切片
+                                // 同步解析（remember(text) 单次，首组合即全高）。
+                                // 零 item 间距（turn 内无缝，#246 同款；底距归尾块
+                                // Turn entry）；冻结内容不可变=零失效零重测。
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clipToBounds()
-                                        .onGloballyPositioned {
-                                            sgHeadTopY.intValue = it.positionInRoot().y.toInt()
-                                            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
-                                                System.currentTimeMillis() - sgSwapAtMs.longValue < 1200
-                                            ) {
-                                                dev.leonardo.ocbeacon.logging.AppLogger.d(
-                                                    "SGB",
-                                                    "HEAD topY=" + sgHeadTopY.intValue,
-                                                )
-                                            }
-                                        }
-                                        .padding(bottom = SpacingTokens.XS.dp)
                                 ) {
-                                    StepGroupFoldRow(step = entry.step, pinEligible = isHeadRow)
+                                    dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamShardContent(
+                                        markdown = entry.text,
+                                        textColor = MaterialTheme.colorScheme.onSurface,
+                                    )
                                 }
                             }
-                            is ChatEntry.StepGroupBody -> {
-                                // 内容分片(独立 LazyItem):视口外零组合。注意:切片按
-                                // part 边界——单个巨型 text part(如 60 行表格)仍会整条
-                                // 测量(#422 三层根因,见 backlog note),待 AST 级切片。
-                                val bodyTurn = renderableTurns.getOrNull(entry.displayIndex)
-                                if (bodyTurn != null) {
-                                    // #430 loading 首帧占位:巨型单体 part(实测 60 行表格
-                                    // h=20226px)首组合冻结主线程 598ms,期间 alpha=0 内容
-                                    // 在组合、屏幕无任何反馈=用户主诉「加载/延迟高」。
-                                    // 重组合延后一帧:首帧先画轻量占位(冻结期间可见),
-                                    // 下一帧再组合重内容——加载态即时可见,内容照常淡入。
-                                    var heavyComposed by androidx.compose.runtime.saveable.rememberSaveable(entry.key) {
-                                        androidx.compose.runtime.mutableStateOf(false)
+                            is ChatEntry.StreamPrefix -> {
+                                // #442 A2.5 资格泛化：推理/工具前缀条目——
+                                // renderItems[0..partIdx) 经 ChunkAssistantItems 渲染
+                                //（历史 Chunk 路径首段同机制：reasoning/工具卡/分
+                                // 隔线全内建）。零 padding（turn 内无缝；turn 顶缝
+                                // 由更旧侧条目的 bottom padding 自带）。提问卡分工：
+                                // 锚落在前缀（推理区）时在此渲染（与尾块同一确定性
+                                // 算法自算），简化锚定=前缀末位（锚=末前缀 item 时
+                                // 与原位精确一致；中位锚罕见路径容忍轻微后移）。
+                                val displayItemIndex = entry.displayIndex
+                                val pMsg = displayItems[entry.displayIndex].second
+                                val fullTurn = renderableTurns[displayItemIndex]
+                                // [A2.5] 动机埋点：前缀条目组合事实（推理先行轮
+                                // renderItem 级拆分的渲染端验证锚——重进/回收后
+                                // 首组合必现此行）
+                                androidx.compose.runtime.LaunchedEffect(entry.key, entry.partIdx) {
+                                    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                        dev.leonardo.ocbeacon.logging.AppLogger.d(
+                                            "A2.5",
+                                            "prefix compose key=${entry.key.takeLast(20)} k=${entry.partIdx} — 推理/工具前缀独立条目（文档序：冻结块上方）",
+                                        )
                                     }
-                                    LaunchedEffect(entry.key) {
-                                        androidx.compose.runtime.withFrameNanos { }
-                                        heavyComposed = true
-                                    }
-                                    if (!heavyComposed) {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = SpacingTokens.XL.dp),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(20.dp),
-                                                strokeWidth = 2.dp,
-                                            )
-                                        }
-                                    } else {
-                                    var bodyShown by androidx.compose.runtime.saveable.rememberSaveable(entry.key) {
-                                        androidx.compose.runtime.mutableStateOf(false)
-                                    }
-                                    LaunchedEffect(entry.key) { bodyShown = true }
-                                    val bodyAlpha by androidx.compose.animation.core.animateFloatAsState(
-                                        targetValue = if (bodyShown) 1f else 0f,
-                                        // 淡入时长:介于 AppMotion.SHORT(150) 与 MEDIUM(300) 之间,
-                                        // 大组分片直出的视觉过渡档(用户裁决「直出+淡入」)
-                                        animationSpec = androidx.compose.animation.core.tween(SG_BODY_FADE_MS),
-                                        label = "sgBodyFade",
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clipToBounds()
-                                            .padding(bottom = SpacingTokens.XS.dp)
-                                            .graphicsLayer { alpha = bodyAlpha }
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
-                                        ) {
-                                            ChunkAssistantItems(
-                                                items = entry.groups.map { RenderItem.GroupedParts(it) },
+                                }
+                                val prefixQ = embeddedQuestionByMsgId[pMsg.message.id]?.takeIf { q ->
+                                    fullTurn != null && questionAnchorInPrefix(q, fullTurn, entry.partIdx)
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clipToBounds()
+                                ) {
+                                    if (fullTurn != null) {
+                                        Column {
+                                            dev.leonardo.ocbeacon.ui.screens.chat.components.ChunkAssistantItems(
+                                                items = fullTurn.renderItems.subList(
+                                                    0, entry.partIdx.coerceAtMost(fullTurn.renderItems.size),
+                                                ),
                                                 textColor = MaterialTheme.colorScheme.onSurface,
                                                 isAmoled = isAmoled,
                                                 onViewSubSession = navigateToChildSession,
                                                 onOpenFile = onOpenFile,
                                                 onLocateTask = onLocateTask,
                                                 eventExpandedStates = eventCardExpandedStates,
-                                                renderableTurn = bodyTurn,
+                                                renderableTurn = fullTurn,
                                                 compact = LocalChatDensity.current == ChatDensity.Compact,
                                                 readinessRegistry = LocalRenderReadiness.current,
                                             )
+                                            if (prefixQ != null) {
+                                                var lastPrefixQ by remember {
+                                                    androidx.compose.runtime.mutableStateOf<
+                                                        dev.leonardo.ocbeacon.domain.model.SseEvent.QuestionAsked?
+                                                        >(null)
+                                                }
+                                                lastPrefixQ = prefixQ
+                                                dev.leonardo.ocbeacon.ui.screens.chat.components.CardExpandReveal(
+                                                    visible = prefixQ != null,
+                                                ) {
+                                                    lastPrefixQ?.let { pq ->
+                                                        dev.leonardo.ocbeacon.ui.screens.chat.dialog.QuestionCard(
+                                                            question = pq,
+                                                            onSubmit = { answers ->
+                                                                viewModel.replyToQuestion(pq.id, answers)
+                                                            },
+                                                            onReject = { viewModel.rejectQuestion(pq.id) },
+                                                        )
+                                                    }
+                                                }
+                                            }
                                         }
-                                    }
                                     }
                                 }
                             }
@@ -1750,6 +1858,43 @@ fun ChatMessageList(
                                     "attach key=" + itemKey + " streaming=" + isStreamingMsg +
                                         " sid=" + streamingMsgId,
                                 )
+                            }
+                        }
+                        // #442 R2 分片唤醒（A2.5 资格泛化）：注册资格放宽到**任意
+                        // 位置**的首个 Single-Text renderItem（推理/工具前缀后——
+                        // 推理先行轮 glm 系常态；A2 仅 index 0 把它们全排除）。
+                        // 优先未完结 part（增长源；已完结 part 无 Fire 无害）。
+                        // 活提问在场时暂缓注册（提问卡锚定语义依赖整 turn 渲染，
+                        // Q 解决后下一批恢复资格）；发布态不受影响（完结持续性）。
+                        // 注册在组合期（先于子树 PartContent 的 controllerFor 查
+                        // 询）；key 变更/离树注销——发布态保留（controllerFor 对
+                        // 已发布 part 兜底返回）。
+                        val shardRegPartId =
+                            dev.leonardo.ocbeacon.ui.screens.chat.components.shardRegistrationPartId(
+                                renderItems = renderableTurns[displayItemIndex]?.renderItems,
+                                hasLiveQuestion = embeddedQuestionByMsgId[msg.message.id] != null,
+                                pilotEnabled = dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardPilot.enabled && isStreamingMsg,
+                            )
+                        remember(itemKey, shardRegPartId) {
+                            if (shardRegPartId != null) {
+                                dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.register(
+                                    itemKey, shardRegPartId,
+                                ) { heightReserve.hardReset() }
+                                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                    AppLogger.d("SGR-435", "shard-reg key=" + itemKey + " part=" + shardRegPartId.take(18))
+                                }
+                            }
+                            // lint：remember 禁返回 Unit——注册副作用块以 true 收尾
+                            true
+                        }
+                        androidx.compose.runtime.DisposableEffect(itemKey, shardRegPartId) {
+                            onDispose {
+                                if (shardRegPartId != null && dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                    AppLogger.d("SGR-435", "shard-unreg key=" + itemKey + " part=" + shardRegPartId.take(18))
+                                }
+                                shardRegPartId?.let {
+                                    dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.unregister(it)
+                                }
                             }
                         }
                         // [#437 引擎①] 帽协议（一帧缓冲+同 pass 原子释放）；旧 pairing 路径
@@ -1793,6 +1938,12 @@ fun ChatMessageList(
                         // 临时诊断（ScrollDiag，DEBUG-only）：item 初次测量后的高度变化
                         //（渐进测量/异步重排检测——跳变根因取证）
                         val diagLastSize = remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+                        // [#492 广域检测网 2026-10-01] 静默滑移检测器：item 根 y 变化而
+                        // fiso 与高度双冻结 ⇒ 位移来自本 item 之外（同列表他处插拔/重排）
+                        // ——fii/fiso/RESIZE/MDResize 对此全盲（2026-10-01 两例 -40/-26px
+                        // 完美平移滑移零仪器事件）。滚动（fiso 变）与流式增长（高度变）
+                        // 天然被排除，零噪声。
+                        val silentDiagLast = remember { intArrayOf(Int.MIN_VALUE, Int.MIN_VALUE, Int.MIN_VALUE) }
                         // [VDRAW] Turn 臂绘制相位探针（DSH 流式尾 t_dsh-* 走此分支）
                         // [R4 探针注入化] 同上
                         val vdrawTurnDedup = remember { intArrayOf(-1, -1) }
@@ -1809,11 +1960,17 @@ fun ChatMessageList(
                             // 2026-08-20 分片：item 级间距（原 spacedBy 移除——
                             // chunk item 间需无缝，Turn 与相邻项间隙在此补）。
                             // 置于 layout{} 补偿之外，不影响补偿测量高度。
-                            .padding(bottom = messageSpacing)
+                            // 底部间隙收口（2026-10-01 用户主诉）：reverseLayout 全列表
+                            // 底位条目抑制 item 级底距——底距只留 contentPadding SM 呼吸
+                            //（对齐 2026-09-19 终裁「最后一条消息停在列表最底部」）。
+                            .let { m ->
+                                if (suppressBottomGap) m else m.padding(bottom = messageSpacing)
+                            }
                             .onSizeChanged { s ->
                                 if (BuildConfig.DEBUG) {
                                     val prev = diagLastSize.value
                                     if (prev != androidx.compose.ui.unit.IntSize.Zero && s.height != prev.height) {
+                                        GrowthClock.lastAt = android.os.SystemClock.elapsedRealtime()
                                         AppLogger.w(
                                             "ScrollDiag",
                                             "RESIZE t=" + android.os.SystemClock.elapsedRealtime() +
@@ -1824,6 +1981,29 @@ fun ChatMessageList(
                                     }
                                 }
                                 diagLastSize.value = s
+                            }
+                            .onGloballyPositioned { pos ->
+                                if (BuildConfig.DEBUG) {
+                                    val y = pos.positionInRoot().y.toInt()
+                                    val h = pos.size.height
+                                    val fiso = listState.firstVisibleItemScrollOffset
+                                    val last = silentDiagLast
+                                    val now = android.os.SystemClock.elapsedRealtime()
+                                    // 增长静默窗（600ms）：物理跟随（流式增长推送内容，
+                                    // 必伴随 RESIZE 打点）不报——只报无任何高度事件的位移。
+                                    if (last[0] != Int.MIN_VALUE && y != last[0] &&
+                                        fiso == last[1] && h == last[2] &&
+                                        now - GrowthClock.lastAt > 600
+                                    ) {
+                                        AppLogger.w(
+                                            "SilentShift",
+                                            "key=" + itemKey.take(18) + " y " + last[0] + "->" + y +
+                                                " (d=" + (y - last[0]) + ") fiso=" + fiso + " h=" + h +
+                                                " t=" + now,
+                                        )
+                                    }
+                                    last[0] = y; last[1] = fiso; last[2] = h
+                                }
                             }
                             .drawBehind {
                                 if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
@@ -1902,6 +2082,51 @@ fun ChatMessageList(
                                 // 嵌入该消息的思考卡片（ReasoningBlock）内部渲染
                                 val embeddedQ = embeddedQuestionByMsgId[msg.message.id]
 
+                                // #442 A2.5：分片 part 前缀在场（k>0）时尾块 turn
+                                // 渲染子范围 [k, size)（renderItems 切片——推理/工
+                                // 具前缀移交 StreamPrefix 条目）。切片键=fullTurn 实
+                                // 例（结构性事件换代自动重切，防工具卡终态陈旧）。
+                                val fullTurnForSlice = renderableTurns[displayItemIndex]
+                                val shardK = shardPartIdx[itemKey]
+                                val tailTurn = if (shardK != null && fullTurnForSlice != null &&
+                                    shardK < fullTurnForSlice.renderItems.size
+                                ) {
+                                    // [A2.5] 动机埋点：尾块切片生效（k 变化时重打——
+                                    // 毕业/前缀出现时切片边界追踪）
+                                    androidx.compose.runtime.LaunchedEffect(itemKey, shardK) {
+                                        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                            dev.leonardo.ocbeacon.logging.AppLogger.d(
+                                                "A2.5",
+                                                "tail slice key=${itemKey.takeLast(20)} from=$shardK — 尾块渲染子范围（前缀移交 StreamPrefix，帽物主仍本键）",
+                                            )
+                                        }
+                                    }
+                                    fullTurnForSlice.copy(
+                                        renderItems = fullTurnForSlice.renderItems.subList(
+                                            shardK, fullTurnForSlice.renderItems.size,
+                                        )
+                                    )
+                                } else {
+                                    fullTurnForSlice
+                                }
+                                // A2.5 提问卡分工：锚 part 落在前缀（推理区）时，尾块
+                                // 切片不含锚——卡移交 StreamPrefix 条目渲染（防丢卡/
+                                // 防尾块错锚；前缀分支以同一确定性算法自算分工）；
+                                // 锚在尾块或无分片时维持原路径。
+                                var tailQ = embeddedQ
+                                if (embeddedQ != null && shardK != null && fullTurnForSlice != null) {
+                                    val anchorId = dev.leonardo.ocbeacon.ui.screens.chat.components
+                                        .questionAnchorPartIdFor(embeddedQ, fullTurnForSlice)
+                                    val anchorIdx = fullTurnForSlice.renderItems.indexOfFirst { item ->
+                                        (((item as? dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem.GroupedParts)
+                                            ?.group as? dev.leonardo.ocbeacon.ui.screens.chat.tools.PartGroup.Single)
+                                            ?.part?.id) == anchorId
+                                    }
+                                    if (anchorIdx in 0 until shardK) {
+                                        tailQ = null
+                                    }
+                                }
+
                                 // [perf-flng] #258 组合成本取证（DEBUG-only）
                                 if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                                     android.os.Trace.beginSection("flng:it:turn-a")
@@ -1910,10 +2135,7 @@ fun ChatMessageList(
                                 Column {
                                 MessageCard(
                                     role = MessageCardRole.ASSISTANT,
-                                    // #422 历史懒加载:大组展开态下本 Turn 是拆分尾片,
-                                    // StepGroup 条目由 Head/Body 独立 LazyItem 承担
-                                    skipStepGroupItem = entry.skipStepGroupItem,
-                                    renderableTurn = renderableTurns[displayItemIndex],
+                                    renderableTurn = tailTurn,
                                     currentMessage = msg,
                                     onViewSubSession = navigateToChildSession,
                                     onOpenFile = onOpenFile,
@@ -1930,7 +2152,7 @@ fun ChatMessageList(
                                         }
                                     },
                                     onLocateTask = onLocateTask,
-                                    pendingQuestion = embeddedQ,
+                                    pendingQuestion = tailQ,
                                     // 2026-08-30 提问卡下跳根修：提交/忽略不再强制拉底——
                                     // mid-list 回答问题被 requestScrollToItem(0) 瞬跳拉底
                                     // 是「提问卡片往下跳」的第二来源。贴底场景 drift guard
@@ -2321,12 +2543,29 @@ fun ChatMessageList(
                         }
                     }
                     
+                // [#492 广域检测网 2026-10-01] LBox：列表容器自身位置/尺寸探针——
+                // 父布局（顶栏/状态条）推移列表时内容整体滑移而 item/滚动探针全静默。
+                val lboxDiagLast = remember { intArrayOf(Int.MIN_VALUE, Int.MIN_VALUE) }
                 LazyColumn(
                     state = listState,
                     // 2026-08-20 滚动稳定性：限速 fling——每帧 ≤ 视口高/8，
                     // 高速段不再冲入未组合区（与渲染供给协调器配合，见上方）
                     flingBehavior = rememberSafeFlingBehavior(listState),
                     modifier = Modifier.fillMaxSize()
+                        .onGloballyPositioned { pos ->
+                            if (BuildConfig.DEBUG) {
+                                val y = pos.positionInRoot().y.toInt()
+                                if (y != lboxDiagLast[0] || pos.size.height != lboxDiagLast[1]) {
+                                    AppLogger.d(
+                                        "LBox",
+                                        "y=" + y + " h=" + pos.size.height +
+                                            " t=" + android.os.SystemClock.elapsedRealtime(),
+                                    )
+                                    lboxDiagLast[0] = y
+                                    lboxDiagLast[1] = pos.size.height
+                                }
+                            }
+                        }
                         // #149：唯一 testTag——ChatScreen 树中有 2 个 scrollable 节点
                         //（消息列表 + 底部输入栏），androidTest 的 hasScrollAction()
                         // 匹配多节点导致 touch 注入失败
@@ -2375,7 +2614,8 @@ fun ChatMessageList(
                     ) {
                         dshJobs.forEach { job ->
                             item(key = "dsh_job_" + job.id) {
-                                Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                                if (BuildConfig.DEBUG) ItemPresenceDiag("dsh_job_" + job.id)
+                                Box(modifier = Modifier.bannerHeightDiag("dsh_job_" + job.id).padding(bottom = messageSpacing)) {
                                     pinnedJobsSlotRegistry.Render(
                                         slot = ServerUiSlot.CHAT_MESSAGE_LIST,
                                         caps = serverCapabilities,
@@ -2393,13 +2633,15 @@ fun ChatMessageList(
                     // 能力位兜底门控）——#420 B 类:恒驻声明+原地揭示(撤销发生在
                     // turn 间隙=非流式,CardExpandReveal 激活;流式时降级裸 AV)
                     item(key = "revert_banner") {
+                        if (BuildConfig.DEBUG) ItemPresenceDiag("revert_banner")
                         BannerReveal(
                             listState = listState,
                             onExpandDeparture = onExpandDeparture,
                             streamingActive = turnActive,
                             visible = revertSupported && sessionMeta.revert != null,
+                             diagKey = "revert_banner",
                         ) {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            Box(modifier = Modifier.bannerHeightDiag("revert_banner").padding(bottom = messageSpacing)) {
                             RevertBanner(onRedo = {
                                 viewModel.redoMessage { ok ->
                                     coroutineScope.launch {
@@ -2426,7 +2668,8 @@ fun ChatMessageList(
                     )
                     if (tailCompaction != null) {
                         item(key = "compaction_banner") {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            if (BuildConfig.DEBUG) ItemPresenceDiag("compaction_banner")
+                            Box(modifier = Modifier.bannerHeightDiag("compaction_banner").padding(bottom = messageSpacing)) {
                                 // #221/#222：展开区流式增长——延迟揭示真·渲染前补偿
                                 // （尾部兜底路径，挂载点原位）；#227 展开键语义在 spec。
                                 CompactionDividerSlot(
@@ -2451,13 +2694,15 @@ fun ChatMessageList(
                     // Retry 横幅 —— 会话处于 Retry 状态时显示（#420 B 类恒驻+原地揭示）
                     val retryStatus = sessionMeta.sessionStatus
                     item(key = "retry_banner") {
+                        if (BuildConfig.DEBUG) ItemPresenceDiag("retry_banner")
                         BannerReveal(
                             listState = listState,
                             onExpandDeparture = onExpandDeparture,
                             streamingActive = turnActive,
                             visible = retryStatus is SessionStatus.Retry,
+                             diagKey = "retry_banner",
                         ) {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            Box(modifier = Modifier.bannerHeightDiag("retry_banner").padding(bottom = messageSpacing)) {
                             if (retryStatus is SessionStatus.Retry) {
                                 RetryBanner(retryStatus)
                             }
@@ -2469,14 +2714,16 @@ fun ChatMessageList(
                     // 本轮输出达上限被截断；继续=再发一条 "continue" prompt（无专用
                     // 端点，Web 同款语义）；新一轮 turn/start（Busy）自动清卡。
                     item(key = "turn_max_tokens") {
+                        if (BuildConfig.DEBUG) ItemPresenceDiag("turn_max_tokens")
                         // #420 B 类恒驻+原地揭示:turn 截断通知出现于 turn 终态(非流式)
                         BannerReveal(
                             listState = listState,
                             onExpandDeparture = onExpandDeparture,
                             streamingActive = turnActive,
                             visible = turnMaxTokens != null,
+                             diagKey = "turn_max_tokens",
                         ) {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            Box(modifier = Modifier.bannerHeightDiag("turn_max_tokens").padding(bottom = messageSpacing)) {
                                 TurnMaxTokensCard(
                                     onContinue = { viewModel.sendMessage("continue") },
                                 )
@@ -2490,7 +2737,8 @@ fun ChatMessageList(
                     // reverseLayout=true：先声明 = 视觉底部 -> 错误行钉在消息流尾部。
                     sessionErrorRowItems(sessionErrorRows).forEach { (key, error) ->
                         item(key = key) {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            if (BuildConfig.DEBUG) ItemPresenceDiag(key)
+                            Box(modifier = Modifier.bannerHeightDiag(key).padding(bottom = messageSpacing)) {
                                 SessionErrorCard(error = error)
                             }
                         }
@@ -2501,13 +2749,15 @@ fun ChatMessageList(
                     // COMP-TOOL 管流式增长,互不打架);turn 结束消失→非流式
                     // CardExpandReveal 激活→原地收起+同帧补偿(旧实现裸移除跳变)
                     item(key = "tool_progress") {
+                        if (BuildConfig.DEBUG) ItemPresenceDiag("tool_progress")
                         BannerReveal(
                             listState = listState,
                             onExpandDeparture = onExpandDeparture,
                             streamingActive = turnActive,
                             visible = activeTools.isNotEmpty(),
+                             diagKey = "tool_progress",
                         ) {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            Box(modifier = Modifier.bannerHeightDiag("tool_progress").padding(bottom = messageSpacing)) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -2528,13 +2778,15 @@ fun ChatMessageList(
 
                     // 步骤进度指示器（#420 B 类恒驻+原地揭示,消失路径同上）
                     item(key = "step_progress") {
+                        if (BuildConfig.DEBUG) ItemPresenceDiag("step_progress")
                         BannerReveal(
                             listState = listState,
                             onExpandDeparture = onExpandDeparture,
                             streamingActive = turnActive,
                             visible = currentStep != null,
+                             diagKey = "step_progress",
                         ) {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            Box(modifier = Modifier.bannerHeightDiag("step_progress").padding(bottom = messageSpacing)) {
                             if (currentStep != null) {
                                 StepProgressIndicator(stepInfo = currentStep)
                             }
@@ -2547,15 +2799,17 @@ fun ChatMessageList(
                     // 复用同一 item),到达/离开经 CardExpandReveal;turn 后下发的
                     // 问题(非流式)由此激活补偿,流式内到达降级裸 AV
                     item(key = "question_pending") {
+                        if (BuildConfig.DEBUG) ItemPresenceDiag("question_pending")
                         val question = unembeddedQuestions.firstOrNull()
                         BannerReveal(
                             listState = listState,
                             onExpandDeparture = onExpandDeparture,
                             streamingActive = turnActive,
                             visible = question != null,
+                             diagKey = "question_pending",
                         ) {
                             if (question != null) {
-                                Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                                Box(modifier = Modifier.bannerHeightDiag("question_pending").padding(bottom = messageSpacing)) {
                                 QuestionCard(
                                     question = question,
                                     positionLabel = if (unembeddedQuestions.size > 1) "1/${unembeddedQuestions.size}" else null,
@@ -2575,15 +2829,17 @@ fun ChatMessageList(
 
                     // 待处理权限 —— 一次显示一个（最旧优先）——#420 B 类同上
                     item(key = "perm_pending") {
+                        if (BuildConfig.DEBUG) ItemPresenceDiag("perm_pending")
                         val permission = interaction.pendingPermissions.firstOrNull()
                         BannerReveal(
                             listState = listState,
                             onExpandDeparture = onExpandDeparture,
                             streamingActive = turnActive,
                             visible = permission != null,
+                             diagKey = "perm_pending",
                         ) {
                             if (permission != null) {
-                                Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                                Box(modifier = Modifier.bannerHeightDiag("perm_pending").padding(bottom = messageSpacing)) {
                                 PermissionCard(
                                     permission = permission,
                                     positionLabel = if (interaction.pendingPermissions.size > 1) "1/${interaction.pendingPermissions.size}" else null,
@@ -2616,13 +2872,13 @@ fun ChatMessageList(
                             when (entry) {
                                 is ChatEntry.Chunk -> "assistant_chunk"
                                 is ChatEntry.TurnChunk -> "assistant_segment"
+                                is ChatEntry.StreamChunk -> "assistant_stream_shard"
+                                is ChatEntry.StreamPrefix -> "assistant_stream_prefix"
                                 is ChatEntry.UserChunk -> "user_chunk"
-                                is ChatEntry.StepGroupHead -> "assistant_sg_head"
-                                is ChatEntry.StepGroupBody -> "assistant_sg_body"
                                 is ChatEntry.Turn -> if (entry.isUser) "user" else "assistant"
                             }
                         },
-                    ) { _, entry ->
+                    ) { entryIndex, entry ->
                         // #423 批次六:全条目接入 animateItem(仅位移,无淡入淡出——
                         // 滚动不触发,结构变化(条目插拔)平滑滑动)。调研定案:结构
                         // 裂变的成熟收尾;视口内让位条目滑开而非跳变。
@@ -2641,23 +2897,48 @@ fun ChatMessageList(
                         // displayItems/turnGroups/streamingMsgId（每 flush 新实例捕获替换
                         // = 全部可见 item 每 flush 重组的根因之一）。
                         val entryStreaming = entry is ChatEntry.Turn && entry.isStreaming
+                        // [#492 广域检测网 2026-10-01] 条目存在性账本（chunk 裂变/重排
+                        // 直接签名）+ TurnFin 流式→完结翻转帧标记（#491 完结换装定罪起点）。
+                        if (BuildConfig.DEBUG) {
+                            ItemPresenceDiag(entry.key)
+                            val prevStreaming = remember { mutableStateOf(false) }
+                            if (prevStreaming.value && !entryStreaming) {
+                                AppLogger.i(
+                                    "TurnFin",
+                                    "key=" + entry.key.toString().take(24) +
+                                        " t=" + android.os.SystemClock.elapsedRealtime(),
+                                )
+                            }
+                            prevStreaming.value = entryStreaming
+                        }
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                // 卡内滚动嵌套传导守卫(#474 六轮,分通道终裁):
+                                // 拖拽到边→剩余位移协议自然传导外层(同向跟手,零干预);
+                                // 惯性到边→动量就地吸收(逐帧+残速双通道),不传导不注入
+                                // (五轮反转注入致拖拽方向反,已废弃)。
+                                // #476:链传导解除 autoScroll 武装(嵌套 dispatch 不置
+                                // isScrollInProgress,不解除则 250ms 后 GUARD 吸回底)。
+                                .cardFlingLeakGuard(onUserChain = onExpandDeparture)
                                 .animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = null),
                         ) {
                             CompositionLocalProvider(
                                 LocalCardExpandListState provides listState,
                                 LocalCardExpandDeparture provides onExpandDeparture,
                                 LocalInStreamingTurn provides entryStreaming,
+                                // #508:宿主 item 身份——展开反射归一的折叠算术需要
+                                // 知道 +H 落在哪个 item(宿主=锚永不折叠;宿主在上方
+                                // 按增长后容量向旧侧折算)。
+                                LocalCardExpandHostKey provides entry.key,
                             ) {
                                 val extras = transcriptCardExtras[entry.key]
                                 if (extras == null || extras.isEmpty) {
-                                    renderTranscriptEntry(entry)
+                                    renderTranscriptEntry(entry, suppressBottomGap = entryIndex == 0)
                                 } else {
                                     Column(modifier = Modifier.fillMaxWidth()) {
                                         extras.before.forEach { renderTranscriptCardItem(it, spacingBelow = true) }
-                                        renderTranscriptEntry(entry)
+                                        renderTranscriptEntry(entry, suppressBottomGap = entryIndex == 0)
                                         extras.after.forEach { renderTranscriptCardItem(it, spacingBelow = false) }
                                     }
                                 }
@@ -2670,6 +2951,7 @@ fun ChatMessageList(
                     // 自新向旧向上排列，与消息流时序方向一致）。
                     transcriptTrailingCards.asReversed().forEach { card ->
                         item(key = card.planKey) {
+                            if (BuildConfig.DEBUG) ItemPresenceDiag(card.planKey)
                             renderTranscriptCardItem(card, spacingBelow = true)
                         }
                     }
@@ -2677,7 +2959,8 @@ fun ChatMessageList(
                     // 分页加载指示器 —— 抓取更旧消息时出现在视觉顶部（reverseLayout）
                     if (messageState.isLoadingOlder) {
                         item(key = "loading_older") {
-                            Box(modifier = Modifier.padding(bottom = messageSpacing)) {
+                            if (BuildConfig.DEBUG) ItemPresenceDiag("loading_older")
+                            Box(modifier = Modifier.bannerHeightDiag("loading_older").padding(bottom = messageSpacing)) {
                             Box(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = SpacingTokens.MD.dp),
                                 contentAlignment = Alignment.Center

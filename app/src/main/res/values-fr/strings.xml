@@ -256,7 +256,6 @@
     <string name="chat_message_delete_failed">Échec de la suppression du message</string>
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">jetons/s</string>
-    <string name="chat_msg_tail_summary">%1$d étapes · %2$d outils</string>
     <string name="a11y_message_detail">Détails du message</string>
     <string name="chat_stats_session_title">Statistiques de la session</string>
     <string name="chat_stats_summary">%1$d tours · %2$d étapes · %3$s LLM · %4$s outils</string>
@@ -492,6 +491,7 @@
     <string name="server_settings_oauth_browser_hint">Terminez l’autorisation dans votre navigateur. Cette fenêtre se fermera automatiquement.</string>
     <string name="chat_error_view_page">Page</string>
     <string name="chat_error_view_code">Code</string>
+    <string name="math_block_badge">Formule</string>
     <string name="chat_save_image">Enregistrer l’image</string>
     <string name="chat_image_saved">Image enregistrée</string>
     <string name="chat_image_save_failed">Échec de l’enregistrement de l’image</string>

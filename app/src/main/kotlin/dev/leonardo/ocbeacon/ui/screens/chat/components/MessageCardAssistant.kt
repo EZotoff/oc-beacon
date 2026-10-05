@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -60,6 +61,7 @@ import dev.leonardo.ocbeacon.domain.model.Message
 import dev.leonardo.ocbeacon.ui.screens.chat.components.RenderReadiness
 import dev.leonardo.ocbeacon.domain.model.Part
 import dev.leonardo.ocbeacon.domain.model.SseEvent
+import dev.leonardo.ocbeacon.domain.model.PartIdContract
 import dev.leonardo.ocbeacon.ui.components.ProviderIcon
 import dev.leonardo.ocbeacon.ui.screens.chat.ChatMessage
 import dev.leonardo.ocbeacon.ui.screens.chat.dialog.QuestionCard
@@ -90,7 +92,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalOnToggleToolExpanded
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalToolExpandedStates
-import dev.leonardo.ocbeacon.ui.screens.chat.util.toolExpandedOrDefault
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material3.Icon
 import androidx.compose.animation.core.LinearEasing
@@ -154,9 +155,6 @@ internal fun MessageCardAssistant(
     onDeleteMessage: (() -> Unit)? = null,
     /** 2026-09-12 扁平化：行模型能力位（尾部字段/动作门控单源）。 */
     caps: RowCapabilities? = null,
-    /** #422 历史懒加载:大组拆条目发射时尾片置 true——StepGroup 条目整体
-     *  跳过(折叠行由 ChatEntry.StepGroupHead 条目渲染,内容由 Body 条目)。 */
-    skipStepGroupItem: Boolean = false,
 ) {
     // D2-L22：原 if(isAmoled) 两分支相同（死条件）——直接取 onSurface
     val textColor = MaterialTheme.colorScheme.onSurface
@@ -192,21 +190,10 @@ internal fun MessageCardAssistant(
     // ——提交后 pendingQuestion 移除，全部重复卡一起消失）。
     // 锚定策略：优先 pendingQuestion.tool.callId 精确匹配的 Tool part；
     // 否则最后一个 Reasoning/Tool part（保持"渲染在思考流末尾"原语义）。
+    // #442 A2.5：算法提纯为 [questionAnchorPartIdFor]——ChatMessageList 的
+    // 分片前缀/尾块提问卡分工与其共用同一真相源。
     val questionAnchorPartId = remember(pendingQuestion?.id, renderableTurn) {
-        if (pendingQuestion == null) {
-            null
-        } else {
-            val singles = renderableTurn.renderItems.mapNotNull { item ->
-                (item as? RenderItem.GroupedParts)?.group
-                    ?.let { it as? PartGroup.Single }?.part
-            }
-            val callId = pendingQuestion.tool?.callId?.takeIf { it.isNotBlank() }
-            val toolMatch = callId?.let { cid ->
-                singles.lastOrNull { it is Part.Tool && (it.callId == cid || it.id == cid) }
-            }
-            toolMatch?.id
-                ?: singles.lastOrNull { it is Part.Reasoning || it is Part.Tool }?.id
-        }
+        questionAnchorPartIdFor(pendingQuestion, renderableTurn)
     }
 
     // 2026-08-30 提问卡跳变根修：提交/忽略后 pendingQuestion 立即移除 →
@@ -229,10 +216,20 @@ internal fun MessageCardAssistant(
     var qEntered by rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     LaunchedEffect(Unit) { qEntered = true }
 
+    // #471③ 验收探针（DEBUG-only）：整卡高度序列——闪烁/跳变帧与 gate
+    // 大放行、heldTail 毕业交接、完结换装的对齐分析用；零行为变化。
+    var probeLastH by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     MessageBubble(
             alignEnd = false,
             containerColor = Color.Transparent,
             flat = true,
+            modifier = Modifier.onSizeChanged { s ->
+                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG && s.height != probeLastH) {
+                    android.util.Log.w("MDResize", "card=" + currentMessage.message.id.takeLast(12) +
+                        " h=" + s.height + " d=" + (s.height - probeLastH))
+                    probeLastH = s.height
+                }
+            },
             tailExtra = {
                 // #410：尾部单点（主路径与分片/分段共用；产出行流式完结门控在内部）
                 AssistantTurnTail(
@@ -338,6 +335,9 @@ internal fun MessageCardAssistant(
                                 if (item.group.part.id == renderableTurn.lastStepDividerBeforePartId) {
                                     StepDivider(0)
                                 }
+                                //（#507 swapStableKey 已随 #509 方案B 退役 2026-10-03：
+                                // part id 自首帧永久稳定——宿主前缀跨毕业不变，
+                                // 换装稳定键在全协议恒等，回归 key(part.id) 本键。）
                                 key(item.group.part.id) {
                                 // 滚动预解析消费：长文本 part 取 Parsed state（与驱动端
                                 // key 约定：partId；阈值一致 ≥200 字符）。
@@ -351,10 +351,21 @@ internal fun MessageCardAssistant(
                                             it.ignored != true && !it.text.contains("User has answered")
                                     }
                                 val preParsedAssistantState = if (longTextPart != null) {
-                                    val partReadiness by readinessRegistry
-                                        .flow(longTextPart.id)
-                                        .collectAsState()
-                                    (partReadiness as? RenderReadiness.Parsed)?.state
+                                    // #442 A2 修复（真机 02:05 定罪）：已分片 part 的全文
+                                    // 预解析态会把尾块 item 撑成全文高（RESIZE 96→49390，
+                                    // 与冻结 shard 双渲染重复 + 完结瞬间踢飞 pilot 致尾段
+                                    // held 不再 flush）——已发布 part 抑制预解析，尾块渲染
+                                    // 权归 pilot 切片（shardHold 冷续）。
+                                    if (dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker
+                                            .controllerFor(longTextPart.id)?.hasPublished() == true
+                                    ) {
+                                        null
+                                    } else {
+                                        val partReadiness by readinessRegistry
+                                            .flow(longTextPart.id)
+                                            .collectAsState()
+                                        (partReadiness as? RenderReadiness.Parsed)?.state
+                                    }
                                 } else {
                                     null
                                 }
@@ -423,60 +434,28 @@ internal fun MessageCardAssistant(
                         }
                     }
 
-                    // #422:step 折叠组——流式 turn 恒平铺(跟随生成,DSH 同款时机);
-                    // 非流式走 StepGroupCard 折叠(最终回答=最后消息恒平铺,装配层保证);
-                    // 历史懒加载拆条目时本 item 由 Head/Body 条目承担,此处整体跳过
+                    // #422 清理批次(2026-09-28 用户裁决):StepGroup 统一渲染树——
+                    // 流式/完结同构。原双分支(流式平铺 PartContent 直出 vs 完结
+                    // StepGroupCard)整树互换是完结塌缩根因:互换首帧 heavyComposed=false
+                    // 渲染 24dp 桩,且流式分支不写账本致桩兜底失守(ledgerTotal=0 实证,
+                    // RESIZE 712→475→700)。统一后唯一保留的流式态差异是解析策略分流
+                    // (asyncParse:流式同步 pilot 链/完结异步 #428 >2048 防线)——同构
+                    // 树内参数级差异,不再触发子树重建;pilot→async 换装由
+                    // pilotTerminalHold(#472)终帧保持保护。
                     is RenderItem.StepGroup -> key(item.msgId) {
-                        // [DEBUG-hflick] #437 十三轮仪器：流式平铺↔折叠组分支翻转探针。
-                        // 两分支内容树不同构（平铺=PartContent 直出；折叠=切片+账本+
-                        // heavyComposed 门控），互换即整树重测量——结构性高度跳变源。
-                        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-                            val prevStreaming = HflickProbe.branchStates[item.msgId]
-                            if (prevStreaming != null && prevStreaming != isStreaming) {
-                                dev.leonardo.ocbeacon.logging.AppLogger.w(
-                                    "HFLICK",
-                                    "[DEBUG-hflick] BRANCH id=" + item.msgId.takeLast(12) +
-                                        " streaming " + prevStreaming + "->" + isStreaming +
-                                        " grp=" + item.groups.size,
-                                )
-                            }
-                            HflickProbe.putBranch(item.msgId, isStreaming)
-                        }
-                        if (skipStepGroupItem) {
-                            // 大组展开态:内容已拆为独立 LazyItem(见 buildChatEntries)
-                        } else if (isStreaming) {
-                            item.groups.forEachIndexed { gi, g ->
-                                // #463:step 边界(消息边界)插分割线+步序
-                                dev.leonardo.ocbeacon.ui.screens.chat.tools.stepDividerBefore(gi, item.stepStarts)
-                                    ?.let { ord -> StepDivider(ord) }
-                                val sp = (g as? PartGroup.Single)?.part
-                                if (sp != null) {
-                                    key(sp.id) {
-                                        PartContent(
-                                            part = sp,
-                                            textColor = textColor,
-                                            isUser = false,
-                                            onViewSubSession = onViewSubSession,
-                                            onOpenFile = onOpenFile,
-                                            asyncParse = false,
-                                        )
-                                    }
-                                }
-                            }
-                        } else {
-                            StepGroupCard(
-                                step = item,
-                                textColor = textColor,
-                                isAmoled = isAmoled,
-                                onViewSubSession = onViewSubSession,
-                                onOpenFile = onOpenFile,
-                                onLocateTask = onLocateTask,
-                                eventExpandedStates = eventExpandedStates,
-                                renderableTurn = renderableTurn,
-                                compact = compact,
-                                readinessRegistry = readinessRegistry,
-                            )
-                        }
+                        StepGroupCard(
+                            step = item,
+                            isStreaming = isStreaming,
+                            textColor = textColor,
+                            isAmoled = isAmoled,
+                            onViewSubSession = onViewSubSession,
+                            onOpenFile = onOpenFile,
+                            onLocateTask = onLocateTask,
+                            eventExpandedStates = eventExpandedStates,
+                            renderableTurn = renderableTurn,
+                            compact = compact,
+                            readinessRegistry = readinessRegistry,
+                        )
                     }
                 }
             }
@@ -529,7 +508,7 @@ internal fun MessageCardAssistant(
  * 独立子 composable：内部 ticker（2026-08-15 用户要求：1s → 300ms，
  * 秒级小数进度感）更新自身 state——重组范围仅限
  * 本 Text，不触发整个 footer Row 重组（原实现 ticker state 在 footer 级，
- * 与 48ms SSE flush 叠加导致 ~30 次/s footer 重组）。
+ * 与 100ms SSE flush 叠加导致 ~10 次/s footer 重组）。
  */
 @Composable
 private fun StreamingElapsedText(startMs: Long) {
@@ -746,6 +725,67 @@ internal fun ChunkedAssistantMessage(
     }
 }
 
+/**
+ * #442 A2.5：提问卡锚定算法（提纯自 MessageCardAssistant 内联——前缀/尾块
+ * 分工共用同一真相源）。优先 question.tool.callId 精确匹配的 Tool part；
+ * 否则最后一个 Reasoning/Tool Single part。null=无锚（含 question=null）。
+ */
+internal fun questionAnchorPartIdFor(
+    question: SseEvent.QuestionAsked?,
+    renderableTurn: RenderableTurn,
+): String? {
+    if (question == null) return null
+    val singles = renderableTurn.renderItems.mapNotNull { item ->
+        (item as? RenderItem.GroupedParts)?.group
+            ?.let { it as? PartGroup.Single }?.part
+    }
+    val callId = question.tool?.callId?.takeIf { it.isNotBlank() }
+    val toolMatch = callId?.let { cid ->
+        singles.lastOrNull { it is Part.Tool && (it.callId == cid || it.id == cid) }
+    }
+    return toolMatch?.id
+        ?: singles.lastOrNull { it is Part.Reasoning || it is Part.Tool }?.id
+}
+
+/**
+ * #442 A2.5：分片前缀的提问卡分工判定——锚 part 的 renderItem 位置落在
+ * [0, partIdx) 前缀区间（推理区）时 true（提问卡由 StreamPrefix 条目渲染，
+ * 尾块切片不含锚）。锚在尾块/无锚/锚不可定位（StepGroup 内 part 恒非锚）
+ * 时 false。
+ */
+internal fun questionAnchorInPrefix(
+    question: SseEvent.QuestionAsked,
+    renderableTurn: RenderableTurn,
+    partIdx: Int,
+): Boolean {
+    val anchorId = questionAnchorPartIdFor(question, renderableTurn) ?: return false
+    val anchorIdx = renderableTurn.renderItems.indexOfFirst { item ->
+        ((item as? RenderItem.GroupedParts)?.group as? PartGroup.Single)?.part?.id == anchorId
+    }
+    return anchorIdx in 0 until partIdx
+}
+
+/**
+ * #442 A2.5 注册资格（纯函数，单测锚）：任意位置首个**未完结** Single-Text
+ * renderItem 的 partId（推理/工具前缀后——推理先行轮 glm 系常态；A2 仅
+ * index 0 把它们全排除）。无流式 text 时回退首个 text（A2 平权——无增长
+ * 即无 Fire，注册无害）。活提问在场返回 null：提问卡锚定语义依赖整 turn
+ * 渲染（Q 解决后下一批恢复资格）；发布态不受影响（完结持续性）。
+ * [pilotEnabled] 参数化供旗标关分支单测。
+ */
+internal fun shardRegistrationPartId(
+    renderItems: List<RenderItem>?,
+    hasLiveQuestion: Boolean,
+    pilotEnabled: Boolean = true,
+): String? {
+    if (!pilotEnabled || hasLiveQuestion) return null
+    val textParts = renderItems?.mapNotNull { item ->
+        (((item as? RenderItem.GroupedParts)?.group as? PartGroup.Single)?.part as? Part.Text)
+    }.orEmpty()
+    return (textParts.firstOrNull { it.time?.end == null }
+        ?: textParts.firstOrNull())?.id
+}
+
 /** 分片场景的 renderItems 渲染（复制自 MessageCardAssistant 主循环的精简版：
  *  无 pendingQuestion / 无 question 锚定——历史已完结 turn 不含待处理提问）。 */
 @Composable
@@ -761,6 +801,9 @@ internal fun ChunkAssistantItems(
     renderableTurn: RenderableTurn,
     compact: Boolean,
     readinessRegistry: RenderReadinessRegistry,
+    /** 统一树解析分流(#422 清理批次):流式同步(pilot 链)/完结异步(#428 >2048
+     * 冷滑防线)。默认 true 保持既有调用点(分片/历史)行为不变。 */
+    asyncParse: Boolean = true,
 ) {
     val showTurnDividers = LocalShowTurnDividers.current
     for (item in items) {
@@ -832,6 +875,7 @@ internal fun ChunkAssistantItems(
                     if (item.group.part.id == renderableTurn.lastStepDividerBeforePartId) {
                         StepDivider(0)
                     }
+                    //（#507 swapStableKey 已退役——同平铺分支，key(part.id) 本键。）
                     key(item.group.part.id) {
                     val part = item.group.part
                     val preParsed = (part as? Part.Text)
@@ -847,30 +891,21 @@ internal fun ChunkAssistantItems(
                         onViewSubSession = onViewSubSession,
                         onOpenFile = onOpenFile,
                         preParsedState = preParsed,
-                        // 分片 turn 恒非流式（流式 turn 不分片）——降级异步解析
-                        asyncParse = true,
+                        // 统一树解析分流:StepGroupCard 按流式态传入;其他
+                        // 调用点默认 true(分片恒非流式,行为不变)
+                        asyncParse = asyncParse,
                         turnAgentName = if (part is Part.Tool && part.tool == "task") renderableTurn.taskAgentName else null,
                     )
                     }
                 }
             }
-            // #422:step 折叠组——递归复用本函数渲染 groups(不无限递归:StepGroup
-            // 在此解开为 GroupedParts 序列);分片 turn 恒非流式,无流式豁免
+            // #422 清理批次:StepGroup 统一渲染树——递归复用本函数渲染 groups
+            // (不无限递归:StepGroup 在此解开为 GroupedParts 序列);分片 turn 恒
+            // 非流式(流式 turn 不分片),isStreaming 恒 false
             is RenderItem.StepGroup -> key(item.msgId) {
-                // [DEBUG-hflick] #437 十三轮仪器：分片路径 StepGroup 子树重建取证
-                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-                    val prevStreaming = HflickProbe.branchStates[item.msgId]
-                    if (prevStreaming != null && prevStreaming != false) {
-                        dev.leonardo.ocbeacon.logging.AppLogger.w(
-                            "HFLICK",
-                            "[DEBUG-hflick] BRANCH(chunk) id=" + item.msgId.takeLast(12) +
-                                " streaming " + prevStreaming + "->false grp=" + item.groups.size,
-                        )
-                    }
-                    HflickProbe.putBranch(item.msgId, false)
-                }
                 StepGroupCard(
                     step = item,
+                    isStreaming = false,
                     textColor = textColor,
                     isAmoled = isAmoled,
                     onViewSubSession = onViewSubSession,
@@ -1250,94 +1285,6 @@ private fun AssistantTurnTail(
 
 
 /**
- * #422 折叠组展开表 key(单一真相源):「step_」前缀与 part id 不冲突
- * (MessageCardAssistant/ChatMessageList 三消费方共用,防手拼漂移断链)。
- */
-internal fun stepGroupStateKey(msgId: String): String = "step_" + msgId
-
-/** #423 批次七:折叠行位置上报(结构裂变重锚的实测源)。key=stateKey。 */
-internal val LocalFoldRowYReport = staticCompositionLocalOf<((String, Float) -> Unit)?> { null }
-
-/** #423 批次七:折叠行点击快照钩(toggle 瞬间冻结点击行屏位,供重建后重锚)。 */
-internal val LocalFoldRowClick = staticCompositionLocalOf<((String) -> Unit)?> { null }
-
-/**
- * #422 折叠组计数行(共享组件):Layers 图标 + 「N 步 · M 个工具」,点击 toggle
- * 展开态。StepGroupCard(小组动画路径)与 ChatEntry.StepGroupHead 条目
- * (大组懒加载路径)共用——同一交互入口。
- */
-@Composable
-internal fun StepGroupFoldRow(
-    step: RenderItem.StepGroup,
-    modifier: Modifier = Modifier,
-    /** #423 批次七:#sgt 尾行不参与重锚(与 #sgh 同 stateKey,防 60px 歧义)。 */
-    pinEligible: Boolean = true,
-    /**
-     * #429:展开集高度计算期——true 时层叠图标换小 spinner(loading 过渡,
-     * 用户裁决 2026-09-24;计算期=点击→Phase A 落地,幕布接续)。
-     */
-    expanding: Boolean = false,
-) {
-    val onToggleToolExpanded = LocalOnToggleToolExpanded.current
-    val hapticView = LocalView.current
-    val hapticOn = LocalHapticFeedbackEnabled.current
-    val stateKey = stepGroupStateKey(step.msgId)
-    val expanded = toolExpandedOrDefault(stateKey)
-    // #429:计算期 spinner——本参(小组卡内路径)或共享表命中(大组外层行)皆显示
-    val computingShared = dev.leonardo.ocbeacon.ui.screens.chat.util.LocalStepGroupComputing.current
-    val showComputing = expanding || (computingShared.value[stateKey] == true)
-    val reportY = LocalFoldRowYReport.current
-    val clickHook = LocalFoldRowClick.current
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .onGloballyPositioned {
-                // 批次七:逐放置上报屏位(常态每布局一次,零日志;重锚消费)
-                if (pinEligible) reportY?.invoke(stateKey, it.positionInRoot().y)
-            }
-            .clickable {
-                clickHook?.invoke(stateKey)
-                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-                    dev.leonardo.ocbeacon.logging.AppLogger.d(
-                        "SGB",
-                        "CLICK key=" + stateKey.takeLast(12) + " expanded=" + expanded +
-                            " steps=" + step.textCount + " tools=" + step.toolCount,
-                    )
-                }
-                performHaptic(hapticView, hapticOn)
-                // 第二参=「未被 toggle 过时的默认态」(委托语义 !(map[id] ?: default)),
-                // 非期望下一态。传 !expanded 会让收起态首点写入 false = 静默无效
-                // (真机取证:click 日志在、toggle 写入 false、无 SGBODY/episode,
-                // 每组每冷启首点必哑——用户观感「点了没反应/加载慢」)。
-                onToggleToolExpanded(stateKey, expanded)
-            },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
-    ) {
-        if (showComputing) {
-            // #429:loading 过渡——高度计算期(先算后展)的可见反馈
-            CircularProgressIndicator(
-                modifier = Modifier.size(16.dp),
-                strokeWidth = 2.dp,
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Default.Layers,
-                contentDescription = stringResource(if (expanded) R.string.a11y_icon_collapse else R.string.a11y_icon_expand),
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.MUTED),
-            )
-        }
-        Text(
-            text = stringResource(R.string.chat_msg_tail_summary, step.textCount.coerceAtLeast(1), step.toolCount),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AlphaTokens.MUTED),
-            maxLines = 1,
-        )
-    }
-}
-
-/**
  * #463(2026-09-29 用户提案→二轮简化):turn 内 step 边界分割线——React 密集
  * 轮次的步间视觉分隔。用户裁决(验收二轮):不要「第 x 步」序号,只留简单
  * 分割线(消息边界=step 边界,#422 既有语义);首 step 不插(turn 开始处)。
@@ -1347,7 +1294,7 @@ private fun StepDivider(stepOrdinal: Int) {
     HorizontalDivider(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = SpacingTokens.XS.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = AlphaTokens.FAINT),
     )
 }
@@ -1362,6 +1309,9 @@ private fun StepDivider(stepOrdinal: Int) {
 @Composable
 private fun StepGroupCard(
     step: RenderItem.StepGroup,
+    /** 统一树解析分流:流式同步(pilot 链)/完结异步(#428 防线)。不驱动
+     * 任何分支选择——树恒同构(2026-09-28 #422 清理批次)。 */
+    isStreaming: Boolean,
     textColor: Color,
     isAmoled: Boolean,
     onViewSubSession: ((String) -> Unit)?,
@@ -1391,38 +1341,11 @@ private fun StepGroupCard(
         stepGroupNeedsSlicing(step.groups)
     }
     val stepLedger = rememberStepGroupLedger(step.msgId)
-    // #427 竞态修复:重内容门控上提卡体——原在 fraction 门控内容内,收起离树
-    // 即弃置,预热/重展开重入时 Spacer(63px) 首帧与真实内容互换=单帧弹跳
-    // (用户「收起后上推再弹回」成分之一);上提后卡存期内恒真,重入即真实内容
-    // (账本暖时展开即时,占位使命已由账本接管)。
-    // #437 验收十三轮根修一：门控键撤除 step.msgId——组重派生（分页截断/REST
-    // 刷新/回合结束换装）改变组首消息 id 时，remember(msgId){false} 会把数千
-    // px 组体打回桩一帧再逐帧长回（真机 RESIZE 4958→774→5648 塌缩-弹开实证，
-    // 2026-09-26 日志 /tmp/flicker-logcat）。子树存续期间恒保持已组合；子树
-    // 重建（key 变更/分支互换）由账本 Σ 桩高兜底（见下方桩分支根修二）。
-    var heavyComposed by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf(false)
-    }
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        androidx.compose.runtime.withFrameNanos { }
-        heavyComposed = true
-    }
-    // [DEBUG-hflick] #437 十三轮仪器：组身份/账本/门控取证（grep HFLICK 定位/清理）。
-    // fresh=子树重建（分支互换/key 变更）；old->new=同子树内身份漂移。
-    val hflickPrevId = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
-    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-        val idNow = step.msgId
-        if (hflickPrevId.value != idNow) {
-            dev.leonardo.ocbeacon.logging.AppLogger.w(
-                "HFLICK",
-                "[DEBUG-hflick] STEP id " + (hflickPrevId.value?.takeLast(12) ?: "fresh") + "->" + idNow.takeLast(12) +
-                    " grp=" + step.groups.size + " slices=" + stepSlices.size +
-                    " warm=" + stepLedger.isWarm(stepFingerprints) + " heavy=" + heavyComposed +
-                    " ledgerTotal=" + stepLedger.totalHeight(stepFingerprints),
-            )
-            hflickPrevId.value = idNow
-        }
-    }
+    // #422 清理批次(2026-09-28):heavyComposed 首帧门控+HFLICK 探针退役——
+    // 统一树后流式/完结同构,无「分支互换首帧」;小组首组合直渲染(等价原流式
+    // 平铺分支),大组由窗口化内部分批(#427 体系)。原门控两大动机随清理失效:
+    // ①重内容首帧全量组合冻结→窗口化接管 ②重入弹跳→卡体恒真实内容。
+    // 账本(#437 根修三:进程级 LRU)保留——统一树下跨形态恒存活,窗口化记账。
     // #430(用户裁决 2026-09-24):过程卡片退役——过程内容默认全展示,不再经
     // 折叠行/CardExpandReveal 展开。理由:大内容原地展开的组合成本(36k px
     // ≈1.6s 冻结)不随位移配对改善,分批只是把冻结拆段;默认展示=滚动接近时
@@ -1432,31 +1355,10 @@ private fun StepGroupCard(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
     ) {
-                if (!heavyComposed) {
-                    // #437 验收十三轮根修二：桩帧高度 = 账本 Σ+片间距（全暖时），
-                    // 与 StepGroupWindowedBody 总高累加式逐像素对齐——分支互换/
-                    // 子树重建的首帧不再塌到 24dp 固定桩（RESIZE 4958→774 的 774
-                    // 帧即旧桩+气泡 chrome）。全冷（真首组合，通常屏外预取）才
-                    // 退 24dp。
-                    val stubPx = stubHeightPx(
-                        ledger = stepLedger,
-                        fingerprints = stepFingerprints,
-                        sliceCount = stepSlices.size,
-                        spacingPx = with(androidx.compose.ui.platform.LocalDensity.current) {
-                            SpacingTokens.XS.dp.roundToPx()
-                        },
-                    )
-                    Spacer(
-                        modifier = Modifier.fillMaxWidth().height(
-                            if (stubPx != null) {
-                                with(androidx.compose.ui.platform.LocalDensity.current) { stubPx.toDp() }
-                            } else {
-                                24.dp
-                            },
-                        ),
-                    )
-                } else if (!stepNeedsSlicing) {
-                // #463:小组直渲染——step 边界(消息边界)插分割线+步序
+                if (!stepNeedsSlicing) {
+                // #463:小组直渲染——step 边界(消息边界)插分割线+步序。
+                // 统一树:解析分流在此(asyncParse)——流式同步 pilot 链/完结
+                // 异步 #428 防线,参数级差异不触发子树重建。
                 step.groups.forEachIndexed { gi, g ->
                     dev.leonardo.ocbeacon.ui.screens.chat.tools.stepDividerBefore(gi, step.stepStarts)
                         ?.let { ord -> StepDivider(ord) }
@@ -1471,6 +1373,7 @@ private fun StepGroupCard(
                         renderableTurn = renderableTurn,
                         compact = compact,
                         readinessRegistry = readinessRegistry,
+                        asyncParse = !isStreaming,
                     )
                 }
                 } else {
@@ -1507,6 +1410,7 @@ private fun StepGroupCard(
                             renderableTurn = renderableTurn,
                             compact = compact,
                             readinessRegistry = readinessRegistry,
+                            asyncParse = !isStreaming,
                         )
                     }
                 }
@@ -1525,22 +1429,6 @@ private fun StepGroupCard(
 @Composable
 private fun rememberStepGroupLedger(msgId: String): StepGroupHeightLedger =
     androidx.compose.runtime.remember(msgId) { StepGroupLedgerStore.getOrCreate(msgId) }
-
-/**
- * [DEBUG-hflick] #437 十三轮：高度闪烁取证探针数据面（grep HFLICK 定位/清理）。
- * 进程级 map，容量封顶防膨胀；DEBUG 专用，release 由调用点 BuildConfig 门控。
- */
-internal object HflickProbe {
-    private const val CAP = 256
-    private val branch = HashMap<String, Boolean>()
-
-    fun putBranch(id: String, streaming: Boolean) {
-        if (branch.size >= CAP && !branch.containsKey(id)) branch.remove(branch.keys.first())
-        branch[id] = streaming
-    }
-
-    val branchStates: Map<String, Boolean> get() = branch
-}
 
 /** 三点 loading 行波周期（ms）。呼吸 800ms 过快，行波序列取 1200ms 更接近
  *  常见输入指示器节奏。 */

@@ -77,7 +77,7 @@ internal fun visibleSliceRange(
     return if (first < 0) null else first..last
 }
 
-/** 首测默认窗：顶部 3 片（折叠行邻域 + ~2 屏），覆盖展开起点。 */
+/** 首测默认窗：顶部 3 片（列表头邻域 + ~2 屏），渐进组合起点。 */
 private fun defaultWindow(sliceCount: Int): IntRange =
     0..(sliceCount - 1).coerceAtMost(2)
 

@@ -40,12 +40,13 @@ class MessageStore @Inject constructor(
     private val clock: () -> Long = System::currentTimeMillis,
 ) : MessageCacheRepository {
 
-    /** #272：FTS5 内容索引（运行时探测可用性；API<30 自动降级 LIKE）。 */
-    private val fts = MessageFtsIndex(database, databaseRecovery)
+    // #478：FTS 索引维护整段拆除——external-content 表由 cached_parts 触发器
+    // 同步（见 MessageFtsSchema.TRIGGERS），本类不再持有 MessageFtsIndex
+    // （检索侧由搜索调用方自行注入）。
 
     /**
      * #97（H-6）：SSE delta 增量落盘——按 part 追加文本（O(delta) 写），
-     * 替代原每 48ms 批整条消息 JSON 编码 + 全行重写（写放大 ~20/s）。
+     * 替代原每 100ms 批整条消息 JSON 编码 + 全行重写（写放大 ~10/s）。
      * 消息骨架（元数据）由调用方随请求传入（handler 持有内存最新状态）；
      * delta 追加到 part 行，ended 时由 [upsertMessages] 全量覆盖最终文本。
      */
@@ -160,19 +161,10 @@ class MessageStore @Inject constructor(
                 // （replaceSessionMessages 的 clear+重写）插入两步之间时，parts 落库
                 // 同样触发 FK 787。归档/裁剪（archiveOverflow 自持事务）保持事务外，
                 // 不构成嵌套。
-                // [299-probe] DEBUG 观测：页落库分段计时（tx/FTS/归档）
+                // [478-probe] DEBUG 观测：页落库分段计时（tx/归档）。
+                // #478：existingTexts 快照 + fts.indexTextParts 整段拆除——FTS
+                // 同步下沉到 cached_parts 触发器（upsertParts 的 REPLACE 即触发）。
                 val probeT0 = android.os.SystemClock.elapsedRealtime()
-                // #299 续项：写前快照现存 part 文本——FTS 只索引「新增或文本变化」
-                // 的 part（幂等跳过；原 DELETE FROM fts WHERE partId=? 在 FTS5 虚表
-                // 上全表扫描 ~600ms/次，重进场/多写者重复索引同一批 part 时是页
-                // 后处理的主成本，真机探针 fts=13.6s/50 msgs 实证）。
-                val incomingIds = toPersist.flatMap { m ->
-                    m.parts.mapIndexed { index, p -> p.id.ifEmpty { "${m.info.id}_p$index" } }
-                }
-                val existingTexts = HashMap<String, String?>()
-                incomingIds.chunked(SQLITE_IN_CHUNK).forEach { chunk ->
-                    dao.existingPartTexts(chunk).forEach { existingTexts[it.id] = it.text }
-                }
                 database.withTransaction {
                     dao.upsertMessages(
                         toPersist.map { m ->
@@ -215,28 +207,6 @@ class MessageStore @Inject constructor(
                     )
                 }
                 val probeT1 = android.os.SystemClock.elapsedRealtime()
-                // #272：FTS5 增量索引（#299 幂等收窄：仅「新增或文本变化」的 part
-                // ——文本未变跳过，重进场零 FTS；FTS 行不删，冷数据保持可搜）
-                fts.indexTextParts(
-                    sessionId,
-                    toPersist.flatMap { m ->
-                        m.parts.mapIndexed { index, p ->
-                            (p as? Part.Text)?.let { t ->
-                                val partId = p.id.ifEmpty { "${m.info.id}_p$index" }
-                                // 快照文本一致 → 索引行已正确，跳过
-                                if (existingTexts[partId] == t.text) null
-                                else IndexedTextPart(
-                                    partId = partId,
-                                    messageId = m.info.id,
-                                    role = m.info.role,
-                                    text = t.text,
-                                    existing = existingTexts.containsKey(partId),
-                                )
-                            }
-                        }.filterNotNull()
-                    },
-                )
-                val probeT2 = android.os.SystemClock.elapsedRealtime()
                 // ---- 归档编排（prune 前）：count → 查 overflow 最老 → 归档+裁剪原子化 ----
                 // overflow>0 时 archiveOverflow 内含事务（upsertAll+pruneToLimit 原子，并返回裁剪数）；
                 // overflow==0 时无需裁剪（已在限额内）。裁剪不再单独无条件执行——避免与事务内裁剪重复。
@@ -252,8 +222,8 @@ class MessageStore @Inject constructor(
                     val probeT3 = android.os.SystemClock.elapsedRealtime()
                     AppLogger.d(
                         TAG,
-                        "[299-probe] upsert n=" + toPersist.size + " tx=" + (probeT1 - probeT0) +
-                            "ms fts=" + (probeT2 - probeT1) + "ms archive=" + (probeT3 - probeT2) +
+                        "[478-probe] upsert n=" + toPersist.size + " tx=" + (probeT1 - probeT0) +
+                            "ms archive=" + (probeT3 - probeT1) +
                             "ms total=" + (probeT3 - probeT0) + "ms overflow=" + overflow,
                     )
                 }
@@ -477,8 +447,8 @@ class MessageStore @Inject constructor(
                 database.withTransaction {
                     dao.clearSession(sessionId)
                     archiveDao.clearSession(sessionId)
-                    // #272：FTS 行级联清除（会话删除=本地全清）
-                    fts.clearSession(sessionId)
+                    // #478：FTS 清理由 cached_parts 删除触发器级联承担
+                    // （dao.clearSession 经 FK CASCADE 删 parts → ad 触发器）
                 }
             }
         }
@@ -495,7 +465,7 @@ class MessageStore @Inject constructor(
                 database.withTransaction {
                     dao.deleteMessage(sessionId, messageId)
                     dao.deletePartsForMessage(messageId)
-                    fts.deleteMessage(sessionId, messageId)
+                    // #478：FTS 清理由 cached_parts 删除触发器级联承担
                 }
             }
         }
@@ -509,25 +479,17 @@ class MessageStore @Inject constructor(
         if (messages.isEmpty()) return
         withContext(Dispatchers.IO) {
             runCatchingCancellable {
-                // [299-probe] DEBUG 观测
+                // [478-probe] DEBUG 观测。#478：FTS 快照判据段拆除——触发器同步。
                 val probeT0 = android.os.SystemClock.elapsedRealtime()
-                // #299 续项：clear 前快照（replace 删行重建——文本未变的 part 其
-                // FTS 行仍正确，跳过重索引）
-                val existingTexts = HashMap<String, String?>()
-                messages.flatMap { m ->
-                    m.parts.mapIndexed { index, p -> p.id.ifEmpty { "${m.info.id}_p$index" } }
-                }.chunked(SQLITE_IN_CHUNK).forEach { chunk ->
-                    dao.existingPartTexts(chunk).forEach { existingTexts[it.id] = it.text }
-                }
                 databaseRecovery.withCorruptionRecovery {
                     database.withTransaction {
                         dao.clearSession(sessionId)
-                        upsertInTransaction(sessionId, messages, existingTexts)
+                        upsertInTransaction(sessionId, messages)
                     }
                 }
                 val probeT1 = android.os.SystemClock.elapsedRealtime()
                 if (BuildConfig.DEBUG) {
-                    AppLogger.d(TAG, "[299-probe] replace n=" + messages.size + " txTotal=" + (probeT1 - probeT0) + "ms")
+                    AppLogger.d(TAG, "[478-probe] replace n=" + messages.size + " txTotal=" + (probeT1 - probeT0) + "ms")
                 }
             }.onFailure { e ->
                 AppLogger.e(TAG, "replaceSessionMessages failed (keep existing cache)", e)
@@ -536,11 +498,10 @@ class MessageStore @Inject constructor(
     }
 
     /** 事务内写入（不嵌套 withTransaction；不触发归档——对账场景写入量=服务器全量，超限由下次常规 upsert 的 prune 管理）。
-     *  [existingTexts]：写前快照（#299 FTS 幂等收窄判据，由调用方采集传入）。 */
+     *  #478：FTS 维护拆除——parts 行落库即由触发器同步索引。 */
     private suspend fun upsertInTransaction(
         sessionId: String,
         messages: List<MessageWithParts>,
-        existingTexts: Map<String, String?>,
     ) {
         dao.upsertMessages(
             messages.map { m ->
@@ -574,25 +535,7 @@ class MessageStore @Inject constructor(
                 }
             },
         )
-        // #272：REST_AUTHORITY 全量替换路径同样维护 FTS 索引（#299 幂等收窄同上）
-        fts.indexTextParts(
-            sessionId,
-            messages.flatMap { m ->
-                m.parts.mapIndexed { index, p ->
-                    (p as? Part.Text)?.let { t ->
-                        val partId = p.id.ifEmpty { "${m.info.id}_p$index" }
-                        if (existingTexts[partId] == t.text) null
-                        else IndexedTextPart(
-                            partId = partId,
-                            messageId = m.info.id,
-                            role = m.info.role,
-                            text = t.text,
-                            existing = existingTexts.containsKey(partId),
-                        )
-                    }
-                }.filterNotNull()
-            },
-        )
+        // #478：FTS 维护段拆除——parts 行落库即由触发器同步索引
     }
 
     /**
@@ -731,8 +674,6 @@ class MessageStore @Inject constructor(
     companion object {
         private const val TAG = "MessageStore"
 
-        /** SQLite IN 参数段长（#299 快照批查）。 */
-        private const val SQLITE_IN_CHUNK = 500
         const val SESSION_MESSAGE_LIMIT = MessageCacheRepository.SESSION_MESSAGE_LIMIT
         const val ARCHIVE_BUCKET_WINDOW_MS = 86_400_000L          // 1 天
         const val ARCHIVE_BUCKET_MAX_BYTES = 512 * 1024           // 512KB（调研约束）

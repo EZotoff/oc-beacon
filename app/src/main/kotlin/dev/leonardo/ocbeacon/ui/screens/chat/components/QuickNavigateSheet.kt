@@ -94,7 +94,7 @@ fun QuickNavigateSheet(
     //    长 assistant 回复/空壳（无文本 user 不在列表），currentMsgId=null 时
     //    应定位到"当前位置附近"而非最新（用户反馈"没有定位到当前所在位置"）。
     // 3. 2026-08-12 再修复：key **不含** currentMsgId/anchorTimestampMs——
-    //    SSE 流式期间 displayItems 每 48ms 变化 → 锚点持续重算（logcat 实证
+    //    SSE 流式期间 displayItems 每 100ms 变化 → 锚点持续重算（logcat 实证
     //    findCurrent 每 ~50ms 刷屏）→ 本 effect 反复重启 → 抽屉列表反复
     //    scrollToItem → 用户点击 Q 时条目正在移动 → 点击落空（用户反馈
     //    "选中了之后没有挪动"）。只在打开/列表加载完成时定位一次。

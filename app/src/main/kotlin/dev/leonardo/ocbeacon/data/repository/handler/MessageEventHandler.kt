@@ -41,9 +41,14 @@ class MessageEventHandler @Inject constructor(
      * MessageUpdated / MessageRemoved / MessagePartUpdated / Delta / PartRemoved。
      */
     override fun handle(event: SseEvent, serverId: String): Boolean {
-        return when (event) {
+        val handled = when (event) {
             is SseEvent.MessageUpdated -> { handleMessageUpdated(event); true }
             is SseEvent.MessageRemoved -> { handleMessageRemoved(event); true }
+            // #509：合成 id→权威 id 的原地换名（毕业换装）——行不离开列表、
+            // part.id 不变，消除 remove+add 的列表成员空窗（P5-3 过滤把「权威
+            // 行已到、parts 未到」的中间态整轮过滤 → turn 组瞬空 → t_ 条目销毁
+            // → 全部槽位记忆归零 → asyncTerminal Loading≈0px 空白 350-700ms）。
+            is SseEvent.MessageIdSwapped -> { handleMessageIdSwapped(event); true }
             is SseEvent.MessagePartUpdated -> { handleMessagePartUpdated(event); true }
             is SseEvent.MessagePartDelta -> { handleMessagePartDelta(event); true }
             is SseEvent.MessagePartRemoved -> { handleMessagePartRemoved(event); true }
@@ -54,6 +59,13 @@ class MessageEventHandler @Inject constructor(
             is SseEvent.SurfaceRangeReplaced -> { handleSurfaceRangeReplaced(event); true }
             else -> false
         }
+        // #442 B案：SSE 结构事件统一发布结构性视图。**MessagePartDelta 例外**
+        //——它仅缓冲（不立即改热视图），但 flush 与后续 delta 事件的交错会把
+        //「已含本批累积」的热视图新值过桥（B6 真机定罪：CML-tick ~6/s =
+        // 每 flush 后首个 delta 事件击穿结构性静默）——结构性发射只属于结构
+        // 事件族。dispatch 外直调入口（upsert/clear/patch 族）各自就地发布。
+        if (handled && event !is SseEvent.MessagePartDelta) publishStructural(event::class.simpleName ?: "SseEvent")
+        return handled
     }
 
     internal companion object {
@@ -85,6 +97,20 @@ class MessageEventHandler @Inject constructor(
          * 即判旧本地钟回填残留（实证残留 +3.5h；合法完结与水位差恒小）。
          */
         internal const val POLLUTED_COMPLETED_MARGIN_MS = 10 * 60_000L
+
+        /**
+         * #490：已拆待播台账容量上界——follow/历史回放会重放旧 user/message
+         * （各携带一次 pending-* 拆除登记），FIFO 上界防无界增长；requestId
+         * 每次发送新铸（UUID），淘汰永不误伤未来播种。
+         */
+        internal const val PRE_DEMOLISHED_ECHO_LIMIT = 32
+
+        /**
+         * #490：pending-* echo 行的合法寿命宽限。播种→拆除的正常间隔 <1s
+         *（持久回显随受理即时广播）；宽限远大于该窗口只为容纳极端调度延迟，
+         * 超龄即判拆除丢失（WS 断连/竞态残留/历史版本缺陷）的幽灵。
+         */
+        internal const val STALE_PENDING_ECHO_MS = 120_000L
     }
 
     private val _messages = MutableStateFlow<Map<String, List<Message>>>(emptyMap())
@@ -92,6 +118,43 @@ class MessageEventHandler @Inject constructor(
 
     private val _parts = MutableStateFlow<Map<String, List<Part>>>(emptyMap())
     val parts: StateFlow<Map<String, List<Part>>> = _parts.asStateFlow()
+
+    // #442 B案 节奏收编（spec 2026-10-02 §2.1）：UI 主列表消费的**结构性视图**——
+    // 仅结构性事件发射（part 生命周期/消息生命周期/会话清理/REST 合并）；流式
+    // delta 批只进热视图（_parts）与 StreamingDeltaBus，不经此流——十源 combine
+    // 及其下游（ChatScreen 投影/ChatMessageList 函数体）在流式稳态零滴答
+    //（根因二：100ms 批快照重组链收口）。热视图语义零变更（所有既有读点
+    //（isStaleDelta/inferDeltaKind/持久化）继续读 _parts 拿最新累积）。
+    private val _structuralParts = MutableStateFlow<Map<String, List<Part>>>(emptyMap())
+    val structuralParts: StateFlow<Map<String, List<Part>>> = _structuralParts.asStateFlow()
+
+    /** 结构性发布：热视图当前值整体过桥（同实例=StateFlow 值相等去重，幂等零成本）。
+     *  [cause] 仅用于 [B2-struct] 埋点动机标注（哪个结构事件触发了 combine 源滴答）。 */
+    private fun publishStructural(cause: String) {
+        if (!dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) return
+        _structuralParts.value = _parts.value
+        if (BuildConfig.DEBUG) {
+            AppLogger.d(TAG, "[B2-struct] publish cause=$cause msgs=${_parts.value.size} — 结构性视图过桥（流式 delta 批不经此=根因二静默前提）")
+        }
+    }
+
+    /** #442 B案：消息内已终态（time.end≠0）的 Text/Reasoning 撤销 bus 覆盖——
+     *  structural 权威已发布，live 让位防陈旧覆盖（服务端改写/迟滞累积族）。 */
+    private fun clearTerminalLiveParts(messageId: String) {
+        if (!dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) return
+        val parts = _parts.value[messageId] ?: return
+        val terminal = parts.mapNotNull { p ->
+            val ended = when (p) {
+                is Part.Text -> (p.time?.end ?: 0L) != 0L
+                is Part.Reasoning -> (p.time?.end ?: 0L) != 0L
+                else -> false
+            }
+            if (ended) p.id else null
+        }
+        if (terminal.isNotEmpty()) {
+            dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.clearParts(terminal)
+        }
+    }
 
     /**
      * assistant 消息 ID 集合，供 PartUpdated handler 进行快速 O(1) 查找。
@@ -105,8 +168,8 @@ class MessageEventHandler @Inject constructor(
      */
     private val assistantMessageIds: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
-    // ── SSE delta 批处理（48ms 窗口）──────────────────────────────
-    // 缓冲传入的 delta 并每 48ms 刷新一次，以降低
+    // ── SSE delta 批处理（窗口 = STREAM_FLUSH_INTERVAL_MS，引擎域常量）──
+    // 缓冲传入的 delta 并按批周期（100ms）刷新一次，以降低
     // 重组频率。每次 flush = 1 次 StateFlow 更新 = 1 次
     // 重组 = 1 次 layout 修饰符测量。
     private data class PendingDelta(
@@ -131,7 +194,7 @@ class MessageEventHandler @Inject constructor(
     // #340 根因修复：原 Channel.BUFFERED(64) + trySend 满即丢——真机 resync 期
     // 实证 dropped 1150→1500 连发（Room 写入慢于 SSE 生产时丢弃最新写
     // 请求，含终态修复写）。两路重构：
-    // - 增量 delta：UNLIMITED channel 保序入队不丢（流式生产速率有界：48ms 批）；
+    // - 增量 delta：UNLIMITED channel 保序入队不丢（流式生产速率有界：批 cadence）；
     // - 全量 upsert：按 (sessionId, messageId) 最新快照合并（latest-wins，快照语义
     //   天然幂等），内存占用=窗口内不同消息数（阈值刷洗封顶）；
     // - 刷洗策略：消息数≥阈值或 最老条目时延≥上限时刷洗（每会话
@@ -167,6 +230,35 @@ class MessageEventHandler @Inject constructor(
      * 竞态构造性消除；同 id 再到达时 enqueueUpsert 撤销待删（事件时间最后操作胜出）。
      */
     private val pendingDeletes = HashMap<String, HashSet<String>>()
+
+    /**
+     * #490 换装握手顺序无关化：已拆待播台账（pendingId → 登记时刻）。
+     *
+     * DSH 0.2.0-rc.2 实测（hitl3 捕获 09-30 22:21:31）：服务器广播的持久
+     * user/message 帧（mapper 随帧补发 MessageRemoved(pending-<rpcId>) 拆除）
+     * 可先于 prompt RPC 的 HTTP 响应到达——拆除时刻幽灵尚未播种（无行可删
+     * no-op），响应返回后的本地播种成为永不拆除的持久幽灵（单发双消息且
+     * 重进仍在的根因；同捕获 22:21/23:29/23:32 三次幽灵 vs 22:34/23:19 两次
+     * 正常换装 = 同一竞态的两种落序）。拆除时刻在此登记，迟到的播种命中即
+     * 丢弃：无论到达顺序，「pending-* 在拆除后必不存在」恒成立。V2 通道
+     * admission.id 即 durable id（同 id 幂等合并，顺序无关），不经本台账。
+     */
+    private val preDemolishedEchoes = LinkedHashMap<String, Long>()
+    private val preDemolishedLock = Any()
+
+    /** #490：登记一次 pending 拆除（含行在场被真删与行缺席 no-op 两种落序）。 */
+    private fun recordPreDemolishedEcho(id: String) {
+        synchronized(preDemolishedLock) {
+            preDemolishedEchoes[id] = System.currentTimeMillis()
+            while (preDemolishedEchoes.size > PRE_DEMOLISHED_ECHO_LIMIT) {
+                preDemolishedEchoes.remove(preDemolishedEchoes.keys.first())
+            }
+        }
+    }
+
+    /** #490：播种命中已拆台账则消费并返回 true（调用方丢弃本次播种）。 */
+    private fun consumePreDemolishedEcho(id: String): Boolean =
+        synchronized(preDemolishedLock) { preDemolishedEchoes.remove(id) != null }
 
     /**
      * #338：会话时间域基准——最近观察到的该会话「消息/事件时刻」（DSH=服务器
@@ -398,6 +490,17 @@ class MessageEventHandler @Inject constructor(
             }
         }
 
+        // #501 part 出生检测基准：本批触及消息在 update 前的 part id 集。DSH
+        // 线面 block-start 空种子被 #230 零信息丢弃后，part 只能由下方 applyDelta
+        // idx<0 兜底在热视图出生——出生是结构事实（列表条目新增），与纯文本
+        // 增长（走 bus，结构性静默）必须区分对待。
+        val birthBaseline: Map<String, Set<String>> =
+            if (dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
+                effective.map { it.messageId }.toSet().associateWith { id ->
+                    _parts.value[id]?.mapTo(mutableSetOf()) { it.id } ?: mutableSetOf()
+                }
+            } else emptyMap()
+
         _parts.update { current ->
             // #97（M-15）：原实现批内每 delta 都整份 Map 拷贝（updated + (...)）——
             // O(N×M)。改为一次 toMutableMap，批内按 messageId 聚合就地更新。
@@ -415,6 +518,27 @@ class MessageEventHandler @Inject constructor(
                 )
             }
             updated
+        }
+
+        // #442 B案 节奏收编：触及消息的累积全文发布引擎域快通道（键=落位
+        // part.id；值与热视图同字符串实例零拷贝）——UI 消费端（PartContent 两
+        // 分支）以 live 覆盖参数，重组收敛到 item 内部。本发布**替代**了
+        // `_parts` 对 UI 主列表的每 flush 发射（无 part 出生时 structuralParts
+        // 不动）。
+        if (dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
+            for (messageId in effective.map { it.messageId }.toSet()) {
+                dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
+                    .publishParts(_parts.value[messageId])
+            }
+            // #501 出生过桥：本批有新 part id 落位 → structuralParts 过桥一次。
+            // DSH 流式期零结构事件（纯 delta 线面），出生不过桥则 B案 UI 在完结
+            // assistant/message 前看不到该 part——正文整段流式期不可见、完结才
+            // 整段砸出（真机定罪 2026-10-02）。出生每 part 一次（低频），纯文本
+            // 增长仍只走 bus——「delta 批结构性静默」不变量不破。
+            val born = birthBaseline.any { (id, before) ->
+                _parts.value[id]?.any { it.id !in before } == true
+            }
+            if (born) publishStructural("part-birth")
         }
 
         // SSE 双写：#97（H-6）增量落盘——本批 delta 只追加到对应 part 行
@@ -467,6 +591,17 @@ class MessageEventHandler @Inject constructor(
 
     internal fun handleMessageUpdated(event: SseEvent.MessageUpdated) {
         val sessionId = event.info.sessionId
+        // #490：迟到播种命中已拆台账——拆除已随持久回显先行到达（durable 行
+        // 在场），本次播种是竞态败者的幽灵，直接丢弃（不进内存不落 Room）。
+        if (event.info.id.startsWith("pending-") && consumePreDemolishedEcho(event.info.id)) {
+            if (BuildConfig.DEBUG) {
+                AppLogger.w(
+                    TAG,
+                    "[echo-drop] pre-demolished pending echo ${event.info.id.take(24)} (durable echo won the race)",
+                )
+            }
+            return
+        }
         // #378：迟到的被遮蔽消息（older page 回放在 surfaceOp 之后到达）——台账
         // 拦截，不重加（否则压缩在翻页场景下被视觉撤销）。
         DshMessageId.seqOf(event.info.id)?.let { seq ->
@@ -652,7 +787,7 @@ class MessageEventHandler @Inject constructor(
      * - fire-and-forget：在 [batchScope] 中 launch，不阻塞 SSE 处理
      * - 写失败静默（MessageStore 内部已捕获，内存视图不受影响）
      * - [messageStore] 为 null 时（测试环境）直接返回
-     * - 沿用 48ms 批处理节奏：调用方在 flushPendingDeltas（已聚合）或
+     * - 沿用批处理节奏（STREAM_FLUSH_INTERVAL_MS）：调用方在 flushPendingDeltas（已聚合）或
      *   handleMessageUpdated（单条事件）处调用，不逐 delta 写
      */
     private fun persistSseUpdate(sessionId: String, messageIds: List<String>) {
@@ -687,13 +822,26 @@ class MessageEventHandler @Inject constructor(
             val sessionMessages = current[sessionId] ?: return@update current
             current + (sessionId to sessionMessages.filter { it.id < revertMessageId })
         }
+        // #442 B案：bus 清理先于热视图移除（part ids 仅此刻可得）
+        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
+            .clearParts(_parts.value.filterKeys { it in removedIds }.values.flatten().map { it.id })
         _parts.update { it.filterKeys { msgId -> msgId !in removedIds } }
         assistantMessageIds.removeAll(removedIds)
+        publishStructural("pruneReverted")
 
         if (BuildConfig.DEBUG) AppLogger.d(TAG, "Pruned ${removedIds.size} reverted messages for session ${sessionId.take(12)}")
     }
 
     internal fun handleMessageRemoved(event: SseEvent.MessageRemoved) {
+        // #490：pending 拆除时刻登记（行在场=正常换装后防复活兜底；行缺席=
+        // 播种后到的竞态，台账使迟到的播种在 handleMessageUpdated 处被丢弃）。
+        if (event.messageId.startsWith("pending-")) {
+            recordPreDemolishedEcho(event.messageId)
+        }
+        // bus 清理先于热视图移除（part ids 仅此刻可得——pruneReverted 同款；
+        // 2026-10-03 审计 Gap A 补口：不清则 live 覆盖残留到会话级清理）
+        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
+            .clearParts(_parts.value[event.messageId].orEmpty().map { it.id })
         _messages.update { current ->
             val sessionMessages = current[event.sessionId]?.filter { it.id != event.messageId }
             if (sessionMessages != null) current + (event.sessionId to sessionMessages) else current
@@ -707,15 +855,119 @@ class MessageEventHandler @Inject constructor(
         // 时延批 upsert 无顺序保证（真机：upsert 事务晚 167ms 提交重插已删行 → 幽灵
         // 复活挂屏 6 分钟）。改记入待删队列：先从合并缓冲撤下未写行（该行从未落库），
         // 删除由单写协程在既有写入之后串行执行。
+        withdrawPendingUpsertAndEnqueueDelete(event.sessionId, event.messageId)
+        persistWakeups.trySend(Unit)
+    }
+
+    /**
+     * #437 写序原语（handleMessageRemoved / #509 handleMessageIdSwapped 共用）：
+     * 合并缓冲撤下 [messageId] 的未写快照（该行从未落库）+ 待删队列登记（删除由
+     * 单写协程在既有写入之后串行执行——后到 upsert 不得重插已删行）。
+     */
+    private fun withdrawPendingUpsertAndEnqueueDelete(sessionId: String, messageId: String) {
         synchronized(pendingUpsertsLock) {
-            val byMsg = pendingUpserts[event.sessionId]
-            if (byMsg?.remove(event.messageId) != null && pendingUpsertCount > 0) {
+            val byMsg = pendingUpserts[sessionId]
+            if (byMsg?.remove(messageId) != null && pendingUpsertCount > 0) {
                 pendingUpsertCount--
                 if (pendingUpsertCount == 0) oldestPendingUpsertAt = 0L
             }
-            pendingDeletes.getOrPut(event.sessionId) { HashSet() }.add(event.messageId)
+            pendingDeletes.getOrPut(sessionId) { HashSet() }.add(messageId)
         }
+    }
+
+    /**
+     * #509：消息 id 原地换名（[SseEvent.MessageIdSwapped]——DSH 毕业换装）。
+     *
+     * 合成 id（流式宿主 `dsh-t{turn}s{step}` / 乐观播种 `pending-<rpcId>`）与权威
+     * id（`seq-…`）是同一逻辑消息的两个 wire 拼法。旧路径把它们表达为
+     * MessageRemoved(合成) + MessageUpdated(权威)：两次独立 StateFlow 更新之间
+     * 存在「权威行在场、parts 未到」的中间态——P5-3 过滤把该中间态整轮过滤 →
+     * turn 组瞬时为空 → t_ 条目从列表消失又重现 → LazyColumn 销毁重建条目子树
+     * → 全部组合内记忆（pilotEverRendered/async 终态/预解析消费门）归零 →
+     * 新树 asyncTerminal Loading≈0px 空白 350-700ms（表格轮真机定罪）。
+     *
+     * 本路径在同一 handler 调用内**背靠背同步**完成改名（消息行原位换 id + parts 键
+     * 换名 + [Part.rekeyed] 改写归属，part.id 不动；两次 StateFlow 写之间无挂起点
+     * ——观察者经 dispatcher 派发恢复，只见终态），零列表成员空窗；part id 跨毕业
+     * 连续使预解析注册表/分片账本/换装指纹全部免失键。
+     *
+     * 幂等与边界：
+     * - fromId 行缺席（历史 fold 无 chunk 播种 / 重入已权威 / 重复事件）→ no-op；
+     * - toId 行已在场（resync 双源：Room 已按权威 id 播种 + 实况重放又建宿主行）
+     *   → 并入语义：fromId 行撤下、parts 归并（等价旧 remove+add 终态，无空窗）；
+     * - pending-* fromId 无条件登记 #490 台账（换名即拆除——行缺席的竞态败者
+     *   播种随后到达时被 handleMessageUpdated 丢弃）；
+     * - toId 命中 #378 遮蔽区间（迟到的被压缩消息毕业）→ 跳过（紧随的
+     *   MessageUpdated 由台账拦截，不重加）。
+     */
+    internal fun handleMessageIdSwapped(event: SseEvent.MessageIdSwapped) {
+        val sessionId = event.sessionId
+        // #490：pending-* 换名=拆除（含行缺席 no-op 的竞态落序——无条件登记）
+        if (event.fromId.startsWith("pending-")) {
+            recordPreDemolishedEcho(event.fromId)
+        }
+        // #378：换入目标被表面折叠遮蔽——不换名（防迟到的被压缩消息借毕业回魂）
+        val toSeq = DshMessageId.seqOf(event.toId)
+        if (toSeq != null && isShadowed(sessionId, toSeq)) {
+            if (BuildConfig.DEBUG) {
+                AppLogger.d(TAG, "[swap] drop shadowed target " + event.toId.take(16))
+            }
+            return
+        }
+        // 48ms 批窗内滞留的 fromId delta：换名后 _parts[fromId] 已撤，flush 的
+        // idx<0 兜底会在旧键下重建孤儿 part——就地丢弃（其后紧随的权威终态
+        // part 全文必含其内容，#265 守卫同语义）。
+        synchronized(pendingLock) {
+            if (pendingDeltas.isNotEmpty()) {
+                pendingDeltas.removeAll { it.messageId == event.fromId }
+            }
+        }
+        var applied = false
+        var renamedIsAssistant = false
+        _messages.update { current ->
+            val msgs = current[sessionId]?.toMutableList() ?: return@update current
+            val fromIdx = msgs.indexOfFirst { it.id == event.fromId }
+            if (fromIdx < 0) return@update current  // 幂等 no-op（已换/从未在场）
+            if (msgs.any { it.id == event.toId }) {
+                // 双源并入：toId 行保留（Room 权威种子），fromId 行撤下
+                msgs.removeAt(fromIdx)
+            } else {
+                val row = msgs[fromIdx]
+                msgs[fromIdx] = when (row) {
+                    is Message.User -> row.copy(id = event.toId)
+                    is Message.Assistant -> row.copy(id = event.toId)
+                    else -> return@update current  // 未建模形态不换名（防御）
+                }
+                renamedIsAssistant = row is Message.Assistant
+            }
+            applied = true
+            current + (sessionId to msgs)
+        }
+        if (!applied) return
+        _parts.update { current ->
+            val fromParts = current[event.fromId] ?: return@update current
+            val rekeyed = fromParts.map { it.rekeyed(event.toId) }
+            val existingTo = current[event.toId].orEmpty()
+            val merged = if (existingTo.isEmpty()) rekeyed
+            else MessageMergeEngine.mergePartsList(existingTo, rekeyed)
+            (current - event.fromId) + (event.toId to merged)
+        }
+        assistantMessageIds.remove(event.fromId)
+        // 双源并入分支的 toId 行已由其自身 handleMessageUpdated 注册过集合；纯换名
+        // 分支补注册换名后的 Assistant。
+        if (renamedIsAssistant) assistantMessageIds.add(event.toId)
+        // Room 写序（同 handleMessageRemoved）：fromId 撤缓冲 + 待删；换名后的行随
+        // persistSseUpdate 以 toId 落盘。
+        withdrawPendingUpsertAndEnqueueDelete(sessionId, event.fromId)
+        persistSseUpdate(sessionId, listOf(event.toId))
         persistWakeups.trySend(Unit)
+        if (BuildConfig.DEBUG) {
+            AppLogger.w(
+                TAG,
+                "[swap] " + event.fromId.take(16) + " -> " + event.toId.takeLast(12) +
+                    " parts=" + _parts.value[event.toId]?.size + " (#509 原地换名)",
+            )
+        }
     }
 
     // ============ #378 表面区间折叠（surfaceOp.replace 消费面） ============
@@ -843,6 +1095,7 @@ class MessageEventHandler @Inject constructor(
             }
             if (mutated) next else current
         }
+        publishStructural("patchFileUrl")
     }
 
     internal fun patchToolChildSession(sessionId: String, callId: String, childSessionId: String) {
@@ -873,6 +1126,7 @@ class MessageEventHandler @Inject constructor(
             }
             next
         }
+        publishStructural("patchToolChild")
     }
 
     internal fun handleMessagePartUpdated(event: SseEvent.MessagePartUpdated) {
@@ -900,6 +1154,10 @@ class MessageEventHandler @Inject constructor(
             }
             current + (messageId to messageParts)
         }
+        // #442 B案：终态（time.end）Text/Reasoning 撤销 bus 覆盖——完结权威
+        //（本 update 已携全量累积）经 structuralParts 发布（dispatch 尾），
+        // live 让位防陈旧覆盖。
+        clearTerminalLiveParts(messageId)
     }
 
     /**
@@ -918,8 +1176,8 @@ class MessageEventHandler @Inject constructor(
         // delta 流宿主缺失时播种骨架（骨架经 mergeAssistantMeta 由后续
         // step.ended/REST 兜底补齐 agent/model 元数据）。
         ensureAssistantSkeleton(event.sessionId, event.messageId)
-        // 缓冲 delta 以批量 flush（48ms 窗口）——将重组频率
-        // 从逐 token 降至约 20 次/秒，消除布局抖动。
+        // 缓冲 delta 以批量 flush（批窗口 = STREAM_FLUSH_INTERVAL_MS）——将重组频率
+        // 从逐 token 降至约 10 次/秒，消除布局抖动。
         // #230：part 未注册时（空 started 被 #230 丢弃/事件丢失）此前默认
         // "text"——reasoning delta 会以正文 kind 重建（渲染进正文块+dedup
         // 分桶错乱）。按派生 id 契约判型：`_reasoning_ord_` → reasoning。
@@ -942,6 +1200,8 @@ class MessageEventHandler @Inject constructor(
             val messageParts = current[event.messageId]?.filter { it.id != event.partId }
             if (messageParts != null) current + (event.messageId to messageParts) else current
         }
+        // #442 B案：移除的 part 撤销 bus 覆盖
+        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.clearPart(event.partId)
     }
 
     /**
@@ -987,6 +1247,8 @@ class MessageEventHandler @Inject constructor(
             // 落盘闭环：重启/离线 seed 后计时冻结不回涨（对齐 markSessionIdle 的
             // persistSseUpdate 语义——内存态 part 变更必须同步 Room）。
             persistSseUpdate(event.sessionId, listOf(event.messageId))
+            // #442 B案：块完结=终态，撤销该消息内 bus 终态覆盖
+            clearTerminalLiveParts(event.messageId)
         }
     }
 
@@ -1009,7 +1271,38 @@ class MessageEventHandler @Inject constructor(
             MergeStrategy.REST_AUTHORITY -> upsertRestAuthority(sessionId, incoming)
             MergeStrategy.APPEND_ONLY -> upsertAppendOnly(sessionId, incoming)
         }
+        sweepStalePendingEchoes(sessionId)
         applyMessageCap(sessionId)
+        // #442 B案：dispatch 外直调入口（REST 合并/缓存种子）就地发布结构性视图；
+        // bus 对触及消息撤销覆盖——服务端权威若与累积分歧（resync 改写族），
+        // pilot 前缀差分自证走 #472 宽限+重建兜底；流仍在飞则下一 flush 重新
+        // 发布合并后基线（R6）。
+        publishStructural("upsert:" + strategy::class.simpleName)
+        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
+            .clearParts(incoming.flatMap { mwp -> mwp.parts.map { it.id } })
+    }
+
+    /**
+     * #490 存量幽灵自愈：REST 快照（任何策略）不含 pending-* 行——它只在本
+     * 进程播种、合法寿命 <1s（拆除随持久回显即时到达）。刷新时仍在场且超
+     * [STALE_PENDING_ECHO_MS] 宽限的 pending-* 行 = 拆除丢失的幽灵（WS 断连
+     * 窗口/历史版本竞态残留在 Room 的存量）——复用拆除原语（handleMessageRemoved：
+     * 内存三清 + Room 待删队列单写协程路径）清淤，重进会话时 REST 首刷即愈。
+     */
+    private fun sweepStalePendingEchoes(sessionId: String) {
+        val now = System.currentTimeMillis()
+        val staleIds = _messages.value[sessionId]
+            ?.filter { it.id.startsWith("pending-") && it is Message.User &&
+                now - it.time.created > STALE_PENDING_ECHO_MS }
+            ?.map { it.id }
+            .orEmpty()
+        if (staleIds.isEmpty()) return
+        staleIds.forEach { id ->
+            handleMessageRemoved(SseEvent.MessageRemoved(sessionId = sessionId, messageId = id))
+        }
+        if (BuildConfig.DEBUG) {
+            AppLogger.w(TAG, "[echo-sweep] dropped ${staleIds.size} stale pending echo row(s) in ${sessionId.take(12)}")
+        }
     }
 
     /**
@@ -1050,12 +1343,15 @@ class MessageEventHandler @Inject constructor(
         // 在 update 内对比「合并前后」的 tokens/cost（消息不在 existing = null→值
         // 视为变更），变更行于 parts 合并后经 [persistSseUpdate] 增量落盘。
         // CAS 重试重复 add 同 id 幂等；值未变的重复刷新 0 写库——检测即节流
-        //（SSE_PRIORITY 仅由 REST 快照触发，不在 48ms delta 批处理路径上）。
+        //（SSE_PRIORITY 仅由 REST 快照触发，不在 delta 批处理路径上）。
         val tokensChangedIds = HashSet<String>()
         _messages.update { current ->
             val existing = current[sessionId] ?: emptyList()
             // O(n+m) 两路归并替代 O((n+m) log(n+m)) 全量排序（见 mergeSortedMessages 前提）
-            val merged = mergeSortedMessages(existing, incomingSorted) { sse, inc ->
+            // #485：REST 快照归并后按服务端 created 重排（mergeRestSnapshot）——
+            // 保位契约在「user 行 created 被 REST 权威前跳」时破坏有序前提，
+            // t_ 键漂到信封 → 子树换血 → asyncTerminal Loading≈0 闪灭。
+            val merged = MessageMergeEngine.mergeRestSnapshot(existing, incomingSorted) { sse, inc ->
                 MessageMergeEngine.mergeMessageMeta(sse, inc)
             }
             val assistantBeforeById = HashMap<String, Message.Assistant>(existing.size)
@@ -1106,7 +1402,7 @@ class MessageEventHandler @Inject constructor(
             // tokens 抹掉 → lastContextTokens=0 → 顶部导航栏 context 指示器消失。
             // Assistant 改字段级合并（mergeAssistantMeta：incoming 非空字段权威、
             // 空字段保留 existing）——REST 权威语义不变，元数据不再丢失。
-            val merged = mergeSortedMessages(existing, incomingSorted) { e, inc ->
+            val merged = MessageMergeEngine.mergeRestSnapshot(existing, incomingSorted) { e, inc ->
                 if (e is Message.Assistant && inc is Message.Assistant) {
                     MessageMergeEngine.mergeAssistantMeta(e, inc)
                 } else if (e is Message.User && inc is Message.User) {
@@ -1175,10 +1471,14 @@ class MessageEventHandler @Inject constructor(
     // ============ 批量操作 ============
     fun clearForSession(sessionId: String) {
         val messageIds = _messages.value[sessionId]?.map { it.id }?.toSet() ?: emptySet()
+        // #442 B案：bus 清理先于热视图移除（part ids 仅此刻可得）
+        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
+            .clearParts(_parts.value.filterKeys { it in messageIds }.values.flatten().map { it.id })
         _messages.update { it - sessionId }
         _parts.update { it - messageIds }
         assistantMessageIds.removeAll(messageIds)
         lastDomainEventTimeMs.remove(sessionId)
+        publishStructural("clearForSession")
         // 可观测性（#89 验证）：记录清理量
         dev.leonardo.ocbeacon.logging.AppLogger.d(
             "MsgEvent",
@@ -1190,9 +1490,12 @@ class MessageEventHandler @Inject constructor(
         val messageIds = _messages.value
             .filterKeys { it in sessionIds }.values.flatten()
             .map { it.id }.toSet()
+        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
+            .clearParts(_parts.value.filterKeys { it in messageIds }.values.flatten().map { it.id })
         _messages.update { it - sessionIds }
         _parts.update { it - messageIds }
         assistantMessageIds.removeAll(messageIds)
+        publishStructural("clearForServer")
     }
 
     fun clearAll() {
@@ -1200,6 +1503,8 @@ class MessageEventHandler @Inject constructor(
         _parts.value = emptyMap()
         assistantMessageIds.clear()
         lastDomainEventTimeMs.clear()
+        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.clearAll()
+        publishStructural("clearAll")
     }
 
     /**
@@ -1284,6 +1589,9 @@ class MessageEventHandler @Inject constructor(
             }
             if (changed) updated else current
         }
+        //（2026-10-03 审计 Gap B 补口：中断/REST 空闲终态化后撤销 bus live 覆盖
+        //——与 MessagePartTimePatch 终态路径同款，防陈旧 live 残留到会话级清理）
+        changedIds?.forEach { clearTerminalLiveParts(it) }
     }
 }
 

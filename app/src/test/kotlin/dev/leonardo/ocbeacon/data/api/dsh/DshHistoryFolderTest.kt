@@ -58,8 +58,12 @@ class DshHistoryFolderTest {
         assertEquals("seq-fixture-0001-5", user.info.id)
         assertEquals("fixture-0001", user.info.sessionId)
         assertEquals(1788109000011L, user.info.time.created)
-        // #356：RPC 提交回显（source.rpcId=rpc-fixture-1）→ 同批拆除 pending echo（原子换装）
-        assertEquals(SseEvent.MessageRemoved("fixture-0001", "pending-rpc-fixture-1"), events[5])
+        // #356：RPC 提交回显（source.rpcId=rpc-fixture-1）→ 同批原地换名 pending echo
+        //（#509：MessageIdSwapped 替代 Removed 拆除——行不离开列表）
+        assertEquals(
+            SseEvent.MessageIdSwapped("fixture-0001", "pending-rpc-fixture-1", "seq-fixture-0001-5"),
+            events[5],
+        )
         assertEquals("fixture user prompt", ((events[6] as SseEvent.MessagePartUpdated).part as Part.Text).text)
         // step/start → busy（chunk 行 9-12 被跳过后紧邻 tool/call）
         assertEquals(SseEvent.SessionStatus("fixture-0001", SessionStatus.Busy), events[7])
@@ -72,13 +76,20 @@ class DshHistoryFolderTest {
         val completed = (events[10] as SseEvent.MessagePartUpdated).part as Part.Tool
         assertEquals("call_fixture_1", completed.id)
         assertTrue(completed.state is dev.leonardo.ocbeacon.domain.model.ToolState.Completed)
-        // assistant/message 整装：流式桥拆除 + 消息 + reasoning/text part
-        assertEquals(SseEvent.MessageRemoved("fixture-0001", "dsh-t1s1"), events[11])
+        // assistant/message 整装：流式桥原地换名（宿主行在场时）+ 消息 + reasoning/text part
+        //（#509：MessageIdSwapped；历史 fold 无宿主行时消费端幂等 no-op）
+        assertEquals(SseEvent.MessageIdSwapped("fixture-0001", "dsh-t1s1", "seq-fixture-0001-13"), events[11])
         val assistant = (events[12] as SseEvent.MessageUpdated).info as Message.Assistant
         assertEquals("seq-fixture-0001-13", assistant.id)
         assertEquals(1788109000019L, assistant.time.completed)
         assertEquals("thinking...", ((events[13] as SseEvent.MessagePartUpdated).part as Part.Reasoning).text)
         assertEquals("answer", ((events[14] as SseEvent.MessagePartUpdated).part as Part.Text).text)
+        // #509：权威 part id 用**流式宿主前缀**派生（跨实况/历史同源）——part 身份
+        // 自首帧起永久稳定，id 键控缓存（预解析注册表/分片账本/换装指纹）跨毕业
+        // 连续；messageId 仍指向权威 seq id（归属不变）。
+        assertEquals("dsh-t1s1_reasoning_ord_0", (events[13] as SseEvent.MessagePartUpdated).part.id)
+        assertEquals("seq-fixture-0001-13", (events[13] as SseEvent.MessagePartUpdated).part.messageId)
+        assertEquals("dsh-t1s1_text_ord_1", (events[14] as SseEvent.MessagePartUpdated).part.id)
         // turn/end → idle；todo/title
         assertEquals(SseEvent.SessionIdle("fixture-0001", 1788109000021), events[15])  // #294：time 透传
         assertTrue(events[16] is SseEvent.TodoUpdated)

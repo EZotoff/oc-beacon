@@ -118,6 +118,8 @@ class EventDispatcher @Inject constructor(
         bind(
             messageHandler,
             SseEvent.MessageUpdated::class, SseEvent.MessageRemoved::class,
+            // #509：合成 id→权威 id 原地换名（DSH 毕业换装）
+            SseEvent.MessageIdSwapped::class,
             SseEvent.MessagePartUpdated::class, SseEvent.MessagePartDelta::class,
             SseEvent.MessagePartRemoved::class,
             // #453：块完结时间补丁（DSH block-end）
@@ -212,6 +214,8 @@ class EventDispatcher @Inject constructor(
     }
     val messages: StateFlow<Map<String, List<Message>>> get() = messageHandler.messages
     val parts: StateFlow<Map<String, List<Part>>> get() = messageHandler.parts
+    /** #442 B案：UI 主列表消费的结构性 parts 视图（流式 delta 批零发射）。 */
+    val structuralParts: StateFlow<Map<String, List<Part>>> get() = messageHandler.structuralParts
     val sessionDiffs: StateFlow<Map<String, List<FileDiff>>> get() = sessionHandler.sessionDiffs
     val permissions: StateFlow<Map<String, List<SseEvent.PermissionAsked>>> get() = permissionHandler.permissions
     val questions: StateFlow<Map<String, List<SseEvent.QuestionAsked>>> get() = questionHandler.questions
@@ -516,6 +520,7 @@ class EventDispatcher @Inject constructor(
             // 消息
             is SseEvent.MessageUpdated -> event.info.sessionId
             is SseEvent.MessageRemoved -> event.sessionId
+            is SseEvent.MessageIdSwapped -> event.sessionId
             is SseEvent.MessagePartUpdated -> event.part.sessionId
             is SseEvent.MessagePartDelta -> event.sessionId
             is SseEvent.MessagePartRemoved -> event.sessionId

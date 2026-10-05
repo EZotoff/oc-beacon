@@ -256,7 +256,6 @@
     <string name="chat_message_delete_failed">메시지 삭제 실패</string>
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">토큰/초</string>
-    <string name="chat_msg_tail_summary">%1$d단계 · %2$d개 도구</string>
     <string name="a11y_message_detail">메시지 세부정보</string>
     <string name="chat_stats_session_title">세션 통계</string>
     <string name="chat_stats_summary">턴 %1$d · %2$d단계 · %3$s LLM · %4$s개 도구</string>
@@ -492,6 +491,7 @@
     <string name="server_settings_oauth_browser_hint">브라우저에서 인증을 완료하세요. 이 창은 자동으로 닫힙니다.</string>
     <string name="chat_error_view_page">페이지</string>
     <string name="chat_error_view_code">코드</string>
+    <string name="math_block_badge">수식</string>
     <string name="chat_save_image">이미지 저장</string>
     <string name="chat_image_saved">이미지가 저장되었습니다</string>
     <string name="chat_image_save_failed">이미지 저장에 실패했습니다</string>

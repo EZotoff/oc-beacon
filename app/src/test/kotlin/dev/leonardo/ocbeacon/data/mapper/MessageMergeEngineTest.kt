@@ -36,11 +36,14 @@ class MessageMergeEngineTest {
     }
 
     @Test
-    fun `applyDelta endsWith dedup does not double-append overlapping delta`() {
-        // 48ms 批内同 part 多次 delta 可能携带重叠后缀——endsWith 去重（铁律②配套）
+    fun `applyDelta 恰等于尾部的重复短语照常追加 - #505`() {
+        // #505 真机 turn 30 定罪：模型 10 字重复短语恰等于累积尾部，旧 endsWith
+        // 去重误判重复投递丢弃 → 累积中段缺口 → 换装门前缀断裂 → 完结 200px
+        // 占位闪塌。DSH WS 抓包实证 delta 流==权威转写逐字节（重复即真重复）；
+        // 真重复与真重投本地不可区分，两误判都由完结权威替换自愈——原样追加。
         val parts = listOf(text("p1", text = "你好世界"))
         val out = MessageMergeEngine.applyDelta(parts, "p1", "s1", "m1", "text", "世界")
-        assertEquals("你好世界", (out[0] as Part.Text).text)
+        assertEquals("你好世界世界", (out[0] as Part.Text).text)
     }
 
     @Test
@@ -132,11 +135,12 @@ class MessageMergeEngineTest {
     }
 
     @Test
-    fun `applyDelta reasoning endsWith dedup mirrors text branch - #266`() {
-        // 顺带项：reasoning 注册 append 与 text 同款 endsWith 去重（此前盲拼接）
+    fun `applyDelta reasoning 重复短语同样原样追加 - #505`() {
+        // #266 曾与 Text 对齐去重；#505 两分支一并撤销（误杀面同构：
+        // 推理流式重复短语丢弃=思考文本中段缺口）。
         val parts = listOf(reasoning("p1", text = "思考过程"))
         val out = MessageMergeEngine.applyDelta(parts, "p1", "s1", "m1", "reasoning", "过程")
-        assertEquals("思考过程", (out[0] as Part.Reasoning).text)
+        assertEquals("思考过程过程", (out[0] as Part.Reasoning).text)
     }
 
     @Test
@@ -420,6 +424,52 @@ class MessageMergeEngineTest {
         val error = merged.state as ToolState.Error
         assertEquals(2000L, error.time!!.start)
         assertEquals(3000L, error.time!!.end)
+    }
+
+    // ============ 流式期前缀一致性守卫（坍缩重建根修 H1，2026-09-30 真机定罪） ============
+    //
+    // 13:55 事件：delta 累积（prevLen=495，围栏后带空行的列表前缀）与流中
+    // 权威快照（542ch，divergeAt=396 处空行被服务器侧折叠——更长但异构）在
+    // 48ms 批间分歧 → 旧 longer-wins 整体替换 → pilot nonPrefix（300ms 宽限后
+    // 仍分歧）→ RESETKEY 整树重建 → 卡片 5741→3249 坍缩 + 200ch/200ms 限速
+    // 重灌 4.4s（用户主诉「整个回答坍缩并重建」）。守卫：流式期（incoming
+    // 无 end）delta 累积是真相源——仅前缀一致（快照 ⊇ 累积，REST 领先场景）
+    // 才允许快进替换；分歧快照保 existing，终态 text.ended 权威替换不受影响。
+
+    @Test
+    fun `mergePart streaming diverging snapshot does not replace delta accumulation`() {
+        val existing = text("p1", text = "代码\n\n\n**列表中包含引用：**\n- 项目 A")
+        val incoming = text("p1", text = "代码\n\n**列表中包含引用：**\n- 项目 A\n  | 属性 | 值 |")
+        val out = MessageMergeEngine.mergePart(existing, incoming) as Part.Text
+        assertEquals("流式期分歧快照不得替换 delta 累积", existing.text, out.text)
+    }
+
+    @Test
+    fun `mergePart streaming prefix-consistent snapshot still fast-forwards`() {
+        val existing = text("p1", text = "你好")
+        val incoming = text("p1", text = "你好世界")
+        val out = MessageMergeEngine.mergePart(existing, incoming) as Part.Text
+        assertEquals("REST 领先原语义保留：前缀一致更长快照照常快进", "你好世界", out.text)
+    }
+
+    @Test
+    fun `mergePart terminal full-text replace unaffected by streaming guard`() {
+        val existing = text("p1", text = "退化复读的内容被服务器截断……")
+        val incoming = Part.Text(
+            id = "p1", sessionId = "s1", messageId = "m1",
+            text = "权威全文 914 字符。",
+            time = Part.Text.Time(start = 0, end = 123L),
+        )
+        val out = MessageMergeEngine.mergePart(existing, incoming) as Part.Text
+        assertEquals("text.ended 权威全量替换不受守卫影响", "权威全文 914 字符。", out.text)
+    }
+
+    @Test
+    fun `mergePart streaming diverging snapshot for reasoning keeps existing too`() {
+        val existing = reasoning("r1", text = "思路A\n\n继续")
+        val incoming = reasoning("r1", text = "思路A\n继续思考且更长更长更长更长")
+        val out = MessageMergeEngine.mergePart(existing, incoming) as Part.Reasoning
+        assertEquals("reasoning 同守卫对称", existing.text, out.text)
     }
 
     /** 双侧都无锚（历史落库数据）→ 不伪造，保持 incoming 原样。 */

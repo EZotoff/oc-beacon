@@ -262,7 +262,6 @@
     <string name="chat_message_delete_failed">Nie udało się usunąć wiadomości</string>
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">tokenów/s</string>
-    <string name="chat_msg_tail_summary">%1$d kroków · %2$d narzędzi</string>
     <string name="a11y_message_detail">Szczegóły wiadomości</string>
     <string name="chat_stats_session_title">Statystyki sesji</string>
     <string name="chat_stats_summary">%1$d tur · %2$d kroków · %3$s LLM · %4$s narzędzi</string>
@@ -500,6 +499,7 @@
     <string name="server_settings_oauth_browser_hint">Dokończ autoryzację w przeglądarce. To okno zamknie się automatycznie.</string>
     <string name="chat_error_view_page">Strona</string>
     <string name="chat_error_view_code">Kod</string>
+    <string name="math_block_badge">Wzór</string>
     <string name="chat_save_image">Zapisz obraz</string>
     <string name="chat_image_saved">Obraz zapisany</string>
     <string name="chat_image_save_failed">Nie udało się zapisać obrazu</string>

@@ -29,4 +29,9 @@ object PartIdContract {
     /** 未注册 part 到达 delta 时的 kind 推断（#230）。返回 "reasoning" | "text"。 */
     fun kindOf(id: String): String =
         if (id.contains(REASONING_MARKER)) "reasoning" else "text"
+
+    //（#507 swapStableKey 已随 #509 方案B 退役（2026-10-03 用户裁决）：DSH 权威
+    // part id 改用流式宿主前缀派生后，part id 自首帧起跨毕业永久稳定，换装稳定
+    // 键在 DSH/V2/V1 全协议上恒等；残余防御位（无 turn/step 畸形事件回落 seq
+    // 前缀）经裁决放弃——历史档案见 docs/journal/2026-10-01-442 §31。）
 }

@@ -4,9 +4,9 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#474**（2026-09-28 #473 调试探针族清扫——历代 campaign 遗留）。
+**编号**：全局递增，不回收。下一编号：**#512**（2026-10-04 #511 10h 人类行为模拟 + 高度栈覆盖审计收口）。
 
-**操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。
+**操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
 > 编号勘误（2026-08-23 合并时）：terminology 分支先行占用的 #194–#199 与主工作区 #194（FAB）撞号，合并时 terminology 侧六卡顺移 +5 → #200–#205；文档内旧引用已同步改。
 
@@ -53,250 +53,180 @@
 
 ## P0 — 主流程阻塞
 
-- [~] **#436 服务器断开后无法自动重连——SSE断连横幅持续2秒后重试不恢复需重启app** `sse,session,bug`
-  - 实测(2026-09-25 04:52):DSH web 服务器重启后,app横幅服务器已断开正在重连2秒后重试持续超过1分钟不恢复,需force-stop重启才重连(token未变,服务器健康)。用户指令本轮加入修复。嫌疑:DshWsEventClient/Orchestrator重连退避或401处理;测试向量:adb reverse移除重加tcp3080模拟断连,不触碰真服务器
-  - token持久化自愈+探针分类已装机;活体取证:传输级断连恢复本就正常(隧道恢复4s重连);LAN 403=服务端trust fence需--trusted-host;V6:用户重启dsh-web验证自愈
-  - 三级自愈实证+token持久化落盘;LAN 403=服务端trust fence;终态:待用户验收
+- [~] **#507 流式毕业内容消失——turnGroups 结构缓存空 parts 阻断 #g 条目发射** `streaming` `render` `shard-pilot` `regression`
+  - 用户报告：流式中所有内容突然没掉又恢复、前文全部消失；卡片展开收起不稳定。真机定罪（连拍+语义树+探针三轮）：fire 后尾卡塌至 96px 且冻结 StreamChunk/StreamPrefix 条目从未组合——毕业的 2000+ 字无处渲染。
+  - 根因：#g 条目生成的发布查找走 turnGroups 的 cm.parts——turnGroups 是结构缓存（id 生命周期签名），流式宿主 ChatMessage 捕获于创建时刻（parts 尚空，出生在后续 delta 批），签名不变缓存永不刷新 → 查找恒 miss。渲染管道（renderableTurns miss 分支修正）看得见 parts——两管道视野分裂。
+  - 修复：发布查找改 turnKey 直查（PublishedShards.turnKey 同源注册期条目键），组遍历降兜底——绕开整类 parts 引用陈旧性。回归测试 StreamShardEntryEmissionTest（结构缓存空 parts 场景红→绿）；真机 E2E 毕业①len2179/h5065px 毕业②len2093/h4796px 冻结条目全高组合，视觉满屏连续正文零消失。508-shard 探针（组合+实测高度）按 keep-probes 裁决保留 DEBUG-only。
+  - 展开收起不稳定主根因同源（内容消失+整视口条目churn）；修复后毕业重排仍在（冻结条目插入+尾块收缩=引擎配对合法转移）——待用户验收确认，若残余另立卡。
+  - 复杂交互矩阵验收（2026-10-03 晨，8 场景全过）：T1 毕业时上滚阅读（读位历经完结换装纹丝不动）/T2 流式中展开思考卡保到完结（3 毕业穿过展开态，冻结块 5380/5084/3960px 全高）/T3 六连toggle 展开收起（终态正确零破损）/T4 排队第二问（双轮交接 fires 单调）/T5 Home 后台 6s 回前台（无缝，4 fires 单调）/T6 毕业后远滚驱逐+回滚（冷启 adopt 续账，冻结条目同长重组，继续毕业 6779→9062）/T7 9500+字压力（6 fires 单调 2047→12363，每刻内容在场）/T8 退出重进冷启（8 章+结语零缺口）。全程 20+ fires 全单调、零 reset、零 dropped、零换装 forensic miss。
 
-- [ ] **#434 #432 根因定罪:贴底构型收起镜像dispatch 0消费→上方内容裸下移H px** `chat-ui,bug`
-  - 连接态(DSH)实测+录屏双证:贴底(fii=0,fiso=0)收起时镜像dispatch -H在新侧无空间,consumed=0(paired-shift日志实锤),塌缩无补偿→上方旧内容裸下移H涌入视口(录屏帧94→101判读确认'顶部露出更早段落',542px)。中位构型dispatch可消费故守恒(矩阵1-6全绿)。用户流式场景常处贴底=高频触发。修法:consumed==0且贴底时换向dispatch +H(旧侧有空间,补偿上方内容下移;不露底空白——露的是旧内容)。候选实现:PairedDispatch加方向fallback;需真机验证方向+防双发。
+- [~] **#506 思考卡计时拖满全程+展开内容困在 240dp 隐形滚动窗（#506）** `streaming` `dsh` `render`
+  - 真机 t33/t34 定罪（用户报告）：①DSH 把 reasoning 的 block-end 压到整流结束才发（t32 抓包：思考 22:10:56 完，block-end 22:12:03.9 才到）→ time.end 迟到 67s → 计时跑满正文流式全程；②展开思考卡内容完整可达但锁在 240dp 内滚窗（无滚动条提示/流式不跟随），用户感知「展示不全」。
+  - 修复：①DshEventMapper block-start(N) 顺手给前驱 N-1 发 TimePatch（块严格顺序抓包零交错实证；TimePatch 端 end==null first-write-wins，晚到的真实 block-end 自然让位）；②ReasoningBlock 展开区撤 240dp 帽+内部滚动=全内容高度（展开即看全意图；supersede 2026-08-16 240dp 裁决——同域最新用户投诉为准）。
+  - 残余（登记待裁决）：完结换代（删合成+上权威）后 DSH 卡时长消失——转写块无 time 字段，跨消息转移需 temporal join，未在本卡实施。
+  - 真机 t35 终验双证：①TimePatch 22:40:52.343 流中（正文起步即 reasoning 终态化）——计时不再拖满全程；②展开卡 768 字首段至末行一整块连续呈现零滚动。全量单测绿。等用户自然使用验收。
+  - 残余已修（同批）：定罪修正——权威 part 带 time 但 start=end=事件时刻（恒 0 时长），非转写缺 time。mapper blockStart/blockEndTimes 记账（block-start 记起始+推前驱结束），整装结算真块时长。真机 t36 完结卡显示 5.2s 真时长（修复前恒空）。
 
-- [ ] **#433 滚动死锁:fling+tap后LazyList完全无滚动响应(跨重装持久)** `chat-ui,bug`
-  - 00:07 fling中tap思考卡后,列表对任意方向滑动零响应(MIUIInput事件送达,无ANR,CPU~20%)。force-stop重启/重装(install -r保留数据)均不恢复;pm clear后现场丢失无法复验。嫌疑:某持久化状态(expanded集合/DataStore)触发测量/布局死循环或滚动消费悬挂。复现路径已记录在案,待重建环境后优先定位。
+- [~] **#505 流式重复短语误杀致换装门断裂——applyDelta endsWith 去重中段内容丢失（#505）** `streaming` `dsh` `render`
+  - 真机 turn 30 定罪：模型 10 字重复短语恰等于累积尾部 → applyDelta endsWith 去重误杀 → 累积 3724 vs 终态 3734 中段缺口 → #504 换装门前缀断裂 miss → 200px 占位闪塌（h=200→9597）。
+  - WS 抓包 t31 证 DSH delta 流==转写逐字节（无重复投递/无缺口）；journal 考古：endsWith 去重在两族服务器已文档化场景零保护价值（#266 案例它自己也没接住），纯防御遗产。
+  - 修复：①applyDelta 撤 fuzzy endsWith 去重（Text/Reasoning，终态守卫保留）；②换装门加头尾锚容错（|gap|≤512 + 前缀锚≥256 + 后缀锚≥256 命中）；③forensic 探针升级（分叉位置+上下文采样）。
+  - 真机 E2E turn 32 双证：①累积==终态 4658 逐字节相等（本轮 11 个 tail-equal 真重复——连续空格/数字重复位，旧代码把 100 吃成 10 的潜伏腐蚀——全保留）；②换装门命中 src=asyncInline + h=11866 d=11866 首测全高零闪灭。全量单测绿。等待用户自然使用验收。
+
+- [~] **#503 流式尾段重建循环——A2 冻结分片毕业 fire 回卷（#503，已旗标稳定化待根修）** `streaming` `scroll` `regression` `shard-pilot`
+  - 真机定罪（2026-10-02 用户验收：「输出到快结束的时候一直在重建循环」）：单轮尾段 9 次 MDPilot shard fire/9 秒，origin 回滚重冻结（2313×2、2629×2）+ turn 条目回收重组对（shard-unreg→shard-reg）——fire→条目churn（StreamChunk/StreamPrefix 插入+尾块重切）→条目回收→pilot 冷启重播→再 fire 的回卷循环；每循环=一次全量条目重建=用户所见重建循环。
+  - 稳定化（已落地）：STREAM_SHARD_PILOT=false（dev+beta 下一构建；性能优化开关，回退单容器流式）。#501（part-birth，DELTA_BUS 旗标）与 #502（静止采纳）均不受影响——真机 E2E 验证 fire/回收全零、B3 2.3s 即燃、MDResize 全程连续增长、3856 测试 0 失败（6 skip=分片旗标语义臂）。
+  - 根修方向（待做）：pilot 毕业的 resetKey/onRebuild 回卷链——fire 后条目churn 触发条目回收→coldStartPlan 重播已发布区间，需把毕业发布与条目生命周期解耦（如 fire 幂等去重/回收期 graduation 冻结）。附：同轮另见视口 0↔7 弹跳（24 LEAP，MSGEFFECT/GUARD 双确认静默、引擎 set 只指向阅读锚）——疑为条目churn 副作用，pilot 关闭后待复测；若仍在则另立卡片。
+  - 根修落地（2026-10-02 深夜三段）：①Machine 回退宽限窗 300ms（瞬时陈旧快照不再单批 Reset 销毁已发布集——回滚环燃料掐断）；②fire 事务性（Broker.fire 回 Boolean + confirmFire 落账，未注册竞态下批重试，账本与发布态不脱钩）。真机 t36（6000字，旗标重开）：三次毕业 origin 严格递增 2050→4177→6185、零 Reset 零 dropped、reg=1/unreg=0——回卷消灭。STREAM_SHARD_PILOT dev 已重开交自然使用验收（beta/stable 仍 false）。
+
+- [~] **#502 流式消息被裁剪在视口小块——配对让位永久化死锁冻结高度帽（#502）** `scroll` `engine` `streaming` `regression`
+  - 真机定罪（2026-10-02，用户流式中有机复现）：流式上翻阅读期间引擎在阅读位配对 set(7,393) → 用户甩回底 (0,0) → shouldYieldPairing 判「外部 pending 未消费」永久让位（yield×1448/12s）——用户手势是已完成的外部滚动而非待消费 pending，读位永 ≠ lastSet 且只有引擎 apply 才写 lastSet → 鸡生蛋死锁。
+  - 后果：每帧作废帽释放计划 → reserved 冻结 685 而真高涨至 4303 → item 按 min(真高,685)+clipToBounds 底对齐上报 = 流式消息被裁剪在视口一小块固定区域（最新文本在框内滚动），完结换装 reset 才全量展示（用户主诉）。#501 修复后 DSH 流式期有真实增量可卡 + 用户滚动测试凑齐配方才首次暴露。
+  - 修复：divergence 静止采纳——读位连续两帧静止且 lastSet 陈旧（≥2 帧引擎无 set，防误毁 pending 保护）⇒ 采纳为配对基线恢复正常求值（帽释放当帧生效）。相位级测试确定性复现死锁三帧转换（帧3 旧行为永久 yield 处 → 采纳+帽 685→1128）；pending 未消费窗口回归锚钉住。单测 3856/0/0；三轮真机 E2E 无回归、无误触发 adopt。
+
+- [~] **#501 DSH 流式正文结构性不可见——#230 空种子 × B案结构静默，完结整段砸出（#501）** `dsh` `streaming` `engine` `regression`
+  - 真机验收 #442 时用户定罪（2026-10-02）：DSH 服务器流式正常（自建 WS 抓帧 940 帧实证：block-start 空种子→reasoning-delta 145→text-delta 778），app 正文整段流式期不可见、完结 assistant/message 才 +5675px 砸出。
+  - 根因链：DSH block-start 空种子被 #230 零信息丢弃（防线本身正确）→ part 仅由 flush 的 applyDelta idx<0 兜底在热视图出生 → B案 UI 读 structuralParts（只在结构事件过桥），DSH 流式期零结构事件（纯 delta 线面）→ 出生永不过桥。SSE 不受影响（part.updated 携累积文本=结构事件不断过桥）；reasoning 可见是 text block-start 自身结构事件捎带过桥的巧合。
+  - 修复：flushPendingDeltas part 出生过桥（cause=part-birth，每 part 一次；纯文本增长仍走 bus，delta 批结构性静默不变量不破）。真机验证：B3 探针 5.4s 即燃（原完结才燃）、MDResize ~66px 步长持续增长、shard-reg 流式期注册（A2.5 首次在 DSH 线生效）、CML-tick=0、完结无重复无脏行。单测 3850/0/0 双臂绿（新增 DSH 形态出生/单次发射 2 用例）。
 
 ## P1 — 核心功能需求
 
-- [ ] **#470 流式高度配对收缩缺口:帽不回改空白残留+ledger收缩不配对视口落** `scroll,chat`
-  - 2026-09-30 调研 P3 定罪:①帽轨 reserveReleasePlan 对 trueHeight<=reserved 恒 null(帽单调只增,ScrollCompensation.kt:338)——流式内容回缩(表格列放宽/setext 前重排)时 item 保持旧高=空白残留,直到换流式项 reset;②ledger 轨 note 对 d<0 只 rebase 不配对(:157)——压缩卡/工具横幅回缩时上方内容下坠无补偿。修复需高度引擎域专项设计(帽回改与『已上屏永不回改』既有裁决冲突,需用户裁断语义:回缩时同步缩帽+视口跟随 vs 维持空白)。
 
-- [ ] **#469 流式表格高度抖动三连:键含全文致列宽重排+stagedLimit塌回+两拍收敛** `chat,markdown,scroll`
-  - 2026-09-30 高度稳定性系统调研(docs/research/streaming-height-stability-audit.md)P0 定罪:①MeasureCache/rows/NaturalWidthsLru 键含整条消息全文,流式每 append 失效重建→新宽单元格改变全表列宽,已上屏行重换行(双向跳变,MarkdownTable.kt:189/361-414);②>20 行表格 stagedLimit=remember(content,tableNode){1} 每 append 重置→塌回 8 行再逐帧重建循环(MarkdownTable.kt:101/226-232/765-770);③containerWidth 首拍 0→120dp cap 夹窄,次拍放宽回缩(MarkdownTable.kt:250/258/390-414)。修复方向:表格内 remember 键改表格自身文本/node 深比较+BoxWithConstraints 首拍内联宽。触发面:流式中任何表格输出(密集轮次常见)。
+- [~] **#511 10h 人类行为模拟 + 高度栈覆盖审计收口** `streaming` `height` `soak`
+  - mock LLM(12语料×7画像+5%断流)→v1-e2e:4299→真机随机化驱动器（10h 挂钟，2026-10-04 09:30 发车）；review.sh 每2h签名台账+死亡复活+过deadline终盘自动收割（cron automation-3e10101d）
+  - 覆盖审计补口五组单测已落：Part.rekeyed 19子类契约/GrowLedger.relearnBaseline+伪增量对照/broker fallback缓存移除+clearAll/preParseStreamedTurnParts四门/swap遮蔽守卫；全量绿
+  - 判读基线：#484 健康线（10h 零负向d 零RESETKEY）；终盘产物 human-sim-10h/reports/final_report.md（review.sh --final 自动生成台账节）
+  - 终盘 PASS（21:00 收割）：10h 挂钟/有效 8.7h/全部巡检节签名全零/201 轮/app 零真实崩溃；两起崩溃风暴均为驱动基建陷阱已根修存档（journal §6 + review_log 两事故节）——留 verify 待用户验收
 
+- [~] **#510 审计驱动清理批次：pilot 即终态 + 三补偿族退役（#509 二期五项裁决）——渲染栈 −948 行** `chat` `refactor`
+  - 用户质询只增不减触发全面审计：D2 根修=pilot 即终态（毕业不切渲染器，shardHold 语义泛化）；CompletionHandoff/pilotTerminalHold+freeze/replayHold/HeldTailReveal/swapStableKey 五族退役；bus 两 Gap 补口；13 处注释更正。真机三协议负向 RESIZE=0、短轮 104ms 残余构造性消失（28154286）
+  - 收尾批（f3b4f886）：协调器键统一锚定式（§31 待察项根修）+ 死参数/broker 身份/账本换键三修复——审计可执行项全部清零，journal §32
 
-- [ ] **#462 多卡展开态收起其一仍导致用户视角高度变化** `scroll`
-  - 用户报告(2026-09-29):展开≥2 张内容卡后收起其中一张,视口锚定仍漂移;要求根因分析+根修(收起配对在多卡展开态的语义缺口)
-  - 2026-09-29 根修交付:根因=收起用「本卡展开前绝对快照」恢复视口(requestScrollToItemNoCancel(episodeAnchorItem/Offset))——仅在集间无其他位移时正确;多卡展开态 V=Pa+H_A+H_B,收起 A 绝对恢复 Pa 偏差 −H_B(视口多退 B 的展开量)=「收起其一视角跳变」。数学定罪+既有真机日志证实模型(展开配对后 fiso+=H、快照恢复=−H,#427 终局日志 4103↔3909)。修:resolveCollapseAnchor 纯函数(增量镜像语义:目标=当前视口−episodeShiftConsumedPx,单卡与旧绝对恢复数学同值,多卡保其他卡净位移;跨界经可见 item 高链折算,链不足返 null)——收起路径接线(绝对快照退役,取消路径 cancel-anchor-restore 保留原撤销语义不动);anchorKnown=false 回退既有 dispatch 镜像。TDD:ResolveCollapseAnchorTest 5 例(零消费不变/单卡镜像/多卡保他卡/跨界折算/链不足 null)+全量单测绿。真机复验(冷启流程,双开思考卡→收起其一,像素对比):修复前同流程 rows400-600 有 24732px 内容位移(视口跳变),修复后中段内容带(200-2200)完全静止、仅收起卡自身局部变化 794px——收起不再拖动视口。
+- [~] **#509 表格轮毕业换装塌缩窗——TurnFin 时宿主 item 满高→182px 存根→430ms 后弹回（贴底可见内容消失再出现）** `chat` `scroll`
+  - 用户主诉面：「一会儿没输出、一会儿大段内容突然出现」。真机 2/2 复现（B2: h2197→182(d=−2015)→2221(d=+2039) 间隔 430ms；R2: h2670→182(d=−2488)），同一 182px 存根=条目壳高；纯文本轮（S6 持续 +66/+90 无塌缩）与 60 行代码块轮（B3 无塌缩）均免疫——表格解析路径专属
+  - 机制链（B2 12:21:38.5-39.2 全取证）：Idle 后 pilot 卸载（len=1178→4）→ 塌缩 → path=preParsed chunked=false ×8+（len 620-2672）+ entries n=142 全量重组合 + 表格同步重解析 430ms → 弹回；#472 preParsed 快路径未覆盖表格条目（表格需分段渲染态重建）
+  - 缓冲区疑虑已排除（用户问题正面回答）：数据级到达-渲染深度纯文本 max=26 字/p95=8、表格轮 max=65 字——管线无积压；爆发感全部来自本毕业塌缩窗（表格中流分段渲染正常：RESIZE p50 +66px 平滑）
+  - 修复方向候选：a) 流式期预解析冻结形态表格（复用流式已解析态）；b) 交换保持——旧内容挂至新条目量测就绪（防塌缩窗，跨淡入）；c) #429 式 loading 过渡兜底。另需修 journal §26 的 TurnFin 全称表述（文本轮正当位移≠表格轮无缺陷）
+  - 修复 v1+v2 已落地（单测绿+真机路径验证）：①replayHold——重灌中间态（4→5→15…前缀形态）期 pilot 分支保持+freeze 冻结旧内容（CompletionHandoff.replayHoldCandidate 纯函数+5 单测，LRU 防污 guard）；②换装桥长度门移除——takeIfMatches 命中轮任意长度走 asyncTerminal（Default 线程解析）+holdPilotTerminal 保持，主线程零解析（消除 syncSmall 的 350ms parseBlocking）。真机 v2a 实证 asyncTerminal 路径启用且零异常
+  - 残余（未全愈，需深度裁决）：表格轮毕业仍有 350-700ms 空槽——v2a 定罪链：TurnFin(39.57)→h 2571→0(39.61)→asyncTerminal 渲染(39.96)→h 120→2595(40.28)；ItemP 证据=u_seq/t_seq 条目在毕业时刻 enter(39.61)/leave(40.31) 双重建——条目子树整体销毁使一切组合内保持机制（pilotEverRendered/remember 态）失效。属 #485(REST 快照归并)+#504(id 换代)身份翻覆族：合成→权威→REST 刷新链上消息 id/键翻覆引发 LazyColumn 重排湍流，锚链（#440 槽位锚→user id）随翻覆漂移。候选深修=内容指纹锚（user 文本 hash 抗 id 翻覆，需防碰撞）或数据层身份稳定化——重大手术另启批次裁决
+  - 深修裁决（2026-10-03 用户）：选方案 B 数据层身份稳定化；方案 A 内容指纹锚暂缓。完整 handoff 见 docs/specs/2026-10-03-509-identity-stabilization-handoff.md（自含三层前因后果/主战场文件地图/设计约束/风险清单/验收标准/环境备忘）——压缩/新会话从该文档直接开工
+  - 方案B 落地（45c9d9bb 已推送）：MessageIdSwapped 原地换名+part id 宿主前缀+流末预解析暖场；真机两轮表格零塌缩零空白零 ItemP、Room 重入零孤儿、V1 抽测过——verify 态待用户日常复验（关注点：表格/长文轮完结一瞬是否还有任何空白或弹跳）
+  - 二期（28154286）：pilot 即终态落地——毕业不切渲染器，第一波 replayHold 已作为死码随批退役；卡片 verify 关注点升级为「完结一瞬零空白 + 滚动回收后重看无闪烁」
 
-- [~] **#447 opencode server 2.0.16+ 移除 /api/health 导致 app V2 探测永久失效** `network` `compat`
-  - 2.0.16+ 实测移除 GET /api/health(鉴权通过仍 404)→ApiVersionDetector V2 探测只认该端点返回 null；tryV1 探 /global/health 收 SPA HTML 被 content-type 防御拦截→双探皆空 UNKNOWN
-  - checkHealth 按 #132 语义 UNKNOWN 保留原值→真机持久化的 V1 永不被纠正→V1 请求 /project 等收 HTML 200→SSE parseEvent 抛异常→重连退避→『服务器已断开+目录为空』
-  - 取证:handoff-oc-beacon-card-intervention.md §10.1(2026-09-27);可观测性缺口:V2 探测非 2xx 静默 return null(ApiVersionDetector L99)且新进程启动未发探测请求,修复需先补日志
-  - 服务器侧已收口(2026-09-27):本机 opencode systemd 用户服务化(linger 开机自启)——opencode-v1@4199(~/oc-v1-env 隔离,无密码仅 127.0.0.1)/opencode-v2@4096(真实环境,Basic Auth 经 OPENCODE_SERVER_PASSWORD 固定为 service.json 密码;官方机制=不设则每次启动随机生成)。真机 E2E 绿(debug-entry→SessionList)。app 侧 V2 探测修复(可观测性缺口)仍待做
-  - 2026-09-27 根修：/api/event 线面探针接替 /api/health（2.0.16+）；真机 v2 回路绿（条幅恢复 7s 消失）。服务器侧 v2 systemd 服务化+固定密码已就绪。
+- [~] **#508 展开反射锚定归一分支丢一个 item 高度——中位小 item 构型展开恒 −1024px 视口跳变（违「卡钉住」裁决）** `chat` `scroll`
+  - #466 normalizeExpandAnchor 链尽 fall-through 丢弃越界折算的整 item 高度：逆布局可见链只含锚 item 自身（新侧已滚过不可见），rawTarget=fiso+H 超锚 item 旧尺寸时返回 (锚idx, fiso+H−旧尺寸)，目标位恒短一个 item 高；实测展开位移 = H−锚item尺寸（与 fiso 无关，本例 1335−2359=−1024 两次复现同值），卡头 y1995→1074、上方条目逐出、~790px 空白带不自愈
+  - 触发构型：中位 fii>0 且锚 item 尺寸 < fiso+H（T9 真机矩阵 2359px 分片条目首踩）；作者原设计场景 fii==0 半贴底时 item0 为流式巨轮恒大于 fiso+H，折叠分支从未真跑过——现有单测 normalizeCrossesIntoNewwardItem 把 (0,273) 错值钉成预期（注释称数学等价，实丢 747px）
+  - 修复须辨卡片宿主 item：宿主=锚 item 时增长同遍落地 (fii,fiso+H) 恒合法（fiso≤尺寸 ⇔ fiso+H≤尺寸+H），无需预折；宿主在上方 item 时才需向旧侧链折算且用增长后尺寸——方向/尺寸双修正，BottomPinnedExpandSkipTest 三用例需重写
+  - 根修完成（2026-10-03 07:46 真机三连试验）：normalizeExpandAnchor 重写为宿主感知——折叠方向转旧侧(idx 递增，逆布局折叠正方向)+宿主容量+H+宿主未知按锚兜底；CML itemsIndexed 逐 item 提供 LocalCardExpandHostKey；单测重写（旧 normalizeCrossesIntoNewwardItem 把 (0,273) 错值钉成预期已纠正，新增 T9 数值化回归钉子与 host>锚 AP 不变量双例）。真机验证：触发构型（item15 增长前 2359 < rawTarget 2716/3586 两档深度）下 host=15=锚 → LRef 原样写 off=2716/3586（旧码会写 357/1227 造成 2359px 跳变），卡头 Y 三例 1307/2177/1930 全纹丝不动，零空白带；收起镜像 1381=2716−1335 精确不变。commit 待推
 
-- [ ] **#441 app SSE 长连接随机断连：输出期间渲染静默（服务端正常）** `bug` `dsh`
-  - 二十四/二十五世轮实证：DSH 服务正常（RPC accepted、服务端 turn 照常完成并生成标题），app 侧 MDPilot/渲染全静默；重启 app 即恢复。疑电池优化杀后台 socket（横幅曾警告）或 SSE 重连缺失。
-  - 毒害流式测试通道（多轮'队列 stall'误诊实为此）；也是生产可用性缺陷。
-  - 2026-09-28 方案A 子项一(静默哨兵)交付:DshSilenceWatchdog(纯逻辑,虚拟时钟,7例TDD)+引擎接线(帧喂食/监控协程15s/判死→close走既有退避重连)。两轮真机实证收敛出关键结论:期望源在引擎层不可用——常开=空闲110s周期重连循环(follow后无帧);挂follow open=fire-and-forget无回执必判死;respond走HTTP独立通道与WS帧流无关。正确源=ChatUiState streaming(SseConnectionManager层onStreamingChanged接线),与follow End自愈状态机同批(A2)。当前态:哨兵待命(帧喂食在,判死门常关=零误杀,210s+空闲观察0判死,连接Online authed)——A2接线即激活
-  - 2026-09-28 方案A 子项二(A2)交付:①streaming 期望三跳接线——SessionStateService.activityFlow(任一会话 activity 非空)→SseConnectionManager collect(distinctUntilChanged)→dshFrameSources 转发(DshFrameSource 接口新增 default 钩子,协议路由源覆写→mux 哨兵)——A1 待命态判死门通电;②follow End/StreamError 自愈——原 End 分支 Unit 无动作(定罪点)改为清 followed 幂等集(followSessionIdOf 纯函数反解,3例TDD),事件驱动补开(#319)/聚焦请求(#333)不再被去重拦截;不自动立即重开(End=正常消亡,防风暴)。验证:10例测试绿+全量单测绿+真机空闲0判死+等待期FSM未Busy时门关自洽(链路行为分析闭环)。trip 正例留待 #441 真实场景(不可按需构造)
-  - 2026-09-28 方案A 子项三(A3 网络切换 kick)交付:①NetworkMonitor 增 NetworkIdentity(handle=Network.getNetworkHandle 稳定句柄+主传输)与 networkIdentity StateFlow——onCapabilitiesChanged(validated)更新身份,onLost 仅当前身份网络清空;回调工厂提取 createCallback() internal 可测缝(纯提取重构生产行为零变化,绕开单测 android stub:NetworkRequest.Builder.addCapability 返回null)。②OpenCodeConnectionService 增 networkSwitchKickJob:identity 流 drop(1)+debounce 2s(切换竞速防抖)+distinctUntilChanged→reconnectAll;onDestroy 与 recoveryJob 同步 cancel。③SseConnectionManager 死注入清理:networkMonitor 构造参数删除(kick 统一 Service 层;调研§5.3'接线或删除'取删除)。TDD:NetworkMonitorIdentityTest 4例(validated追踪/同态切换identity变化且NetworkState恒Available盲区前提自证/仅当前网络lost才清/unvalidated不成为身份)全绿+全量单测绿。真机自动验证不可行:WiFi切换/飞行模式都断无线adb(serial即WiFi adb),同A1哨兵trip正例先例留真实场景——用户日常网络切换后 logcat 搜 'Network identity switched' 应见 kick。
-  - 2026-09-29 用户裁决:A3 网络切换 kick 真机暂不可测(会断无线adb)→待观察:或由 agent 侧模拟测(ConnectivityManager 双网络回调仿真不可行,系统层注入无门;可做=USB adb 有线连接下 svc wifi 切换——serial 走有线时不受影响,待执行)。3 周观察窗(至 2026-10-19):无反馈即关闭待观察标记。
-  - 2026-09-29 用户质疑「不是根因修复」分析与回应:三子项分界诚实裁定——A2(follow End 清幂等集)=根修(修「订阅状态不跟随终结事件」的状态机缺陷);A3(网络 identity 流)=根修(修「同态切换零信号」的感知盲区;半开本身是传输层固有特性,应用层只能检测+重连);A1(静默哨兵)=纯自愈,未修「为什么会静默」——其上游根因(电池优化杀 socket/传输半开/服务端行为)未定罪,原调研「先 B 探针后 A 自愈」的顺序被跳过直接做了 A。风险披露:A1+A2 组合存在未验证的误杀通道——streaming 期(门开)若服务端正常长思考>110s 无帧会 trip 误杀(此前真机实证仅覆盖空闲态 0 误杀,长静默流式场景未验)。提案(待用户裁决):B 定罪探针批次——连接死亡现场快照日志(异常时刻:存活时长/最后帧距今/退避计数/电池优化状态/网络 identity 对齐),下次真实断连自动落袋证据→定罪上游→根修;同时标定长思考流式的真实无帧间隔分布,校准 110s 阈值或加 streaming 心跳请求。
-  - 2026-09-29 A3 实测尝试结论:真机双 adb 通道均无线(WiFi 直连+mDNS 无线调试),无 USB 有线 serial——切换 WiFi 必断 adb,agent 侧物理不可达(需用户插 USB 线或提供第二 AP 凭据后 agent 可代测)。按观察窗处理(至 2026-10-19 无反馈关闭)。
-  - 2026-09-29 B 定罪探针一期交付(用户裁决'相当于探针埋点吗?可以做'):lastEventAtMs 每服务器最后事件时间戳表(SSE 事件入口打点)+backoffWithSchedule 快照日志(death-snapshot server/attempt/lastEventAgoMs——退避重连必经点)。判读法:巨大 lastEventAgoMs=连接活着但长期无事件=静默型死亡(哨兵域,上游为服务端/半开);小值=事件流活跃中断=传输断(上游为网络/系统杀)。完整版二期(电池优化状态/网络 identity/断连异常栈)待一期数据回流后按需接入。同批:#463 V1 兼容调研结论——DB 实证三服务器均'每 step 一条消息'(assistantMsgs≈reasoningParts),现有消息边界装配已全兼容,无需改动;用户看不到分割线=完结 turn 折叠为计数行(#422 语义),展开后可见。
-
-- [ ] **#438 流式突发路径收尾：gate 时间限速与配对 set 保 key** `streaming` `scroll` `#437`
-  - 真机 R9 实证两残差：①catch-up 期 gate 按 400ch/48ms 释放而 measure 滞后聚合（442ms 聚 7 批=单 note d=6236）；②大额配对 set 走 requestPositionAndForgetLastKnownKey 核销锚 key，突发期新 item 插入+重排后 LazyList 按字面 index 重锚（LEAP -7562 视觉大跳）
-  - 修法方向：gate 释放按壁钟限速（与到达解耦）；配对 set 后在同帧重建 lastKnownKey 或改用保 key 的定位通道
-  - 证据：docs/journal/2026-09-25-437-streaming-md-stable-reveal.md 验收十轮；/tmp/t9_log.txt /tmp/f9 帧
-  - 2026-09-27 #438① 已落地：gate 大放行壁钟限速（BIG_RELEASE_CH=200/间隔≥200ms，与到达解耦）+ releaseLength maxReleaseChars 参数（空行毕业段纳入批预算）；真机 gran-run4：append max 1023-2087→200。②配对 set 保 key 未动（下轮）。
-  - 2026-09-28 深度调研(issue438-research.md):①已完整收口;②键回写机制在但覆盖有洞——R-1 targetKey 仅落点在 visibleItemsInfo 内才解析,越窗 null 仍按裸 index set(R9 LEAP 残余通道);R-2 新发现死接线:shouldYieldPairing 记忆变量 lastSetFii/lastSetFiso 声明在每帧执行的 PreDrawFlushTask lambda 体内(ScrollCompensation.kt:366-369),每帧重置→让位防御从未生效(#444 嫌疑(a)直接对应物,与 issue442 调研交叉互证);方案A(M):resolvePairedTarget 纯函数+null-key 熔断+记忆缝修复+TDD 3-4 例
-  - 2026-09-28 R-2 让位防御死接线已根修:lastSetFii/lastSetFiso 从 PreDrawFlushTask lambda 体内提到工厂函数体(闭包捕获,记忆生命周期=task 实例)——修复前每帧重置 null,shouldYieldPairing 外部 pending 让位分支(cb733d80 引入)在生产从未生效。TDD:FlushTaskMemoryTest 新增 2 例(红→绿:跨帧记忆+让位触发/实例间无泄漏);全量单测绿;真机流式冒烟 flush/release 配对正常。R-1(null-key 裸 index set)未动——方案A 剩余项
-  - 2026-09-28 R-1 null-key 裸 index 通道已根修:resolvePairedTarget 纯函数提取(可见窗换算原逻辑+越窗 dataKeyAt 数据侧 key 投影兜底——chatEntries.entries[i].key 与 LazyColumn item key 同源含 chunk 后缀);装配 ChatMessageList dataKeyAt 投影+remember key 加 chatEntries(重排后记忆清零语义正确)。TDD:ResolvePairedTargetTest 4 例(窗内换算/越窗投影/无投影退旧通道/投影miss退null);全量单测绿。至此 #438 方案A 三件套(R-1 熔断→投影/R-2 死接线/测试锚)全部落地
-
-- [ ] **#437 流式Markdown稳定揭示渲染——安全前缀两级放行(稳定块+纯段安全后缀),消灭不稳定尾回溯跳变** `sse,render,perf`
-  - 根因:不稳定尾先字面排版后回溯重释义=已显示内容高度回溯(真机录屏A-B翻转帧定罪);#435引擎只能配对单调增长。方案:pilot差分与append之间加SafePrefixGate(库与渲染零改动):稳定块+开放段纯文字安全后缀两级放行,尾部扣留超龄进锁高降亮区,完结EOF全量flush。spec:docs/specs/2026-09-25-437-streaming-md-stable-reveal-design.md(阶段A-D+验收矩阵)
-  - 2026-09-28 深度调研(issue437-research.md,204行):核心根因已由 SafePrefixGate 消灭有二十余轮定量证据;剩余=验收收口+关联残差分卡。R-7 重要发现:beta/stable 双关闭,修复仅 dev 生效(build.gradle.kts:108-118);铁律文档 sse-scroll-stability-iron-laws.md 未收编#437 内容(文档同步缺口);#450 是本卡判据放宽的直接次生回归(教训建议进铁律)
-
-- [~] **#435 #433 高度引擎统一化——流式增长/COMP-MSG/GUARD整合进引擎配对体系(用户裁决)** `chat-ui,architecture`
-  - 用户裁决:所有高度相关处理统一到高度引擎。现状断层:48ms批流式增长直接改布局绕过引擎→GUARD事后拉回(snapshotFlow版一帧滞后,已作缓解层装机);COMP-MSG补偿(ChatMessageList layout{}注入)与steady配对(引擎dispatchRawDelta)两套并行。目标:流式item增长纳入steady同构配对(dispatchRawDelta同帧,与卡片增长一致),COMP-MSG/GUARD/流式锚定并入PreRenderCoordinator flush体系,单一视口权威。依赖:真机活跃流式窗口验证(本轮两次16s录屏窗口agent均空闲,需用户配合制造流式)。
-  - spec 定稿:docs/specs/2026-09-25-435-height-engine-unification-design.md——统一配对规则 pair(Δ)⟺anchor==S∧fiso>0(锚即意图:贴底跟随族/读历史一律免派发,尾段阅读同帧+Δ配对);通道drain无豁免/引擎steady无豁免/stream-instant三层同批封堵;PreRenderShiftChannel+DeferredRevealCompensator+shouldCompensate机器退役
-  - 实现+单测+真机核心判决(零GUARD/14次贴底免派发/无锯齿)完成,残余两构型单测已锁待用户真机复核;spec+三篇调研+journal 齐备
-  - 终判(12:22):三构型真机全绿——贴底33条免派发零GUARD/尾段14条pair全额消费fiso精确推进/读历史零派发视口冻结;证据链完整(单测16+录屏+logcat),待用户验收
-
-- [ ] **#432 思考卡收起高度变化/偏移竞态诊断(#432):15轮仪器矩阵未复现主诉,实锤prewarm早熟+滚动锁死** `chat-ui,perf`
-  - 用户主诉收起时高度变化+双向偏移竞态。真机矩阵(3卡型×toggle×连点×交替×录屏逐帧)全部判绿(锚点±4px守恒,塌缩单帧)。实锤:①prewarm集体触发(同秒9卡,H=0/18早熟settle→展开偏移根源,已修2da3b6d0);②滚动死锁(fling+tap后列表锁死,跨install -r持久,pm clear毁现场未定位);③环境:opencode服务器API漂移(SSE返HTML)。待用户提供复现录屏/路径。
-
-- [ ] **#431 #431 滚动穿大表单帧巨块——巨型 text part 单片不可分+首组代表测/解析成本** `perf` `chat` `ui`
-  - 过程默认展示(#430)后滚动穿表成为新付费点:实测 6 次滑动 Skipped 102/58/60/64/69/47(每屏 0.4-0.85s 冻结)
-  - 根因:sliceStepGroupBodies 只在 PartGroup 边界切片,10193 字符巨型 text part 独自成片(≈5 屏),进窗单帧全量组合(markdown 解析+表脚手架+首组代表测);v4 表内分批只覆盖表格首组合,不覆盖片级首帧
-  - 候选:A 片内 markdown 块级分段(Stage B 语义下沉到窗口体) B 表格列宽跨回收缓存(naturalWidths 每片重付 48 次测量) C 片粒度细化(1 屏→1/4 屏,冻结块×4 小但更频)
-  - 修复落地(2026-09-24,提交见 journal 批次十五):
-  - A 巨型 text part markdown 块边界分段(splitHeavyTextPart/markdownBlocks 纯函数,
-  -   表格/围栏代码原子,贪心装段≤2200 字符;合成 part id#sgN)——万字符 part 不再
-  -   独自成片,窗口化按屏付费;
-  - B 表格列宽跨回收 LRU(NaturalWidthsLru,容量24,键=fontSize+全文)——回收重入
-  -   零重测(原每表 48 次测量×4 表≈150ms)。
-  - 真机前后对比(同参数 12 次滑动穿表):基线 Skipped 102/58/60/64/69/47(6 次冻结
-  - ≈3.4s)→ 优化后 1 次 Skipped 35(且与刷新率切换系统事件同帧);热轮回滚再 +1 次
-  - 45。渲染完整性判读通过(行序连续/列对齐/无断表)。单测 7 新用例全绿。
-
-- [ ] **#430 展开向上顶——稳态迟到增长零配对+欠账派发时序** `perf` `chat` `ui`
-  - 主诉:reverseLayout 下各类卡片展开有时向上顶而非向下(2026-09-24)
-  - 根因三层:①episode 单时刻配对,settle 窗外增量(分批表格/asyncParse)无主;②dispatch 瞬态 0 消费(增长晚一帧落地→内测见旧高→PairedDispatch 放弃);③连锁=reveal 被顶出视口→切片窗口断粮→表格永不组合
-  - 修复:稳态账本(measure 记账 Δreport)+pre-draw flush 同帧派发+欠账 rebase(pending=目标−实消费)+派发门控 rep>0+残量 2s 重试窗+H 目标=落地高度
-  - 终验:冷展开 topY 2051→2051 精确归位,Σd=Σconsumed=36612 完美守恒,表格 36660 完整组合;收起锚点精确恢复;ANR/crash 0;单测含 5 个新用例全绿
-
-- [ ] **#429 大卡渐进展开:消除3~5s等待+白屏揭示,展开动画与高度计算流水化** `perf` `render` `ux`
-  - 实测:预热门265ms/未预热~2.4s/真冷3~5s;定罪:toggle全列表重组风暴(StateFlow<Map>)+表格240可选中文本单元单帧2501ms排版+part边界切片使窗口化失效;白屏=PhaseA落地与drawF起步区间
-  - 方案分层L0(风暴收敛+表格退出Selection+解析缓存)→L1(表格行组切片)→L2(首窗即时)→L3(完全体渐进);可行性与证据链见 spec 2026-09-23-progressive-card-expand-design
-  - 关联:#428(收起跳变已修,白屏同族解析缓存已备);约束:不回归逐帧全量布局族/不渲染后补偿
-  - 用户裁决(2026-09-23):L0+L1+L2+L3 全量一次到位,不分层交付;表格逐字选择放弃,以「长按单元格弹菜单:复制此格(纯文本)/复制整表(TSV)」补偿
-  - 进度(2026-09-24):L0 交付(d3462892,风暴收敛+表格退出选择,62ms 预热门首开);L1 虚拟化一次尝试回退(双测崩溃/窗口抖动/估高偏置三轮修复后,阻塞于 containerWidth=0 首测列宽错误+跨遍槽位别名→错误高度污染账本);L1-v2 设计=每组独立 SubcomposeLayout+Column,下轮实施
-  - 进度(2026-09-24):L1-v2+L2 交付——每组独立 SubcomposeLayout+Column,组高走放置回调,首窗=视口+1屏,更深组折叠线下渐进组合;视觉对原版基线一致(ref0 裁决),真冷首开~1.2s/暖 81-94ms,零崩溃零ANR;L3 被构造吸收(可见域恒先组合后揭示)
-  - 调整(2026-09-24 用户裁决):L1-v2 虚拟化因展开后滑动巨卡回退(组入窗组合落滚动帧);恢复原先算高度架构+新增 loading 过渡(引擎 onExpandComputing 信号+折叠行 spinner,计算期可见反馈);滚动流畅复验零长帧;spinner 视觉取证待设备可用
-  - loading 修复(2026-09-24):①跨条目接线(LocalStepGroupComputing 共享表,大组#sgh外层行与卡体不同 LazyItem)②先行帧(invoke(true)后等一帧再 warmup——spinner 重组否则与重组合同帧被压 2.3s);终验 state=true→行渲染 10ms,2.4s 窗内圆环像素验证可见;收起回归绿
-  - 后台化调研(2026-09-24,用户指示):组合/测量不可后台(WindowRecomposer绑定UI线程,官方源码定罪,1.7-1.12无API);可后台=解析(已做)/列宽StaticLayout预测(PrecomputedText官方路径);官方推荐原语=PausableComposition分帧+movableContentOf保活+Canvas直绘;文档 docs/research/2026-09-24-compose-background-compute-feasibility.md(含本地实证附录);时间切片WIP已stash待裁决
-  - ## 追加批次十一(#429 A+B:时间切片三轮定罪,v4 终案交付)
-  - - **信号方案三轮定罪(全数退役)**:①子树 CompositionLocal——大表 >2048 字符走 async parse(#428),表格实际组合晚于展开计算窗口(settle 提前判稳,items=…:25680 表格独立条目),Local 够不到;②进程级全局信号——toggle→重组→effect 帧序竞态(重组先于 effect),首组合读初值结构性错位;③v3 首组合恒分批——MDT429 定罪日志实证分支已进(60 行表被 markdown 源拆为 4 个 MarkdownTable:62/63/2/61 行,grouped=true)但 Skipped 114 帧仍在:巨帧主源=naturalWidths remember 全表 1116 次 TextMeasurer.measure(×4 表≈950ms)同步执行,帧步进器只分批组合未分批宽度测量。
-  - - **v4 终案(MarkdownTable.kt)**:①stagedLimit=remember(content,tableNode){grouped?1:MAX}——首组合恒分批,每帧+1 组(withFrameNanos 让帧),组合完成全保留(滚动=单体,v2 教训);②naturalWidths 只测首组代表行(表头+8 行=54 次≈40ms),后续组超宽单元格走既有多行 wrap 语义,宽度恒定零重排;③与 PREWARM 既有机制协同——冷启动后空闲预热期渐进完成组合,命中即 266ms 展开。
-  - - **B(movableContentOf)真机否定撤除**:re-expand 实测连续 Skipped 41/40/45/51/53(≈400ms×5)——移回虽免组合,36612px 全量测量仍在单帧执行,组合免了测量没免,收益为负;撤除后 re-expand 走 staged 同冷路径。
-  - - **真机证据(小米 houji 120Hz)**:冷点击(预热未中)Skipped 74/53/33/32/31 五段渐进(v1/v3 单帧 114/116)——分批实证工作,帧间让出主线程;预热命中 266ms 零跳帧;H 精确(items 20:36660,表格 36612);episode 2165ms(冷)vs 266ms(预热命中);ANR/crash 0;TableGroupBoundsTest+全量单测绿。
-  - - **rig 勘误**:uiautomator dump 持续陈旧(一律截图+多模态定位);heads-up「无线调试」通知遮挡+断连期点击无效;服务器迁移事故(16:47 用户整理,旧 4199 服务数据入回收站)——从 Trash db 迁回目标会话(session_v2+19 message+project 依赖)到新服务库(49374,reverse 重映射),会话列表恢复;滚动落点漂移需视觉闭环;Choreographer「Skipped N frames」分段分布=渐进分批的现成判据。
-  - - **遗留(V6 人工验收清单)**:spinner 帧级旋转直接证据未捕获(点击落点漂移+248ms~2s 窗口,连拍/录屏两法均被误点打断)——代码逻辑链(onExpandComputing→LocalStepGroupComputing→fold row spinner+advance-frame 修复 cb7cbf47+五段渐进的帧间让出)推证充分,请用户真手指验收「点击大表展开时圈圈是否持续转动」;展开态 fling 专项未跑(组合完成后全保留=零回归 by design)。
-  - #429 后续(2026-09-24):分批使大表高度增长跨越 settle 窗逐帧落地,窗外增量零配对
-  - =「展开向上顶」主诉（与 #430 两层时序洞叠加）；#430 稳态配对+欠账协议修复,冷展开
-  - Σ 守恒/topY 精确归位。见 #430。
-
-- [~] **#428 大卡收起闭合帧后一帧视口重填 268px 跳变(LazyList 不满视口二遍填)** `perf` `render`
-  - 收起锚点恢复后视口 items 总高 1930<2400,下一帧 LazyList 补齐=268px 单帧上移泄露(100%复现,与渲染解析无关——三假设两否一立)
-  - 候选:FLUSH 拒绘闭合帧hold到视口稳定/恢复位预填/beyondBoundsCount 试验;同族:批次十三c 锚点重推导泄露
-  - 取证链+工具沉淀见 journal 2026-09-23 追加批次四
-  - 修复(2026-09-23):根因修正——二遍填非新条目组合,是恢复位邻域条目(#s1 TurnChunk 段,含 101 字符小文本 part)闭合帧原子重组时走异步解析路径首帧 State.Loading 短高 199px 入测,Default 解析完成后次帧回填 467px→其下内容 +268px 二次重排=「上推1~3帧后高度复位」;ItemSize428 逐条目探针定罪(p5/p6),多模态取证排除 loading 圈观感(占位帧内容超绘、槽位错位)
-  - 修复落点 MarkdownContent.kt:≤2048 字符文本 part 改 remember 内联同步解析(库 parseMarkdown 非 suspend 纯函数,组合线程有界 1-3ms,非 runBlocking 家族),首组合首测即终高;>2048 保持异步(84ms 冷滑巨帧防线+registry 预解析覆盖)
-  - 验证:基线红 5/5(b1/p3/p5/p6/fix1)→修复绿 5/5(fix2/fix4/v1/v2/v3,POST_CLOSE_RED=0,#s1 首测即 467,覆盖新装/会话重进/不同锚点);单测全绿;回归 6 连点+3 fling+会话重进无崩溃无 ANR 无集退出异常
-  - 勘误:诊断期 short-text 假设证伪不成立——当时改道库 rememberMarkdownState 同样首帧占位(parse 在 LaunchedEffect);残余同族风险:>2048 字符 part 在 registry 条目被视口离场逐出时仍可占位一帧,加固项(registry 保留/LRU)另记
-  - 同族加固落地(2026-09-23):MarkdownParsedStateCache(LRU 32,内容为键,Loading 拒入)接入 rememberAsyncMarkdownState——命中即同步终态,覆盖 registry 视口离场逐出与 <200 字符门槛两类 miss;单测 7 例+真机双收起绿(k1/k2 POST_CLOSE_RED=0)+回归无 ANR
-
-- [ ] **#423 PreRenderCoordinator 集中式渲染前计算模块** `render` `architecture` `stability`
-  - 集中式渲染前计算/视口配对模块:意图层并行声明+底层单写者串行帧事务,统一全部卡片展开/收起稳定性(十一轮竞态根因收拢)
-  - 已裁决:全量收编(D1)/统一动画契约含大组(D2)/流式入队分两步(D3)/每步人工手感验收(D4)/反射炸弹 Phase0 护栏(D5);五不变量 I1-I5
-  - 六路调研已归档+spec v1 已写,待用户签收后按 Phase0-4 小步迁移
-  - → docs/research/pre-render-coordinator/00-synthesis.md
-  - 实施开工(2026-09-22):P0 完成——八环仪器固化 scripts/prerender+基线留档 07(红环4 RED:展开落地+198px 瞬态=用户否决闪现,帧级证据);Phase0 完成(26a94b3f 反射探针可测缝+BOM 冒烟单测 3/3 绿,当前 BOM 2026.08.00 未装箱巧合仍成立);Phase1a 视口租约接线中(withEpisode+A3/A4/A5/A6/A9 让位,新增 8 单测全绿;fb3478f6 P0)
-  - 批次一完成(2026-09-22):Phase1a 视口租约已合入(f6a4a314)——episode 全程持租约,A3/A4/A5/A6/A9 五点让位,单测 +8 全绿,全量套件绿,真机同场景零回归(红环1 GREEN 保持/账本数学逐帧一致)。+198px 展开落地瞬态已在 07 基线留档,属 Phase1 主体(引擎迁入)消灭对象。待用户 D4 手感验收。journal: docs/journal/2026-09-22-423-prerendercoordinator.md
-  - 双轴评审收口:Standards 阻断项(MSGEFFECT 复查漏租约)已修复合入;Spec 轴三范围判定忠实。评审建议登记:reanchorWhenSettledOffBottom 六参谓词束 Data Clumps——Phase1 主体引擎迁入时随协调器统一收编,不单独重构。红环2 补跑 GREEN(FLICKER none)。D4 手感验收待用户。
-  - 批次二(闪现根修,用户手感报告驱动):pre-pair 同遍合并+FLUSH 拒绘单点+PRD 帧级观测体系。802ms 未配对窗口→7ms;topY 逸出 0;episode 355ms;像素单帧零过冲。反射定论:无需(相位纪律即可)。commit 634a3e11。待用户手感复验(含 M2:下方内容单帧跳变是否可接受)。
-  - 批次三(步骤组顶开根修,用户三报告驱动):FLUSH 实测钉位统一契约(预测配对退役——LEAP+回收双雷,帧级实证 LeftCompositionCancellationException);组尾收起行(小组+大组);重内容首帧占位。折叠行 1100→1100 分毫不动;思考卡同路径回归;全量绿。待用户手感复验。commit 805c0e84。
+- [~] **#504 DSH 完结换装闪塌——seq 换装重键 Markdown 状态致 200px 占位 260ms（#504）** `dsh` `streaming` `completion` `regression`
+  - 真机定罪（19:02:33 帧级）：流式卡 8754px → MessageRemoved+seq 换装 → 新 part id（dsh-tXs1_text_ord_1→seq-N_text_ord_1）重键 Markdown 记忆 → 8KB 文本异步解析先以 200px 占位合成 → 260ms 后回弹 8778px。用户所见「结束时出现一次」的塌-弹。SSE 路径 part id 恒定无此症——DSH 合成 id→权威 id 换装特有，#485 完结闪灭家族的 DSH 变种。
+  - 修法：PartContent 文本分支完结桥接——bus live 清除瞬间不立即跌回 part.text（异步占位），保留渲染上一帧 live 全文（与终态文本一致）至终态 Markdown 解析完成原子交接。零闪塌零额外解析。
+  - 修复落地（2026-10-02 深夜，五轮真机取证迭代）：①Compose 派发次序定罪（旧节点 onDispose 恒晚于新节点 remember）→dispose-stash 改活跃指纹登记；②库 StreamingMarkdownState 对新收集器零重放定罪（hold 渲染空态 200px）→状态实例交接改指纹门+换装帧同步解析（rememberSyncMarkdownState，normalizeForRender 同源视觉恒等，一次性 ~10ms 主线程）；③严格相等恒 miss 定罪（pilot 终帧落后终态 2 字符）→尾差容错 512；④prefix=false 定罪（完结对尾部区域 ~16 字符改写非纯追加）→公共前缀+尾部重写松弛 256（分叉点须落两串末 256 内，中段分叉恒 miss）；⑤单槽 last-writer-wins 定罪（推理块终态 1165 抢占正文 3988 指纹）→多槽 LRU×4 全槽遍历。全量 3863/0/0（+7 交接门用例）；[504-forensic] 取证探针 DEBUG-only 永久保留（keep-probes 裁决），miss 自动吐槽况。最终换装 E2E 被当夜无线闪断阻断——留用户自然使用验收，探针自证。
+  - 真机终验通过（21:33，K8s 2500字长答）：换装帧  首测即全高——零 200px 桩、零回弹（修复前形态 h=200 d=200→d=10330 回弹）；换装时刻零 forensic miss（指纹桥命中）；同步解析成本无感知帧损。#501-#504 四连修全部真机闭环。
+  - 深层根修补充（同批）：part 组合键归一化（PartIdContract.swapStableKey——派生 id 取 kind+ordinal 后缀，消息级 t_ 已有 #440 槽位锚）→ 换代子树存活，#472 hold 机制 DSH 首次可用，指纹桥降为二线。真机 t36 换装帧首测全高 h=17554 零闪。
 
 ## P2 — 优化与锦上添花
 
-- [ ] **#471 完结瞬间高度跳变族:StepGroup整树互换+>2048字符Loading塌缩+归一化重排** `chat,markdown`
-  - 2026-09-30 调研 P2 定罪:①多消息 turn 完结时 StepGroup 流式平铺↔折叠组整树互换(探针注释自认结构性高度跳变源,数千 px 级,冷账本 24dp 桩帧,MessageCardAssistant.kt:428-479);②>2048 字符正文完结切 pilot→async 首帧 Loading≈0 高再 Success 全高(#428 同族 +268px,MarkdownContent.kt:603-715);③完结归一化变换(数学围栏/任务列表/长段空行化)只发生在完结=一次性重排。方向:②pilot 终帧同步换入/缓存预热收益最明确;①依赖 L3 AST 切片既有计划。另:setext 升格(SafePrefixGate 自认缺口)+tight→loose 列表+CRLF 表格三小项随 markdown 批次顺带。
-  - 2026-09-30 #472 修(②完结 Loading 塌缩):真机定罪在手——断连重连恢复换装时 RESIZE t_msg_0e641a99a001 h 1105→865(d=-240)→1580(d=+715) 41ms 两连跳(=Loading≈0 高帧→Success 弹回,与正常完结换装同构);另 RESERVE align-flip overflow=-62 佐证帽负溢出。根修:pilotTerminalHold 纯函数(pilot 曾渲染∧async 未就绪→完结帧保持 pilot 终帧)+asyncTerminal 提升固定组合位(条件创建,hold 期与切换后同实例零重解析,collectAsState 响应式解除);残余归一化差由帽配对吸收。TDD 3 例红转绿+全量单测绿;①StepGroup 互换与③归一化重排为残余(量级小于已修,另批)。
-  - 2026-09-30 修复交付(②完结 Loading 塌缩):真机定罪——重连恢复换装时 RESIZE t_msg_0e641a99a001 h 1105→865(d=-240)→1580(d=+715) 41ms 两连跳(=Loading≈0 高帧→Success 弹回,与正常完结换装同构);另 RESERVE align-flip overflow=-62 佐证帽负溢出。根修(12f8214b):pilotTerminalHold 纯函数(pilot 曾渲染∧async 未就绪→完结帧保持 pilot 终帧)+asyncTerminal 提升固定组合位(条件创建,hold 期与切换后同实例零重解析,collectAsState 响应式解除);残余归一化差由帽配对吸收。TDD 3 例红转绿+全量单测绿+装包。①StepGroup 互换与③归一化重排为残余(量级小于已修,另批)。待用户复验:完结一瞬无塌缩弹开。
-  - 2026-09-30 用户验收通过(②完结 Loading 塌缩):茶文化轮判定链+高度序列双证据——完结帧 hold=true 拦截 Loading(19:00:10.772),144ms 后 async 就绪无缝切换,全程高度差仅 ±24px(归一化微差,一行文字高);对比修复前同场景 -13171/+12824 两连跳。残余:①StepGroup 边界换装(轮次开始/结束各一次 845→1492)与③归一化重排量级小待后续;新发现④SSE retry 恢复场景:重连后内容跳变重组期 pilotEverRendered 丢失(ever true→false 实证)→塌缩 -8575px 仍现,仅断连续传时发生,正常轮次不受影响——随 retry 路径稳定性专项处理。
+- [ ] **#495 TODO 入口空态泄漏（V2/DSH）——todoCapable 死状态与 #85 登记矛盾** `dsh`
+  - FAB TODO 入口无能力位门控；ChatViewModel.todoCapable 探测全仓无消费（死状态）；V2/DSH 入口常驻但 TodoSheet 恒空态（DSH getSessionTodos 恒空表=探测成功）。
+  - v1-v2-differences #85 明文要求 V2 隐藏 Todo 入口未落地——2026-09-07 审计 E-1 漏网项；修法=入口挂能力位。
+  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D1
 
-- [ ] **#465 UI 暖态下点击偶发失效(冷启可靠,间歇性)** `chat-ui`
-  - 2026-09-29 #461/#462 取证副产物:force-stop 冷启后输入 tap 可靠命中,暖运行后同坐标偶发零效果(无日志无 UI 变化,vibrator 反馈存在);复现条件未锁定——暖态 35min 点击仍正常(4 条 episode 日志实证),失效为间歇性非持续态。影响面=自动化验证可靠性,无用户主诉不阻塞;再撞上时现场抓 input dispatcher+app 双侧日志。
+- [ ] **#494 DSH 权限预设下拉夺焦点收键盘——与 #361「菜单不得收键盘」裁决冲突** `keyboard`
+  - PermissionPresetSelector 用默认 DropdownMenu（focusable=true）→ DSH 输入框聚焦时点权限 pill 键盘收起；同屏 busy 气泡已按 #361 显式 focusable=false 保键盘。
+  - 仅 DSH 渲染该控件 → 同类轻量选择两套键盘策略按端不同（用户键盘不一致感知的真正近亲）；修法=同款焦点策略或非夺焦点容器。
+  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D5
 
-- [ ] **#464 UI 暖态下列表/卡片点击偶发失效(冷启可靠)** `chat-ui`
-  - 2026-09-29 #461/#462 取证副产物:force-stop 冷启后输入 tap 可靠命中(会话行/卡标题),同一 app 暖运行数分钟后点击同坐标零效果(无日志无 UI 变化,vibrator 反馈存在=命中可点击元素但未触发业务);两次独立取证会话复现,冷启后恢复。疑点:点击消费被某 overlay/焦点态拦截或状态门;影响面=自动化测试可靠性,人工使用未报告。待真机复现窗定罪(diagnosing-bugs 流程),暂无用户主诉不阻塞。
+- [ ] **#493 模型抽屉键盘保持——切模型不收键盘（三端共享改造）** `keyboard`
+  - 真机实测三端一致为「收起→抽屉→回弹」（ModalBottomSheet 独立窗口必夺焦点）；2026-09-30 用户裁决基准=不收键盘。
+  - 实现方向：换主窗口内非模态呈现（Popup(focusable=false) 容器或布局内 BottomSheet），保留返回键/点外关闭、scrim、75% 固定高、#379/#405 手势隔离语义；共享组件=三端同改（影响面已裁决）。
+  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §一
 
-- [ ] **#459 V2 2.0.18 消费侧 14 端点漂移清单（health/question|form request/pty shells/share/rename/service stop 等 404）** `regression,v2,data`
-  - app 调用面 45 点中 14 点在 2.0.18 openapi 缺失（全 404 实证）；真机主链路不受影响（探测器/PATCH session 等降级路径实证），但 question/form 轮询兜底、pty shells、share、service/stop 在 2.0.18 下不可用。详见回归报告 §1.2/缺陷 D2
+- [ ] **#489 FileViewer 语法高亮 span 多染一字符（PhraseLocation.end exclusive 语义误用 end+1）** `ui` `bug`
+  - 高亮影响面调研副产物（2026-09-30）：highlights 库 PhraseLocation.end 为 exclusive 语义（官方 README emphasis(13,25)→ExampleClass 占 13..24 + NumericLiteralLocator 测试双证），HighlightBuilder.kt:39 的 end+1 使每个高亮短语尾部多染 1 字符
+  - 证据链与修复建议见 docs/research/2026-09-30-code-syntax-highlighting-impact-analysis.md §1.1.d；修复=去掉 +1（一行）+ 对照既有单测；注意与聊天域高亮组件（#488）的防御写法保持同语义
 
-- [ ] **#458 DSH 0.1.7 错误码税则漂移：39 值点式闭集全面脱节** `regression,dsh,data`
-  - 0.1.7 实发斜杠命名空间码（session/not-found、gateway/arguments-invalid），app DshRpcErrorCode 闭集 isKnown 恒 false 全走 Unknown 兜底（优雅降级成立但分类/文案失准）；/api/respond 已移除改 /result（app 双路已备）。详见 docs/research/2026-09-28-triface-regression-report.md 缺陷 D1/D5
+## P3 — 观察与低价值改进
 
-- [~] **#457 displayItems 单 key 值缓存三处遗留洞(#452 同款:SnapshotStateList 实例键自反恒等)** `chat,render,bug`
-  - #452 深审(issue452-followup-audit.md)全仓扫描:ChatMessageList.kt:595 turnOrdinalByMsgId(中危——台账轮次号翻页后永不更新/错位,违背自身设计注释)、:599 displayItemMessageIds(低危 V1 去重)、:602 v1CompactionSummaryInList(低危)——均 displayItems 单 key 值缓存无兜底;修法照抄 size-key 或改 derivedStateOf;另建议补 androidTest Compose 层回归测试防 key 改回实例引用(骨架已在审计报告)
-  - 2026-09-28 已修:三处(ChatMessageList.kt turnOrdinalByMsgId/displayItemMessageIds/v1CompactionSummaryInList)remember(displayItems) 实例键自反恒真 → displayItems.size 键(#452 同款修法,快照读建立失效依赖+值比较);注释已标机制。验证:全量单测绿;行为级androidTest(Compose层)仍缺(与#452深审建议同池)
-  - 2026-09-29 用户裁决:先留着待观察,3 周窗(至 2026-10-19)无反馈(轮次号错乱/去重失败类怪象)即关闭。防御性修复无可直接观察面,日常无异常视为通过。
+- [ ] **#500 debug 通道热启动失效——app 前台时 am start 携 debug_url 不生效** `debug-channel` `dsh` `tooling`
+  - 真机实证（2026-10-02，dev debug 包）：app 已前台时 am start --es debug_url http://127.0.0.1:3080 --es debug_server_type dsh，am 提示 intent delivered to top-most instance，但 handleDebugProfileIntent 未执行——无 Debug channel requested 日志、服务器不切换；force-stop 后冷启动同参数立即生效。
+  - MainActivity launchMode=standard（manifest 实证）；疑点：standard 模式下复用顶层实例不回调 onNewIntent，而新实例路径亦未处理——需源码定位送达路径。
+  - 影响面：自动化脚本未先 force-stop 时静默失效；debug-entry.sh 冷启动已规避。附：adbd 会把 ShellService 命令行（含 --es debug_token）回显进 logcat，注 token 后须 logcat -c 清洗。
+  - 勘误（2026-09-30 盘点）：「新实例路径亦未处理」疑点过时——MainActivity:291 onNewIntent 已实现且 :298 调 handleDebugProfileIntent（onCreate 路径 :184 亦有）；真因待定罪=manifest 默认 standard 复用顶层实例不回调 onNewIntent 与实证吻合，为何未走新实例 onCreate 需真机送达路径取证；修法候选=singleTop（动 manifest 需评估返回栈语义）
 
-- [~] **#455 统计栏视觉微调：间距对齐 user 侧 + agent 徽标边框化** `uiux` `chat`
-  - assistant 正文→统计栏间距原 SM 8dp（compact XS 4dp），user 气泡外置统计栏 4dp（compact 2dp）——两侧不一致（2026-09-27 用户报告）
-  - 修复：MessageSectionScaffold 尾部间距独立 tailGap（4dp/2dp 与 UserBubbleExternalActions 严格一致），正文内部 parts 间距解耦不动
-  - AgentTag 去实底背景改 1dp 边框（tagColor@MUTED + 同色文字）——扁平消息层下实底徽标不协调（用户裁决）
-  - 扩展(2026-09-27 二轮)：①卡片族容器垂直 padding 2→0dp(ToolCardScaffold+ReasoningBlock)——透明卡无背景,padding 只叠加卡间节奏,像素定罪修改前卡间空隙 24/38.5/37.5/28dp 两档混杂(#422 中断轮平铺豁免首次暴露),归零后图标列实测 25.1-25.5dp 完全统一
-  - ②统计栏行高：assistant 信息簇 Row heightIn(min=28dp) 对齐 user 侧外置统计栏 28dp 图标命中区(#419 定规不可降)
-  - 保持：turn 边界/消息边界(16dp)为结构语义层级不压平;Shell 两行卡行尾时长整行居中(设计)
+- [ ] **#499 cleanup**
+  - 摘要补全（2026-09-30 盘点，正文原落 journal §7.7）：过渡装备清扫——JankHold/STREAMING_MD_PILOT 等 B案后死代码整体退役（probe 按 keep-probes 裁决保留）；前置=#442 验收+旗标提升后执行；#510 已退役五族不含此二者（五文件仍有引用）
+
+- [ ] **#498 render**
+  - 摘要补全（2026-09-30 盘点，正文原落 journal）：CJK 粗体闭界——闭界星号后紧跟 CJK 字符（如 **……。**学）渲染为字面星号；服务端原文+markdown 库 flanking 行为，旧路径同渲染非回归（journal 2026-10-01-442 §7）
+
+- [ ] **#497 子会话底栏三形态分裂 + DSH composer 异步挂载焦点扰动** `subagent`
+  - 子会话底栏：V1/V2 整块空白（无任何说明）vs DSH 只读提示行/可输入 composer——同意图三形态；readOnlyHintVisible 现要求 subagentsSupported，V1/V2 不给提示行。
+  - DSH subagentMode 异步解析期 composer 先缺席后出现（ChatTextField 无 FocusRequester）→ 焦点/键盘重置——键盘行为按类型不同的真实结构源；对齐机会=V1/V2 也给只读提示行。
+  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D3/D4
+
+- [ ] **#496 空闲长按发送键三端语义分裂——DSH 死手势无反馈** `interaction`
+  - 空闲长按发送键：V1/V2=切 shell 模式；DSH=静默 no-op（连提示都没有，比能力位隐藏更差）；2026-09-07 审计 A-4 挂 ASK 至今未裁决。
+  - 需裁决统一语义：能力位分派维持（DSH 给 toast 说明/换 steer 入口）或全面重设计。
+  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D2
+
+- [ ] **#488 markdown 能力补齐批次：块内HTML隐形+代码语法高亮+真数学渲染+setext stage-2（远期清单正式立卡）** `markdown` `render`
+  - 2026-09-30 #487 后续深调定罪三项能力缺口：①块内 HTML 渲染为空（mikepenz v0.45.0 基础+m3 AAR 零 HTML 组件，二进制 grep 实证；整消息 HTML 走 looksLikeHtmlPayload 预览通道但混排块隐形）②代码块无语法高亮（走库默认 code renderer，build.gradle.kts:249 注释明示）③\begin/\[/712321 数学均降级为文本或围栏（transformMathFallback 文本降级 + \begin 无变换字面流）
+  - setext stage-2（升格行级定案）维持 accepted-gap 备查（spec 2026-09-30-471-3 §3.6）；此前散落 handoff 未立卡，2026-09-30 正式收编
+  - 实现方向：覆写 markdownComponents html 钩子（原文呈现或接预览同款）；高亮评估 league/ prism 类纯 Kotlin 方案（M3 禁引入额外 UI 依赖库红线内评估）；真数学需渲染层 KaTeX 级能力或维持降级+标注
+  - 2026-09-30 代码高亮子项可行性调研完结（docs/research/2026-09-30-code-syntax-highlighting-feasibility.md）：有条件可行，推荐引入 mikepenz 官方同族 multiplatform-markdown-renderer-code:0.45.0——版本零升级（pin 的 0.45.0 即最新，-code POM 与现状逐项一致）、零新第三方实体（语法引擎 dev.snipme:highlights 1.1.0 已因 FileViewer 在 APK，R8 keep 就位）、净增 17KB；fence 语言 v0.45.0 已解析只差消费（markdownComponents codeFence 正门接入，「league/prism 类纯 Kotlin 方案」评估答案即此库）
+  - 落地条件与风险：user 气泡豁免（primary 背景预设色板不可读）+自建 M3 令牌 SyntaxTheme（键控动态色/AMOLED）+span 区间防御（官方 issue #415 反向区间崩溃先例，移植 HighlightBuilder 写法）；流式期大块高亮作业整块重启→快速流下停留纯色到 EOF（降级优雅不卡主线程）+完结换装一次纯色→着色 pop（#472 语义需评估）；json/yaml/html/sql 不在引擎语言表→静默纯色（不劣于现状）
+  - 2026-09-30 影响面分析完结（docs/research/2026-09-30-code-syntax-highlighting-impact-analysis.md）：路线修正——不引 -code 依赖（span 防御/M3 主题/打点三处定制全落其 v0.45.0 private 区，可见性直证），改仓库内自建组件（core public API MarkdownCodeFence + 已在依赖树的 highlights，~120 行 fork + CodeSyntaxTheme 映射纯函数 ~50 行）→ 零新依赖，UI 依赖禁令裁决面消失；user 气泡豁免是伪问题（用户消息走纯 Text 不进 MarkdownContent，PartContent.kt:144-154）
+  - 影响面总评：小切口多波及——必改 2 文件（build.gradle.kts 注释 + MarkdownContent.kt 三点位 ~40 行）+ 新增 2-3 文件 + 测试 2（~120 行），但 components 单例使高亮一次性波及 8 调用面（assistant 双路径/Reasoning 流式/工具卡×2/通知卡/压缩卡/预览对话框），与流式重启节律/高度引擎 Bold advance/主题 remember 键三套承重机制交叉；实施三批（S/S-M/M），批 1 真机判据复用 #487「50 行 Kotlin」高度单调性；顺带发现 FileViewer HighlightBuilder.kt:39 end+1 多染一字符存量偏差（#489 另立）
+  - 2026-09-30 阶段三处置：①块内 HTML 原文呈现已落地（custom 钩子覆写+真机 E2E 实证原文可见）④setext 维持 accepted-gap（卡原文语义，技术论证入 journal）②③方案文档 docs/research/2026-09-30-488-syntax-math-options.md——两裁决点待用户：②高亮走官方 renderer-code+highlights（新增两依赖）还是自写 top-5 lexer；③数学走降级+着色/标注升级还是维持现状
+  - 2026-09-30 ①块内 HTML 原文呈现用户验收通过（模块 C 演示『这算是对代码块的修复吧…没啥问题』——效果确认：HTML 内容以代码块样式展示原文，修复前整块隐形）；①就此收口，卡整体待 ②③两裁决点拍板后一并收尾
+  - 2026-09-30 用户裁决（②③双双拍板）：②代码高亮走仓库自建渲染壳——零新依赖（core 公共 API MarkdownCodeFence + 已在依赖树的 highlights 引擎，~170 行自建 + CodeSyntaxTheme M3 映射纯函数）；官方 -code 库因三处必需定制（span 越界防御/M3 令牌主题/流式观测打点）全落 v0.45.0 private 区被否，澄清要点=两路线同一引擎只差渲染壳
+  - ③数学渲染走方案 c：降级+标注升级（「公式」徽标明示局限 + 可选 \命令/花括号/上下标轻着色），零新依赖零架构变更，真排版留远期观察 KMM 生态；②③裁决既定，卡转回 [ ] 开工——实施按影响面分析三批（S/S-M/M），③可并入批 1 或随后小步
+  - 2026-10-01 批 1（最小着色）落地：自建壳 HighlightedCode.kt（fork -code v0.45.0，theme 入 produceState 键/每作业新建 Builder/区间守卫/CodeHL 打点四差异）+ CodeSyntaxTheme.kt（M3→SyntaxTheme 9 角色）+ MarkdownContent 三点位 + 单测 14 例；全量 3764 绿；真机 E2E 全判据过（流式逐批着色 ms≤27/MDResize 全正单调/守卫零触发/主题三态无残留/json 静默 spans=0）——journal 2026-10-01-488-syntax-highlight-shell 批 1 节；②余批 2（观察精修）/批 3（可选），③（数学标注）未开工
+  - 2026-10-01 批 1 用户验收通过（「ok 可以」）——②最小着色收口；同会话续开 ③数学降级+标注升级（方案 c：降级块「公式」徽标+可选轻着色）
+  - 2026-10-01 ③数学降级+标注升级落地：transform 产物围栏 tex→math（专属识别位，不误伤手写 tex 围栏）+ SafeHighlightedMathBlock（「公式」徽标 math_block_badge×15 语言 + \命令tertiary/花括号onSurfaceVariant/上下标secondary 手写轻着色，静态完结内容 remember 同步构建）+ 单测 12 例新增/transform 断言改标，全量绿+i18n 917 keys PASSED；真机 E2E（big-pickle 会话）：Code block, math 徽标块+dual族像素+vision 三色判读+亮色重建无残留+单美元守卫——journal 2026-10-01-488-syntax-highlight-shell ③节；环境坑：v1 无 zhipuai 凭据（新会话默认模型 401，改用既有 big-pickle 会话）；③ 就此收口待用户验收
+  - 2026-10-01 ③用户验收通过（「可以 我觉得可以暂时用这样的效果」）——降级+标注形态就此定局；批 2（观察精修）/批 3（可选语言标签+复制）维持挂卡随观察窗推进，不阻塞
+
+- [ ] **#486 SSE retry 重建帧 watch（原#471④）：断连续传+滚出视口弃树+ever=false 理论盲区，复发再战勿主动开工** `scroll` `chat`
+  - 原 #471④ 用户裁决 c 降级观察（v1+v2 四场景不可复现，331k 行取证 Loading=0，#472 hold/registry/preParsed 防御栈有效）；#471 整卡迁移后观察线独立成卡（spec §8：watch 不关）
+  - 理论盲区：断连续传+滚出视口弃树重建+ever=false 帧（0 触发）；若复发，残余只剩 staged/换装差（-1330px ③族已消失）——spec §8 残余收窄注记
+  - 判读取证：MDResize 负 d / RESETKEY / nonPrefix / rawTail 探针均保留 DEBUG-only（2026-09-30 用户裁决）
 
 - [ ] **#442 高度引擎根修二期：R2分片增量化(滑动p90 12ms)+cadence收编+flush深拆+终审待复核项** `perf` `refactor`
   - 终审判定：R1批次已锁 A2 贴底5ms/A1回归/A4全项；滑动p90 19-27 未达12——R2分片(稳定块缓存/尾块单测)是 O(内容)→O(尾块) 唯一路径。
   - Medium欠账：cadence结构收编(spec裁决3)、flush八职责深拆(终审S2)、StreamingPairingRule缝退役迁移。
   - 待复核：ScrollQuiescence单例假设、HeldTail锁高裁剪视觉等价、diffDisplayItemsInto边界、SSE铁律逐条。
+  - 2026-09-29 用户裁决:吸收 #445 并入——R2 深水区含流式 markdown 稳定/活跃双容器状态管理方案(append-only+前缀吸收,固化解迁移帧问题);随卡迁入用户观感记录:完结窗会小跳一下(2026-09-27,限速节奏参数 BIG_RELEASE_MIN_INTERVAL_MS 可调,视情况修)
+  - 2026-09-30 吸收 #470 域（用户裁决）：帽不回改+ledger 负向不配对两路径随 R2 一并设计（ScrollCompensation.kt:338/:157）；当前实证 4h 重度使用零负向高度事件，不阻塞
+  - 2026-10-01 二期开工（journal 2026-10-01-442 §1）：销账——cadence 收编(5d061df2)/缝退役(12513603)/待复核四项(四十六世轮)已完成；调研 §3.8 失活防御已被 #438 R-2 修复(FlushTaskMemoryTest 在案)
+  - 2026-10-01 批次 C 落地：flush 八职责深拆(FlushTaskMemory/reservePhase/vtraceTick/applyPairedShift，表征测试 7 例先行钉行为+引擎域 47/47+全量 3787/0/0，日志签名集字节不变)+cadence 文档漂移修正(48ms→100ms)；主体 R2 分片唤醒(批次 A1 毕业计划纯函数→A2 装配层多 item→A3 帽/配对适配→A4 真机 p90)进行中
+  - 2026-10-01 批次 A1+A2 内核落地：毕业计划纯函数(空行块边界贪心打包/冻结append-only/单调/门槛上限重置，8例) + 武装/触发状态机(影子态毕业时机决策件，6例) + 施工 spec(docs/specs/2026-10-01-442-r2-shard-awakening-design.md：影子态零闪烁换装/键族/帽reset/切割高度恒等假设/完结持续性)；全量 3801/0/0。下一实施批 A2 装配层接线→A3 换装收口→A4 真机 p90
+  - 2026-10-01 批次 A2 装配落地（journal §4）：STREAM_SHARD_PILOT dev 开关+broker 单例(partId 注册/发布/完结兜底)+StreamChunk 逆文档序发射(尾块原键零迁移)+StreamShardContent 同步解析渲染+pilot 切尾坐标(Fire=帽hardReset→发布→重建快灌同协程步,冷续单帧,完结持续 shardHold)；测试 9 新例+全量 3810/0/0
+  - 已知边界：Fire 重建窗待 A3 影子态、非 text-leading turn 不分片、真机 A4 未验
+  - 2026-10-02 A4 烟测两轮（journal §5）：16/14 次 shard fire 全链活、tail 恒小(≤800ch 单帧重建)、视觉完整性三视口过、混合窗 p90=12ms；P1 全文预解析双渲染(96→49390+完结踢飞 pilot)热修(已发布 part 抑制预解析，EOF flush/回收冷续复测过，3810/0/0)；P2 覆盖缺口：text-leading 资格排除推理先行轮次(37K 正文零分片实证)——A2.5 泛化待办(renderItem 级拆分)；正式 p90 判定未做
+  - 2026-10-02 用户对齐（重组风暴缓解/根修分界，防账面混淆）：JankHold+签名缓存=缓解（只盖滚动窗+单链，二十五世轮根因二原文）；全链重组彻底根修=B案节奏收编（SSE 原始 delta 直入引擎，绕开数据层 StateFlow→ChatMessageList 快照重组链，spec 2026-09-26 架构1+2/预留高度表）。A案分片只修根因一（帽全量测量）+item 级重组面（冻结块零重组零重测），不消除每批顶层重跑（ChatMessageList god file 拆分另在 #481 在册）。既定次序不变：A2.5 资格泛化→A4 正式复测 p90→不达标升 B 案（#445 载体）；用户保留将 B 案提前的选项（先根治重组链而非先拿帧率数字）
+  - 2026-10-02 B案适配性系统分析完成（用户指令：只分析不改动；journal §6 全文）：**结论=适配且接缝成熟度高于 spec 时点**——实质是「JankHold 已验证的滚动窗终态（快照静止+item 级增长）常态化+增量喂送搬到冻结点前」，非新架构。关键实测：每文本 flush 唯一发射源=_parts（getMessagesFlow 纯内存热视图，Room 不回流）；chatEntries 已不随纯文本增长重建（签名缓存生效）；残余=combine O(n)+ChatScreen 投影 O(n)+ChatMessageList 函数体重跑（根因二）。九项接缝就位（单一咽喉/三分离/broker 先例/pilot 机器/完结换装三件套/cadence 常量已归引擎域等）。架构2 预留高度表建议维持 parked（A案冻结分片已等价达成其测量面目标）——B案提前范围裁为架构1 节奏收编单干。R1-R9 风险均为 spec 批裁决点（R1 reasoning 必须进范围：glm 系推理先行是常态）。批次草案 B1-B6+根修判据（流式稳态函数体重执行 ~10/s→≈0）已录 journal §6.7；次序裁决（A2.5/A4 与 B 正交可并行）留用户
+  - 2026-10-02 B案节奏收编+A2.5 全量落地（六 commit d9f128b4..8a9eff20，journal §7 全证据）：数据层 structuralParts+StreamingDeltaBus 双出口（_parts 热视图零变更）、UI 五消费面切 structural、PartContent 两分支 live 覆盖、A2.5 推理先行轮 renderItem 级拆分（StreamPrefix#p+尾块切片+提问分工）。**根修判据达成**：CML-tick 探针关关基线流式稳态 ~4.8-6/s → A+B 开（含两真机定罪热修：①dispatch 尾 Delta 例外发布——flush 后首 delta 击穿结构性静默；②jkHold 按旗标退役——holding 直读驱动 ChatScreen 重组）轮次启动结构性窗后 ≈0/s。B5 烟测全链活（text/reasoning 双模型 fire+EOF+prefix 渲染实证+零重复零 FATAL）。A3 影子态裁决=放弃（tail 恒≤800ch）；架构2 维持 parked；A4 正式 p90 专项方法学仍开放（gfx 配对窗噪声主导，帧级收益被光标动画/铺开期掩蔽）。全量单测 3824/0/0。过渡装备清扫（JankHold 等）留独立批次
+  - 2026-10-02 A4 正式判定补做完毕（journal §7.5）：降噪方法学=framestats 120 帧环分块（消除光标长窗稀释）+稳态期分段（append 活跃验证）+双臂同协议 8 循环取中位。**A+B 臂混合窗 p90=7.6ms ≤12ms 目标达标**；关关基线 p90=10.4/p95=14.3ms（改善 -27%/-40%，尾部块收敛 7.1-8.0）。先前摘要百分率配对结论作废（方法受污染）。#442 A 线（A2.5 落地+A4 达标+A3 裁决放弃）与 B 线（B1-B6 全量+根修 CML-tick 实证）至此全闭合，待验收
+  - 2026-10-02 全面覆盖批（f7ca309d）+重进场景族真机实证（journal §7.6）：+24 分支测例（非终态保留/REST 后重发布连续性/no-op 去重/资格 7 分支/锚定 10 分支），全量 3848/0/0；全路径动机埋点（[MOTIVE] 测试行 + [B2-struct]/[B2-bus]/[A2.5]/[B3]/[B4] 生产探针带动机文案）。**重进三场景实证**：①流中退出重进（推理期最对抗路径）——REST 刷新清 bus→同帧 structural 兜底→下 flush 重建→override 探针闭环可见，流零中断轮次正常完结；②完结重进完整；③深滚回收零异常。输出消息重进问题确认解决
+  - 2026-10-02 终审完整性审计（journal §7.7）：揭出并修复 P0 级缺陷——beta/stable 自 A2 起编译失败（旗标字段 dev-only 但无条件引用），三 flavor 编译任务验证过；双臂单测纪律补全（Assume 守卫后开臂 3848/0/0、关臂 3848/24skip/0 均机器可判）。需求终审表逐条闭合：仅 #470 B/A（用户裁决挂起）与「完结小跳复验」（#472 机制性已修）两项非代码残留；beta/stable 旗标提升为发版裁决。清扫独立卡已立
+  - 2026-10-02 #470 帽回改 B/A 用户裁决落章：选 A（维持空白——帽不回改+视口不跟随；4h 零负向实证为据，遇「回缩后大片空白」不适再立卡升 B）。同轮补测流式中点停止 E2E（journal §7.8.1）：中断链全绿（abort 请求→interrupted/step.failed→FSM Idle→终态过桥→bus 清除→「已中断」状态行+部分正文保留+零 FATAL）；观察项=session.execution.interrupted 事件未映射（无 UX 影响，可随 #459 顺带）。至此 #442 唯一用户裁决类残留=旗标提升 beta/stable（发版裁决）
+  - 2026-10-02 旗标提升 beta 执行完毕（用户裁决）：STREAM_SHARD_PILOT+STREAM_DELTA_BUS beta=true（ad9cb70a）；发 v0.4.0-beta（force-bump=minor 开新线避 v0.3.1-beta 历史 tag 碰撞；release.sh python 派发器顺手修复 4bded7f9）。#442 至此仅剩用户验收（dev 日常使用）→ migrate；stable 旗标随下一批
+  - 2026-10-02 v0.4.0-beta 发布完成（§6 验证全绿：APK/版本/签名/说明）：首次 CI 撞 lint 门禁四错（间距令牌×3/remember Unit/组合期 StateFlow.value——本地漏跑 lintDevDebug 预检教训），aae6b576 清零后 tag 重指发布。beta 渠道自此带 R2 分片+B案重组根修+A2.5；#442 仅剩用户验收→migrate；stable 旗标下一批
+  - 旗标现状注记（2026-09-30 盘点）：beta STREAM_SHARD_PILOT 随 #503 稳定化自 v0.4.0-beta 发布态回退 false；现 dev=true/beta=false/stable=false（DELTA_BUS dev+beta=true）。beta 重提升+stable 首提=同一发版裁决，门控 #503 根修验收
 
-- [ ] **#439 流式期重组隔离：entries 签名缓存与子卡 skippability 恢复** `streaming` `compose`
-  - 流式批（~14/s）仍使流式 turn + 相邻注入卡条目全量重组（真机 35s 524 次）；渲染像素幂等故非闪烁源，属性能债。
-  - 修复位：ChatMessageList.kt:741 chatEntries 键改结构签名（仿 :283 turnGroups sig-cache）；MarkdownChunking.kt:291-313 ChatEntry 预载 msg/streaming/key；:2448-2487 item lambda 消除 displayItems/turnGroups 直读；:1361-1375/:1772 回调 lambda remember 化。
+- [ ] **#464 UI 暖态下列表/卡片点击偶发失效(冷启可靠)** `chat-ui`
+  - 2026-09-29 #461/#462 取证副产物:force-stop 冷启后输入 tap 可靠命中(会话行/卡标题),同一 app 暖运行数分钟后点击同坐标零效果(无日志无 UI 变化,vibrator 反馈存在=命中可点击元素但未触发业务);两次独立取证会话复现,冷启后恢复。疑点:点击消费被某 overlay/焦点态拦截或状态门;影响面=自动化测试可靠性,人工使用未报告。待真机复现窗定罪(diagnosing-bugs 流程),暂无用户主诉不阻塞。
+  - 2026-09-29 审计顺带实证:一次拖动送达零响应不再现(见 #465 注记);#477 dump 全盲为坐标类判读新增干扰源——本卡与 #465 高度重复,建议合并为单卡观察项待裁决
+  - 2026-09-29 用户裁决:吸收 #465 合并,本卡为该域唯一观察卡(暖态间歇 input 送达零业务响应;今日一次拖动零响应不再现实证在案;#477 dump 全盲为坐标判读新干扰源)——再撞上即现场抓 input dispatcher+app 双侧日志
 
-- [~] **#427 步组大内容切片+预测量+窗口化组合(成本根因修复)** `perf` `render`
-  - 组合/测量成本与内容总高成正比→改为与可视窗口成正比:纯函数切片器+宽度键控高度账本+窗口化宿主;引擎契约不变,小组零改动
-  - 四阶段交付(P1切片→P2账本→P3窗口→P4可选表级);收编#424/#425动机;#426死代码随切片器转正清理
-  - → docs/specs/2026-09-23-427-step-group-slicing-windowing.md
-  - P1-P3 已实现并真机取证(f2bcb12e/a1b3ce8f/3759317a)：切片器+片高账本+窗口化宿主，引擎契约零改动
-  - 实测：暖展开269ms/收起772ms(20k单体片)/冷展开3118ms/小组227-249ms；铁律DRAW探针topY=644逐帧恒定
-  - 差距：多片窗切换无真机数据(造数失败,免费模型连败)；P3b预热错峰未做；P4未立项——详见 journal 2026-09-23 节
-
-- [ ] **#424 步组内容后台解析预取池(L0)** `perf` `render`
-  - 用户提案:守护线程池(如2线程)后台预取 Markdown 解析——Compose 组合/测量是主线程铁律不可搬,但解析(最重CPU段)可并行;卡片可见即预取解析模型,ε 组合直接命中缓存
-  - 依赖:与 CardExpandReveal PREWARM 衔接(解析预热→组合预热两层)
-  - 2026-09-28 勘误(依 issue424-425 深度调研§6.2):字面提案重复建设——解析预取早已后台化(RenderReadiness.kt:121-127 flowOn(Default))+消息/part级窗口化(RenderSupplyCoordinator ±20条LRU48);主链路'步组卡可见→预取→ε组合命中缓存'已随 #430 过程卡片退役(7d5cd5fc)消失。真实残余缺口=R-C synthetic盲区:切片段(#sgN)组合期派生不进数据模型,驱动端(RenderSupplyCoordinator:329)与消费端(MessageCardAssistant:338/:813)双端排除永远拿不到registry预热;2200预算>2048异步阈值使多数段带Loading首帧。范围改写为R-C并与 #431 方案一第3条合并执行(两卡改同一行避免重复动:三处synthetic排除+StepGroupSlicing.kt:19预算;推荐降预算对齐变体2200→2048使合成段全落#428同步路径构造上消灭Loading首帧零新机制;取舍需真机标定同步1-3ms×窗内段数滚动帧叠加)。若用户裁决不再需要步组解析预取语义可直接关账并入#431。
-
-- [~] **#422 step 自动折叠:turn 内非最后 step 折叠为计数行(DSH 同款时机)** `ui` `chat`
-  - 用户裁决(2026-09-20):每 turn 最后 step(最终回答)恒展开,之前 step 自动折叠计数行;流式恒平铺,完结生效
-  - 关键发现:StepStart/StepFinish 在 UI 过滤层(RenderableTurn.kt:193 filterRenderableParts)被丢弃——第一步=装配层保留边界标记
-  - 方案+调研:docs/research/2026-09-20-code-step-grouping.md;影响面:RenderableTurn/ChunkAssistantItems/折叠组件/i18n(复用统计词);#420:整组单 LazyItem 不拆
-  - 三轮收口(2026-09-21 凌晨):
-  - 1) CardExpandGeometryNode(ModifierNodeElement+LayoutModifierNode)落地:tween 窗口内复用 settle 末真测 placeable(逐帧只重算 report=f·H,子树零重测);窗口外恒真测保内容失效传播;epoch 变化清缓存双保险。展开前 settleUntilContentStable(2 帧判稳/600ms 上限)吸收表格 containerWidth 两拍收敛与 asyncParse 迟到;episode 末 epoch 强制真测+迟到增量 δ 补偿。单测+5(时钟新语义)。
-  - 2) 真机(小米14)验证:重型 turn(10193 字符双表格,H=20292px)10s 冻结 stall 消除——settle 即刻判稳、tween 全程 H 恒定(缓存命中)、收展均为钳制限速平滑动画(展开总 ~2.6s:首测 ~1s 内容固有组合成本+渐进揭示;普通卡片远快于此)。多模态走查:四元素顺序排列无叠压。
-  - 3) 顺带修复两处折叠组渲染 bug:a) #258 Stage A MdChunkPlan 对多消息轮次的巨型 part 分片会绕过 StepGroup(Chunk 条目按 part 直渲染,折叠行+末消息内容双丢失)——产侧协调器+装配侧 buildChatEntries 双端封堵,巨型末消息归 Stage B;b) StepGroupCard 展开体缺 Column 包裹(ChunkAssistantItems 为裸 for)致全部 part 堆叠 (0,0) 互相叠压——补 Column(XS 间距,同 Segmented 路径)。
-  - 4) DSH 折叠时机核实:研究档案 §1.3 定案 DSH=turnClosed 后折叠(流式恒平铺)——与现有实现(装配层 turn 完结重组+渲染层 isStreaming 平铺)一致,无需改动。
-  - 5) code-review 双轴:Spec 6 项全忠实;Standards 8 条修 5(谓词抽取/术语/类KDoc/import序),余 3 低severity(settle 帧循环单测缺口留待)。
-  - 待用户验收:视觉终判(尤其巨型卡展开的 2.6s 钳制限速揭示节奏是否可接受——若嫌慢可裁决 MAX_FRAME_DELTA_PX 按 H 自适应放宽)。
-  - 四轮收口(2026-09-21 01:15,懒加载实施):
-  - 1) 用户报「点了卡死」+ 实测取证:历史大组展开 = 单 LazyItem 一帧组合全部内容(10193 字符双表格,H=20292px,400+ SelectableText 单元格)→ Choreographer Skipped 434 帧 = 3.6s 冻结,MIUIScout 栈顶 MultiParagraphLayoutCache(文本断行)。首轮 Node 缓存只消了逐帧重测风暴,首组合一次性成本仍在。
-  - 2) 用户裁决:仅历史展开路径懒加载(流式输出路径零改动——实测流式最差 37 帧微跳,健康);大组直出+淡入,小组(<3 屏)保留动画。
-  - 3) 实施(14c3aa01+da5833d0):LARGE_STEP_GROUP_WEIGHT=6000 阈值;展开态大组拆条目发射——尾 Turn(skipStepGroupItem)+StepGroupBody×N(权重 2200 切片,独立 LazyItem,220ms 淡入)+StepGroupHead(共享 StepGroupFoldRow);键序号=文档序、发射逆序(#246 语义);displayEntryStart 钉头部;流式恒不拆(单点门控+单测);stepGroupStateKey() 前缀收口。
-  - 4) 真机验证:同重型组冷展开 434 帧→0 帧冻结(全程仅 1 次 37 帧级微跳);折叠行→内容→末消息+统计栏结构正确;收起即时;小组动画保留(713ms);流式冒烟正常;单测 +3(切片/发射序/流式豁免),全量套件过;双轴 review:Spec 10/10 忠实。
-  - 已知权衡(用户已裁决接受):大组收起为硬切无动画;二次展开无淡入(rememberSaveable 残留);流式防护单点在 buildChatEntries。
-  - 待用户真机验收。
-  - 五轮收口(2026-09-21 01:45,用户验收发现的第三层根因):
-  - 1) 用户真机验收:点折叠行两次后卡死(logcat 证:两次 ~2.5s 主线程阻塞,栈顶 SimpleMarkdownTable placement;插桩复现:Skipped 440 帧)。
-  - 2) 插桩定音(已撤):懒加载框架完全生效——entries 拆分成功、仅组合视口内 2 个 body、组合仅 21ms;冻结在 body 组合之后的测量阶段。
-  - 3) 第三层根因:sliceStepGroupBodies 按 part 边界切片,而真实场景大组常为**单个巨型 text part**(60 行表格=10193 字符一个 part)——单 part 不可分,一个 body 条目仍装整表,LazyList 测量该条目时 360 单元格全量断行=3.6s。多层 part 的大组已验证有效(组合快、零跳帧),单 part 巨物未解。
-  - 4) 已交付有效的部分(14c3aa01+da5833d0):多 part 大组懒加载+小组动画保留+单测;另发现折叠行可点击区域仅文字宽度(fillMaxWidth 未生效于触摸区)的存量 bug——用户中排点击无反应即此,待修。
-  - 5) 下一步方案(待实施):body 内巨型 text part 复用 #258 computeChunkPlan 做 AST 块级切片(协调器预解析→区间条目),即 Stage B Giant 段机制接入展开态拆分;折叠行触摸区修复(Row 可点击区域全宽化)。
-  - 教训:本轮『零跳帧验证』实际测的是一次未命中的点击(坐标又落在行边)——仪器验证必须先确认动作确实生效再读数。
-  - 6) 2026-09-21 内容漂移(diagnosing-bugs 全程)——已修复 ede8ac05
-  - - 症状:小组(动画路径)一个展开+收起循环视口净漂 -366px,展开末折叠行 934→836,收起后整个列表上移(uiautomator 三 dump 逐行对账;截图证实标题栏不动=非滚动错觉)
-  - - 根因:#420 δ 配对是开环账本,只记指令不记实际消费。两类误差:(a) dispatchRawDelta 列表边缘残量(逐帧 residual 8+17+35+12+15+11=98px,展开末一次性显形);(b) LazyList 锚点翻转会计误差(收起过程 -268px,账本完全无感知)
-  - - 修复:CardExpandReveal reveal 盒顶缘(=折叠行底缘)onGloballyPositioned 实测窗口 Y;episode 正常完成后 episodeEndCorrection(纯函数,5 单测)判定偏差,单次 dispatchRawDelta 修正回本集起点;用户滚动取消/协程取消(反向 toggle)跳过——阅读位置优先权铁律
-  - - 真机验证(小米14,同测试位):展开 err=98 consumed=98(钉回 934);收起 err=268 consumed=268;循环后 dump 与点击前逐字节一致,净漂 0px;连测 2 循环守恒;PSNR 首尾帧 32dB(同布局)。证据:docs/acceptance/2026-09-21-422-evidence/drift-fixed-cycle.mp4
-  - - 遗留:大组(硬切换条目路径)无任何锚定——展开时折叠行飞出屏(插入高度无补偿),收起时锚点条目被删视口任意落位;与 L3(单巨型 part 测量冻结)同批处理。展开态折叠行 a11y 可见高度 6px(与 reveal 盒 6px 重叠,疑 #231 clip 链)顺带记录
-  - 7) 2026-09-21 渲染前反馈闭环重写(用户裁决弃事后补偿)——899d74a2
-  - - 用户观看压测后裁决:ede8ac05 的 episode 末补偿"先漂再拽回"不可接受;要求渲染前完成计算(#420 同帧配对严格化)
-  - - 逐帧插桩([DEBUG-425] topY/anchor/fii/fiso/rep/abs)定位三类断点:①组合滞后残量永久丢失(指令账本只记指令);②LazyList 锚点翻转会计误差(消费满额但视觉说谎,收起 −60→−328 阶跃);③收起中段 anchor 稳定时 dev=0 证明配对数学本身正确
-  - - 新机制:每帧指令 = 缓动增量 + (锚−上帧实测Y) 死拍反馈;吸收账本观测化;循环收敛条件 = 缓动走完且指令≈0
-  - - 四个真机迭代坑(全部插桩实证后修复):死锁(上报做消费奴隶→dispatch 恒 0,改乐观上报)、双计振荡((目标−已吸收)+偏差 极限环 ±154 交替,改增量+偏差)、崩溃(fraction→0 后缓存 placeable 放置 detached 节点,关窗口+守卫)、连点链式漂移(重定向取消以漂后位置起新锚 −73px,carriedAnchor 携带)
-  - - 压测(用户令系统性设计):A1 十循环 934 守恒;A2 24 连点@300ms / A3 30 连点@150ms 风暴后 934 精确守恒;1244 风暴帧 17 帧(1.4%)瞬时偏差≤2 帧自愈;63 episode 仅 1 次 end-restore 82px;无 ANR/崩溃;JVM 竞态单测 28 个
-  - - 证据:docs/acceptance/2026-09-21-422-evidence/drift-fixed-tap-storm.mp4
-  - - 注:风暴中偶发单次点击丢失(input 投递层面,非状态机;恢复点击均正常翻转);大组硬切路径漂移与 L3 冻结仍在案(与本卡分批)
-  - 8) 2026-09-21 震荡根治·两阶段架构(用户两轮否决后)——a7e7d2bd
-  - - 用户裁决链:ede8ac05 事后补偿=否("先漂再拽回");899d74a2 逐帧反馈=否("来回震荡")
-  - - 取证定案(录屏条带追踪±24-136px + [DEBUG-425] 逐帧):①展开方向 LazyList 布局多 pass 不稳定(dispatch 时刻 topY 逐 pass 振荡±60px)——动画期间布局/滚动参与即震荡;②逐帧实测反馈的信号(布局坐标)对滚动位移盲且滞后,本身成为扰动源;③自然锚定证伪(禁 dispatch 折叠行飞出屏 2852px,dispatch 必需);④收起方向布局稳定(consumed==d 逐帧,topY 恒定)
-  - - 终局架构:展开=A 阶段一次性布局落位(内容不可见,稳定窗全额重试)+B 阶段纯绘制揭示(drawWithContent clipRect,零布局零滚动);收起=原逐帧路径;指令=目标−已吸收账本
-  - - 验证:展开/收起终态 934 精确;5 循环+12 连点守恒;零 end-restore;无崩溃。余量:展开 A 阶段一次 ~130px 单向瞬时沉降(无往复);备选=DSH 式硬切无动画(结构完美,待用户裁决)
-  - - 工具教训:uiautomator dump 对被裁节点报可见高度(6px 假象);positionInRoot 对滚动 draw-offset 盲——测量指标必须与像素级录屏条带交叉验证;screenrecord 变帧率使帧号≠墙钟
-  - 六轮收口(2026-09-21 午后,空白卡死追修):
-  - - 1) 用户报「为啥会这样」:折叠行下方 ~1200px 空白、内容全消。取证:fraction=1(布局占位2852)+drawFraction=0(内容隐形)的卡死态;恢复实验(再点一次)内容即回,H 恒在。
-  - - 2) 根因:cancel-on-scroll 处理器(LaunchedEffect(listState),不随 visible 重启)闭包捕获**过期 visible**——收起期首次组合的实例在展开后遇用户滚动,snap(0f) 把 fraction 打 0(内容离树、H=0),收尾 vt 循环又把 fraction 拉回 1,终态「占位+隐形」。日志铁证:cancel 后 rep/abs/H 全 0。
-  - - 3) 修复:①rememberUpdatedState(visible) 读当下值;②finally 不变量「fraction>0 ⇒ drawFraction=1」兜底一切退出路径。
-  - - 4) 击杀链复现验证(修复后):展开→淡入中 fling→cancel-on-scroll 命中(snap f=1.000)→post-cancel 帧恒 rep=2852/H=2852(旧版此处归 0)→滚回 T1 内容完整可见(7.6s 行+18 行表格标题俱在),无任何空白。
-  - - 5) 教训:长生命周期 effect 闭包捕获可变参数必须 rememberUpdatedState;「占位必显示」应为组件级不变量(纯绘制分数只能由正常动画路径收敛,退出路径须强制归位)。
-  - 七轮收口（release 首装冒烟，2026-09-21）：用户要求换 release 版体验（debug 卡顿）。跨签名切换（pinnedDebug→release.jks）卸载重装 devRelease 后，adb tap 在折叠行上 8/8 无效 → 一度误判"release 上 toggle 失效"。插桩版复测 6/6 全对（click→toggle→episode 展开 f=1.000 620ms/收起 f=0.000 385ms，同帧配对 2852/2852 在 release 同样成立），还原重建干净版复测：tap1 miss、tap2 正常。真相：(a) 已知 tap flakiness（折叠行触摸目标窄）在 release 依旧 ~50%，非回归；(b) 自制检测器 isexp.py 被 6px sliver 命中 fold934 正则 → 永远报 NOT_EXPANDED，放大成幻影 bug——sliver 陷阱复发，检测器必须用"展开内容标志行 presence + 折叠行全高"双条件；(c) strip 跟踪器在 miss tap 的整行按压高亮/收起过渡态上会产出 d≈11 弱匹配的假位移（-116px/-84px 假 RED），判定必须加 d 阈值（<5 才可信）并以组上方参考条带为验收主判据。release 像素级验证：上方参考条带全程 +0px 零 UNMATCHED（收起+展开双 episode 213 帧）。
-  - 八轮收口（release 体验两 bug + 幻影哑火，2026-09-21，22f25b53）：用户报①大组展开加载延迟高②思考卡等小卡展开"闪烁跳一下像补偿"。插桩 release 三点取证定音：(1) 幻影哑火根因=StepGroupFoldRow 把 !expanded 当 defaultExpanded 传——委托语义 !(map[id]?:default) 使收起态首点写 false=静默无效,每组每冷启首点必哑(观感即"点了没反应/加载慢"),改传 expanded;(2) 小卡顿挫=两阶段设计在小卡呈四拍(摘要瞬消→+146px 刚性跳留空白一拍→内容瞬现→底纹渐隐,逐帧视觉取证),≤600px 改逐帧几何 tween+同帧增量配对(drain 基准 lastMeasuredH→lastReportedH 两路径统一)+alpha 随 fraction 淡入;(3) 大组冻结=60 行表格单体 part(h=20226px)首组合 598ms 屏幕零反馈,StepGroupBody 重组合延后一帧,首帧画 loading 占位。验证(真机 release,22f25b53):T1/大组冷启首点均即展开;思考卡墨水轨迹 4-5 帧渐变无凹陷无闪烁,上方条带 +0;大组展开涟漪→占位可见 0.7s(冻结分段)→内容流入;T1 两阶段守恒 ref -2px。教训:检测器 sliver 陷阱二次复发后,状态判定一律用"展开内容标志行 presence+折叠行全高"双条件;条带跟踪器在按压高亮/内容替换窗的弱匹配(d≥11)产假位移,验收主判据=组上方参考条带。L3(AST 级切片根治 598ms 冻结)仍待做,占位是体验缓解。
-  - 九轮收口（浅灰 pill 定性，2026-09-21）：八轮收口后视觉终审在录屏 f0020+ 报「展开态标题行残留浅灰 pill(x237-1024,灰226)」。数值复核定案为视频编码伪影：pill 区域在 mp4 帧内 95-98% 均匀 226 且无形状结构，而同状态无损 screencap PNG 该区域 98% 为真背景 249、灰带仅 0.2%；折叠/展开/滚走回/再收起四态 PNG 扫描均无任何背景块（先前扫到的 215-245 灰带实为 FAINT 半透明摘要文字墨水及其淡出过程）。结论：应用渲染干净，无残留样式，非 22f25b53 回归；教训入档：录屏取证对「平坦背景上的低对比(~8%)色块」结论必须用无损截图交叉验证——H.264 在邻近运动内容旁会把背景量化漂移 20+ 灰阶且长时间不收敛。
-  - 十轮收口（用户再报震荡/上顶，2026-09-21，fbc91c21+a98e5b76）：release 验收再报①过程展开内容上顶②其他卡片先震荡后展开。插桩三轮定案:②根因=八轮收口的清理事故——git checkout 回滚插桩时连带吞掉了 drain 配对基准修改(lastMeasuredH→lastReportedH),该编辑从未随 22f25b53 发布!逐帧路径首拍在布局未增长时全额 dispatch H(f=0.004 即推 146px),账本实测 +146,+146,-146,+146,-146(fii 8↔7)=震荡,战后缓动走完=「先震荡然后展开」;另有 else 悬挂(小卡分支后 A/B 代码无条件坠落=内容闪灭再淡入)同期未发布。两者重应用(fbc91c21)。①大组上顶=权重≥6000 硬切换无配对(已知#4),锚定尝试五轮(scrollToItem 偏移/反馈环/键匹配/两步跳拉)均因反向布局滚动语义落错位——实测视口被甩到会话底端比不锚更糟,已撤(a98e5b76),回归 #4 随 L3 以 layoutInfo 键匹配重做;教训:反向布局滚动语义必须先写校准单测再上真机。验证:小卡贴底武装态墨水 75→89 单调无凹陷无闪烁;T1 守恒 ref -2px;单测全绿。流程教训入档:清理插桩禁止整文件 checkout——必须按 diff 块回退,发布前 grep 目标修改是否在树(本次两处修复双双被吞,验证却因靶位盲区+视觉终审窗口未覆盖闪灭拍而放行)。
-  - 十一轮收口（小卡位置漂移+回跳，2026-09-21，7dbb4189）：用户 subagent 点击思考卡实测「内容往上推,动画结束卡片突然跳回原位」——违反卡片视口位置不变量。图标条(∞图标区域,不受摘要淡化污染的位置特征)轨迹实测复现:动画期卡片被推 0→-8→-40→-110→-194px,episode 末 end-restore 一次性跳回 0。根因=十轮收口上线的逐帧配对路径:drainPhaseA 首拍 pending<1(f=0.004·H≈0.6px)即执行「phaseADrain=false」解除排干武装,后续每帧增长全部无配对,推力逐帧累积;end-restore 在 episode 末一次性纠偏=可见回跳。架构裁决:撤逐帧路径,小卡回归两阶段(一次落地+同帧全额配对,位置钉死);空白拍(四拍顿挫残余)改由 PHASE_B_JUMP_START=0.3 消除——A 落地帧排干完成时(pre-draw 同帧)drawFraction 直接跳 0.3,B 从 0.3 续坡至 1,高度与首批内容同帧出现,无空白无瞬现;展开向闭环尾循环(零指令空转)一并跳过。验证:展开/收起双向图标条全程 dy=0(位置不变量成立),墨水无凹陷无闪烁,落地帧起内容即部分可见;单测全绿。方法论入档:卡片位置不变量的判定特征必须选「不随动画变化的稳定像素」(∞图标条),摘要淡化区/高亮区会让模板匹配器跟丢或误报;逐帧布局参与反向列表=漂移与震荡二象性,两阶段一次落地+同帧配对是唯一被反复验证稳定的位置钉死方案。
-
-- [~] **#421 消息流全量单行形态(DSH化):思考/工具/通知卡去容器** `ui` `chat`
-  - 已实施完成(commit 5022b81a..7851eee2):ToolCardScaffold 透明收口16卡/ReasoningBlock去容器去色条+∞图标+尾部摘要/展开左竖线/通知四类+三横幅透明化;豁免:统计栏/问题/权限/错误行
-  - 调研:docs/research/2026-09-20-single-line-cards/(B视觉/C业界/D改造地图);验证:容器色块像素消失+多模态审查成型+全量单测绿;#420契约零改动
-  - 待用户真机观感验收
-
-## P3 — 观察与低价值改进
+- [ ] **#477 长文 markdown 块 uiautomator 语义零暴露——dump 全盲致渲染正常被误判空白** `ui`
+  - 2026-09-29 收口审计真机定罪:末轮长文(async parse 路径)可见区 dump 零文本节点(仅 1 个空 text 可点击 TextView h≈1921px),同期旧 turn 正常暴露;vision(三路交叉)+像素双验证内容完整渲染(连续正文/无空白/无圆点)——渲染层无恙,纯语义暴露缺陷
+  - 影响面=自动化验证可靠性+#467 dump 实证段污染(核心 SGR 日志证据不受影响)+a11y;待定位暴露分叉(疑 rememberAsyncMarkdownState 路径)
+  - 证据:/tmp/ui_b1.xml(底,盲) vs /tmp/ui_top.xml(顶,正常);#475「近空白/折叠态」原判即此 artifact
+  - 2026-09-29 定罪深化(见journal):分叉=单part纯文本长度(同turn 993暴露/3585盲,表格组件不受影响);渲染三层同构排除(组件/库重载/success槽);超视口单item假设被未分段表格turn(3674px)暴露推翻;最强嫌疑=SPLIT_PARAGRAPH 3000拆段线;androidTest断言已写但被MIUI+idle挂死双阻塞;修复候选A完结即分段/B到达即分段/C拆段线定罪后修normalize/D平台上报——待用户裁决,不盲改
+  - 2026-09-30 定性翻转(用户裁决B降级观察):今日冷启进程两会话十几个turn(0-20k chars全路径)零盲例——五假设全推翻(拆段线:3585原文标准段落格式未触发/Q换帧:7523混合part同经换帧暴露/长文=盲:4077五段纯散文注入段段暴露/路径=盲/密集dump自伤:10连dump后仍暴露);原定罪(长文语义零暴露)重定性=疑似长跑进程状态性退化(R假设:昨21:22同屏老表格turn暴露vs新essay盲分野=内容创建时刻;盲取证全部集中于4h+单一进程晚期);再撞上(长跑进程新组合内容dump全盲)即抓:logcat a11y错误+dumpsys meminfo+uptime;A11yDiag探针留树备用
 
 - [ ] **#303 Supervisor queue.json 无界增长（resolved 项累积）** `data`
   - 观察：supervisor 服务的 queue.json 只增不减，resolved 项长期累积；App 侧 seen 集合已按开放 id 裁剪（有界），但服务器文件本身无清理
@@ -304,32 +234,11 @@
   - 归属：清理/归档逻辑属 supervisor 服务侧（本 App 只读，不写 supervisor）——需服务侧加裁剪或归档
 - [ ] **#473 调试探针族清扫——历代 campaign 遗留 DEBUG 打点归档** `chore`
   - grep \\\[DEBUG- 盘点:CardExpandReveal(#420-427/466)/ChatMessageList+MessageCardAssistant(hflick/jk)/SafeFlingBehavior(flng)/ChatScrollController(drift)/rbexp 等几十处打点,均 BuildConfig.DEBUG 门控、release 零影响,但污染调试 logcat(472 闪烁定罪时曾混入噪音)。逐族清理+保留关键结构注释;涉及文件多有编辑协议约束,单独批次执行。
-
-- [ ] **#467 V1 外部注入轮次(POST /session/{id}/message)app 不实时渲染** `sse,v1,data`
-  - 2026-09-30 #463 流式验证副产物:服务端 POST 触发的完整轮次(glm-5.3-flash 3 step,响应 JSON 正常返回)app 打开态全程未渲染——新 user 消息与 assistant 流式内容均未出现(视口停中部非贴底排除法+dump 底部仍为旧 turn 实证)。疑 app SSE 订阅/事件处理与「app 自发 prompt」绑定(SessionStateService idle 态过滤外部 message.part 事件?)或 SSE 连接已静默断(#441-B 探针可判:death-snapshot lastEventAgoMs)。影响面:仅外部注入轮次,用户正常发送路径不受影响。待复现窗+探针日志定罪。
-
-- [ ] **#460 V1 服务端三处顽固缺陷实测（find 超时/项目外 file 500/share 挂起）+ 参数名勘误（/find 收 pattern）** `regression,v1`
-  - 1.18.32 实测：/find?pattern 可 ReadTimeout；/file 项目外路径 500 UnknownError（非 400/404，差异文档有载）；POST share 挂起不返回；/find 参数名 pattern（文档未载）。详见回归报告缺陷 D3/D4
+  - 2026-09-30 精化+新增三条方法教训:①「retained-subtree 盲区」实为 A11yDiag 语义=组合事件(内容经 pilot/preParsed state 对象流动时外层组合体跳过),内容级探针 MDPilot/ChunkDiag 一直覆盖,r3 实证 243/38 条——无真盲路径,改判读口径即可;②device 侧 grep 命令文本被 adbd in ShellService 记入 logcat→下轮自匹配假增长,监控必须 pull 到宿主 grep;③设备 nohup logcat 的 pkill -f 自匹配自杀(pkill 按进程名);宿主 nohup 不挺过 run_code 退出
+  - 2026-09-30 用户裁决：由于特殊情况先保留（不关闭，与探针永久保留裁决的冲突挂起由用户自持）
 
 - [ ] **#454 v1 真机 IME 换行注入后 prompt 未发出** `chat` `device` `v1`
   - 真机 IME keyevent 66 发送路径:消息含注入换行(Run\n\n)时 prompt POST 未发出,乐观气泡悬挂;二次干净发送正常(prompt_async 202)。发送链路疑有 IME 竞态边角,#453 验证时顺带观察,未复现第二次
-
-- [~] **#445 R2 测量增量化深水区：流式 markdown 稳定/活跃双容器需换状态管理方案** `perf` `design`
-  - 双容器在 append-only StreamingMarkdownState 约束下存在固化解迁移帧（空白/重叠一帧=闪烁）——需自研 append-only+前缀吸收的渲染状态或库改造；stableTailBoundary 纯函数已备（StableTailBoundaryTest 6 例）。目标：append 成本 O(总内容)→O(尾块)，滑动 p90 冲 12ms。
-  - 取证补充(2026-09-27):完结窗 -67px uniform 步进源=chunk/segment plan 异步就绪节奏(RenderSupplyCoordinator),非 held 帽——帽平滑化参数保留(held 域更细腻)。深水区=plan 就绪节流/合并。
-  - 排除链更新(2026-09-27 R4):完结窗t>10.5s的-67px uniform步进≠item高度变化(RESIZE序列66-68px步进全在流式期内=限速铺开的期望节奏,t>10.5s后零RESIZE)=纯视口滚动注入——嫌疑收窄到完结触底滚动分步(scrollToBottom/GUARD pending)。下一轮:logcat定位完结后的滚动派发源。
-  - 结论修正(2026-09-27 R4终):条带步进帧与RESIZE序列7↔7一一对应(时间轴对齐偏移~3s)——所谓完结切换窗跳变在当前修复栈下已退化为流式尾段限速铺开节奏(66-68px/300-400ms,BIG_RELEASE_MIN_INTERVAL_MS=200 可调)——设计行为非缺陷。旧的EOF一次性大跳已被#438①限速消除(append max 2087→200)。卡片主体收口待用户观感验收;深水区(plan就绪/双容器固化解)维持登记。
-  - 用户验收观感(2026-09-27):完结窗会小跳一下——记录,后续视情况修复(限速节奏参数可调)。
-
-- [ ] **#444 fling 下滑跳变复发（原 #437 系修复后回归）** `bug`
-  - 用户报告（2026-09-27 R2 开工时）：此前修复过的 fling 下滑跳变再次出现。
-  - 历史修复链供溯源：817607b4 配对 set 键保持(LEAP 重锚)/b54650c3 配对单帧巨额 set 视觉跳变/f09eb29b 流式滚动暂缓。嫌疑：R1-A2 单出口合并后的配对 set 行为变化或键保持通道在新路径的退化。
-
-- [ ] **#443 markdown 稳态粒度扩展：更多大块逐行/逐段放行（引用块/嵌套列表/长段落折行等）** `streaming`
-  - 用户裁决（2026-09-26 #441 后续）：表格/列表已逐行；评估引用块(>)、嵌套列表、def list、长代码块行级、setext 标题等大块的行级定案可行性，逐类 TDD 扩展 SafePrefixGate。
-
-- [ ] **#426 结构裂变死代码清理(批次十三退役遗留)** `cleanup`
-  - buildChatEntries StepGroupHead/Body 发射机+sliceStepGroupBodies+SGB 探针+LARGE_STEP_GROUP_WEIGHT 常量已休眠
 
 ## P4 — 外部前提阻塞
 
@@ -339,6 +248,7 @@
 - [ ] **#352 长按菜单「取消归档」——wire 层无恢复动词（2026-09-07 用户裁决要求，服务器阻塞）** `dsh` `archive` `ui`
   - 裁决原文:「归档单向契约同删除一样在长按弹出框中增加即可」——用户要求已归档行长按菜单加「取消归档」
   - **前提**：上游 dsh 服务器提供恢复动词——实测证据（2026-09-07 深夜，当前部署源码 dsh-api-workspace-controller typert）：WorkspaceArchiveSessionRequest={sessionId} **add-only**，全 API 面仅 archiveSession 一个归档动词，官方 web 客户端同无恢复入口（SessionRowMenu 2026-09-05 四重取证注释仍有效）；动词就位后：菜单项+RPC+已归档折叠区行刷新一步到位（#351 能力位先例同款）
+  - 2026-09-29 前提重验:dsh 部署版=0.1.7-rc.2(=npm 最新) dist 全仓仍无 unarchive/恢复动词——前提不变,维持 P4
 
 - [ ] **#332 spill 提示行——服务器无结构化信号（工具结果溢出 notice 内嵌纯文本）** `dsh` `sse`
   - **前提**：dsh-spill-policy 全链查实——溢出替换为有界 head/tail 预览+locator 提示全部内嵌工具结果 output 文本,transcript 无 spill 事件（session 事件枚举/types/实现三路 grep 0）;文案模式匹配脆弱（#136 先例:服务器改文案即静默失效）。待服务器暴露结构化字段再实现。→ `docs/research/2026-09-05-audit-309-313.md` #312③ + 实现 agent 取证（暂不可实现）
@@ -349,6 +259,7 @@
   - 方向：run 级聚合器（成员 label/outcome/phase 折叠进阶段卡，参照官方 tool-workflow 装配）；验证=真机 workflow 运行会话卡片分阶段展示
   - **2026-09-01 活体四面包夹（走查 #9 定性）**：events.mux 实况帧（两次 WS tap + 现跑 workflow 对照，仅 tool/code-dispatch* 渲染伴生）、session.history journal（39 页全翻 0 行，fresh run 亦不入）、session/projection（仅 permissions）、session/jobs（仅 bash 后台任务）四面皆无 → app 侧映射链（DshEventMapper:469 + DshMessageAssembler）为休眠代码路径，非缺陷；走查期「18 事件在 a6c4」不复现（疑当时另有来源/版本窗口）。重开丢卡=结构性（无服务器数据源），DSH synthetic 消息零持久化同因
   - **2026-09-02 复验（差距调研独立交叉确认）**：`docs/research/dsh-gap-2026-09-01/` 四路证据（fe 源码/Android 清点/Web 实测/服务端 api-gap）再次确认服务器事件面无 tool-workflow 运行事件——门维持关闭；聚合器设计参照 fe-inventory §2.17 client-ui-workflow-run
+  - 2026-09-29 前提重验:0.1.7-rc.2 dist 仍无 tool-workflow 运行事件——前提不变,维持 P4
 
 - [ ] **#146 OpenCode 官方问题清单（issue/PR 候选）** `upstream`
   - **前提**：上游 anomalyco/opencode 合入变更——需先过用户流程门槛（本地定位官方源码→修复→完整测试含 E2E+交叉验证→人工测试→用户放行才可提交 PR；源码已就位）；2026-09-03 用户裁决长期挂起，上游不提不影响本 app（客户端防御均已落地）
@@ -356,3 +267,4 @@
   - ⑥候选（2026-08-27 八轮实证）：V2 后台 shell 状态恒 completed（exit 7 亦然），失败信号仅正文文本——上游语义退化，客户端已防御性派生
   - **2026-09-02 逐项复现取证完结（journal 258-stage-b §十）**：源码浅克隆 `~/Documents/code/opencode-upstream`@69c172e + Host-4199 live 复验——①②③⑥ HEAD 仍成立（①连 schema 都无 Started；②端点零回溯处理；③400 已类型化 `_tag` 但无降级；⑥exitCode 从不映射 status）；**④上游已修/改版**（空 body 分支 + payload 改 `{messageID?}`，运行版未跟上，app 现发形状已匹配 HEAD）；⑤不变（FR 开放）。PR 候选排序 ③>⑥>①>②
   - → `docs/journal/2026-08-15-chat-flow-bugs.md`
+  - 2026-09-29 前提复核:上游浅克隆 ~/Documents/code/opencode-upstream 已不在本机——重验/提 PR 前需重新浅克隆

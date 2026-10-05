@@ -112,6 +112,29 @@ status)
   esac
   echo "#$N 状态 → $S"
   ;;
+# -------------------------------------------------------------- move
+move)
+  if [ "$#" -ne 2 ]; then die "move: 用法 move <N> <P0-P4>"; fi
+  N="$1"; P="$2"
+  echo "$P" | grep -q '^P[0-4]$' || die "move: 目标需 P0..P4"
+  A=$(anchor "$N"); if [ -z "$A" ]; then die "move: 找不到卡 #$N"; fi
+  CUR=$(section_of_line "$A")
+  if [ "$CUR" = "$P" ]; then echo "#$N 已在 $P"; exit 0; fi
+  E=$(block_end "$A")
+  sed -n "${A},${E}p" "$BL" > "$TD/card"; printf '
+' >> "$TD/card"
+  sed -i "${A},${E}d" "$BL"
+  PREV=$((A-1)); if [ "$PREV" -ge 1 ]; then
+    L1=$(sed -n "${PREV}p" "$BL"); L2=$(sed -n "${A}p" "$BL" || true)
+    if [ -z "$L1" ] && [ -z "${L2:-}" ]; then sed -i "${A}d" "$BL"; fi
+  fi
+  H=$(section_header_line "$P"); if [ -z "$H" ]; then die "move: 找不到节 ## $P"; fi
+  K=$(top_insert_point "$H")
+  ins_after "$K" "$TD/card"
+  echo "#$N: $CUR -> $P（节顶）"
+  run_check
+  ;;
+
 # -------------------------------------------------------------- migrate
 migrate)
   if [ -z "${1:-}" ]; then die "migrate: 用法 migrate <N> [-j 文件] [-r 依据]"; fi

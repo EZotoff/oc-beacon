@@ -256,7 +256,6 @@
     <string name="chat_message_delete_failed">メッセージの削除に失敗しました</string>
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">トークン/秒</string>
-    <string name="chat_msg_tail_summary">%1$d ステップ · %2$d ツール</string>
     <string name="a11y_message_detail">メッセージの詳細</string>
     <string name="chat_stats_session_title">セッション統計</string>
     <string name="chat_stats_summary">ターン %1$d · %2$d ステップ · %3$s LLM · %4$s ツール</string>
@@ -492,6 +491,7 @@
     <string name="server_settings_oauth_browser_hint">ブラウザで認証を完了してください。このウィンドウは自動的に閉じます。</string>
     <string name="chat_error_view_page">ページ</string>
     <string name="chat_error_view_code">コード</string>
+    <string name="math_block_badge">数式</string>
     <string name="chat_save_image">画像を保存</string>
     <string name="chat_image_saved">画像を保存しました</string>
     <string name="chat_image_save_failed">画像の保存に失敗しました</string>

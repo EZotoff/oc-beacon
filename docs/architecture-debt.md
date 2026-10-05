@@ -1,7 +1,7 @@
 # Architecture Debt Register
 
 Generated: 2026-07-13
-Updated: 2026-08-07（密码导航重构后同步）
+Updated: 2026-09-30（#42x-#47x 滚动/渲染引擎战役后全量复测——god files 表刷新+引擎域入册+测试缺口并入；#481）
 
 ## 1. 依赖方向违规（已修复 vs 剩余）
 
@@ -39,14 +39,42 @@ Updated: 2026-08-07（密码导航重构后同步）
 
 **推荐**：Option B（AGENTS.md 已声明 "ViewModel 委托给 UseCase" 是项目规范，删除会破坏架构一致性）。
 
-## 3. God Files（>500 行，2026-08-07 实测）
+## 3. God Files（>500 行，2026-09-30 实测）
 
-| File | 行数 | 状态 |
-|------|------|------|
-| ChatScreen.kt | ~770 | 继续 sub-composable 抽取（#16 已抽滚动控制器） |
-| ChatMessageList.kt | ~674 | #18 已外移指纹函数，继续提取滚动/缓存逻辑 |
-| SessionListViewModel.kt | ~522 | #17 已分层修复（UseCase 下沉），仍偏大 |
-| ServerTerminalWorkspace.kt | ~620 | 已迁移 data/terminal，逻辑内聚可接受 |
+| File | 2026-08-07 | 2026-09-30 | 状态 |
+|------|------|------|------|
+| ChatMessageList.kt | ~674 | **2756** | #42x-#47x 引擎战役主战场（entries 装配/流式配对/分片消费）；拆分需以引擎域为单元整体外移，散抽会破坏铁律链 |
+| DshApiClient.kt | — | **2550** | DSH 协议栈（0.1.x 演进期），按域分文件候选 |
+| DshEventMapper.kt | — | **2150** | 同上（事件映射面随 SSE 事件集扩张） |
+| V2ApiClient.kt | — | **1874** | V2 端点族（#459 漂移清单对应面） |
+| CardExpandReveal.kt | — | **1861** | #420-427/#466 卡片展开战役产物；含 DEBUG 打点（#473 清扫域） |
+| ChatViewModel.kt | ~493（瘦身后） | **1574** | 回涨（会话动作/数据委托并入后）；SessionActionsDelegate 880 + MessageDataDelegate 831 已是外移产物 |
+| SessionListViewModel.kt | ~522 | **1418** | 持续回涨 |
+| MessageCardAssistant.kt | — | **1387** | 分段/分片/StepGroup 渲染树（#422/#258） |
+| ChatScreen.kt | ~770 | **1360** | 屏幕 shell；BottomBar 808 已外移 |
+| MessageEventHandler.kt | ~857（#234 后） | **1289** | SSE 事件装配 |
+
+> 700-984 行段（未列全）：V1ApiClient 984 · MarkdownContent 961 · MarkdownTable 914 · QuestionPartContent 885 · SessionActionsDelegate 880 · SseConnectionManager 866 · ChatRepositoryImpl 865 · DshRemoteMuxEngine 843 · MessageDataDelegate 831 · SessionListScreen 818 · ChatScreenBottomBar 808 · SessionStateService 792 · ChatFabMenu 775 · AppNotificationManager 756 · MessageStore 744。
+
+### 3.1 滚动/渲染引擎域（2026-09-30 入册，#42x-#47x 战役产物）
+
+高度-视口配对与流式稳定是铁律链承重区（见 AGENTS.md「SSE 滚动稳定性」+ docs/research/sse-scroll-stability-iron-laws.md），**改动前必读铁律**：
+
+| 域 | 文件 | 行数 | 职责 |
+|------|------|------|------|
+| scroll/ | ChatScrollController.kt | 488 | 视口意图/贴底判定（snapshotFlow 双值键） |
+| scroll/ | ScrollCompensation.kt | 708 | #435 高度配对/帽轨（#470 回缩缺口在册） |
+| scroll/ | PreRenderCoordinator.kt | 198 | pre-draw flush 单点 |
+| util/ | SafeFlingBehavior.kt | 132 | fling 行为 |
+| components/ | CardExpandReveal.kt | 1861 | 卡片展开（#420-427/#466） |
+| components/ | RenderSupplyCoordinator.kt | 602 | 预解析/chunk/segment 计划供给窗 |
+| components/ | TurnSegmenting.kt | 208 | Stage B turn 分段骨架 |
+| components/ | MarkdownChunking.kt | 413 | entries 装配/chunk 消费 |
+| markdown/ | SafePrefixGate.kt | 516 | #437 稳定前缀两级放行 |
+| markdown/ | StreamingMarkdownPilot.kt | 318 | #265 前缀差分试点 |
+| markdown/ | HeldTailReveal.kt / HeldTailAging.kt | 188/96 | #437 降亮区 |
+
+> 旧表勘误：原 ChatScreen ~770 / ChatMessageList ~674 系 2026-08-07 快照，两个月引擎战役使其失真 ~4 倍——本节为 2026-09-30 wc -l 全量复测。
 
 > 2026-08-07 已瘦身出表：ChatViewModel（~1100→493，#8/#15 拆分）、SessionListScreen（~700→367）、SettingsDataStore（~690→223）、NavGraph（~570→420）、MessageDataDelegate（#15 拆为 PaginationDelegate + OptimisticMessageStore）。
 
@@ -56,7 +84,8 @@ Updated: 2026-08-07（密码导航重构后同步）
 
 | 模块 | 风险 |
 |------|------|
-| 终端 tab 管理（ServerTerminalWorkspace） | 重连/多 tab 逻辑无单测 |
+| 分页 androidTest @Ignore（ChatInteractionTest pagination_triggersOnScrollUp） | sessionId 空壳致 init 跳过 loadMessagesForSession → hasOlderMessages 恒 false；解法三选一（SavedStateHandle 注入非空 sessionId / 测试可见强制钩 / Mock SessionLifecycleDelegate），方案注释在测试现场（2026-09-30 并入自 #481） |
+| 终端 tab 管理（ServerTerminalWorkspace） | 重连/多 tab 逻辑无单测（2026-09-30 复核仍缺） |
 | ServerSettingsViewModel 新方法 | ProviderRepository 新 8 方法仅有 mapper 测试，ViewModel 层无覆盖 |
 | SessionStateRepository 接口 | 已由 SessionStateServiceTest 覆盖（经具体类） |
 

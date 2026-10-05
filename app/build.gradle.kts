@@ -92,6 +92,14 @@ android {
             buildConfigField("boolean", "STREAMING_MD_PILOT", "true")
             // #437 两级安全放行闸（stable reveal）：dev 先行（回退=置 false 一行）
             buildConfigField("boolean", "STABLE_REVEAL_PILOT", "true")
+            // #442 B6/A4 判定矩阵：-POCBEACON_STREAM_FLAGS_OFF=true 构建旗标全关基线
+            val streamFlagsOff = (project.findProperty("OCBEACON_STREAM_FLAGS_OFF") as? String)?.toBoolean() ?: false
+            // #503（2026-10-02 真机定罪）：毕业 fire 回卷循环（fire→条目churn→条目回收
+            //→pilot 冷启→origin 回滚重冻结→再 fire，9 fire/9s）——流式尾段重建循环。
+            // 关闭冻结分片（性能优化，回退=单容器流式；#501 正文修复在 DELTA_BUS 不受影响）
+            buildConfigField("boolean", "STREAM_SHARD_PILOT", "true")
+            // #442 B案 节奏收编（spec 2026-10-02-442-b-cadence-incorporation）：dev 先行
+            buildConfigField("boolean", "STREAM_DELTA_BUS", "!$streamFlagsOff")
             // 2026-08-13 用户决策：dev 测试构建 versionCode 用 Unix 时间戳——
             // 每次构建自动递增，adb install -r 可覆盖安装（保留 App 数据/服务器配置，
             // 禁止卸载重装）；正式版本号（version.properties）仅 beta/stable 使用。
@@ -104,18 +112,28 @@ android {
             manifestPlaceholders["appLabel"] = "OC Beacon Beta"
             // GitHub 分发渠道保留应用内自更新
             buildConfigField("boolean", "ENABLE_AUTO_UPDATE", "true")
-            // #265 试点未达标前 beta/stable 不放开
-            buildConfigField("boolean", "STREAMING_MD_PILOT", "false")
-            // #437 同步关闭（依赖 STREAMING_MD_PILOT）
-            buildConfigField("boolean", "STABLE_REVEAL_PILOT", "false")
+            // 2026-09-30 用户裁决放行（#437 收口）：廿余轮定量证据 + 铁律 10-14 收编
+            buildConfigField("boolean", "STREAMING_MD_PILOT", "true")
+            // #437 稳定揭示（依赖 STREAMING_MD_PILOT）
+            buildConfigField("boolean", "STABLE_REVEAL_PILOT", "true")
+            // #442 R2 分片 + B案节奏收编：2026-10-02 用户裁决提升 beta
+            //（dev 泡机+双臂单测+真机矩阵后；stable 再晚一批观察）
+            // #503：SHARD 因毕业回卷循环降回 false（下一 beta 构建携带；DELTA_BUS 保留）
+            buildConfigField("boolean", "STREAM_SHARD_PILOT", "false")
+            buildConfigField("boolean", "STREAM_DELTA_BUS", "true")
         }
         create("stable") {
             dimension = "flavor"
             manifestPlaceholders["appLabel"] = "@string/app_name"
             // Google Play 渠道：政策禁止 REQUEST_INSTALL_PACKAGES 自更新，禁用
             buildConfigField("boolean", "ENABLE_AUTO_UPDATE", "false")
-            buildConfigField("boolean", "STREAMING_MD_PILOT", "false")
-            buildConfigField("boolean", "STABLE_REVEAL_PILOT", "false")
+            // 2026-09-30 用户裁决放行（#437 收口）：与 beta 同批
+            buildConfigField("boolean", "STREAMING_MD_PILOT", "true")
+            buildConfigField("boolean", "STABLE_REVEAL_PILOT", "true")
+            // #442 R2 分片 + B案节奏收编：stable 待观察后随下一批提升
+            //（beta 先行裁决 2026-10-02；回退=beta/stable 翻 false 一行）
+            buildConfigField("boolean", "STREAM_SHARD_PILOT", "false")
+            buildConfigField("boolean", "STREAM_DELTA_BUS", "false")
         }
     }
 
@@ -249,8 +267,8 @@ dependencies {
     implementation("com.mikepenz:multiplatform-markdown-renderer-m3:$markdownRendererVersion")
     implementation("com.mikepenz:multiplatform-markdown-renderer-coil3:$markdownRendererVersion")
 
-    // FileViewer 源码视图的语法高亮（dev.snipme/highlights）。
-    // 注意：Markdown 代码块使用 mikepenz 内置的默认渲染器，而非本库。
+    // 语法高亮引擎（dev.snipme/highlights）：FileViewer 源码视图 + 主对话流
+    // Markdown 代码块（#488② 自建渲染壳，ui/screens/chat/markdown/HighlightedCode.kt）。
     implementation("dev.snipme:highlights:1.1.0")
 
     // WebView 回退（为兼容遗留场景保留）

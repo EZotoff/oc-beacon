@@ -18,24 +18,28 @@ internal fun normalizeTaskListMarkers(markdown: String): String {
     var fenceMarker: Char? = null
     var minimumFenceLength = 0
     return markdown.split('\n').joinToString("\n") { line ->
-        val marker = MarkdownFenceStartRegex.find(line)?.groupValues?.get(1)
+        // #471③：围栏判定统一至 MarkdownFenceLine（闭栏无 info、反引号栏
+        // info 无反引号——与 SafePrefixGate 同语义，消除栏状态分歧破口）。
         if (fenceMarker != null) {
             // 在围栏内——只有匹配的关闭围栏才能结束它。
-            if (marker != null && marker.first() == fenceMarker && marker.length >= minimumFenceLength) {
+            if (MarkdownFenceLine.closes(line, fenceMarker!!, minimumFenceLength)) {
                 fenceMarker = null
                 minimumFenceLength = 0
             }
             line
-        } else if (marker != null) {
-            // 开启新的围栏。
-            fenceMarker = marker.first()
-            minimumFenceLength = marker.length
-            line
         } else {
-            // 在任何围栏外——将 Unicode 任务标记规范化为 GFM 语法。
-            TaskListMarkerRegex.replace(line) { match ->
-                val checkbox = if (match.groupValues[2][0] == BALLOT_BOX) "[ ]" else "[x]"
-                match.groupValues[1] + checkbox + match.groupValues[3]
+            val open = MarkdownFenceLine.open(line)
+            if (open != null) {
+                // 开启新的围栏。
+                fenceMarker = open.first
+                minimumFenceLength = open.second
+                line
+            } else {
+                // 在任何围栏外——将 Unicode 任务标记规范化为 GFM 语法。
+                TaskListMarkerRegex.replace(line) { match ->
+                    val checkbox = if (match.groupValues[2][0] == BALLOT_BOX) "[ ]" else "[x]"
+                    match.groupValues[1] + checkbox + match.groupValues[3]
+                }
             }
         }
     }
@@ -43,5 +47,4 @@ internal fun normalizeTaskListMarkers(markdown: String): String {
 
 private const val BALLOT_BOX = '\u2610' // ☐ — 未选中；☑ (\u2611) 和 ✅ (\u2705) 映射为已选中。
 
-private val MarkdownFenceStartRegex = Regex("^ {0,3}(`{3,}|~{3,})")
 private val TaskListMarkerRegex = Regex("^(\\s*[-+*]\\s+)([\u2610\u2611\u2705])([ \\t]+)")

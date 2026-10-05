@@ -6,7 +6,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * 本地缓存的消息部件。独立成表：SSE 流式更新每 48ms 一个 token delta，
+ * 本地缓存的消息部件。独立成表：SSE 流式更新每 100ms 一批 token delta，
  * 独立表每次只更新单行 text，避免重写整条消息 JSON 的写放大。
  */
 @Entity(

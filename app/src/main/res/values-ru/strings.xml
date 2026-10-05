@@ -282,7 +282,6 @@
     <string name="chat_message_delete_failed">Не удалось удалить сообщение</string>
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">токенов/с</string>
-    <string name="chat_msg_tail_summary">%1$d шагов · %2$d инструментов</string>
     <string name="a11y_message_detail">Детали сообщения</string>
     <string name="chat_stats_session_title">Статистика сессии</string>
     <string name="chat_stats_summary">%1$d раундов · %2$d шагов · %3$s LLM · %4$s инструментов</string>
@@ -334,6 +333,7 @@
     <string name="chat_retry">Повтор #%1$d: %2$s</string>
     <string name="chat_error_view_page">Страница</string>
     <string name="chat_error_view_code">Код</string>
+    <string name="math_block_badge">Формула</string>
     <string name="chat_save_image">Сохранить изображение</string>
     <string name="chat_image_saved">Изображение сохранено</string>
     <string name="chat_image_save_failed">Не удалось сохранить изображение</string>

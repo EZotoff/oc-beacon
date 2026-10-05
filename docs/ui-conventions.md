@@ -36,6 +36,22 @@
 
 ## Theme Token System
 
+### Syntax theme 映射（代码块语法高亮，#488②）
+
+`ui/screens/chat/markdown/CodeSyntaxTheme.kt` 的 `ColorScheme.toCodeSyntaxTheme()`——M3 语义色 → highlights 引擎 `SyntaxTheme` 9 角色，规则（2026-09-30 用户裁决自建渲染壳路线）：
+
+| SyntaxTheme 角色 | M3 映射 | 依据 |
+|---|---|---|
+| code（默认前景） | `onSurface` | = codeBlockFg 非 user 分支 |
+| keyword | `primary` | 最强强调位 |
+| string / metadata / mark | `tertiary` | Material You 第三色调（后两者无显然对应，批 2 视觉试验位） |
+| literal | `secondary` | 第二色调 |
+| comment / multilineComment / punctuation | `onSurfaceVariant` | 灰阶降权（引擎 ColorHighlight 强制 alpha=1，只能换色相令牌降权） |
+
+AMOLED 免特判（AMOLED 只覆盖 surface 族）；动态色自动适配。
+
+数学降级块（#488③）不走上表引擎映射（highlights 无 tex 语言）：`transformMathFallback` 产物 ```math 围栏由 `SafeHighlightedMathBlock` 手写三角色——`\命令` tertiary / 花括号 `onSurfaceVariant` / 上下标 secondary——块顶「公式」徽标（`math_block_badge`，15 语言，labelSmall+Medium+onSurfaceVariant），静态完结内容同步构建（remember 键 = 参与着色的 colorScheme 角色）。
+
 ### Alpha tokens (Alpha.kt)
 
 7 个语义透明度常量 — SELECTED(0.12) / DIFF_BG(0.10) / FAINT(0.35) / MUTED(0.50) / MEDIUM(0.70) / HIGH(0.80) / AMOLED(0.92). 用它们代替硬编码的 `.copy(alpha = Xf)`。

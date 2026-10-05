@@ -247,6 +247,7 @@ class ChatViewModelRevertTest {
                 coEvery { chatRepo.listActiveSessions(any()) } returns kotlin.Result.success(emptyMap())
                 every { chatRepo.getParts(any()) } answers { eventDispatcher.parts.map { it[firstArg<String>()] ?: emptyList() } }
                 every { chatRepo.getAllPartsMap() } returns eventDispatcher.parts
+                every { chatRepo.getStructuralPartsMap() } returns eventDispatcher.structuralParts
                 every { chatRepo.getPermissionsSnapshot() } answers { eventDispatcher.permissions.value }
                 every { chatRepo.getQuestionsSnapshot() } answers { eventDispatcher.questions.value }
                 every { chatRepo.getSessionsSnapshot() } answers { eventDispatcher.sessions.value }

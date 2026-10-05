@@ -965,3 +965,23 @@ IP 漂移对策；dsh-pair.sh 支持 DSH_PAIR_SERIAL 参数化传名）。
 歧义形态扣留——置于纯文字分支之前防先匹配吞掉）。
 **验收**：gate 全族 43 测试+全量回归 BUILD SUCCESSFUL；已提交。
 **装机**：设备离线（mDNS 失联），APK 已构建备好，下次设备窗口即装。
+
+## 已完结卡片迁入（2026-09-30）
+
+### **#437 流式Markdown稳定揭示渲染——安全前缀两级放行(稳定块+纯段安全后缀),消灭不稳定尾回溯跳变** `sse,render,perf`
+  - 根因:不稳定尾先字面排版后回溯重释义=已显示内容高度回溯(真机录屏A-B翻转帧定罪);#435引擎只能配对单调增长。方案:pilot差分与append之间加SafePrefixGate(库与渲染零改动):稳定块+开放段纯文字安全后缀两级放行,尾部扣留超龄进锁高降亮区,完结EOF全量flush。spec:docs/specs/2026-09-25-437-streaming-md-stable-reveal-design.md(阶段A-D+验收矩阵)
+  - 2026-09-28 深度调研(issue437-research.md,204行):核心根因已由 SafePrefixGate 消灭有二十余轮定量证据;剩余=验收收口+关联残差分卡。R-7 重要发现:beta/stable 双关闭,修复仅 dev 生效(build.gradle.kts:108-118);铁律文档 sse-scroll-stability-iron-laws.md 未收编#437 内容(文档同步缺口);#450 是本卡判据放宽的直接次生回归(教训建议进铁律)
+  - 2026-09-29 发掘审计:铁律收编缺口比 R-7 记载更大——sse-scroll-stability-iron-laws.md 止于 2026-09-25 #435,#437 稳定揭示/#438 限速与保 key/#472 行内放行/#474 守卫分通道/#476 GUARD 死区五域铁律全未收编;R-7 收口时应一并补
+  - 2026-09-30 铁律五域收编完成：sse-scroll-stability-iron-laws.md 新增 §2.6 铁律 10-14（#437 安全前缀+差分基准取放行前缀 / #438 壁钟限速+保 key 投影 / #472 行内放行镜像+非前缀宽限 / #474 手势-程序通道分治 / #476 GUARD 死区），全部代码符号 grep 核实在位；卡上残余仅剩 beta/stable flag 放行裁决（build.gradle.kts:108-118，等用户拍板）
+  - 迁入依据：用户裁决放行 beta/stable（2026-09-30）：SafePrefixGate 根修廿余轮定量证据+铁律 10-14 五域收编完成+compileBetaDebugKotlin 绿，dev-only 门结束；回退通道=flavor flag 置 false（backlog.sh migrate 2026-09-30）
+
+## 放行后验证状态（2026-09-30）
+
+- compileBetaDebugKotlin 绿 + 全量单测 3742/0 失败 + R8 静态核查：proguard 对 mikepenz/intellij markdown 全家 keep（proguard-rules.pro:38-40），pilot/gate/inline 三类无自定义反射面（唯一 Class.forName=平台类 android.os.SystemProperties，R8 透明）
+- 残余：beta/stable **release** 构建开 R8，flag 翻 true 后 pilot 路径首次进入 R8 常量折叠保留面——运行时 smoke 未做（发版红线：version.properties 未 bump 禁 assemble beta/stable）。**下次 beta 发版首轮 E2E 必须覆盖一轮流式输出**；回退通道=flavor flag 置 false
+
+## 放行后验证补充（2026-09-30 20:30，用户授权本地不发布构建）
+
+- assembleBetaRelease BUILD SUCCESSFUL（3m32s，R8 全程无 keep 报错）；mapping.txt 实证 pilot 家族保留（StreamingMarkdownPilot/SafePrefixGate/InlineSpanSafety/StreamingGrowLedger/MarkdownContent 共 3384 处引用，rememberPilotStreamingMarkdownState 完整映射）
+- 装机冒烟：install Success（release keystore 签名，与 CI 同源）→ 冷启 → 进程存活、FATAL=0、UI 正常（中文本地化/MD3/空状态引导页/电池横幅，vision 判读无渲染异常）
+- 残余收窄：唯一未覆盖=beta 包内一轮真实流式输出（需 UI 手工配置服务器，debug 通道 beta 禁用）——beta 包已留在真机（dev.leonardo.ocbeacon.beta，adb reverse tcp:4096 已通），用户指配一轮即完成闭环；下轮 CI 发版 E2E 同样覆盖

@@ -1,6 +1,8 @@
 package dev.leonardo.ocbeacon.ui.screens.chat.util
 
+import dev.leonardo.ocbeacon.domain.model.Message
 import dev.leonardo.ocbeacon.ui.screens.chat.ChatMessage
+import dev.leonardo.ocbeacon.ui.screens.chat.components.SYNTHETIC_ENVELOPE_ROLES
 
 /**
  * 计算聊天消息列表中 assistant 消息的 turn 分组。
@@ -38,7 +40,19 @@ internal fun computeTurnGroups(messages: List<ChatMessage>): Map<Int, List<ChatM
 internal fun computeTurnAnchors(messages: List<ChatMessage>): Map<Int, String> {
     val indexToAnchor = mutableMapOf<Int, String>()
     for ((range, _) in buildAssistantTurnGroups(messages)) {
-        val terminator = messages.getOrNull(range.last + 1)
+        // #485：信封（agent-switched/model-switched/shell）不产条目（buildChatEntries
+        // 跳过不渲染）——锚到信封=锚到不可见行，t_ 键脆弱（真机 18:31:42 完结闪烁
+        // 定罪：归并失序把 user 挤到信封下方，锚跌落到信封 id）。向 Older 侧穿透
+        // 连续信封锚到真实消息；idle 是轮末书签+可见 u_ 条目兼天然轮界——不穿透
+        //（防极端失序下跨轮抢前一轮 user 键）。
+        var ti = range.last + 1
+        var terminator = messages.getOrNull(ti)
+        while (terminator != null &&
+            (terminator.message as? Message.User)?.role in SYNTHETIC_ENVELOPE_ROLES
+        ) {
+            ti++
+            terminator = messages.getOrNull(ti)
+        }
         val anchor = terminator?.takeIf { !it.isAssistant && !it.message.id.startsWith("pending-") }?.message?.id
         if (anchor != null) {
             for (i in range) {

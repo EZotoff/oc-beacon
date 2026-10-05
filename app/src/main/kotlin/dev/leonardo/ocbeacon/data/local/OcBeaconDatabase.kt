@@ -14,10 +14,15 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * 对齐消息流 Room 种子化模式）。
  * v8（#385b）：DSH 消息 id 会话命名空间化（seq-{sessionId}-{n}）——清空旧裸
  * seq-{n} 行（跨会话碰撞已串味，不可信缓存；各会话下次进入时经历史重放自愈）。
+ * v10（#478）：FTS5 external-content 重建——旧 message_fts 全文镜像（影子表
+ * _content 613MB + 倒排 162MB = 库 92%）DROP 后按 content=cached_parts 重建，
+ * 同步挂触发器；rebuild 只从现存热表行构建，18 万孤儿行（prune 不删的冷数据）
+ * 随重建丢弃。文件级回收由 DatabaseModule onOpen 阈值 VACUUM 完成（迁移
+ * 事务内禁 VACUUM）。
  */
 @Database(
     entities = [CachedMessageEntity::class, CachedPartEntity::class, LogEntity::class, ArchiveBucketEntity::class, SessionSyncEntity::class, CachedSessionEntity::class],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 abstract class OcBeaconDatabase : RoomDatabase() {
@@ -62,6 +67,49 @@ abstract class OcBeaconDatabase : RoomDatabase() {
         val MIGRATION_8_9: Migration = object : Migration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("DELETE FROM session_sync_state")
+            }
+        }
+
+        /**
+         * #478：FTS5 external-content 重建（837MB 库 → 预计稳态 ~230MB 根修）。
+         *
+         * 复合根因（2026-09-29 真机 dbstat 定罪）：①FTS5 建表未用外部内容表，
+         * 全文在库内双份（message_fts_content 613MB）；②FTS 行不随热表修剪
+         * （181,682 行 vs cached_parts 6.6k 行，冷数据未压缩文本永驻）；③
+         * page_size=1024 放大 btree/溢出链开销（→onOpen VACUUM 顺带 4096）。
+         *
+         * 本迁移治①②存量：DROP 旧表（影子表级联清除）→ external-content 新表
+         * + 触发器（增量一致性）→ 从 cached_parts 现存 text 行回填（孤儿行自然
+         * 丢弃；过滤回填与触发器同语义，见 MessageFtsSchema.BACKFILL）。
+         * ③与文件回收见 DatabaseModule 的阈值 VACUUM。
+         *
+         * 埋点走 android.util.Log：迁移期间 AppLogger 持久化写库会重入死锁。
+         */
+        val MIGRATION_9_10: Migration = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val t0 = android.os.SystemClock.elapsedRealtime()
+                // 旧库可能从未建过 FTS（从未触发搜索的设备）——COUNT 容错，DROP IF EXISTS 兜底
+                val oldRows = try {
+                    db.query("SELECT COUNT(*) FROM ${MessageFtsSchema.TABLE}").use {
+                        if (it.moveToFirst()) it.getLong(0) else 0L
+                    }
+                } catch (e: Exception) {
+                    0L
+                }
+                db.execSQL("DROP TABLE IF EXISTS ${MessageFtsSchema.TABLE}")
+                db.execSQL(MessageFtsSchema.CREATE)
+                MessageFtsSchema.TRIGGERS.forEach(db::execSQL)
+                db.execSQL(MessageFtsSchema.BACKFILL)
+                // external-content 表 COUNT(*)=content 表行数（含 reasoning 等
+                // 非索引行），真实倒排行数以 _docsize 影子表计
+                val newRows = db
+                    .query("SELECT COUNT(*) FROM ${MessageFtsSchema.TABLE}_docsize")
+                    .use { if (it.moveToFirst()) it.getLong(0) else 0L }
+                android.util.Log.i(
+                    "OcBeaconDB",
+                    "[478-migration] FTS external-content rebuilt: old=$oldRows indexed=$newRows rows, " +
+                        (android.os.SystemClock.elapsedRealtime() - t0) + "ms",
+                )
             }
         }
     }

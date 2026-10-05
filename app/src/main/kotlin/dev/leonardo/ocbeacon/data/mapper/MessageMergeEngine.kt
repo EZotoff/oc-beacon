@@ -56,8 +56,16 @@ internal object MessageMergeEngine {
                 // incoming.text 含完整文本且 end!=0。保守策略：
                 // incoming 带 end 时间戳（ended/REST 语义）→ 覆盖；
                 // 纯 started/delta 路径（无 end）→ 保留更长者（流式保护）。
+                // —— 2026-09-30 H1 守卫修订（坍缩重建根修，13:55 真机定罪）：
+                // 「保留更长者」在流式期放行了**更长但异构**的快照（服务器侧
+                // 空行折叠使同一 part 出现两套字节表示）→ 整体替换 delta 累积
+                // → pilot nonPrefix（divergeAt=396）→ RESETKEY 整树重建 →
+                // 卡片 5741→3249 坍缩 + 200ch/200ms 限速重灌 4.4s。流式期
+                // delta 累积是真相源：仅**前缀一致**（incoming ⊇ existing，
+                // REST 领先快进原语义）才替换；分歧快照保 existing，流末
+                // text.ended 权威全量替换收敛（isTerminal 分支不受影响）。
                 val isTerminal = (incoming.time?.end ?: 0L) != 0L
-                val merged = if (isTerminal || incoming.text.length >= existing.text.length) incoming else existing
+                val merged = if (isTerminal || incoming.text.startsWith(existing.text)) incoming else existing
                 // #266 身份回填：合并结果保留 existing 的派生 id（流式身份跨
                 // 完结稳定）——#246 锚点、Room 行键（upsertParts 只 REPLACE 不
                 // 删缺席行，改名即产孤儿行）、未来一切 partId 键控逻辑不再站在
@@ -73,7 +81,10 @@ internal object MessageMergeEngine {
                         ?: (incoming.time?.end ?: existing.time?.end) ?: 0L,
                     end = incoming.time?.end ?: existing.time?.end
                 )
-                val merged = if (incoming.text.length >= existing.text.length) incoming else existing
+                // 2026-09-30 H1 守卫（同 Text 分支）：流式期前缀一致才替换，
+                // 终态（reasoning.ended 权威全量）恒覆盖——与 #266 ended 语义对齐。
+                val isTerminal = (incoming.time?.end ?: 0L) != 0L
+                val merged = if (isTerminal || incoming.text.startsWith(existing.text)) incoming else existing
                 // #266 身份回填（语义同 Text 分支）
                 val id = existing.id.ifBlank { incoming.id }
                 if (merged.id == id) merged.copy(time = time)
@@ -531,6 +542,27 @@ internal object MessageMergeEngine {
     }
 
     /**
+     * #485：REST 快照归并入口（SSE_PRIORITY / REST_AUTHORITY 策略共用）。
+     *
+     * 背景（真机 2026-09-30 18:31:42 定罪）：V2 SSE 把消息 created 写成信封/
+     * 客户端钟（V2SseMapper），流式期内存行比 REST 权威 created 早 0.5-1s；
+     * [mergeSortedMessages] 契约「合并行保持 existing 原位」——user 行内容被
+     * REST 权威替换（created 前跳）却留在 SSE 时期槽位 → 输出列表失序 →
+     * computeTurnAnchors 的 Older 侧相邻错位（t_ 键漂到 agent-switched 信封）
+     * → LazyColumn 弃整棵子树 → asyncTerminal 全新实例 Loading≈0 高 =
+     * 「完结前内容闪灭重现」。故 REST 快照归并后必须按服务端 created 重排。
+     */
+    fun mergeRestSnapshot(
+        existing: List<Message>,
+        incomingSorted: List<Message>,
+        merge: (existingMsg: Message, incomingMsg: Message) -> Message,
+    ): List<Message> = mergeSortedMessages(existing, incomingSorted, merge)
+        // 稳定重排到服务端真相序：mergeSortedMessages 保位契约在「合并行 created
+        // 被 REST 权威前跳」时破坏有序前提（见上）——REST 快照频率低（轮次完结/
+        // 手动刷新），O(n log n) 一次可承受；二次刷新起列表已序，零移动。
+        .sortedBy { it.time.created }
+
+    /**
      * 合并消息的 SSE 和 REST 版本。
      * SSE 对内容更新（流式传输），但 REST 可能有 SSE 尚未投递的完成信息。
      *
@@ -610,15 +642,22 @@ internal object MessageMergeEngine {
     // ============ delta 应用（自 flushPendingDeltas 内联块抽出，#234）============
 
     /**
-     * 将单个 delta 应用到消息的 part 列表（48ms 批处理 flush 的每条目变换）。
+     * 将单个 delta 应用到消息的 part 列表（100ms 批处理 flush 的每条目变换）。
      *
      * - part 已注册且**终态**（ended 全量值已落位，time.end 非空）：丢弃——
      *   #266 终态守卫。ended 是官方 replayable full-value boundary，其后到达的
      *   delta 必为过期重放或服务器截断残留（2026-08-30 真机 E2E 实证：模型
      *   尾部自重复被服务器截断，滞留 delta 走本分支 endsWith 不命中 → 盲拼接
      *   → 尾段渲染两遍）。Tool part 无终态语义，不受影响。
-     * - part 已注册且流式中：文本追加（Text/Reasoning 均有 endsWith 去重——
-     *   批内重叠 delta 不重复拼接；#266 起 Reasoning 与 Text 对齐，不再盲拼接）
+     * - part 已注册且流式中：文本原样追加（#505 撤 endsWith 去重）。去重是
+     *   SSE 时代防御遗产，考古无已文档化的保护场景（#266 真机案例「尾段非
+     *   全文后缀」它自己都没接住，靠终态守卫收口；OpenCode 实测 delta 丢失
+     *   而非重复投递；DSH WS 抓包实测 delta 流==权威转写逐字节），却有实证
+     *   误杀：模型输出的合法重复短语（恰等于累积尾部）被当重复投递丢弃 →
+     *   累积文本中段缺口 → #504 换装门前缀断裂 → 完结 200px 占位闪塌
+     *   （2026-10-02 真机 turn 30：10 字重复 → 3724 vs 3734 miss）。
+     *   真重复与真重投在本地不可区分；两类误判都在完结权威替换时自愈，
+     *   而误杀会额外击穿换装门——两害相权取原样追加。
      * - part 未注册（空 started 被 #230 丢弃 / 事件丢失）：按 [kind] 重建——
      *   #223 已验证的 idx<0 兜底机制，首个非空 delta 即重建注册。重建前的
      *   过期判定（#265 守卫）**收窄到终态包含**：仅当同 kind 已有终态 part
@@ -646,14 +685,10 @@ internal object MessageMergeEngine {
             }
             if (isTerminal) return parts
             val newPart = when (part) {
-                is Part.Text -> {
-                    if (part.text.endsWith(delta)) part  // 去重
-                    else part.copy(text = part.text + delta)
-                }
-                is Part.Reasoning -> {
-                    if (part.text.endsWith(delta)) part  // #266：与 Text 对齐去重
-                    else part.copy(text = part.text + delta)
-                }
+                // #505：endsWith(delta) 命中≠重复投递——模型重复短语同形，
+                // 误杀即中段内容丢失（KDoc 详见上方）。原样追加。
+                is Part.Text -> part.copy(text = part.text + delta)
+                is Part.Reasoning -> part.copy(text = part.text + delta)
                 else -> part
             }
             messageParts[idx] = newPart

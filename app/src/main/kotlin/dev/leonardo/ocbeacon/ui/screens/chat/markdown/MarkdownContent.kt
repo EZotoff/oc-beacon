@@ -1,8 +1,14 @@
 package dev.leonardo.ocbeacon.ui.screens.chat.markdown
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -15,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.text.AnnotatedString
@@ -27,6 +34,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 import com.mikepenz.markdown.annotator.annotatorSettings
 import com.mikepenz.markdown.coil3.Coil3ImageTransformerImpl
 import com.mikepenz.markdown.compose.components.markdownComponents
@@ -110,15 +118,20 @@ private val SINGLE_NEWLINE_REGEX = Regex("(?<!\n)\n(?!\n)")
 private val TABLE_AFTER_TEXT_REGEX = Regex("""([^\n]*[^\n|])\n([ \t]*\|[^\n]*\|)\n([ \t]*\|[-:\s|]+\|)""")
 
 /**
- * 最小化的 Markdown 预处理——让 Mikepenz Handle 原生解析。
- * 仅保留用户消息的换行规范化。
- * 自定义 HTML 检测和表格格式修复已移除，以避免破坏渲染的误报。
+ * 归一化共享核心（#471③ 流式/完结同源铁律的落点，spec
+ * docs/specs/2026-09-30-471-3-streaming-normalization-unification-design.md §3.1）：
+ * CRLF→LF + GFM 表格前空行 + 数学降级。assistant/user 通用，无身份分支——
+ * 三者皆为「放行安全」变换：回改点全部落在 SafePrefixGate 扣留区（双美元
+ * 定界符行/表头行/含反斜杠行皆活动标记行），已放行前缀的字节不因后续
+ * 到达而改变（逐变换矩阵证明见 spec §3.3）。
  */
-internal fun normalizeMarkdown(raw: String, isUser: Boolean): String {
+internal fun normalizeMarkdownCore(raw: String): String {
     // 规范化 Windows 换行符（\r\n → \n）。Windows 上的 opencode server
     // 在 Markdown 文本中返回 \r\n，这可能破坏 GFM 表格解析
     //（\r 可能被当作单元格内容而非行尾）。
-    var result = raw.replace("\r\n", "\n").replace("\r", "\n")
+    // 快路径：无 \r 整串跳过两次 replace（流式热路径每批一次）。
+    var result = if (raw.indexOf('\r') < 0) raw
+    else raw.replace("\r\n", "\n").replace("\r", "\n")
 
     // 确保 GFM 表格前有一个空行。
     // JetBrains markdown 解析器仅在块边界处检测表格；
@@ -126,13 +139,8 @@ internal fun normalizeMarkdown(raw: String, isUser: Boolean): String {
     result = ensureBlankLineBeforeGfmTables(result)
 
     // #312② 数学块降级（方案 C）：成对数学定界符（$$...$$ / \(...\) / \[...\]）
-    // → tex 围栏/行内代码（见 transformMathFallback KDoc——流式取舍同注）。
-    // 置于用户单换行空行化之前：多行公式块的行结构先成围栏、不被打散。
-    result = transformMathFallback(result)
-
-    if (!isUser) return result
-    // 用户消息：单个 \n 在 Markdown 中不换行（软换行）。
-    return result.replace(SINGLE_NEWLINE_REGEX, "\n\n")
+    // → tex 围栏/行内代码（见 transformMathFallback KDoc）。
+    return transformMathFallback(result)
 }
 
 /**
@@ -143,27 +151,104 @@ internal fun normalizeMarkdown(raw: String, isUser: Boolean): String {
  * `|` 字符会被当作字面文本，表格无法渲染。
  *
  * 模式：非表格行 \n |表头| \n |---| → 非表格行 \n\n |表头| \n |---|
+ *
+ * #471③ 围栏意识（spec §3.3 矩阵修订③）：栏内的表格形态是代码字面——
+ * 插入空行会改写代码块内容（完结渲染正确性缺陷），流式下更会改写 gate
+ * 已放行的栏内前缀（性质测试 random 轮 k=318 实证：未闭合围栏行内
+ * 「文字行\n|表头|\n|---|」被插空行）。行级围栏跟踪与
+ * [normalizeTaskListMarkers]/[transformMathFallback] 同模式：只对栏外
+ * 文本区跑正则，栏内行原样。
  */
 internal fun ensureBlankLineBeforeGfmTables(text: String): String {
     // 2026-08-26 流式卡顿根因修复（simpleperf 实证 ICU RegexMatcher 占主线程
-    // CPU 8.35% 全进程第一）：该正则对全文扫描，流式期间每 48ms 全量重跑。
+    // CPU 8.35% 全进程第一）：该正则对全文扫描，流式期间每批（100ms）全量重跑。
     // 模式必然含 '|'（组 2/3 的表格行）——无 '|' 的文本（essay/纯段落常态）
     // 不可能命中，native contains 扫描短路，正则零成本。
     if (!text.contains('|')) return text
-    // 匹配：不以 | 结尾的行，后跟表格表头行（以 | 开头），
-    // 再跟分隔行（仅含 -、:、空格和 | 的 |）。
-    return text.replace(TABLE_AFTER_TEXT_REGEX) { m ->
+    val lines = text.split("\n")
+    val chunks = ArrayList<CharSequence>(lines.size)
+    val run = StringBuilder() // 当前栏外文本区（行粒度，待表格正则）
+    // 2026-09-30 坍缩重建根修：行哨兵改显式计数——原 run.isNotEmpty() 把
+    // 「首行为空行」（闭合围栏后空行 append 后 run 仍 == ""）误判为 run 未
+    // 启动，下一行跳过分隔换行符 → 空行被静默吞噬；流式中 | 首次到达时该
+    // 吞噬首次生效 → 已放行前缀中段非前缀改写 → pilot RESETKEY 重建坍缩
+    //（真机三案 13:55/14:13/14:40 定罪，divergeAt 全落围栏闭合后空行处）。
+    var runLines = 0
+    var fenceMarker: Char? = null
+    var minFenceLen = 0
+    for (line in lines) {
+        // #471③：围栏判定统一至 MarkdownFenceLine（与三变换/gate 同语义）
+        val openFence = MarkdownFenceLine.open(line)
+        when {
+            fenceMarker != null -> {
+                // 栏内（含闭合围栏行）原样；仅同字符且足够长的无 info 围栏行能闭合
+                if (MarkdownFenceLine.closes(line, fenceMarker!!, minFenceLen)) {
+                    fenceMarker = null
+                    minFenceLen = 0
+                }
+                if (runLines > 0) {
+                    chunks.add(insertTableBlankLinesIn(run.toString()))
+                    run.setLength(0)
+                    runLines = 0
+                }
+                chunks.add(line)
+            }
+            openFence != null -> {
+                // 开启围栏：先冲刷栏外区，围栏行本身原样
+                if (runLines > 0) {
+                    chunks.add(insertTableBlankLinesIn(run.toString()))
+                    run.setLength(0)
+                    runLines = 0
+                }
+                chunks.add(line)
+                fenceMarker = openFence.first
+                minFenceLen = openFence.second
+            }
+            else -> {
+                if (runLines > 0) run.append('\n')
+                run.append(line)
+                runLines++
+            }
+        }
+    }
+    if (runLines > 0) chunks.add(insertTableBlankLinesIn(run.toString()))
+    return chunks.joinToString("\n")
+}
+
+/** 栏外文本区的表格前空行插入（[TABLE_AFTER_TEXT_REGEX] 的局部应用）。 */
+private fun insertTableBlankLinesIn(region: String): String =
+    region.replace(TABLE_AFTER_TEXT_REGEX) { m ->
         "${m.groupValues[1]}\n\n${m.groupValues[2]}\n${m.groupValues[3]}"
     }
+
+/**
+ * 渲染归一化（2026-08-13 提取；#471③ 与流式同源重构）：与 MarkdownContent
+ * 渲染完全一致的文本预处理——预解析（parseMarkdownFlow）必须用同一归一化
+ * 结果，否则解析出的 AST 与实际渲染内容不一致（换行差异 → 高度不同
+ * ——实测 214 vs 331）。
+ *
+ * 不变量（NormalizeSentinelEquivalenceTest 钉死）：
+ * normalizeForRender(raw, isUser=false) == normalizeForStreaming(raw) 逐字节。
+ */
+internal fun normalizeForRender(raw: String, isUser: Boolean): String {
+    val marked = normalizeTaskListMarkers(normalizeMarkdownCore(raw))
+    val withUser = if (!isUser) marked else
+        // 用户消息：单个 \n 在 Markdown 中不换行（软换行）。置于 task 标记
+        // 之后：两者皆行锚定操作、可交换（混合 fixture 等价测试）；多行
+        // 公式块的行结构已在共享核心成围栏、不被打散（#312② 原注释迁移）。
+        marked.replace(SINGLE_NEWLINE_REGEX, "\n\n")
+    return splitOversizedParagraphsByPosition(withUser)
 }
 
 /**
- * 渲染归一化（2026-08-13 提取）：与 MarkdownContent 渲染完全一致的文本预处理
- * ——预解析（parseMarkdownFlow）必须用同一归一化结果，否则解析出的 AST 与
- * 实际渲染内容不一致（换行差异 → 高度不同——实测 214 vs 331）。
+ * 流式 ingest 归一化（#471③，pilot 专用，spec §3.1）：与完结渲染同一核心
+ * 同一序——流式显示的文本与完结渲染的文本逐字节一致（终帧=流式帧），
+ * 完结换装从「文本不同→排版重排→跳变」变为「同文本换渲染器→视觉无事
+ * 发生」。放行单调性（已放行前缀不被回改）的逐变换证明见 spec §3.3；
+ * 性质测试 NormalizationStreamingMonotonicityTest 逐字符增长模拟钉死。
  */
-internal fun normalizeForRender(raw: String, isUser: Boolean): String =
-    splitOversizedParagraphs(normalizeTaskListMarkers(normalizeMarkdown(raw, isUser)))
+internal fun normalizeForStreaming(raw: String): String =
+    splitOversizedParagraphsByPosition(normalizeTaskListMarkers(normalizeMarkdownCore(raw)))
 
 // ============ 超长段落空行化（2026-08-20 第二轮滚动卡顿 C-F1） ============
 
@@ -215,49 +300,51 @@ private fun isOrderedListItem(t: String): Boolean {
 }
 
 /**
- * 超长段落空行化：连续普通文本行构成一个候选段；总字符 ≥
- * [SPLIT_PARAGRAPH_THRESHOLD_CHARS] 时段内行间补空行（单换行 → 空行）。
- * 其余内容原样保留。
+ * 超长段落空行化（位置制，#471③ 语义重定义，spec §3.2）：连续普通文本行
+ * run 内，行 j 之后的边界升级为空行 ⟺ cumEnd(j) ≥
+ * [SPLIT_PARAGRAPH_THRESHOLD_CHARS]（cumEnd(j) = run 起点到行 j 换行含的
+ * 累计字符）。
+ *
+ * 与旧全段判定（run 总字符 ≥3000 时全 run 空行化）的差异：3000 字以内的
+ * 头部边界保持单换行、越过 3000 的边界起才升级——效果上 >3000 段落呈现
+ * 「头部一块 + 尾部逐行成块」的稳定接缝。拆分目的（MarkdownChunking
+ * 分片）只需尾部可拆；接缝在流式/完结两侧一致出现 = 不产生跳变
+ * （一致性优先于均匀性）。
+ *
+ * 流式单调性（放行不回改的关键，spec §3.3 末行）：行 j 分类
+ * （isPlainParagraphLine 全部 startsWith 判定）与 cumEnd(j) 在行 j 完成
+ * 时刻即固定 → 边界升级决策单调不翻转 → 对任意截断前缀 S[:k]，本函数
+ * 输出是全量输出 split(S) 的前缀（NormalizationStreamingMonotonicityTest
+ * 性质钉死）。判定绝不等待下一行存在才做——那会把已放行的换行回改成
+ * 空行（非前缀）。
  */
-internal fun splitOversizedParagraphs(text: String): String {
+internal fun splitOversizedParagraphsByPosition(text: String): String {
     if (text.length < SPLIT_PARAGRAPH_THRESHOLD_CHARS) return text
     val lines = text.split("\n")
     val out = StringBuilder(text.length + lines.size)
-    var runStart = -1
-    var runChars = 0
+    var inRun = false        // 当前普通行 run 开放中
+    var cumEnd = 0           // run 起点到上一完成行换行含的累计字符
     var inFence = false
     var i = 0
     while (i <= lines.size) {
         val line = if (i < lines.size) lines[i] else ""
         val isFence = line.trimStart().startsWith("```") || line.trimStart().startsWith("~~~")
-        // 候选段终止条件：空行 / 非普通行 / 围栏边界
+        // 候选段成员条件：非围栏内 / 非围栏边界 / 普通行
         val plain = !inFence && i < lines.size && !isFence && isPlainParagraphLine(line)
         if (plain) {
-            if (runStart < 0) {
-                runStart = i
-                runChars = 0
-            }
-            runChars += line.length + 1
+            // 边界决策（行 i 完成时刻即定案）：run 已开放且到上一行末的
+            // 累计 ≥ 阈值 → 行 i-1 行尾换行已写，补一个 \n 成空行（升级）
+            if (inRun && cumEnd >= SPLIT_PARAGRAPH_THRESHOLD_CHARS) out.append('\n')
+            if (!inRun) { inRun = true; cumEnd = 0 }
+            out.append(line)
+            if (i < lines.size - 1) out.append('\n')
+            cumEnd += line.length + 1
             i++
             continue
         }
-        // 冲刷候选段
-        if (runStart >= 0) {
-            val runEnd = i // 不含
-            if (runChars >= SPLIT_PARAGRAPH_THRESHOLD_CHARS && runEnd - runStart >= 2) {
-                for (j in runStart until runEnd) {
-                    out.append(lines[j])
-                    if (j < runEnd - 1) out.append("\n\n") // 行间空行：独立成块
-                }
-            } else {
-                for (j in runStart until runEnd) {
-                    out.append(lines[j])
-                    if (j < runEnd - 1) out.append('\n')
-                }
-            }
-            runStart = -1
-            runChars = 0
-        }
+        // 非普通行 / 围栏边界 / 空行：关闭 run（决策即时，无冲刷缓冲）
+        inRun = false
+        cumEnd = 0
         if (isFence) inFence = !inFence
         if (i < lines.size) {
             out.append(line)
@@ -273,8 +360,6 @@ internal fun MarkdownContent(
     markdown: String,
     textColor: Color,
     isUser: Boolean,
-    @Suppress("UNUSED_PARAMETER") customFontSize: String? = null,
-    @Suppress("UNUSED_PARAMETER") immediate: Boolean = false,
     // 2026-08-12 根治：跳转预渲染——外部（MessageCardUser）创建的 MarkdownState
     //（用于 await 解析完成信号）；null = 内部自建（常规渲染路径）。
     overrideState: MarkdownState? = null,
@@ -289,14 +374,15 @@ internal fun MarkdownContent(
     // 索引漂移自愈 + 片间顺序由锚点在 AST 中的出现序保证（确定性排序）。
     blockAnchor: String? = null,
     // 2026-08-22 滚动巨帧根治：非流式 fallback 的异步解析（见
-    // rememberAsyncMarkdownState）——流式内容必须 false（48ms 批处理 +
+    // rememberAsyncMarkdownState）——流式内容必须 false（批处理 cadence +
     // conflate 铁律路径，rememberMarkdownState 保留）。
     asyncParse: Boolean = false,
+    // #442 R2 分片唤醒（A2）：注册在案的流式大文本 part 的分片控制器
+    //（PartContent 按 part.id 从 broker 查得；null=原路径零改造）。
+    shardCtl: ShardController? = null,
 ) {
-    // 注意：customFontSize 和 immediate 保留是为了调用点兼容性
-    //（PartContent / ReasoningBlock 仍传入它们），但有意不使用
-    // ——排版/密度现在由 LocalChatDensity 驱动，且 Mikepenz Markdown
-    // 同步解析，因此 immediate 标志无效果。
+    //（customFontSize/immediate 两死参数已随 2026-10-03 清理批次退役——
+    // 排版/密度由 LocalChatDensity 驱动，解析策略由分支自身决定。）
     //
     // 2026-08-22 滚动巨帧根治：归一化从组合路径移除——原 remember{} 在主线程
     // 对全文跑正则+切段（20K 字符级多条批量 = vsync→input 90ms 巨帧，真机
@@ -440,10 +526,22 @@ internal fun MarkdownContent(
         }
     }
 
-    // components 闭包捕获 linkColor/typography/textColor。键必须包含它们：
-    // 主题切换时颜色变化 → 重建闭包 → 内部 AnnotatedString 用新颜色重建，
-    // 否则切换主题后文字颜色停留在旧主题（暗色浅色在亮色背景下"过曝"）。
-    val components = remember(density, isUser, linkListener, linkColor, textColor) {
+    // #488②：代码高亮主题（M3 令牌 → highlights SyntaxTheme 9 角色，
+    // CodeSyntaxTheme.kt）。键 = 参与映射的 colorScheme 角色（下方 components
+    // 键纪律同款）——主题/动态色/AMOLED 切换 → 新实例 → components 键变化
+    // → codeFence 闭包重建，防代码块残留旧主题色。
+    val colorScheme = MaterialTheme.colorScheme
+    val codeSyntaxTheme = remember(
+        colorScheme.primary, colorScheme.secondary, colorScheme.tertiary,
+        colorScheme.onSurface, colorScheme.onSurfaceVariant,
+    ) { colorScheme.toCodeSyntaxTheme() }
+
+    // components 闭包捕获 linkColor/typography/textColor + #488① custom 钩子捕获
+    // codeBlockBg/codeBlockFg/typography.code + #488② codeFence/codeBlock 捕获
+    // codeSyntaxTheme。键必须包含它们：主题切换时颜色变化
+    // → 重建闭包 → 内部 AnnotatedString 用新颜色重建，否则切换主题后文字颜色停留
+    // 在旧主题（暗色浅色在亮色背景下"过曝"）。
+    val components = remember(density, isUser, linkListener, linkColor, textColor, codeBlockBg, codeBlockFg, typography.code, codeSyntaxTheme) {
         markdownComponents(
             text = { model ->
                 val settings = annotatorSettings(linkInteractionListener = linkListener)
@@ -560,6 +658,54 @@ internal fun MarkdownContent(
             heading4 = { model -> SafeHeading(model, typography.h4, linkListener, linkColor, uriHandler) },
             heading5 = { model -> SafeHeading(model, typography.h5, linkListener, linkColor, uriHandler) },
             heading6 = { model -> SafeHeading(model, typography.h6, linkListener, linkColor, uriHandler) },
+            // #471④-b：任务列表复选框——m3 Material Checkbox（官方 demo 同款装配）。
+            // 此前未覆写 → 基础模块默认 checkedIndicator 渲染字面 "[x] "/"[ ] " 等宽
+            // 文本（用户验收否决形态：要求真 markdown 复选框而非文字）。
+            checkbox = { model ->
+                com.mikepenz.markdown.m3.elements.MarkdownCheckBox(
+                    content = model.content,
+                    node = model.node,
+                    style = model.typography.text,
+                )
+            },
+            // #488②：代码块语法高亮——自建壳（fork -code v0.45.0，
+            // HighlightedCode.kt）。components 单例覆写 → 八个 MarkdownContent
+            // 调用面（assistant 双路径/思考/工具卡×2/通知卡/压缩卡/预览）自动
+            // 获得；user 气泡结构性不触达（PartContent isUser 分支走纯 Text）。
+            // 未知语言引擎侧静默纯色 = 现状等价；流式期 produceState 按 code
+            // 批重启（批节奏天然节流），初值纯文本无空窗。
+            codeFence = { model ->
+                SafeHighlightedCodeFence(
+                    content = model.content,
+                    node = model.node,
+                    style = model.typography.code,
+                    theme = codeSyntaxTheme,
+                )
+            },
+            codeBlock = { model ->
+                SafeHighlightedCodeBlock(
+                    content = model.content,
+                    node = model.node,
+                    style = model.typography.code,
+                    theme = codeSyntaxTheme,
+                )
+            },
+            // #488①：块内 HTML——库对 HTML_BLOCK 零组件（v0.45.0 base+m3 AAR 二进制
+            // grep 实证），custom 默认空 lambda = 整块隐形（内容静默丢失）。覆写：
+            // 等宽代码样式呈现原文（与 code fence 同视觉域），内容可见不丢。
+            // 真 HTML 渲染（WebView 级）属 #488 远期；整消息 HTML 走
+            // looksLikeHtmlPayload 预览通道不受此影响（混排块才进这里）。
+            custom = { elementType, model ->
+                if (elementType == org.intellij.markdown.MarkdownElementTypes.HTML_BLOCK) {
+                    HtmlBlockRaw(
+                        content = model.content,
+                        node = model.node,
+                        style = typography.code,
+                        background = codeBlockBg,
+                        foreground = codeBlockFg,
+                    )
+                }
+            },
         )
     }
 
@@ -579,6 +725,11 @@ internal fun MarkdownContent(
     // 2026-08-13 根本方案：预解析结果存在时直接用 Markdown(state) 重载渲染
     //（无解析等待/loading——内容直接是最终状态）
     if (preParsedState != null) {
+        // #477 探针：分支取证（DEBUG-only）
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+            android.util.Log.w("A11yDiag", "path=preParsed chunked=" + (blockRange != null) +
+                " len=" + markdown.length + " stateType=" + preParsedState.javaClass.simpleName)
+        }
         // 2026-08-20 分片：blockRange 非空时只渲染 [from, to) 区间的顶层块
         //（其余块由同 turn 的相邻 chunk item 渲染——引用式链接在解析期已
         // 写入 referenceLinkHandler，拆开渲染不破坏跨块引用）。
@@ -611,39 +762,45 @@ internal fun MarkdownContent(
 
     // #265 P0-a 试点分支（spec §4）：开关开启、非用户消息、无外部覆写态且
     // 非 asyncParse 时，流式渲染走 StreamingMarkdownState 前缀差分 append。
-    // 归一化让位（冲突①裁决）：流中 append 原始 delta，完结由上方 preParsedState
-    // 分支的既有归一化+分片路径接管，跳变由高度补偿吸收（V6 验证项）。
+    // #471③ 归一化前移（终帧=流式帧）：pilot 内部先归一化（与完结渲染同源
+    // 逐字节一致）再前缀差分——流中即见最终形态（tex 围栏/真复选框），
+    // 完结换装无归一化重排跳变。
     // 回退 = flavor 的 STREAMING_MD_PILOT 置 false。
     // #461：准入收为 streamingPilotEligible 纯函数——静态文本(asyncParse=true)
     // 不得误入(空 state 靠逐帧 append 填充,ε 窗竞态 → H=0 僵尸展开态)。
-    // #472 完结换装无缝:async 终态源提升到固定组合位(条件创建在稳定位置,
-    // hold 期与切换后同一实例——切换帧不再二次 remember 重解析)。完结前
-    // (asyncParse=false)不创建,流式路径零额外成本。
-    val asyncTerminal: com.mikepenz.markdown.model.MarkdownState? =
-        if (overrideState == null && asyncParse && markdown.length > ASYNC_PARSE_MIN_CHARS) {
-            rememberAsyncMarkdownState(markdown, isUser)
-        } else {
-            null
-        }
-    val asyncTerminalState = asyncTerminal?.state?.collectAsState()?.value
-    val asyncTerminalReady = asyncTerminalState != null && asyncTerminalState !is State.Loading
-    // #472 验收轮回归收窄(2026-09-28 真机定罪):hold 只桥接 async 终态在途
-    // (>2048 的 Loading 间隙)。≤2048 完结无终态不保持——立即走同步解析路径
-    // (首帧全高无闪);旧语义 ready 恒 false 使 pilot 永不退场,完结 part
-    // 重组(sync/MessagePartUpdated)的非前缀砸进 pilot 静默重建 → 清空+回灌闪烁
-    val asyncTerminalPending = asyncTerminal != null && !asyncTerminalReady
+    //（#472/#504 完结换装桥接机制已随「pilot 即终态」退役 2026-10-03——
+    // 见下方 pilotRetained 注释；本注释块保留流式准入语义。）
+    // #442 A2：已分片（broker 有发布）的 part 完结后**保持 pilot**（终帧=终态，
+    // #471③ 归一化同源）——完结切全量终态会与冻结 shard items 双渲染（内容
+    // 重复）；async 终态预热也一并跳过（无用功）。
+    val shardHold = shardCtl != null && shardCtl.hasPublished()
+    // #509 方案B 二期（2026-10-03 用户裁决）：**pilot 即终态**——shardHold 的
+    // 「完结不切渲染器」语义泛化到一切幸存 pilot 槽（pilotEverRendered 槽位
+    // 记忆，#509 原地换名后跨毕业存活）。毕业/完结（asyncParse 翻转）不再切换
+    // 终态渲染器：内容全同时零增量（权威转写=流式帧逐字节），内容真变时走
+    // pilot 原生前缀差分/非前缀宽限重建——两层补偿（#504 换装指纹桥 + #472
+    // async 保持窗）随之全族退役。节点滚出视口销毁后冷组合走下方终态路径
+    // （pilotEverRendered=false 天然回冷）。
+    //（2026-09-28 #472 收窄的「pilot 永不退场 → 清空+回灌闪烁」定罪在此解除：
+    // 该症根因是归一化坐标错位使完结全文对 pilot 恒非前缀——#471③ 前移后
+    // 终帧=流式帧，完结内容前缀一致（#509 方案B 真机两轮表格 hold 帧零 delta
+    // 实证）。）
     var pilotEverRendered by remember { androidx.compose.runtime.mutableStateOf(false) }
-    val holdPilotTerminal = StreamingMarkdownPilot.enabled &&
-        pilotTerminalHold(pilotEverRendered, asyncTerminalPending)
+    val pilotRetained = StreamingMarkdownPilot.enabled && pilotEverRendered
     if (streamingPilotEligible(overrideState != null, asyncParse, isUser) && StreamingMarkdownPilot.enabled ||
-        holdPilotTerminal
+        pilotRetained ||
+        shardHold
     ) {
-        // #437：pilotState.state 只收 SafePrefixGate 放行的定案内容；
-        // 扣留尾部（heldTail）超龄后由降亮区呈现（锁高裁剪+呼吸光标，
-        // 高度流=低频量子，与 #435 引擎配对兼容）。回退 = STABLE_REVEAL_PILOT
+        // #437：pilotState.state 只收 SafePrefixGate 放行的定案内容；扣留尾部
+        // 经毕业/EOF flush 释放（降亮区已退役）。回退 = STABLE_REVEAL_PILOT
         // 置 false（gate 旁路，pilot 原行为）。
         pilotEverRendered = true
-        val pilotState = rememberPilotStreamingMarkdownState(markdown, freeze = holdPilotTerminal)
+        // freeze 恒 false：#472 async 桥接窗已退役（无切换帧可桥），shard 冷续
+        // 的 EOF flush 亦须放行——冻结语义全消。
+        val pilotState = rememberPilotStreamingMarkdownState(
+            markdown,
+            shard = shardCtl,
+        )
         androidx.compose.foundation.layout.Column {
             // #437 崩溃修复：非前缀重建（resetKey++）换 state 实例的同一帧，
             // 库 Markdown 内部 collectAsState 对流实例的记忆可能残留旧 snapshot
@@ -661,13 +818,11 @@ internal fun MarkdownContent(
                 modifier = Modifier.fillMaxWidth(),
             )
             }
-            if (StreamingMarkdownPilot.stableReveal) {
-                val held by pilotState.heldTail
-                HeldTailReveal(
-                    tail = held,
-                    textStyle = typography.paragraph.copy(fontFamily = null),
-                )
-            }
+        }
+        // #477 探针：分支取证（DEBUG-only；retained=完结保持（pilot 即终态））
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+            android.util.Log.w("A11yDiag", "path=pilot retained=" + pilotRetained +
+                " len=" + markdown.length)
         }
         return
     }
@@ -686,18 +841,18 @@ internal fun MarkdownContent(
     // remember 内联执行（1-3ms 有界,无跨线程等待=非 runBlocking 家族）,
     // 首测即终高,占位帧从构造上消失;大文本保持异步（84ms 冷滑巨帧防线,
     // 且 ≥200 字符有 registry 预解析覆盖）。
-    val markdownState = overrideState ?: asyncTerminal ?: if (asyncParse) {
-        if (markdown.length > ASYNC_PARSE_MIN_CHARS) {
-            // #472:常规此处已被 asyncTerminal 覆盖;防御保留(条件变动时兜底)
+    //（此路径仅在 pilot 未保留时到达：冷重入/跳转/视口回收的全新节点——
+    // #509 后幸存节点毕业不落此（pilot 即终态）。）
+    val asyncTerminal: com.mikepenz.markdown.model.MarkdownState? =
+        if (overrideState == null && asyncParse && !shardHold &&
+            markdown.length > ASYNC_PARSE_MIN_CHARS
+        ) {
             rememberAsyncMarkdownState(markdown, isUser)
         } else {
-            // #428:小文本同步解析——remember 内联调用库的非 suspend 入口
-            // parseMarkdown(纯 CPU 计算,≤[ASYNC_PARSE_MIN_CHARS] 有界 1-3ms),
-            // 首组合首测即终高。异步路径(与库 rememberMarkdownState 的效果路径)
-            // 首帧恒 State.Loading 占位——大卡收起闭合帧原子重组时以短高入测、
-            // 解析回填帧二次重排(真机 #s1 条目 199→467,+268px 跳变)即其泄露。
-            rememberSyncMarkdownState(markdown, isUser)
+            null
         }
+    val markdownState = overrideState ?: asyncTerminal ?: if (asyncParse) {
+        rememberSyncMarkdownState(markdown, isUser)
     } else {
         // 流式/同步路径：归一化保留在此分支（流式单条增量成本可控）
         val normalizedForLib = remember(markdown, isUser) { normalizeForRender(markdown, isUser) }
@@ -707,6 +862,17 @@ internal fun MarkdownContent(
         )
     }
 
+    // #477 探针：分支取证（DEBUG-only）
+    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+        val src = when {
+            overrideState != null -> "override"
+            asyncTerminal != null -> "asyncTerminal"
+            asyncParse -> "syncSmall"
+            else -> "libStreaming"
+        }
+        // stateType 字段已移除（组合期 StateFlow.value 读触发 lint 门禁——#477 诊断探针保留 src/len；v0.4.0-beta CI 定罪）
+        android.util.Log.w("A11yDiag", "path=render src=" + src + " len=" + markdown.length)
+    }
     Markdown(
         markdownState = markdownState,
         colors = colors,
@@ -833,6 +999,37 @@ private fun rememberSyncMarkdownState(content: String, isUser: Boolean): Markdow
         )
     }
 
+/**
+ * #442 R2 分片唤醒（A2）：流式冻结块渲染——归一化切片（pilot 归一化坐标，
+ * 已是终态形态，#471③ 同源）同步解析 + preParsed 通道（无 Loading 空窗：
+ * 换装帧首组合即全高）。冻结内容不可变 → remember(text) 单次解析；item
+ * 回收重组合按 text 重解析（A2 接受；后续可接 SyncParseCache）。
+ */
+@Composable
+internal fun StreamShardContent(markdown: String, textColor: Color) {
+    val parsed = remember(markdown) { parseMarkdown(markdown) }
+    // [507-shard] #507 消失取证：冻结块组合事实（文本量）+ 实测高度
+    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+        android.util.Log.w("507-shard", "shardContent len=" + markdown.length)
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .onSizeChanged { size ->
+                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                    android.util.Log.w("507-shard", "shardContent h=" + size.height + "px len=" + markdown.length)
+                }
+            }
+    ) {
+        MarkdownContent(
+            markdown = "",
+            textColor = textColor,
+            isUser = false,
+            preParsedState = parsed,
+        )
+    }
+}
+
 @Composable
 private fun rememberAsyncMarkdownState(content: String, isUser: Boolean): MarkdownState {
     // #428 同族加固:缓存命中→同步终态,跨组合首测即终高(registry 逐出/
@@ -951,4 +1148,40 @@ private fun SafeHeading(
             uriHandler = uriHandler,
         ),
     )
+}
+
+/**
+ * #488①：块内 HTML 原文呈现（custom 钩子 HTML_BLOCK 分支）。
+ *
+ * 区间截取走 runCatching + 边界 clamp（#437 崩溃先例：流式 snapshot 失配帧
+ * node 区间可越界 content 长度）；截取失败回退整 content（宁可多显不丢内容）。
+ */
+@Composable
+private fun HtmlBlockRaw(
+    content: String,
+    node: ASTNode,
+    style: TextStyle,
+    background: Color,
+    foreground: Color,
+) {
+    val raw = remember(content, node) {
+        runCatching {
+            val s = node.startOffset.coerceIn(0, content.length)
+            val e = node.endOffset.coerceIn(s, content.length)
+            content.subSequence(s, e).toString().trimEnd()
+        }.getOrDefault(content)
+    }
+    val scroll = rememberScrollState()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color = background, shape = RoundedCornerShape(6.dp))
+            .horizontalScroll(scroll),
+    ) {
+        Text(
+            text = raw,
+            style = style.copy(color = foreground, fontFamily = FontFamily.Monospace),
+            modifier = Modifier.padding(SpacingTokens.MD.dp),
+        )
+    }
 }

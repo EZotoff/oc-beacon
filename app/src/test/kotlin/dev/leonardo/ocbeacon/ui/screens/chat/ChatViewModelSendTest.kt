@@ -120,6 +120,7 @@ class ChatViewModelSendTest {
         every { messagePaging.observeMessages(any()) } returns flowOf(emptyList())
 
         every { chatRepository.getAllPartsMap() } returns MutableStateFlow(emptyMap<String, List<dev.leonardo.ocbeacon.domain.model.Part>>())
+        every { chatRepository.getStructuralPartsMap() } returns MutableStateFlow(emptyMap<String, List<dev.leonardo.ocbeacon.domain.model.Part>>())
         coEvery { chatRepository.listActiveSessions(any()) } returns kotlin.Result.success(emptyMap())
         every { chatRepository.getMessagesFlow(any()) } returns flowOf(emptyList())
         every { chatRepository.getActiveToolProgressForSession(any()) } returns flowOf(emptyList())

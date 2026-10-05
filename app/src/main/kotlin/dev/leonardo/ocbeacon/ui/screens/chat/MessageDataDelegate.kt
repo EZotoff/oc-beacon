@@ -105,7 +105,7 @@ internal class MessageDataDelegate(
                     status is SessionStatus.Idle
                 if (naturalTurnEnd && reconcileJob?.isActive != true) {
                     reconcileJob = scope.launch {
-                        // 延迟窗口：让 48ms 批缓冲 flush 与 UI 稳定，再拉权威值
+                        // 延迟窗口：让 100ms 批缓冲 flush 与 UI 稳定，再拉权威值
                         delay(1_500L)
                         runCatching { reconcileFromRest(sid) }
                             .onFailure {
@@ -135,7 +135,7 @@ internal class MessageDataDelegate(
     // ============ ChatMessage 实例缓存 ============
     /**
      * combine 管道的 ChatMessage 实例缓存：消息未变（parts 与 message 引用均稳定）时
-     * 复用上一轮实例，消除流式/工具运行期间每 ~48ms 全量重建全部消息对象（~2000 条）
+     * 复用上一轮实例，消除流式/工具运行期间每 ~100ms 全量重建全部消息对象（~2000 条）
      * 的分配压力 —— GC 频繁触发导致"用一会儿后滑动卡顿"的根因。
      * 引用稳定性前提：EventDispatcher 的 parts/messages 更新只替换变化消息的
      * List/元素（setMessages/mergeMessages/replaceMessages 均复用 existing 实例），
@@ -183,7 +183,7 @@ internal class MessageDataDelegate(
      *
      * #437 验收十五轮（发射隔离）：十源 combine 的任一源滴答都会整体重算——
      * 发射频率由下方 partsByMessageId 收窄（本会话消息投影）+ StateFlow equals
-     * 去重共同收敛：内存 parts 本就按 48ms 批处理（MessageEventHandler delta
+     * 去重共同收敛：内存 parts 本就按 100ms 批处理（MessageEventHandler delta
      * 批），可见内容无变化 → 结构相等 → 零发射；后台会话噪音被投影隔离。
      * （曾试 sample(48) 节流——破坏测试缝且属节流补丁，撤销；根因在作用域泄漏。）
      */
@@ -191,7 +191,13 @@ internal class MessageDataDelegate(
         combine(
             sessionRepository.getSessionsFlow(serverId),
             messagePaging.observeMessages(sid),
-            chatRepository.getAllPartsMap(),
+            // #442 B案 节奏收编：parts 源切结构性视图（流式 delta 批零滴答）；
+            // 旗标关回退全量热视图（今日行为）。
+            if (dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
+                chatRepository.getStructuralPartsMap()
+            } else {
+                chatRepository.getAllPartsMap()
+            },
             _isLoading,
             paginationDelegate.hasOlderMessages,
             paginationDelegate.isLoadingOlder,
@@ -323,7 +329,7 @@ internal class MessageDataDelegate(
                         " loading=" + loading,
                 )
             }
-            // DIAG 已移除（2026-08-10）：combine 每 48ms 触发的 MsgDiag 日志（每秒 ~80 条 logcat 写入）
+            // DIAG 已移除（2026-08-10）：combine 每 100ms 触发的 MsgDiag 日志（每秒 ~10 条 logcat 写入）
             // 是真机掉帧的根因之一——debug 版 BuildConfig.DEBUG=true 时门控无效，必须彻底删除。
             state
          } catch (e: Exception) {
@@ -481,7 +487,14 @@ internal class MessageDataDelegate(
         //（仅在 parts 变化时赋值，读取方 loadJumpTargets 同步取用）。
         scope.launch {
             try {
-                chatRepository.getAllPartsMap().collect { map ->
+                // #442 B案：跳转镜像同切结构性视图（跳转目标=turn 级结构，无流式文面需求）
+                val partsFlow =
+                    if (dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
+                        chatRepository.getStructuralPartsMap()
+                    } else {
+                        chatRepository.getAllPartsMap()
+                    }
+                partsFlow.collect { map ->
                     messagePartsProvider = { id -> map[id] }
                 }
             } catch (e: Throwable) {

@@ -127,6 +127,10 @@ class ChatRepositoryImpl @Inject constructor(
     override fun getAllPartsMap(): Flow<Map<String, List<Part>>> =
         eventDispatcher.parts
 
+    // #442 B案 节奏收编（spec 2026-10-02 §2.2）：UI 主列表的结构性 parts 源
+    override fun getStructuralPartsMap(): Flow<Map<String, List<Part>>> =
+        eventDispatcher.structuralParts
+
     override fun getPermissionsFlow(sessionId: String): Flow<List<PermissionState>> =
         eventDispatcher.permissions.map { events ->
             (events[sessionId] ?: emptyList()).map { it.toPermissionState() }

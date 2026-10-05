@@ -52,6 +52,14 @@ interface ChatRepository {
     fun getAllPartsMap(): Flow<Map<String, List<Part>>>
 
     /**
+     * #442 B案 节奏收编：结构性 parts 映射——仅结构性事件发射（part/消息
+     * 生命周期、REST 合并、会话清理），流式文本 delta 批零发射。UI 主列表
+     * 消费此视图后，流式增长经 StreamingDeltaBus 快通道直达 item（重组收敛
+     * 到 item 内部）；旗标关时消费方回退 [getAllPartsMap]。
+     */
+    fun getStructuralPartsMap(): Flow<Map<String, List<Part>>>
+
+    /**
      * 观察某个会话待处理的权限请求列表。
      */
     fun getPermissionsFlow(sessionId: String): Flow<List<PermissionState>>

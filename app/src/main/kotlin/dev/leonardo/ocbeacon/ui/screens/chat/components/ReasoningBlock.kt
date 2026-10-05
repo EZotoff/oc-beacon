@@ -21,13 +21,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.draw.clipToBounds
+
+
+
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import dev.leonardo.ocbeacon.ui.theme.LocalChatDensity
@@ -93,8 +92,6 @@ internal fun ReasoningBlock(
     val hapticView = LocalView.current
     val hapticOn = LocalHapticFeedbackEnabled.current
     val expanded = isExpanded
-    val reportY = LocalFoldRowYReport.current
-    val clickHook = LocalFoldRowClick.current
 
     // 流式推理的实时计时器
     // #207：fallback 锚点 remember → rememberSaveable。time=null 的残留 part 无
@@ -212,16 +209,11 @@ internal fun ReasoningBlock(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        // 批次八:REPIN 上报/快照(与组折叠行同机制)
-                        .onGloballyPositioned {
-                            if (pinKey.isNotEmpty()) reportY?.invoke(pinKey, it.positionInRoot().y)
-                        }
                         // 2026-09-20 方案A回退(用户裁决:还是正常卡片就行)——
                         // 强制 height(12dp) 单行胶囊只瘦了思考卡,工具卡未同步,
                         // 卡族折叠态高度失配=「不协调」来源,且违背 2026-08-16
                         // 「折叠行高与工具卡一致」裁决。恢复自然行高。
                         .clickable {
-                            if (pinKey.isNotEmpty()) clickHook?.invoke(pinKey)
                             performHaptic(hapticView, hapticOn); onToggleExpand()
                         },
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -323,18 +315,14 @@ internal fun ReasoningBlock(
                         Column {
                         // #432(卡族垂直节奏一致):顶部 6dp 顶距移除——工具卡展开区
                         // 顶边零距,思考卡多 6dp 使两族展开态首行不同高。
-                        // 2026-08-16（用户反馈调整）：高度上限从半屏收紧为固定值——
-                        // 思考内容是长 Markdown，半屏上限下总是顶满（其他工具卡片
-                        // 内容短、实际远达不到半屏上限），视觉上显著高于其他卡片。
-                        // 240.dp 与多数工具卡片展开态的实际视觉高度一致。
-                        val reasoningScrollState = rememberScrollState()
-                        // clipToBounds：同 #234 二轮防御——滚动容器默认不裁剪溢出绘制
+                        // 2026-10-02 #506:撤 2026-08-16 的 240.dp 上限+内滚窗——
+                        // 内容其实完整可达,但隐形滚动(无滚动条提示/流式不跟随)
+                        // 使用户感知「展示不全」(真机 t34 定罪:展开只露 7/16 条
+                        // 目,末行切半)。展开动作=「看全部」的显式意图,直接给全
+                        // 内容高度;同域最新用户投诉 supersede 旧裁决。同时消灭
+                        // 嵌套滚动容器(fling 泄漏面)与流式跟随问题。
                         Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 240.dp)
-                                .clipToBounds()
-                                .verticalScroll(reasoningScrollState)
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             // 2026-08-16（部分复制）：SelectionContainer 包裹内容——
                             // 用户可选中任意片段复制（与 ReadToolCard 一致），
@@ -344,7 +332,6 @@ internal fun ReasoningBlock(
                                     markdown = text,
                                     textColor = textColor.copy(alpha = AlphaTokens.MUTED),
                                     isUser = false,
-                                    customFontSize = "small",
                                     // #461 根修(2026-09-29):历史思考文本不得走流式 pilot——
                                     // StreamingMarkdownState 初始空靠逐帧 append 填充,在
                                     // CardExpandReveal ε/展开窗内与 settle 竞态 → 600ms 内

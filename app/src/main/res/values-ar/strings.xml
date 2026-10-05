@@ -268,7 +268,6 @@
     <string name="chat_message_delete_failed">فشل في حذف الرسالة</string>
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">tokens/s</string>
-    <string name="chat_msg_tail_summary">%1$d خطوات · %2$d أدوات</string>
     <string name="a11y_message_detail">تفاصيل الرسالة</string>
     <string name="chat_stats_session_title">إحصاءات الجلسة</string>
     <string name="chat_stats_summary">الدور %1$d · %2$d خطوات · %3$s LLM · %4$s أدوات</string>
@@ -508,6 +507,7 @@
     <string name="server_settings_oauth_browser_hint">أكمِل عملية التفويض في متصفحك. سيتم إغلاق هذه النافذة تلقائيًا.</string>
     <string name="chat_error_view_page">صفحة</string>
     <string name="chat_error_view_code">رمز</string>
+    <string name="math_block_badge">صيغة</string>
     <string name="chat_save_image">حفظ الصورة</string>
     <string name="chat_image_saved">تم حفظ الصورة</string>
     <string name="chat_image_save_failed">فشل في حفظ الصورة</string>

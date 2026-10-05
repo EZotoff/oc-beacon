@@ -179,34 +179,11 @@ internal sealed interface ChatEntry {
     data class Turn(
         override val displayIndex: Int,
         override val key: String,
-        /** #422 历史懒加载:大组拆条目发射时,尾片跳过 StepGroup 渲染
-         * (折叠行由 [StepGroupHead] 条目承担,内容由 [StepGroupBody] 承担)。 */
-        val skipStepGroupItem: Boolean = false,
         /** [R4-B3] 身份构建时编码（user 侧）——items lambda 不再捕获 displayItems。 */
         val isUser: Boolean = false,
         /** [R4-B3] 身份构建时编码（所属 turn 正在流式）——items lambda 不再捕获
          *  turnGroups/streamingMsgId（每 flush 新实例捕获替换=全部 item 重组根因）。 */
         val isStreaming: Boolean = false,
-    ) : ChatEntry
-
-    /**
-     * #422 历史懒加载:大组展开态的折叠行头(key "t_<turnId>#sgh",气泡顶部)。
-     * 仅与 [Turn] 尾片 + 若干 [StepGroupBody] 组成同 turn 的条目族。
-     */
-    data class StepGroupHead(
-        override val displayIndex: Int,
-        override val key: String,
-        val step: dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem.StepGroup,
-    ) : ChatEntry
-
-    /**
-     * #422 历史懒加载:大组展开体的 groups 分片(key "t_<turnId>#sgb<i>")。
-     * 独立 LazyItem → 视口外零组合,巨型组首开只组可见条目。
-     */
-    data class StepGroupBody(
-        override val displayIndex: Int,
-        override val key: String,
-        val groups: List<PartGroup>,
     ) : ChatEntry
 
     /** 已完结长消息的 Markdown 分片。 */
@@ -249,6 +226,39 @@ internal sealed interface ChatEntry {
         val isFirst: Boolean get() = chunkIndex == 0
         val isLast: Boolean get() = chunkIndex == chunkCount - 1
     }
+
+    /**
+     * #442 R2 分片唤醒（A2）：流式 turn 的已毕业冻结块（key "t_<turnId>#g<i>"，
+     * 与 #c/#s 键族互斥；index=文档序，0=最旧/头块）。text 为归一化切片
+     * （pilot 归一化坐标），item 渲染经 StreamShardContent 同步解析——冻结
+     * 内容不可变=零失效零重测（O(尾块) 的机制来源）。发射规则同 #246 逆文档序。
+     */
+    data class StreamChunk(
+        override val displayIndex: Int,
+        override val key: String,
+        val turnKey: String,
+        val chunkIndex: Int,
+        val chunkCount: Int,
+        val text: String,
+    ) : ChatEntry {
+        val isFirst: Boolean get() = chunkIndex == 0
+        val isLast: Boolean get() = chunkIndex == chunkCount - 1
+    }
+
+    /**
+     * #442 R2 分片唤醒（A2.5）：推理/工具前缀条目——分片 part 的 renderItem
+     * 位置 k>0（推理先行轮）时，turn 以 renderItem 级拆分为
+     * [StreamPrefix（renderItems[0..k)，本条目）][冻结块 #g][Turn 尾块（原键，
+     * renderItems[k..)）]。key "t_<turnKey>#p"（与 #g/#c/#s 键族互斥）。
+     * reverseLayout 最末发射=视觉 turn 顶部；内容静态无帽无账（帽物主=尾块）。
+     */
+    data class StreamPrefix(
+        override val displayIndex: Int,
+        override val key: String,
+        val turnKey: String,
+        /** 分片 part 在 renderItems 中的位置（渲染端切片单一真相源）。 */
+        val partIdx: Int,
+    ) : ChatEntry
 }
 
 /**
@@ -273,13 +283,6 @@ internal data class ChatEntries(
 internal fun List<ChatMessage>.isMultiMessageTurn(): Boolean = size > 1
 
 /**
- * #422 历史懒加载阈值(已退役,批次十三全量裂变退役后仅注释留存):StepGroup
- * 权重达此值曾走条目化发射。#427 起切片器定义迁 [StepGroupSlicing.kt]
- * (宿主移入卡片内部);本文件下方退役裂变发射分支仍引用该函数——分支恒
- * 不触发(expandedStepGroups 恒空),随 #426 死代码批次整体移除。
- */
-
-/**
  * 构建分片发射表。分片条件（全部满足）：
  * - assistant turn；- 非流式（streamingMsgId 不在 turn 内）；
  * - 不在 recentStreamedTurnKeys（流式刚结束的 turn 延迟分片——避免视口内
@@ -300,12 +303,17 @@ internal fun buildChatEntries(
     chunkPlans: Map<String, MdChunkPlan>,
     recentStreamedTurnKeys: Set<String>,
     segmentPlans: Map<String, TurnSegmentPlan> = emptyMap(),
-    /** #422→#423 批次六:turnKey → 展开态 StepGroup(权重门槛已拆,全量裂变)。
-     *  命中的 turn 拆条目发射(尾 Turn + StepGroupBody×N + StepGroupHead)。 */
-    expandedStepGroups: Map<String, dev.leonardo.ocbeacon.ui.screens.chat.tools.RenderItem.StepGroup> = emptyMap(),
     /** #440 槽位锚（computeTurnAnchors）——turnKey 锚到轮 user 消息，换装零漂移；
      *  置于参数表末尾（带默认值），既有位置传参调用零改动。 */
     turnAnchors: Map<Int, String> = emptyMap(),
+    /** #442 R2 分片唤醒（A2）：partId → 已发布冻结块集（broker 快照）。命中
+     *  turn 的发射走 [ChatEntry.StreamChunk] 结构（尾块 Turn + 冻结块逆文档序），
+     *  抑制该 turn 的其他分片路径（键族互斥）。 */
+    streamShards: Map<String, dev.leonardo.ocbeacon.ui.screens.chat.markdown.PublishedShards> = emptyMap(),
+    /** #442 A2.5 资格泛化：turnKey → 分片 part 的 renderItem 位置 k。k>0
+     *  （推理/工具前缀在场的推理先行轮）时发射 [ChatEntry.StreamPrefix] 并把
+     *  displayEntryStart 钉 prefix；k==0（text-leading）维持 A2 原发射。 */
+    shardPartIdx: Map<String, Int> = emptyMap(),
 ): ChatEntries {
     val entries = mutableListOf<ChatEntry>()
     val displayEntryStart = IntArray(displayItems.size)
@@ -358,31 +366,9 @@ internal fun buildChatEntries(
         val isStreamingTurn = (turnGroups[displayIdx] ?: listOf(msg)).any {
             it.message.id == streamingMsgId || (!it.isUser && it.message.time.completed == null)
         }
-        // #422 历史懒加载:大组展开态拆条目(先于一切旧分片路径——MdChunkPlan 对
-        // 多消息轮次已抑制,segPlan 让位)。发射序 = 视觉自底向上(reverseLayout
-        // 索引 0 在屏幕底部,同 #246 逆文档序先例):尾 Turn(末消息+统计栏)先入列,
-        // 内容分片逆序,折叠行头最后(视觉顶部)。displayEntryStart 钉回头部——
-        // 跳转落点 = 折叠行,语义与其他路径的"首片含标签栏"一致。
-        val splitStepGroup =
-            if (!msg.isUser && !isStreamingTurn) expandedStepGroups[turnKey] else null
-        if (splitStepGroup != null) {
-            entries += ChatEntry.Turn(displayIdx, turnKey, skipStepGroupItem = true, isUser = msg.isUser, isStreaming = isStreamingTurn)
-            // 键序号=文档序,发射逆序(底部=文档最旧片)——同 #246 chunk 键语义
-            val bodies = sliceStepGroupBodies(splitStepGroup.groups)
-            for (bi in bodies.indices.reversed()) {
-                entries += ChatEntry.StepGroupBody(displayIdx, turnKey + "#sgb" + bi, bodies[bi])
-            }
-            // #423 批次三:组尾收起行——大组内容可达数屏高,头部折叠行在视觉顶部
-            // (reverseLayout 发射最后),用户读到底部无处收起。尾部再发一条同款
-            // 折叠行(点击收起),复用 StepGroupHead 渲染分支,零新组件。
-            entries += ChatEntry.StepGroupHead(displayIdx, turnKey + "#sgt", splitStepGroup)
-            entries += ChatEntry.StepGroupHead(displayIdx, turnKey + "#sgh", splitStepGroup)
-            displayEntryStart[displayIdx] = entries.size - 1
-            continue
-        }
         val plan = if (!msg.isUser && !isStreamingTurn && turnKey !in recentStreamedTurnKeys) {
             val turnMsgs = turnGroups[rawIndex] ?: listOf(msg)
-            // #422:多消息轮次(含 StepGroup 折叠组)不走 MdChunkPlan 分片——
+            // #422:多消息轮次(含 StepGroup 分组,统一树平铺)不走 MdChunkPlan 分片——
             // Chunk 条目按 part 直渲染,绕过 turn renderable(折叠组行与末消息
             // 内容双丢失,巨型中间消息平铺)。防御性抑制(协调器侧已不产);
             // 巨型末消息由 Stage B 分段接管(SG 保持独立 item)。
@@ -410,7 +396,52 @@ internal fun buildChatEntries(
                     sp.fingerprint == turnPlanFingerprint(msg, turnMsgs)
             }
         } else null
-        if (plan != null) {
+        // #442 A2：流式分片（broker 发布命中 turn 的任一 part）——先于其他分片
+        // 路径（键族互斥）；完结后持续有效（spec 完结持续性：StreamChunk 保留
+        // 不迁 TurnSegmentPlan，尾块同键换终态渲染）
+        // #507 根修：查找以 turnKey 直查。turnGroups 是**结构缓存**（id 生命周期
+        // 签名，ChatMessageList），流式宿主 ChatMessage 捕获于消息创建时刻——
+        // parts 尚空（part 出生在后续 delta 批，签名不变缓存永不刷新）→ 组
+        // parts 恒空 → 旧查找恒 miss → #g 条目零发射 → 毕业内容无处渲染
+        // （真机定罪：fire 后 2000+ 字消失，vg2 探针 groupParts 空）。发布方
+        // PublishedShards.turnKey 与本处 turnKey 同源（注册期=条目键），直查
+        // 绕开 parts 引用新鲜度；组遍历降为兜底。
+        val turnShards = if (streamShards.isNotEmpty()) {
+            streamShards.values.firstOrNull { it.turnKey == turnKey }
+                ?: streamShards.values.firstOrNull { pub ->
+                    (turnGroups[rawIndex] ?: listOf(msg)).any { cm -> cm.parts.any { it.id == pub.partId } }
+                }
+        } else null
+        if (turnShards != null && turnShards.shards.isNotEmpty()) {
+            // #246 逆文档序（尾片先入列）：尾块 Turn 保原键（锚/帽物主/跳转/槽位
+            // 锚零迁移），冻结块 #g 键族 index=文档序（0=最旧/头块），头块最末
+            // 发射，displayEntryStart 钉头块（跳转落点语义与分片路径一致）
+            entries += ChatEntry.Turn(displayIdx, turnKey, isUser = msg.isUser, isStreaming = isStreamingTurn)
+            val count = turnShards.shards.size
+            for (c in count - 1 downTo 0) {
+                entries += ChatEntry.StreamChunk(
+                    displayIndex = displayIdx,
+                    key = turnKey + "#g" + c,
+                    turnKey = turnKey,
+                    chunkIndex = c,
+                    chunkCount = count,
+                    text = turnShards.shards[c].text,
+                )
+            }
+            // #442 A2.5 资格泛化：分片 part 前有推理/工具 renderItem（k>0）时，
+            // 前缀独立成条（最末发射=视觉 turn 顶部），displayEntryStart 改钉
+            // prefix（turn 头=跳转落点）；k==0 维持 A2 原钉头块。
+            val shardK = shardPartIdx[turnKey] ?: 0
+            if (shardK > 0) {
+                entries += ChatEntry.StreamPrefix(
+                    displayIndex = displayIdx,
+                    key = turnKey + "#p",
+                    turnKey = turnKey,
+                    partIdx = shardK,
+                )
+            }
+            displayEntryStart[displayIdx] = entries.size - 1
+        } else if (plan != null) {
             val count = plan.ranges.size
             // #246 定音（2026-08-27 真机截图+ScrollDiag 算术链）：displayItems
             // 最新在前（reverseLayout 索引 0 在屏幕底部），chunk 必须逆文档序
@@ -430,7 +461,6 @@ internal fun buildChatEntries(
             displayEntryStart[displayIdx] = entries.size - 1
         } else if (userPlan != null) {
             val count = userPlan.segments.size
-            // 同上：逆文档序发射（#246）
             for (c in count - 1 downTo 0) {
                 entries += ChatEntry.UserChunk(
                     displayIndex = displayIdx,

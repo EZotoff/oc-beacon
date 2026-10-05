@@ -6,8 +6,10 @@ package dev.leonardo.ocbeacon.ui.screens.chat.markdown
  * 背景：渲染栈 multiplatform-markdown-renderer 0.45.0 无 math 扩展（已取证），
  * 裁决 = 预变换——不碰渲染器、不增依赖，检测数学定界符并把公式段替换为
  * 等宽可读块：
- * - 块级 `$$...$$`（含多行）与 `\[...\]` → tex 围栏代码块（```tex），
- *   走渲染器既有等宽代码块渲染，公式原样可读且有视觉区分；
+ * - 块级 `$$...$$`（含多行）与 `\[...\]` → math 围栏代码块（```math，#488③
+ *   自 tex 改标——math 是数学降级专属识别位，不与 AI 手写 tex 围栏混淆），
+ *   渲染侧（HighlightedCode.kt SafeHighlightedMathBlock）按 language=="math"
+ *   识别为数学块：等宽呈现 +「公式」徽标 + 手写轻着色；
  * - 行内 `\(...\)` → 行内代码 span（等宽+底色区分）。取舍：CommonMark
  *   围栏必须在行首开启，行内公式若替换为围栏会把所在句子拆成三个块，
  *   行内代码保留段落流且同样等宽可读。
@@ -18,7 +20,7 @@ package dev.leonardo.ocbeacon.ui.screens.chat.markdown
  * - 既有围栏代码块（``` / ~~~，含未闭合）与行内代码 span 内的定界符
  *   字面量不误伤——行级围栏跟踪（同 [normalizeTaskListMarkers] 语义）+
  *   反引号 run 匹配跳过；
- * - 幂等：已变换产物（tex 围栏/行内代码）再次变换不重复处理；
+ * - 幂等：已变换产物（math 围栏/行内代码）再次变换不重复处理；
  * - CommonMark 围栏须行首：行中块级定界符前后补换行隔断（围栏可打断段落）。
  *
  * 流式取舍（StreamingMarkdownState 铁律）：前缀差分 append 管线只接受
@@ -39,45 +41,53 @@ internal fun transformMathFallback(content: String): String {
     val lines = content.split('\n')
     val chunks = ArrayList<CharSequence>(lines.size)
     val run = StringBuilder() // 当前围栏外文本区（行粒度，待数学扫描）
+    // 2026-09-30 坍缩重建根修（同 ensureBlankLineBeforeGfmTables）：行哨兵
+    // 改显式计数——首行为空行（闭合围栏后）时 run=="" 被误判未启动 → 跳过
+    // 分隔换行符 → 空行吞噬 → 流式非前缀改写（pilot RESETKEY 重建坍缩）。
+    var runLines = 0
     var fenceMarker: Char? = null
     var minFenceLen = 0
     for (line in lines) {
-        val marker = FenceLineRegex.find(line)?.groupValues?.get(1)
+        // #471③：围栏判定统一至 MarkdownFenceLine（闭栏无 info、反引号栏
+        // info 无反引号——与 SafePrefixGate 同语义；旧宽松判定在栏内
+        // 「```xxx」误闭合 → 栏状态与 gate 分歧 → 已放行栏内前缀被重写）。
+        val openFence = MarkdownFenceLine.open(line)
         when {
             fenceMarker != null -> {
-                // 围栏内（含闭合围栏行）原样；只有同字符且足够长的围栏行能闭合
-                if (marker != null && marker.first() == fenceMarker && marker.length >= minFenceLen) {
+                // 围栏内（含闭合围栏行）原样；只有同字符且足够长的无 info
+                // 围栏行能闭合（CommonMark 闭栏语义）。
+                if (MarkdownFenceLine.closes(line, fenceMarker!!, minFenceLen)) {
                     fenceMarker = null
                     minFenceLen = 0
                 }
-                if (run.isNotEmpty()) {
+                if (runLines > 0) {
                     chunks.add(transformMathSegments(run.toString()))
                     run.setLength(0)
+                    runLines = 0
                 }
                 chunks.add(line)
             }
-            marker != null -> {
+            openFence != null -> {
                 // 开启围栏：先冲刷栏外文本（含数学降级），围栏行本身原样
-                if (run.isNotEmpty()) {
+                if (runLines > 0) {
                     chunks.add(transformMathSegments(run.toString()))
                     run.setLength(0)
+                    runLines = 0
                 }
                 chunks.add(line)
-                fenceMarker = marker.first()
-                minFenceLen = marker.length
+                fenceMarker = openFence.first
+                minFenceLen = openFence.second
             }
             else -> {
-                if (run.isNotEmpty()) run.append('\n')
+                if (runLines > 0) run.append('\n')
                 run.append(line)
+                runLines++
             }
         }
     }
-    if (run.isNotEmpty()) chunks.add(transformMathSegments(run.toString()))
+    if (runLines > 0) chunks.add(transformMathSegments(run.toString()))
     return chunks.joinToString("\n")
 }
-
-/** 围栏行检测（CommonMark：≤3 空格缩进的 ```/~~~ ≥3 连字符）。 */
-private val FenceLineRegex = Regex("^ {0,3}(`{3,}|~{3,})")
 
 /**
  * 围栏外文本区的数学定界符扫描替换。行内代码 span（反引号 run）原样跳过
@@ -121,7 +131,7 @@ private fun transformMathSegments(text: String): String {
 }
 
 /**
- * 块级数学段替换为 tex 围栏。[closeStart] < 0 或内容空白 = 不成对 → 定界符
+ * 块级数学段替换为 math 围栏。[closeStart] < 0 或内容空白 = 不成对 → 定界符
  * 原样吐出（后续文本继续扫描，不影响下一段配对）。返回推进后的索引。
  */
 private fun appendBlockMath(
@@ -141,7 +151,7 @@ private fun appendBlockMath(
     // CommonMark：围栏须行首开启——行中定界符前补换行隔断（围栏可打断段落），
     // 围栏后非行尾同样补换行让后续文本独立成段
     if (openStart > 0 && text[openStart - 1] != '\n') out.append('\n')
-    out.append("```tex\n").append(inner).append("\n```")
+    out.append("```math\n").append(inner).append("\n```")
     val closeEnd = closeStart + closeDelim.length
     if (closeEnd < text.length && text[closeEnd] != '\n') out.append('\n')
     return closeEnd

@@ -392,14 +392,20 @@ class MessageEventHandlerTest {
     }
 
     @Test
-    fun `handles MessagePartUpdated - replaces with longer incoming text`() {
+    fun `handles MessagePartUpdated - diverging longer snapshot kept out during streaming`() {
+        // 2026-09-30 H1 守卫修订（坍缩重建根修）：旧 longer-wins 启发式放行
+        // 「更长但异构」的流中快照（真机 13:55：delta 累积 495ch vs 服务器侧
+        // 空行折叠后的 542ch 快照在 48ms 批间分歧 → 整体替换 → pilot nonPrefix
+        // → RESETKEY 重建 → 5741→3249 坍缩 + 4.4s 限速重铺）。流式期
+        // （非终态）delta 累积是真相源：前缀一致才快进，分歧保 existing；
+        // 终态（end!=0）权威全量替换不受影响（见 MessageMergeEngineTest）。
         val part = Part.Text(id = "p1", sessionId = "s1", messageId = "m1", text = "Hi")
         handler.handleMessagePartUpdated(SseEvent.MessagePartUpdated(part))
 
-        val longer = Part.Text(id = "p1", sessionId = "s1", messageId = "m1", text = "Hello World")
-        handler.handleMessagePartUpdated(SseEvent.MessagePartUpdated(longer))
+        val longerDiverging = Part.Text(id = "p1", sessionId = "s1", messageId = "m1", text = "Hello World")
+        handler.handleMessagePartUpdated(SseEvent.MessagePartUpdated(longerDiverging))
 
-        assertEquals("Hello World", (handler.parts.value["m1"]!![0] as Part.Text).text)
+        assertEquals("Hi", (handler.parts.value["m1"]!![0] as Part.Text).text)
     }
 
     @Test

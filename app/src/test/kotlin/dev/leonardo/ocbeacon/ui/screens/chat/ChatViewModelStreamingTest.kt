@@ -129,6 +129,7 @@ class ChatViewModelStreamingTest {
                 }
             }
             every { it.getAllPartsMap() } returns partsFlow
+            every { it.getStructuralPartsMap() } returns partsFlow
             every { it.getActiveToolProgressForSession(any()) } returns flowOf(emptyList())
             every { it.upsertMessages(any(), any(), any()) } answers {
                 val sid = firstArg<String>()

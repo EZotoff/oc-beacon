@@ -85,7 +85,7 @@ class DshEnvelopeTest {
         val envelope = DshEnvelope.decode(fixture("errorBadRequest")) as DshEnvelope.ServerResponse
         assertEquals("rpc-bad-1", envelope.rpcId)
         val err = envelope.result as DshRpcResult.Err
-        assertEquals("bad-request", err.code.wire)
+        assertEquals("gateway/bad-request", err.code.wire)
         assertEquals("method mismatch", err.message)
         assertEquals(buildJsonObject {}, err.details)
         assertTrue(err.code.isKnown)
@@ -152,14 +152,17 @@ class DshEnvelopeTest {
     // ============ 闭集完整性 ============
 
     @Test
-    fun `error code closed set has 39 distinct known wire values`() {
-        assertEquals(39, DshRpcErrorCode.ALL.size)
-        assertEquals(39, DshRpcErrorCode.ALL.map { it.wire }.toSet().size)
+    fun `error code closed set has 64 distinct known 0_2_0 wire values`() {
+        // #458：闭集重建为 0.2.0 观测闭集 64 码（live 实测 + dist 提取）
+        assertEquals(64, DshRpcErrorCode.ALL.size)
+        assertEquals(64, DshRpcErrorCode.ALL.map { it.wire }.toSet().size)
         assertTrue(DshRpcErrorCode.ALL.all { it.isKnown })
-        // 抽查闭集成员（§5 补遗行清单首尾 + fromWire 往返）
-        assertTrue(DshRpcErrorCode.ALL.contains(DshRpcErrorCode.fromWire("bad-request")))
-        assertTrue(DshRpcErrorCode.ALL.contains(DshRpcErrorCode.fromWire("internal")))
-        assertEquals(DshRpcErrorCode.SessionNotFound, DshRpcErrorCode.fromWire("session-not-found"))
+        // 抽查闭集成员（gateway/session/directory-picker 三域 + fromWire 往返）
+        assertTrue(DshRpcErrorCode.ALL.contains(DshRpcErrorCode.fromWire("gateway/bad-request")))
+        assertTrue(DshRpcErrorCode.ALL.contains(DshRpcErrorCode.fromWire("gateway/internal")))
+        assertTrue(DshRpcErrorCode.ALL.contains(DshRpcErrorCode.fromWire("directory-picker/unreadable")))
+        assertEquals(DshRpcErrorCode.SessionNotFound, DshRpcErrorCode.fromWire("session/not-found"))
+        assertFalse(DshRpcErrorCode.fromWire("session-not-found").isKnown)
         assertFalse(DshRpcErrorCode.fromWire("totally-unknown").isKnown)
     }
 

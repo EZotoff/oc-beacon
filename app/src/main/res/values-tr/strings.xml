@@ -256,7 +256,6 @@
     <string name="chat_message_delete_failed">Mesaj silinemedi</string>
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">token/s</string>
-    <string name="chat_msg_tail_summary">%1$d adım · %2$d araç</string>
     <string name="a11y_message_detail">Mesaj ayrıntıları</string>
     <string name="chat_stats_session_title">Oturum istatistikleri</string>
     <string name="chat_stats_summary">%1$d tur · %2$d adım · %3$s LLM · %4$s araç</string>
@@ -492,6 +491,7 @@
     <string name="server_settings_oauth_browser_hint">Yetkilendirmeyi tarayıcınızda tamamlayın. Bu pencere otomatik olarak kapanacaktır.</string>
     <string name="chat_error_view_page">Sayfa</string>
     <string name="chat_error_view_code">Kod</string>
+    <string name="math_block_badge">Formül</string>
     <string name="chat_save_image">Görseli kaydet</string>
     <string name="chat_image_saved">Görsel kaydedildi</string>
     <string name="chat_image_save_failed">Görsel kaydedilemedi</string>

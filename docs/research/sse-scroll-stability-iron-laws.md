@@ -10,7 +10,7 @@
 ```
 SSE token 到达
     ↓
-48ms delta 批处理（MessageEventHandler.scheduleFlush）
+100ms delta 批处理（MessageEventHandler.scheduleFlush，周期常量 STREAM_FLUSH_INTERVAL_MS 定义于引擎域 ScrollCompensation.kt）
     ↓ 单次 flush = 1 次 StateFlow 更新 = 1 次重组
 高度补偿（layout{} modifier，仅 streaming message）
     ↓ requestScrollToItemNoCancel 抵消高度增长
@@ -29,7 +29,7 @@ SSE token 到达
 
 ### 铁律 2：`scheduleFlush()` 绝不能取消正在运行的 timer
 
-每个 token 都取消 in-flight timer 会在到达速率 > 1/48ms 时饿死 flush → 块状突发输出。
+每个 token 都取消 in-flight timer 会在到达速率高于批周期（100ms，见 §1）时饿死 flush → 块状突发输出。
 
 **位置**：`MessageEventHandler.kt:58`。实现：`if (batchJob?.isActive == true) return`。
 
@@ -149,6 +149,62 @@ val streamingMsgId = remember(rawMessages) {
 
 **位置**：`MessageDataDelegate.kt`（chatMessageCache + `lastCombineSessionId` 切换清理）、`ChatMessageList.kt`（turnGroupsSigRef/jumpTargetsSigRef + miss 分支修正）、`ToolProgressOutputInjector.kt`（changed 标志 + 原引用返回）。
 
+### 铁律 9（#471③，2026-09-30 追加）：流式与完结必须走同一归一化——禁止任何单侧文本变换
+
+**完结瞬间重排跳变族的最后结构性根因**：归一化只在完结发生 = 流式显示文本与完结渲染文本不一致 → 完结换装即一次性重排（真机实证：表格轮 -8544/+7236、纯文本轮 ±24px 残余、#471④ retry 场景 -1330px ③族）。
+
+**规则**：流式 ingest（pilot 包装器入口）与完结渲染（normalizeForRender 全部消费点）必须共用同一归一化核心——normalizeMarkdownCore（CRLF/表格空行/数学降级）→ normalizeForStreaming（pilot）与 normalizeForRender（完结）同序组合，**render == streaming 逐字节不变量入测**（NormalizeSentinelEquivalenceTest）。任何新的文本变换必须同时接入两侧并证明放行单调：回改点落在 SafePrefixGate 扣留区，NormalizationStreamingMonotonicityTest 逐字符增长×gate 放行前缀稳定性性质测试钉死。
+
+**随批四项配套修订**（归一化前移的破口，spec docs/specs/2026-09-30-471-3-streaming-normalization-unification-design.md §3.3 矩阵修订）：gate 尾 `$` run 收口（逐字符凑对）/ 表格三处排除未定案 `$$`、`\[` 行 / 表头行待定三行结构空行毕业回退 / MarkdownFenceLine 统一围栏判定（三变换与 gate 的栏状态分歧——兼修栏内表格插空行、栏内 ```xxx 误闭合两个存量渲染缺陷）。
+
+**位置**：`MarkdownContent.kt`（normalizeMarkdownCore / normalizeForStreaming / splitOversizedParagraphsByPosition）、`StreamingMarkdownPilot.kt`（ingest 前移）、`MarkdownFenceLine.kt`（统一围栏判定）。
+
+## 2.6 流式揭示域铁律（2026-09-30 追加，#437 收口五域收编）
+
+> 2026-09-29 发掘审计定罪的文档同步缺口：本节止于 #435 期间，#437 稳定揭示 / #438 限速与保 key / #472 行内放行 / #474 守卫分通道 / #476 GUARD 死区五域铁律全部散落 journal 未收编——按 R-7 收口要求补齐。
+
+### 铁律 10（#437）：流式揭示只放安全前缀——不稳定尾禁止先排版后回溯重释义
+
+**不稳定尾先字面排版、后回溯重释义 = 已显示内容高度回溯**（真机录屏 A-B 翻转帧定罪；#435 引擎只能配对单调增长，回溯即坍缩）。
+
+**规则**：pilot 差分与 append 之间必须经 `SafePrefixGate`——稳定块 + 开放段纯文字安全后缀两级放行；尾部扣留；完结 EOF 全量 flush。「未闭合构造零输出」（2026-09-25 用户裁决）。**差分基准必须取放行前缀 `normalized.take(released)`，不得用归一化全文快照**（#471③ 验收第三根因：`$$` 闭合重写天然非前缀但落扣留区，SMP 误判重生成 → 静默 resetKey 重建，真机 h 塌缩 -1128 从零重铺×2）。
+
+**位置**：`SafePrefixGate.kt`、`StreamingMarkdownPilot.kt`（spec：docs/specs/2026-09-25-437-streaming-md-stable-reveal-design.md）。
+
+### 铁律 11（#438）：大放行必须壁钟限速，配对 set 必须保 key
+
+**机制**：空行毕业一次性倾泻千字符级 = 单帧数千 px 增长（真机 run4 append max 2087ch）；配对 set 丢 key 走 null-key 裸 index 通道 = 换流式项时补偿错位（#444 fling 跳变回归的嫌疑通道）。
+
+**规则**：①gate 大放行壁钟限速 `BIG_RELEASE_CH=200` / 间隔 ≥200ms（与到达解耦，防止「旧的 EOF 一次性大跳」换装复发为可见铺开闪烁）；②`resolvePairedTarget` 越窗时必须走 `dataKeyAt` key 投影——与 LazyColumn item key 同源（含 chunk 后缀），`remember` key 加 `chatEntries`（重排后记忆清零语义正确）。
+
+**位置**：`SafePrefixGate.kt`（限速）、`ScrollCompensation.kt`（resolvePairedTarget / 让位防御）。
+
+### 铁律 12（#472）：已闭合行内构造即时放行，判定与解析器逐字镜像；非前缀跳变先宽限再重建
+
+**机制**：行扫描对含 ACTIVE_MARKERS 的行整行扣留 → 已闭合 `*斜体*`/`**粗体**`/`` `代码` `` 也憋到段落末一口气倾泻（R9 实证 444ms 聚 7 批 d=6236px）。
+
+**规则**：已闭合 emphasis/code/strikethrough + 纯文字尾巴按纯文字同节奏增量放行（`InlineSpanSafety.safeCut` 逐字镜像 markdown-jvm 0.7.9 的 canOpen/canClose 判定——**解析器升版必须重验镜像**）；保守扣留四情形维持：未闭合开标记 / 硬停字符（`\ [ ] ! | # > $$ ☐☑✅`）/ 快照尾 run（EOF 侧翼未知 + 防跨批 run 撕裂）/ 配对 span 跨扣留点开标记。
+
+**非前缀跳变处置**（#472 验收轮回归教训）：非前缀 ≠ 立即重建——300ms 宽限冻结（`nonPrefixRebuildDue`）等数据层摆动旧串回来无缝续播，超窗才真重生成重建；hold 桥接期 pilot 输入整冻结（终帧即终点）。
+
+**位置**：`InlineSpanSafety.kt`、`SafePrefixGate.kt`、`StreamingMarkdownPilot.kt`。
+
+### 铁律 13（#474）：手势通道与程序注入通道必须分治——用户链解除程序意图
+
+**机制**：程序配对注入（LEAP/RESIZE 补偿、GUARD 重锚）与用户手势共用语义时，卡内链传导/fling 中 tap 会触发程序化滚动（贴底吸附、制动拉底）——「卡内滚动吞噬拖动」是分通道 by-design 语义，不是死锁。
+
+**规则**：用户手势链（UserInput）到达必须解除 autoScroll 程序意图（`CardFlingLeakGuard.onUserChain` → onExpandDeparture 解除）；展开/收起补偿方向遵循「上方不动 + 向下扩展」（2026-09-29 用户裁决终向）；fling 泄漏拦截上提 item 级通用守卫，协议内反转注入。
+
+**位置**：`CardFlingLeakGuard.kt`、`ChatScrollController.kt`。
+
+### 铁律 14（#476）：重锚必须有死区——微离底不得拉回绝对底
+
+**机制**：零高横幅带（恒驻 banner 槽位不可见时 0 高）→ firstVisibleItemIndex 双稳（0↔首实项，同物理位 off 不变，17ms 翻转）→ isAtBottom 振荡；GUARD 无死区时微离底也重锚 → 落点 off 永不清偿 = ~270ms/轮永续拉锯战（用户字面场景「上移一点即被吸回底」）。
+
+**规则**：GUARD 重锚死区 `REANCHOR_MIN_OFF_PX=120`，且 `materiallyOff` 入 snapshotFlow 键——死区内不重锚；卡内链传导经 onUserChain 解除武装（与铁律 13 同源）。
+
+**位置**：`ChatScrollController.kt`。
+
 ## 3. 回归历史：为什么这个能力"反复出现又消失"
 
 ### 3.1 时间线
@@ -226,7 +282,7 @@ val streamingMsgId = remember(rawMessages) {
 | shouldCompensate LaunchedEffect | `components/ChatMessageList.kt` | ~160 |
 | streaming message 识别 | `components/ChatMessageList.kt` | ~448 |
 | layout 高度补偿 modifier | `components/ChatMessageList.kt` | ~449-471 |
-| 48ms flush | `MessageEventHandler.kt` | ~58 |
+| 100ms flush（`STREAM_FLUSH_INTERVAL_MS`，#442 二期收编引擎域） | `MessageEventHandler.kt` | ~58 |
 | Markdown stateful 渲染 | `markdown/MarkdownContent.kt` | ~364 |
 | isAtBottom 定义 | `ChatScreen.kt` | ~326 |
 | snapToBottom 扩展 | `util/ChatScrollUtils.kt` | ~26 |
@@ -284,6 +340,8 @@ val streamingMsgId = remember(rawMessages) {
 | 2026-07-09 | 本次 | 恢复双 key（修复 #1）+ 移除 takeIf（修复 #2）+ 修正铁律 + 本文档 |
 | 2026-08-06 | v1-v6 | 滚动性能全链路修复：cache window（跳过）→ 指纹缓存（重算）→ 实例/签名缓存（分配风暴）→ 对称窗口（摩擦/fling）；新增铁律 6-8 与 3.4/5.3 节 |
 | 2026-09-25 | #435 | COMP 家族（DeferredRevealCompensator×5 挂载点）/PreRenderShiftChannel/GUARD stream-instant 退役；流式增长并入高度引擎统一配对（StreamingGrowLedger→pre-draw flush，「锚即意图」规则）；引擎 steady flush 增补 #432 贴底豁免；顺带修复读历史流式拖拽缺陷 |
+| 2026-09-30 | #437 收口 | 新增 §2.6 铁律 10-14：五域收编（#437 稳定揭示安全前缀 / #438 限速与保 key / #472 行内放行+非前缀宽限 / #474 手势-程序通道分治 / #476 GUARD 死区）——补 2026-09-29 发掘审计定罪的文档同步缺口；同日铁律 9（#471③ 归一化同源）随坍缩重建批次先期落档 |
+| 2026-10-01 | #442 批次 C | cadence 文档漂移修正：§1 管线/铁律 2/§4 速查表的 48ms 表述更新为现行 100ms（常量实际已于 #437 cadence 快赢改为 100ms、#442 终审 S4 收编引擎域，本文档滞后）；§3.4 历史表格保留 48ms 原文（记录当时事实） |
 
 ---
 

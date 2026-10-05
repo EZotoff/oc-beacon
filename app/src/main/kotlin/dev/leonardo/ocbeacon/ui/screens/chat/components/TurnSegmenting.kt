@@ -122,7 +122,7 @@ internal fun turnItemWeight(item: RenderItem): Int = when (item) {
     is RenderItem.TurnDivider -> 50
     is RenderItem.SyntheticNotice -> 900
     is RenderItem.RepeatingTool -> 550
-    // #422:折叠组=计数行(轻)+潜在展开体;权重按组内 GroupedParts 和
+    // #422 清理批次:统一树平铺,权重按组内 GroupedParts 和(原折叠组估重语义延续)
     is RenderItem.StepGroup -> item.groups.sumOf { g ->
         turnItemWeight(RenderItem.GroupedParts(g))
     }

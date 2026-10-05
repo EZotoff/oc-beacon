@@ -258,7 +258,6 @@
     <string name="chat_message_delete_failed">删除消息失败</string>
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">令牌/秒</string>
-    <string name="chat_msg_tail_summary">%1$d 步 · %2$d 个工具</string>
     <string name="a11y_message_detail">消息详情</string>
     <string name="chat_stats_session_title">会话统计</string>
     <string name="chat_stats_summary">轮次 %1$d · %2$d 步 · %3$s LLM · %4$s 个工具</string>
@@ -510,6 +509,7 @@
     <string name="server_settings_oauth_browser_hint">请在浏览器中完成授权。此窗口将自动关闭。</string>
     <string name="chat_error_view_page">页面</string>
     <string name="chat_error_view_code">代码</string>
+    <string name="math_block_badge">公式</string>
     <string name="chat_save_image">保存图片</string>
     <string name="chat_image_saved">图片已保存</string>
     <string name="chat_image_save_failed">保存图片失败</string>

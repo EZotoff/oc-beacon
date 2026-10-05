@@ -83,7 +83,20 @@ object DshEventMapper {
      */
     private val stepStartTimes = HashMap<String, Long>()
 
+    /**
+     * #507 块级起止时刻（key = "sid:turn:step|ordinal"）：实况 block-start 记
+     * 起始；前驱块结束=后继 block-start 时刻（块严格顺序，DSH 的 block-end 帧
+     * 被服务端压到流尾、时间戳为投递时刻非真实完成——不能用作结束）。整装
+     * assistant/message 结算时读后删（真实块时长供思考卡显示）；turn/end 清
+     * 该会话残留。历史重放无实况块 → 空表回退事件时刻（时长 0=不显示，现状）。
+     */
+    private val blockStartTimes = HashMap<String, Long>()
+    private val blockEndTimes = HashMap<String, Long>()
+
     private fun stepKey(sessionId: String, turn: Long, step: Long) = "$sessionId:$turn:$step"
+
+    private fun blockKey(sessionId: String, turn: Long, step: Long, ordinal: Long) =
+        stepKey(sessionId, turn, step) + "|" + ordinal
 
     /**
      * 首 token 时刻（dsh-llm `isTokenDelta` 规则的 app 侧复刻，权威 =
@@ -700,6 +713,9 @@ object DshEventMapper {
             "turn/end" -> {
                 // #411：轮结束清该会话在途步起始时刻（取消步不结算、不残留）
                 stepStartTimes.keys.removeAll { it.startsWith("$sessionId:") }
+                // #507：块起止时刻同域清理（|ordinal 后缀不参与前缀匹配）
+                blockStartTimes.keys.removeAll { it.startsWith("$sessionId:") }
+                blockEndTimes.keys.removeAll { it.startsWith("$sessionId:") }
                 val idle = DshMappedEvent.Sse(SseEvent.SessionIdle(sessionId, time.takeIf { it > 0 }))
                 val reason = data.obj("reason")
                 when (reason?.str("kind")) {
@@ -973,11 +989,12 @@ object DshEventMapper {
             )
         )
         // #356 echo→持久原子换装：RPC 提交的持久回显（source=user-rpc.rpccdId，
-        // MessageSourceMap 契约）补发 pending-<rpcId> 拆除——本地 echo 气泡与
-        // 持久消息同批到达同批折叠（handleMessageRemoved 幂等：echo 不在为 no-op，
-        // 历史/重放路径天然安全）。
+        // MessageSourceMap 契约）把本地 pending-<rpcId> echo 气泡**原地换名**为持久
+        // 消息（#509：MessageIdSwapped 替代 MessageRemoved 拆除——行不离开列表，
+        // u_ 条目不销毁重建；消费端仍登记 #490 台账，迟到的竞态播种照旧被丢弃；
+        // echo 不在为幂等 no-op，历史/重放路径天然安全）。
         data.obj("source")?.str("rpcId")?.takeIf { it.isNotBlank() }?.let { rpcId ->
-            events += DshMappedEvent.Sse(SseEvent.MessageRemoved(sessionId, "pending-$rpcId"))
+            events += DshMappedEvent.Sse(SseEvent.MessageIdSwapped(sessionId, "pending-$rpcId", id))
         }
         // #378 转录实体接线（压缩摘要表面载体，实录 seq-5392）：
         // - source.compactionId → CompactionSurfaceBound——摘要的 user/message
@@ -1151,8 +1168,19 @@ object DshEventMapper {
         val events = mutableListOf<DshMappedEvent>()
         val turn = data.long("turn")
         val step = data.long("step")
+        // #509：毕业换装=原地换名（MessageIdSwapped）而非 MessageRemoved 拆除——
+        // 消费端单同步块内把宿主行（含 parts）原子改名为权威 id，消除「权威行
+        // 已到、parts 未到」的 P5-3 过滤空窗（t_ 条目销毁重建→槽位记忆归零→
+        // asyncTerminal Loading≈0px 空白的根因）。
+        // part id 前缀=流式宿主 id（**跨实况/历史同源派生**：宿主行在场则与流式
+        // part 同 id 原位合并；历史 fold 无宿主播种也按同前缀派生，与 Room 存量
+        // 行幂等合并）——part 身份自首帧起永久稳定，id 键控缓存（预解析注册表/
+        // 分片账本/换装指纹）跨毕业连续。无 turn/step（畸形/旧事件）回落 seq 前缀。
+        val partIdPrefix = if (turn != null && step != null) streamingMessageId(turn, step) else id
         if (turn != null && step != null) {
-            events += DshMappedEvent.Sse(SseEvent.MessageRemoved(sessionId, streamingMessageId(turn, step)))
+            events += DshMappedEvent.Sse(
+                SseEvent.MessageIdSwapped(sessionId, streamingMessageId(turn, step), id)
+            )
         }
         // (2026-09-12 消息层扁平化 (a)) 模型路由：DSH 把 provider/model 放在
         // data.message.source（实况：{"kind":"model","provider":"...","model":"..."}，
@@ -1202,37 +1230,53 @@ object DshEventMapper {
             )
         )
         val content = message?.arr("content") ?: emptyList()
+        // #507 整装块时刻：实况记账的块起止（读后删）；历史重放/无实况块 → 回退
+        // 事件时刻（start=end → 时长 0 → 显示层不显示，现状语义）。末块无后继 →
+        // 结束回退事件时刻（消息完结≈末块真实完成）。
+        fun blockTimeOf(ordinal: Int): Pair<Long, Long> {
+            if (turn == null || step == null) return time to time
+            val bk = blockKey(sessionId, turn, step, ordinal.toLong())
+            val start = blockStartTimes.remove(bk) ?: time
+            val end = blockEndTimes.remove(bk) ?: time
+            return start to maxOf(end, start)
+        }
         content.forEachIndexed { i, el ->
             val block = el as? JsonObject ?: return@forEachIndexed
             when (block.str("type")) {
-                "reasoning" -> events += DshMappedEvent.Sse(
-                    SseEvent.MessagePartUpdated(
-                        Part.Reasoning(
-                            id = PartIdContract.derive(id, "reasoning", i.toLong()),
-                            sessionId = sessionId,
-                            messageId = id,
-                            text = block.str("text") ?: "",
-                            time = Part.Reasoning.Time(start = time, end = time),
+                "reasoning" -> {
+                    val (bStart, bEnd) = blockTimeOf(i)
+                    events += DshMappedEvent.Sse(
+                        SseEvent.MessagePartUpdated(
+                            Part.Reasoning(
+                                id = PartIdContract.derive(partIdPrefix, "reasoning", i.toLong()),
+                                sessionId = sessionId,
+                                messageId = id,
+                                text = block.str("text") ?: "",
+                                time = Part.Reasoning.Time(start = bStart, end = bEnd),
+                            )
                         )
                     )
-                )
-                "text" -> events += DshMappedEvent.Sse(
-                    SseEvent.MessagePartUpdated(
-                        Part.Text(
-                            id = PartIdContract.derive(id, "text", i.toLong()),
-                            sessionId = sessionId,
-                            messageId = id,
-                            text = block.str("text") ?: "",
-                            time = Part.Text.Time(start = time, end = time),
+                }
+                "text" -> {
+                    val (bStart, bEnd) = blockTimeOf(i)
+                    events += DshMappedEvent.Sse(
+                        SseEvent.MessagePartUpdated(
+                            Part.Text(
+                                id = PartIdContract.derive(partIdPrefix, "text", i.toLong()),
+                                sessionId = sessionId,
+                                messageId = id,
+                                text = block.str("text") ?: "",
+                                time = Part.Text.Time(start = bStart, end = bEnd),
+                            )
                         )
                     )
-                )
+                }
                 // E2E 实证（1192 例）：tool-call/tool-result 块是核心 ContentBlock 的冗余镜像——
                 // 工具卡真源 = tool/call|result 事件对（会话 B 实证渲染正常）。静默确认防重复卡。
                 "tool-call", "tool-result" -> Unit
                 // 2026-09-01（Task 3c 卡片缺口）：file/image ContentBlock → Part.File
                 //（与 user/message 同款；DSH attachment 字节拉取留待 session.attachment 接线）。
-                "file", "image" -> events += mapFileBlock(sessionId, id, i, block)
+                "file", "image" -> events += mapFileBlock(sessionId, id, i, block, partIdPrefix)
                 else -> AppLogger.w(TAG, "assistant/message 未支持的内容块: " + block.str("type"))
             }
         }
@@ -1536,7 +1580,7 @@ object DshEventMapper {
      * octet-stream；source 保真 attachment/原文供后续 session.attachment 接线
      *（url 为 null 时既有图片缩略图链不渲染——字节拉取 = 后续任务，数据不再丢）。
      */
-    private fun mapFileBlock(sessionId: String, msgId: String, index: Int, block: JsonObject): DshMappedEvent.Sse {
+    private fun mapFileBlock(sessionId: String, msgId: String, index: Int, block: JsonObject, partIdPrefix: String = msgId): DshMappedEvent.Sse {
         val attachment = block.obj("attachment")
         val mime = block.str("mime") ?: attachment?.str("mediaType") ?: "application/octet-stream"
         val filename = block.str("filename") ?: attachment?.str("name")
@@ -1544,7 +1588,8 @@ object DshEventMapper {
         return DshMappedEvent.Sse(
             SseEvent.MessagePartUpdated(
                 Part.File(
-                    id = PartIdContract.derive(msgId, "file", index.toLong()),
+                    // #509：part id 前缀=流式宿主（跨毕业稳定，同 text/reasoning 契约）
+                    id = PartIdContract.derive(partIdPrefix, "file", index.toLong()),
                     sessionId = sessionId,
                     messageId = msgId,
                     mime = mime,
@@ -1712,7 +1757,31 @@ object DshEventMapper {
                         text = "", time = Part.Text.Time(start = time),
                     )
                 }
-                listOf(DshMappedEvent.Sse(SseEvent.MessagePartUpdated(part)))
+                val events = mutableListOf(DshMappedEvent.Sse(SseEvent.MessagePartUpdated(part)))
+                // #507 块时刻记账：起始=本帧时刻；前驱块结束=本帧时刻（后继启动⇒
+                // 前驱完成，与下方 #506 前驱终态补丁同一推断）。
+                if (turn != null && step != null) {
+                    if (blockStartTimes.size > 256) { blockStartTimes.clear(); blockEndTimes.clear() }
+                    val bk = blockKey(sessionId, turn, step, index)
+                    blockStartTimes[bk] = time
+                    if (index > 0L) blockEndTimes[blockKey(sessionId, turn, step, index - 1)] = time
+                }
+                // #506：后继块启动 ⇒ 前驱块已完成——就地发前驱终态补丁。DSH 块
+                // 严格顺序（t31/t32 抓包零交错实证），但 block-end 被服务端压到
+                // 整流结束才发（t32：思考 22:10:56 完，block-end 22:12:03.9 才到）
+                // → time.end 迟到全程 → 思考卡计时拖着跑满正文流式。TimePatch 端
+                // end==null first-write-wins，晚到的真实 block-end 自然让位。
+                if (index > 0L) {
+                    events.add(DshMappedEvent.Sse(
+                        SseEvent.MessagePartTimePatch(
+                            sessionId = sessionId,
+                            messageId = messageId,
+                            ordinal = index - 1,
+                            endMs = time,
+                        )
+                    ))
+                }
+                events
             }
             "text-delta" -> listOf(
                 DshMappedEvent.Sse(

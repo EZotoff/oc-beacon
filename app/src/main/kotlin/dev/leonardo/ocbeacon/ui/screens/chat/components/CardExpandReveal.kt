@@ -89,6 +89,15 @@ internal val LocalCardExpandDeparture = compositionLocalOf<(() -> Unit)?> { null
 /** 当前 item 是否属于流式 turn(CML 逐 item 提供);true = 降级裸 AV。 */
 internal val LocalInStreamingTurn = staticCompositionLocalOf { false }
 
+/**
+ * #508:本卡宿主 item 的 key(CML 逐 item 提供)。展开反射目标归一需知 +H 增长
+ * 落在哪个 item——宿主=锚 item 时 (fii,fiso+H) 随同遍增长落地恒合法(fiso≤尺寸
+ * ⇔ fiso+H≤尺寸+H),永不折叠;宿主在锚 item 上方时才需向旧侧折算且宿主容量
+ * 按 +H 计。null=宿主未提供(横幅/预览/其他未挂供给的 item),按宿主=锚 item
+ * 兜底(反射路径现存唯一消费域=turn 条目块,恒有供给;横幅走裸 AV 不经此)。
+ */
+internal val LocalCardExpandHostKey = compositionLocalOf<Any?> { null }
+
 /** 展开位移离开贴底区(补偿后)判定阈值,对齐 isAtBottom 的 100px 判据。 */
 private const val DEPARTURE_THRESHOLD_PX = 100f
 
@@ -540,6 +549,8 @@ internal fun CardExpandReveal(
 ) {
     val listState = LocalCardExpandListState.current
     val departure = LocalCardExpandDeparture.current
+    // #508:宿主 item 身份在组合层读取(LaunchedEffect 协程内不可读 CompositionLocal)
+    val hostItemKey = LocalCardExpandHostKey.current
     if (listState == null || LocalInStreamingTurn.current) {
         // 降级:出厂过渡(与 2026-08-30 终局一致)
         AnimatedVisibility(
@@ -798,12 +809,34 @@ internal fun CardExpandReveal(
                         val anchorFiso = listState.firstVisibleItemScrollOffset
                         val anchored =
                             listState.layoutInfo.visibleItemsInfo.isNotEmpty()
+                        // 2026-09-29 用户裁决终向:展开=「卡与上方纹丝不动,内容
+                        // 向下扩展推走下方」——全域统一反射 (fii, fiso+H)(视口下移
+                        // H 与布局增长抵消:上方净零、卡钉住、下方下移 H)。二轮
+                        // 「锚定底部零位移」(上方让位=向上扩展)被用户否决,撤销。
+                        // 真正的偶发跳变源=半贴底 fiso+H 超界(见下方归一)。
                         if (anchored) {
+                            // 超界防御(#466 建立;#508 根修方向修正):折叠方向=
+                            // 向旧侧(idx 递增)且宿主容量 +H——原向新侧过滤在逆布局
+                            // 下链恒只含锚 item 自身,链尽 fall-through 丢整 item 高度
+                            // (展开位移恒=H−锚item尺寸的视口跳变根因)。
+                            val rawTarget = anchorFiso + H
+                            val visItems = listState.layoutInfo.visibleItemsInfo
+                            val hostIndex =
+                                if (hostItemKey != null) visItems.firstOrNull { it.key == hostItemKey }?.index ?: -1 else -1
+                            val norm = normalizeExpandAnchor(
+                                visItems
+                                    .filter { it.index >= anchorFii }
+                                    .sortedBy { it.index }
+                                    .map { it.index to it.size },
+                                rawTarget,
+                                hostIndex,
+                                H,
+                            )
                             dev.leonardo.ocbeacon.ui.screens.chat.components.LazyListReflection
                                 .requestScrollToItemNoCancel(
                                     listState,
-                                    anchorFii,
-                                    anchorFiso + H,
+                                    norm.first,
+                                    norm.second,
                                 )
                             clock.episodeShiftConsumedPx = H.toFloat()
                             if (BuildConfig.DEBUG) {
@@ -811,6 +844,8 @@ internal fun CardExpandReveal(
                                     "CardExpand",
                                     "[DEBUG-466] expand-anchor fii=" + anchorFii +
                                         " fiso=" + anchorFiso + " +H=" + H +
+                                        " host=" + hostIndex +
+                                        (if (norm.first != anchorFii) " norm->" + norm.first + ":" + norm.second else "") +
                                         " pinned=" + wasPinnedToBottom,
                                 )
                             }
@@ -910,12 +945,22 @@ internal fun CardExpandReveal(
                     // (scrollToItem 是独立排布通道:塌缩先渲染一帧再跳位
                     //  =整屏闪烁,真机复验收敛定罪;本质=渲染后修正,弃。)
                     // 用户滚动过(阅读位置优先权铁律)或锚点链不足 → 回退镜像位移。
+                    // 展开后回收兜底(2026-09-28 真机 t4 定罪):episodeShiftConsumedPx
+                    // 挂在 clock(remember)上,展开→滚离视口→LazyList 回收→重组合新
+                    // clock 账本归零——consumed=0 时 resolveCollapseAnchor 短路返回
+                    // 原位=零回退,-H 塌缩全额漏成视口跳变(close-anchor consumed=0 +
+                    // RESIZE -194 无配对=用户主诉「整体对话内容往下拖动」)。塌缩量
+                    // 恒=当前上报高度 rep(稳态 fraction=1 时 rep==账本:展开反射记
+                    // H,steady 补派双写同步),账本缺失时以 rep 兜底,数学与账本路径
+                    // 严格同值;两条收起路径(反射锚点/dispatch 镜像)统一取用。
+                    val mirrorConsumed =
+                        clock.episodeShiftConsumedPx.takeIf { it > 0f } ?: rep.toFloat()
                     val collapseAnchor = if (!clock.userScrollCancelled) {
                         val vis = listState.layoutInfo.visibleItemsInfo
                         resolveCollapseAnchor(
                             listState.firstVisibleItemIndex,
                             listState.firstVisibleItemScrollOffset,
-                            clock.episodeShiftConsumedPx,
+                            mirrorConsumed,
                             vis.filter { it.index < listState.firstVisibleItemIndex }
                                 .map { it.size }
                                 .reversed(),
@@ -937,7 +982,8 @@ internal fun CardExpandReveal(
                                 "CardExpand",
                                 "[DEBUG-427] close-anchor-request fii=" + aItem +
                                     " fiso=" + aOffset +
-                                    " (mirror consumed=" + clock.episodeShiftConsumedPx.toInt() + ")",
+                                    " (mirror consumed=" + mirrorConsumed.toInt() +
+                                    " ledger=" + clock.episodeShiftConsumedPx.toInt() + " rep=" + rep + ")",
                             )
                         }
                     }
@@ -950,11 +996,7 @@ internal fun CardExpandReveal(
                         // 追加派发=与手势竞态,双错位)
                         clock.programmaticShift = true
                         try {
-                            val backPx = if (clock.episodeShiftConsumedPx != 0f) {
-                                -clock.episodeShiftConsumedPx
-                            } else {
-                                -rep.toFloat()
-                            }
+                            val backPx = -mirrorConsumed
                             applyPairedPreRenderShift(listState, backPx)
                         } finally {
                             clock.programmaticShift = false
@@ -1390,10 +1432,14 @@ internal fun CardExpandReveal(
         }
     }
 
+    // 冷组合抬底数据源:finalHCache(rememberSaveable)跨回收存活,-1=无缓存
+    // (抬底条件 floor>measured 自然失效)。remember(finalHCache) 稳定引用,
+    // lambda 闭包读 state=布局相订阅,缓存更新自动失效重测。
+    val floorProvider = remember(finalHCache) { { finalHCache.value } }
     Box(
         modifier = modifier
             .clipToBounds()
-            .cardExpandGeometry(clock)
+            .cardExpandGeometry(clock, floorProvider)
             .onPlaced {
                 // #423 批次四:布局相写入。真机取证(09-22):onGloballyPositioned 实测
                 // 在绘制期才派发——晚于 pre-draw,FLUSH 修正器在增长落地帧只能读到陈旧值
@@ -1582,11 +1628,47 @@ private fun dispatchClosedLoop(
 
 /**
  * #432 贴底免派发判定(纯函数可单测):严格贴底=最新 item 锚定(fii==0 ∧ offset==0)。
- * 此构型布局把塌高向上扩展——header 与底部内容天然屏位不变,dispatch 反而
- * 把视口推离贴底(「展开跳转到其他地方」)。fii==0 但 offset>0 的半贴底域
- * 布局语义未取证,保守不启用(待真机日志观察后再放宽)。
+ * 此构型布局把塌高向上扩展——header 与底部内容天然屏位不变,steady 迟到增长
+ * 的 dispatch 反而把视口推离贴底。fii==0 但 offset>0 的半贴底域不启用
+ * (2026-09-29 四轮用户裁决:展开=向下扩展+上方不动,半贴底同走反射归一路径)。
  */
 internal fun bottomPinnedExpandSkip(fii: Int, fiso: Int): Boolean = fii == 0 && fiso == 0
+
+/**
+ * 展开反射目标归一(#466 建立,#508 根修):目标滚动位=当前+H,分解 (fii,fiso+H)
+ * 的合法性只取决于**锚 item 的增长后尺寸**——锚 item 唯一会变大的场合是宿主=锚
+ * item 本身(卡在可见域,增长与待定位同遍 measure 落地),此时 fiso≤尺寸 ⇔
+ * fiso+H≤尺寸+H 恒成立,永不折叠。宿主在锚 item 上方(锚 item 不增长)且
+ * fiso+H 超其尺寸时,才沿可见链**向旧侧**(idx 递增,逆布局下即折叠的正方向)
+ * 折算——宿主 item 容量按 +H 计,否则途经宿主的折叠会错一个 H(绝对位偏移)。
+ *
+ * #508 根因(2026-10-03 T9 定罪):原实现向**新侧**过滤折叠链——逆布局可见链
+ * 是 fii..最高可见 idx,新侧(更小 idx)已滚过不可见,链恒只含锚 item 自身;
+ * rawTarget 超锚尺寸时单步折叠后链尽,fall-through 返回 (锚idx, fiso+H−旧尺寸)
+ * ——越界穿越的整 item 高度被静默丢弃,目标恒短一个锚 item 尺寸,实际位移=
+ * H−锚item尺寸(与 fiso 无关;真机两例同值 −1024px)。原 fii==0 设计场景 item0
+ * 为流式巨轮恒不触发折叠,潜伏至中位小 item 构型(2359px 分片条目)。
+ *
+ * @param itemsOldward 自锚 item 起 idx **递增**的 (index,height) 链
+ * @param hostIndex 宿主 item idx;-1=未知(按宿主=链首=锚 item 兜底)
+ * @param hostGrowth 宿主本集增长量(+H)
+ */
+internal fun normalizeExpandAnchor(
+    itemsOldward: List<Pair<Int, Int>>,
+    rawTarget: Int,
+    hostIndex: Int,
+    hostGrowth: Int,
+): Pair<Int, Int> {
+    var off = rawTarget
+    val host = if (hostIndex >= 0) hostIndex else itemsOldward.firstOrNull()?.first ?: -1
+    for ((idx, h) in itemsOldward) {
+        val cap = if (idx == host) h + hostGrowth else h
+        if (off < cap) return idx to off
+        off -= cap
+    }
+    val last = itemsOldward.lastOrNull()
+    return (last?.first ?: 0) to off.coerceAtLeast(0)
+}
 
 /**
  * #462(2026-09-29):收起锚点解析——增量镜像语义(纯函数可单测)。
@@ -1690,6 +1772,7 @@ private suspend fun settleUntilContentStable(clock: CardExpandClock) {
  */
 private class CardExpandGeometryNode(
     var clock: CardExpandClock,
+    var floorProvider: () -> Int = { 0 },
 ) : Modifier.Node(), LayoutModifierNode {
 
     private var cachedPlaceable: Placeable? = null
@@ -1740,7 +1823,27 @@ private class CardExpandGeometryNode(
                 cachedWidth = width
             }
         }
-        val report = clock.onMeasure(placeable.height)
+        // 冷组合抬底(回收跳变根修,2026-09-28 真机录屏定罪):展开态卡滚离视口
+        // →LazyList 回收→重组合(clock/measureCount 归零),asyncParse/内容组合的
+        // 高度迟到落地发生在用户滚回手势中(inProgress)——steady 按位置优先权
+        // 弃配,+H 裸顶视口(录屏 t=9.4s 反向-24/连跳+75 帧实证)。finalHCache
+        // (rememberSaveable)跨回收存活:冷首测(measureCount≤2)以已知终高占位,
+        // 迟到内容落地时高度已正确=零增量零弃配;陈旧 floor(内容变矮)由 count>2
+        // 真测接管,差值走 steady 正常配对。animating 期不抬(episode 独占)。
+        val floorH = if (clock.measureCount <= 2 && clock.fraction >= 1f && !clock.animating) {
+            floorProvider()
+        } else {
+            0
+        }
+        val effH = if (floorH > placeable.height) floorH else placeable.height
+        if (BuildConfig.DEBUG && effH != placeable.height) {
+            AppLogger.d(
+                "CardExpand",
+                "[DEBUG-FLOOR] cold-floor effH=" + effH + " measured=" + placeable.height +
+                    " count=" + clock.measureCount,
+            )
+        }
+        val report = clock.onMeasure(effH)
         // #430:稳态记账(measure 相;基线/rebase 协议见 CardExpandClock)——
         // episode 窗口外的任何 report 变化(分批表格逐组/asyncParse/图片)入账,
         // pre-draw flush 相派发配对位移。
@@ -1768,18 +1871,22 @@ private class CardExpandGeometryNode(
  */
 private class CardExpandGeometryElement(
     private val clock: CardExpandClock,
+    private val floorProvider: () -> Int,
 ) : ModifierNodeElement<CardExpandGeometryNode>() {
-    override fun create(): CardExpandGeometryNode = CardExpandGeometryNode(clock)
+    override fun create(): CardExpandGeometryNode = CardExpandGeometryNode(clock, floorProvider)
 
     override fun update(node: CardExpandGeometryNode) {
         node.clock = clock
+        node.floorProvider = floorProvider
     }
 
     override fun equals(other: Any?): Boolean =
-        other is CardExpandGeometryElement && other.clock === clock
+        other is CardExpandGeometryElement && other.clock === clock &&
+            other.floorProvider === floorProvider
 
-    override fun hashCode(): Int = System.identityHashCode(clock)
+    override fun hashCode(): Int =
+        System.identityHashCode(clock) * 31 + System.identityHashCode(floorProvider)
 }
 
-private fun Modifier.cardExpandGeometry(clock: CardExpandClock): Modifier =
-    this.then(CardExpandGeometryElement(clock))
+private fun Modifier.cardExpandGeometry(clock: CardExpandClock, floorProvider: () -> Int): Modifier =
+    this.then(CardExpandGeometryElement(clock, floorProvider))

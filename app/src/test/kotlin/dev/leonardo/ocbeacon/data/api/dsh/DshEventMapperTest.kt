@@ -207,6 +207,95 @@ class DshEventMapperTest {
     }
 
     @Test
+    fun `block-start patches predecessor terminal time - #506`() {
+        // #506 真机定罪（t32 抓包）：DSH 把 reasoning 的 block-end 压到整流结束
+        // 才发（思考 22:10:56 完，block-end 22:12:03.9 才到）→ time.end 迟到 67s
+        // → 思考卡计时拖着跑满正文流式全程。块严格顺序（零交错实证）⇒ 后继块
+        // 启动即前驱块完成——block-start(N) 顺手发 ordinal=N-1 补丁；TimePatch 端
+        // end==null first-write-wins，晚到的真实 block-end 自然让位。
+        val mapped = DshEventMapper.mapSessionEvent(
+            "fixture-0001",
+            sessionEvent(
+                "assistant/chunk",
+                """{"turn":5,"step":1,"chunk":{"type":"block-start","index":1,"blockType":"text"}}""",
+            ),
+        )
+        val events = eventsOf(mapped)
+        val patch = events.filterIsInstance<SseEvent.MessagePartTimePatch>().single()
+        assertEquals("dsh-t5s1", patch.messageId)
+        assertEquals("fixture-0001", patch.sessionId)
+        assertEquals(0L, patch.ordinal)
+        assertEquals(1788109999000L, patch.endMs)
+        // part 播种事件不受影响（同帧共存）
+        assertTrue(events.any { it is SseEvent.MessagePartUpdated })
+    }
+
+    @Test
+    fun `first block-start emits no predecessor patch - #506`() {
+        // 首块（N=0）无前驱——不发补丁，只播种 part。
+        val mapped = DshEventMapper.mapSessionEvent(
+            "fixture-0001",
+            sessionEvent(
+                "assistant/chunk",
+                """{"turn":5,"step":1,"chunk":{"type":"block-start","index":0,"blockType":"reasoning"}}""",
+            ),
+        )
+        val events = eventsOf(mapped)
+        assertEquals(1, events.size)
+        assertTrue(events.single() is SseEvent.MessagePartUpdated)
+    }
+
+    // ============ #507 整装块真时长（实况块起止记账）============
+
+    private fun chunkEventAt(t: Long, turn: Long, step: Long, chunkJson: String): JsonObject =
+        json.parseToJsonElement(
+            """{"type":"assistant/chunk","seq":100,"time":$t,"data":{"turn":$turn,"step":$step,"chunk":$chunkJson}}"""
+        ).jsonObject
+
+    @Test
+    fun `整装块时长取实况块起止 - #507`() {
+        // 权威 part 时长此前恒 0（start=end=事件时刻）→ 完结思考卡时长消失。
+        // 根修：block-start 记起始、后继 block-start 推前驱结束（DSH block-end
+        // 帧时间戳=流尾投递时刻非真实完成，不能用），整装结算读后删。
+        val sid = "fixture-blocktime"
+        DshEventMapper.mapSessionEvent(sid, chunkEventAt(1000, 7, 1,
+            """{"type":"block-start","index":0,"blockType":"reasoning"}"""))
+        DshEventMapper.mapSessionEvent(sid, chunkEventAt(8000, 7, 1,
+            """{"type":"block-start","index":1,"blockType":"text"}"""))
+        val mapped = DshEventMapper.mapSessionEvent(
+            sid,
+            json.parseToJsonElement(
+                """{"type":"assistant/message","seq":101,"time":60000,"data":{"turn":7,"step":1,""" +
+                    """"message":{"role":"assistant","content":[{"type":"reasoning","text":"想"},{"type":"text","text":"答"}]}}}"""
+            ).jsonObject,
+        )
+        val parts = eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>()
+            .map { it.part }
+        val reasoning = parts.filterIsInstance<Part.Reasoning>().single()
+        val text = parts.filterIsInstance<Part.Text>().single()
+        assertEquals(1000L, reasoning.time!!.start)   // 块启动时刻
+        assertEquals(8000L, reasoning.time!!.end)     // 后继块启动=思考结束
+        assertEquals(8000L, text.time!!.start)
+        assertEquals(60000L, text.time!!.end)         // 末块无后继=事件时刻
+    }
+
+    @Test
+    fun `历史重放无实况块回退事件时刻 - #507`() {
+        // 历史加载（无 chunk 流）→ start=end=事件时刻（时长 0=不显示，现状语义）。
+        val mapped = DshEventMapper.mapSessionEvent(
+            "fixture-history",
+            sessionEvent(
+                "assistant/message",
+                """{"turn":9,"step":1,"message":{"role":"assistant","content":[{"type":"reasoning","text":"h"},{"type":"text","text":"b"}]}}""",
+            ),
+        )
+        val reasoning = eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>()
+            .map { it.part }.filterIsInstance<Part.Reasoning>().single()
+        assertEquals(1788109999000L, reasoning.time!!.start)
+        assertEquals(1788109999000L, reasoning.time!!.end)
+    }
+
+    @Test
     fun `usage chunk is ignored for 276 session usage`() {
         val m = mappedFrames("dsh/mux-frames-extra.jsonl")[10]
         assertEquals(listOf(DshMappedEvent.Ignored(DshIgnoreReason.CHUNK_USAGE)), m.mapped)
@@ -654,11 +743,12 @@ class DshEventMapperTest {
                 """{"turn":3,"step":2,"message":{"role":"assistant","content":[{"type":"reasoning","text":"why"},{"type":"text","text":"answer body"}]},"usage":{"inputTokens":10,"outputTokens":5}}""",
             ),
         )
-        // 桥接拆除 → 消息 → reasoning part → text part
+        // 桥接原地换名（#509）→ 消息 → reasoning part → text part
         assertEquals(4, mapped.size)
-        val removed = (mapped[0] as DshMappedEvent.Sse).event as SseEvent.MessageRemoved
-        assertEquals("fixture-0001", removed.sessionId)
-        assertEquals("dsh-t3s2", removed.messageId) // 同 turn/step 的实况流式宿主被整装替换
+        val swapped = (mapped[0] as DshMappedEvent.Sse).event as SseEvent.MessageIdSwapped
+        assertEquals("fixture-0001", swapped.sessionId)
+        assertEquals("dsh-t3s2", swapped.fromId) // 同 turn/step 的实况流式宿主被原地换名
+        assertEquals("seq-fixture-0001-100", swapped.toId)
         val msg = (mapped[1] as DshMappedEvent.Sse).event as SseEvent.MessageUpdated
         val assistant = msg.info as Message.Assistant
         assertEquals("seq-fixture-0001-100", assistant.id)
@@ -667,11 +757,14 @@ class DshEventMapperTest {
         assertEquals(5, assistant.tokens!!.output)
         assertEquals(15, assistant.tokens!!.total)
         val reasoning = ((mapped[2] as DshMappedEvent.Sse).event as SseEvent.MessagePartUpdated).part as Part.Reasoning
-        assertEquals("seq-fixture-0001-100_reasoning_ord_0", reasoning.id)
+        // #509：权威 part id 用流式宿主前缀派生（跨实况/历史同源——与流式 part 同
+        // id 原位合并）；messageId 仍指权威 seq id
+        assertEquals("dsh-t3s2_reasoning_ord_0", reasoning.id)
+        assertEquals("seq-fixture-0001-100", reasoning.messageId)
         assertEquals("why", reasoning.text)
         assertEquals(1788109999000L, reasoning.time!!.end) // 整装即终态（#266 迟到 delta 守卫）
         val text = ((mapped[3] as DshMappedEvent.Sse).event as SseEvent.MessagePartUpdated).part as Part.Text
-        assertEquals("seq-fixture-0001-100_text_ord_1", text.id)
+        assertEquals("dsh-t3s2_text_ord_1", text.id)
         assertEquals("answer body", text.text)
     }
 
@@ -1412,7 +1505,9 @@ class DshEventMapperTest {
         )
         val parts = eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>()
         val f = parts.single().part as Part.File
-        assertEquals("seq-s1-30_file_ord_0", f.id)
+        // #509：file part id 同 text/reasoning 契约用流式宿主前缀（跨毕业稳定）
+        assertEquals("dsh-t1s2_file_ord_0", f.id)
+        assertEquals("seq-s1-30", f.messageId)
         assertEquals("application/pdf", f.mime)
         assertEquals("spec.pdf", f.filename)
         assertEquals("https://x/spec.pdf", f.url)

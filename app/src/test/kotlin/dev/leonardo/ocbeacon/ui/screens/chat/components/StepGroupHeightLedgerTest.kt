@@ -175,26 +175,4 @@ class StepGroupHeightLedgerTest {
         val eldest = StepGroupLedgerStore.getOrCreate("k0") // 已被逐出 → 新实例
         assertFalse(eldest.isWarm(listOf("fp1")))
     }
-
-    @Test
-    fun stubHeightMatchesLedgerSumPlusSpacingWhenWarm() {
-        // 根修二核心语义：全暖时桩高 = Σ片高 + 间距×(n-1)，与窗口宿主总高式对齐
-        val ledger = StepGroupHeightLedger()
-        ledger.record(1080, "fp1", 100)
-        ledger.record(1080, "fp2", 200)
-        ledger.record(1080, "fp3", 300)
-        assertEquals(600 + 4 * 2, stubHeightPx(ledger, fps, sliceCount = 3, spacingPx = 4))
-    }
-
-    @Test
-    fun stubHeightNullWhenColdOrMismatched() {
-        val ledger = StepGroupHeightLedger()
-        ledger.record(1080, "fp1", 100)
-        // 任一片冷 → null（调用方退 24dp 固定桩）
-        assertNull(stubHeightPx(ledger, fps, sliceCount = 3, spacingPx = 4))
-        // 指纹数与片数不一致 → null（防御：切片重派生中间态）
-        assertNull(stubHeightPx(ledger, listOf("fp1"), sliceCount = 3, spacingPx = 4))
-        // 零片 → null
-        assertNull(stubHeightPx(ledger, emptyList(), sliceCount = 0, spacingPx = 4))
-    }
 }

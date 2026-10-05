@@ -50,6 +50,15 @@ class DshRpcClient @Inject constructor(
 ) {
 
     /**
+     * #441 深究批次（2026-09-30）：prompt 受理回执 → 静默哨兵期望播种通道。
+     * DshApiClient.promptAsync 成功后调用；经 registry 钩子路由到当前 mux 引擎
+     * 的 DshSilenceWatchdog.onRequestSent（帧静默判死门通电）。
+     */
+    fun notifyPromptAdmitted(conn: ServerConnection) {
+        registry.notifyPromptAdmitted(conn.baseUrl)
+    }
+
+    /**
      * 发起一次 RPC 调用并变换 ok 值。
      *
      * [transform] 只在 ok=true 且 value 为对象时执行（52 方法面 value 恒对象，P-4）；

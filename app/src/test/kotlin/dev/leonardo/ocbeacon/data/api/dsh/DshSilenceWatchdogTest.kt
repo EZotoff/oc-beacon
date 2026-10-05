@@ -18,6 +18,41 @@ class DshSilenceWatchdogTest {
         DshSilenceWatchdog(timeoutMs = timeoutMs, nowMs = { clock.now })
 
     @Test
+    fun `prompt admission arms expectation and silence trips`() {
+        // #441 深究批次（2026-09-30）：「空闲期 WS 假活 → 用户发言」形态——
+        // activityFlow 门无源（无事件永不亮），onRequestSent（HTTP 受理回执）
+        // 是唯一期望源：播种后静默超阈值必须判死。
+        val c = Clock()
+        val w = watchdog(c)
+        // 无任何 streaming 期望（空闲），哨兵门关
+        c.now = 500_000
+        check(!w.shouldForceReconnect())
+        // prompt 受理回执（t=500s）→ 播种
+        w.onRequestSent()
+        c.now = 500_000 + 110_000
+        check(!w.shouldForceReconnect()) // 恰好阈值：未超
+        c.now = 500_000 + 110_001
+        check(w.shouldForceReconnect()) // 帧静默超阈值：判死
+    }
+
+    @Test
+    fun `prompt admission then frames arrive no false trip`() {
+        // 受理后帧流正常到达（turn 活动）→ onFrame 刷新基准不误杀；
+        // turn 完结 onStreamingChanged(false) 关门后静默合法。
+        val c = Clock()
+        val w = watchdog(c)
+        w.onRequestSent() // t=0 受理
+        c.now = 30_000
+        w.onFrame() // t=30s 首帧（服务器活动帧）
+        c.now = 30_000 + 110_000
+        check(!w.shouldForceReconnect()) // 距末帧恰好阈值：未超
+        c.now = 30_000 + 200_000
+        w.onStreamingChanged(false) // turn 完结，activityFlow 归零 → 关门
+        c.now = 30_000 + 500_000
+        check(!w.shouldForceReconnect()) // 关门后长静默合法（空闲）
+    }
+
+    @Test
     fun `silent while streaming expected trips after timeout`() {
         val c = Clock()
         val w = watchdog(c)

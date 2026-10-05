@@ -13,34 +13,59 @@ import kotlinx.serialization.json.put
 import java.util.UUID
 
 /**
- * DSH RPC 错误码（backlog #274 组件 ①）。
+ * DSH RPC 错误码（backlog #274 组件 ①；#458 重建为 0.2.0 斜杠闭集）。
  *
- * 39 值闭集全清单来自设计文档 §5 补遗行（RpcErrorDetailsMap keys，rpc.d.ts:26-175，
- * 2026-08-31 源码提取）。DSH 协议可能演进新增错误码，故不做成 enum：闭集外的
+ * 0.2.0-rc.2 的 64 码闭集来自 live 实测 + npm dist 生成绑定/typert.host 注册表
+ * 提取（journal 2026-09-30-dsh020 批次 §阶段一A；0.1.x 点式 39 码闭集随「只适配
+ * 0.2.0」用户裁决退役）。DSH 协议可能演进新增错误码，故不做成 enum：闭集外的
  * 未知码**保留原串**容错（[isKnown]=false），由上层按 [DshErrorCategory].Unknown 兜底。
  */
 @JvmInline
 value class DshRpcErrorCode(val wire: String) {
 
-    /** 是否属于 39 值闭集。 */
+    /** 是否属于 0.2.0 观测闭集 64 码（斜杠 + agent-preset 横杠域）。 */
     val isKnown: Boolean get() = wire in KNOWN_WIRE_CODES
 
     companion object {
-        /** 闭集 wire 串全集（39 值，§5 补遗行）。 */
+        /**
+         * 闭集 wire 串全集（#458 重建：0.2.0-rc.2 斜杠命名空间 60 码）。
+         * 来源 = live 3080 实测 + npm dist 生成绑定/typert.host 注册表提取
+         * （journal 2026-09-30-dsh020 批次 §阶段一A）。0.1.x 点式 39 码闭集
+         * 随「只适配 0.2.0」用户裁决（2026-09-30）退役。
+         */
         private val KNOWN_WIRE_CODES: Set<String> = setOf(
-            "bad-request", "cancelled", "session-not-found", "model-unavailable", "session-conflict",
-            "invalid-time-zone",
-            "workspace-attach-failed", "workspace-not-found", "workspace-invalid-path",
-            "workspace-name-conflict", "workspace-move-invalid",
-            "directory-unreadable", "directory-exists", "directory-create-failed", "picker-unavailable",
-            "agent-preset-read-only", "agent-preset-locked", "agent-preset-conflict",
-            "agent-preset-not-found", "agent-preset-invalid",
-            "agent-busy", "attachment-error", "queue-item-not-found", "steer-unavailable",
-            "command-error", "unknown-command",
-            "settings-rejected", "settings-conflict",
-            "credential-rejected", "model-discovery-failed", "title-invalid", "fork-unavailable",
-            "subagent-parent-unavailable", "subagent-not-found",
-            "catalog-diagnostic", "not-resumable", "unauthorized", "delivery-unavailable", "internal",
+            // gateway 域（typert 传输网关，22 码）
+            "gateway/ambiguous-endpoint", "gateway/arguments-invalid", "gateway/bad-request",
+            "gateway/binding-invalid", "gateway/cancelled", "gateway/context-failed",
+            "gateway/context-not-found", "gateway/context-unavailable", "gateway/definition-unavailable",
+            "gateway/input-invalid", "gateway/internal", "gateway/invocation-unavailable",
+            "gateway/lookup-failed", "gateway/lookup-not-found", "gateway/lookup-unavailable",
+            "gateway/method-unavailable", "gateway/protocol", "gateway/provider-mismatch",
+            "gateway/result-invalid", "gateway/service-unavailable", "gateway/signature-invalid",
+            "gateway/uplink-overflow",
+            // session 域（15 码）
+            "session/agent-busy", "session/attachment-invalid", "session/conflict",
+            "session/fork-unavailable", "session/invalid-time-zone", "session/model-unavailable",
+            "session/not-found", "session/projections-unavailable",
+            "session/provider-credentials-unavailable", "session/provider-models-unavailable",
+            "session/queue-item-not-found", "session/steer-unavailable", "session/title-invalid",
+            "session/workspace-attach-failed", "session/writer-held",
+            // subagent 域（8 码）
+            "subagent/attachment-invalid", "subagent/catalog-diagnostic", "subagent/delivery-unavailable",
+            "subagent/invalid-time-zone", "subagent/not-found", "subagent/not-resumable",
+            "subagent/parent-unavailable", "subagent/unauthorized",
+            // workspace 域（5 码）
+            "workspace/invalid-path", "workspace/move-invalid", "workspace/name-conflict",
+            "workspace/not-found", "workspace/session-active",
+            // directory-picker 域（4 码，0.1.x directory-* 族继任）
+            "directory-picker/create-failed", "directory-picker/exists",
+            "directory-picker/unavailable", "directory-picker/unreadable",
+            // agent-preset 域（横杠命名空间，实测 agentPresets/read bogus 路径）
+            "agent-preset/conflict", "agent-preset/invalid", "agent-preset/locked",
+            "agent-preset/not-found",
+            // 其余域（credential/job/llm/terminal）
+            "credential/rejected", "job/not-found", "llm/model-discovery-rejected",
+            "terminal/control-unavailable", "terminal/limit-reached", "terminal/unavailable",
         )
 
         /** 闭集全量清单（表驱动测试用）。 */
@@ -48,46 +73,27 @@ value class DshRpcErrorCode(val wire: String) {
 
         fun fromWire(raw: String): DshRpcErrorCode = DshRpcErrorCode(raw)
 
-        // 常用码具名常量（全 39 个的语义分类见 DshApiError 表）
-        val BadRequest = DshRpcErrorCode("bad-request")
-        val Cancelled = DshRpcErrorCode("cancelled")
-        val SessionNotFound = DshRpcErrorCode("session-not-found")
-        val ModelUnavailable = DshRpcErrorCode("model-unavailable")
-        val SessionConflict = DshRpcErrorCode("session-conflict")
-        val InvalidTimeZone = DshRpcErrorCode("invalid-time-zone")
-        val WorkspaceAttachFailed = DshRpcErrorCode("workspace-attach-failed")
-        val WorkspaceNotFound = DshRpcErrorCode("workspace-not-found")
-        val WorkspaceInvalidPath = DshRpcErrorCode("workspace-invalid-path")
-        val WorkspaceNameConflict = DshRpcErrorCode("workspace-name-conflict")
-        val WorkspaceMoveInvalid = DshRpcErrorCode("workspace-move-invalid")
-        val DirectoryUnreadable = DshRpcErrorCode("directory-unreadable")
-        val DirectoryExists = DshRpcErrorCode("directory-exists")
-        val DirectoryCreateFailed = DshRpcErrorCode("directory-create-failed")
-        val PickerUnavailable = DshRpcErrorCode("picker-unavailable")
-        val AgentPresetReadOnly = DshRpcErrorCode("agent-preset-read-only")
-        val AgentPresetLocked = DshRpcErrorCode("agent-preset-locked")
-        val AgentPresetConflict = DshRpcErrorCode("agent-preset-conflict")
-        val AgentPresetNotFound = DshRpcErrorCode("agent-preset-not-found")
-        val AgentPresetInvalid = DshRpcErrorCode("agent-preset-invalid")
-        val AgentBusy = DshRpcErrorCode("agent-busy")
-        val AttachmentError = DshRpcErrorCode("attachment-error")
-        val QueueItemNotFound = DshRpcErrorCode("queue-item-not-found")
-        val SteerUnavailable = DshRpcErrorCode("steer-unavailable")
-        val CommandError = DshRpcErrorCode("command-error")
-        val UnknownCommand = DshRpcErrorCode("unknown-command")
-        val SettingsRejected = DshRpcErrorCode("settings-rejected")
-        val SettingsConflict = DshRpcErrorCode("settings-conflict")
-        val CredentialRejected = DshRpcErrorCode("credential-rejected")
-        val ModelDiscoveryFailed = DshRpcErrorCode("model-discovery-failed")
-        val TitleInvalid = DshRpcErrorCode("title-invalid")
-        val ForkUnavailable = DshRpcErrorCode("fork-unavailable")
-        val SubagentParentUnavailable = DshRpcErrorCode("subagent-parent-unavailable")
-        val SubagentNotFound = DshRpcErrorCode("subagent-not-found")
-        val CatalogDiagnostic = DshRpcErrorCode("catalog-diagnostic")
-        val NotResumable = DshRpcErrorCode("not-resumable")
-        val Unauthorized = DshRpcErrorCode("unauthorized")
-        val DeliveryUnavailable = DshRpcErrorCode("delivery-unavailable")
-        val Internal = DshRpcErrorCode("internal")
+        // 常用码具名常量（被生产/测试引用的最小集 + 0.2.0 新引用面；
+        // 全 60 码的语义分类见 DshApiError 表）
+        val GatewayInternal = DshRpcErrorCode("gateway/internal")
+        val GatewayArgumentsInvalid = DshRpcErrorCode("gateway/arguments-invalid")
+        val GatewayBadRequest = DshRpcErrorCode("gateway/bad-request")
+        val GatewayCancelled = DshRpcErrorCode("gateway/cancelled")
+        val GatewayResultInvalid = DshRpcErrorCode("gateway/result-invalid")
+        val SessionNotFound = DshRpcErrorCode("session/not-found")
+        val SessionConflict = DshRpcErrorCode("session/conflict")
+        val SessionModelUnavailable = DshRpcErrorCode("session/model-unavailable")
+        val SessionSteerUnavailable = DshRpcErrorCode("session/steer-unavailable")
+        val SessionQueueItemNotFound = DshRpcErrorCode("session/queue-item-not-found")
+        val SessionAgentBusy = DshRpcErrorCode("session/agent-busy")
+        val WorkspaceNotFound = DshRpcErrorCode("workspace/not-found")
+        val WorkspaceNameConflict = DshRpcErrorCode("workspace/name-conflict")
+        val SubagentNotFound = DshRpcErrorCode("subagent/not-found")
+        val SubagentUnauthorized = DshRpcErrorCode("subagent/unauthorized")
+        val CredentialRejected = DshRpcErrorCode("credential/rejected")
+        val DirectoryPickerUnreadable = DshRpcErrorCode("directory-picker/unreadable")
+        val DirectoryPickerUnavailable = DshRpcErrorCode("directory-picker/unavailable")
+        val DirectoryPickerExists = DshRpcErrorCode("directory-picker/exists")
     }
 }
 

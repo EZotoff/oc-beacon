@@ -1,0 +1,131 @@
+package dev.leonardo.ocbeacon.ui.screens.chat.markdown
+
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * #442 R2 分片唤醒（A2）——broker 注册/发布/续账语义（单例，逐用例隔离）。
+ */
+class StreamingShardBrokerTest {
+
+    @org.junit.Before
+    fun assumeFlagOn() {
+        // 双臂纪律：本类断言旗标开语义——旗标关臂（-POCBEACON_STREAM_FLAGS_OFF=true
+        // 的 test 任务）显式跳过而非假红
+        org.junit.Assume.assumeTrue(StreamingShardPilot.enabled)
+    }
+
+    @After
+    fun tearDown() {
+        StreamingShardBroker.resetForTest()
+    }
+
+    @Test
+    fun `未注册且未发布查无控制器`() {
+        assertNull(StreamingShardBroker.controllerFor("p_x"))
+    }
+
+    @Test
+    fun `注册后控制器身份稳定`() {
+        StreamingShardBroker.register("t_a", "p_a") {}
+        val c1 = StreamingShardBroker.controllerFor("p_a")
+        val c2 = StreamingShardBroker.controllerFor("p_a")
+        assertNotNull(c1)
+        assertSame(c1, c2)
+        assertEquals("t_a", c1!!.turnKey)
+    }
+
+    @Test
+    fun `fire 先行 onFire 钩子再发布（帽 reset 时序）`() {
+        val order = mutableListOf<String>()
+        StreamingShardBroker.register("t_a", "p_a") { order += "capReset" }
+        val ctl = StreamingShardBroker.controllerFor("p_a")!!
+        val ok = ctl.fire(
+            chunks = listOf(FrozenChunk(0, 10), FrozenChunk(10, 20)),
+            texts = listOf("AAAA\n\n", "BBBB\n\n"),
+            tailFrom = 20,
+        )
+        assertTrue(ok) // #503 R2：发布成败回执
+        assertEquals(listOf("capReset"), order)
+        val pub = StreamingShardBroker.shards["p_a"]!!
+        assertEquals("t_a", pub.turnKey)
+        assertEquals(20, pub.tailFrom)
+        assertEquals(2, pub.shards.size)
+        assertEquals("AAAA\n\n", pub.shards[0].text)
+        assertEquals(1, pub.generation)
+        assertTrue(ctl.hasPublished())
+    }
+
+    @Test
+    fun `fire 未注册时 no-op（完结后无钩子路径）`() {
+        StreamingShardBroker.register("t_a", "p_a") {}
+        val ctl = StreamingShardBroker.controllerFor("p_a")!!
+        StreamingShardBroker.unregister("p_a")
+        assertFalse(ctl.fire(listOf(FrozenChunk(0, 5)), listOf("X"), 5)) // #503 R2：no-op 回 false
+        assertNull(StreamingShardBroker.shards["p_a"])
+    }
+
+    @Test
+    fun `注销后已发布 part 仍可得控制器（完结持续性）+ 冷启续账`() {
+        StreamingShardBroker.register("t_a", "p_a") {}
+        val ctl = StreamingShardBroker.controllerFor("p_a")!!
+        ctl.fire(listOf(FrozenChunk(0, 10)), listOf("AAAA\n\n"), 10)
+        StreamingShardBroker.unregister("p_a")
+        // 注销后：pilot 渲染持续性（shardHold/coldStart）仍需控制器
+        val ctl2 = StreamingShardBroker.controllerFor("p_a")
+        assertNotNull(ctl2)
+        assertEquals(10, ctl2!!.coldStartOrigin())
+        val seed = ctl2.coldStartPlan()!!
+        assertEquals(listOf(FrozenChunk(0, 10)), seed.chunks)
+        assertEquals(10, seed.tailFrom)
+        // 但再 fire 已无钩子（no-op，防幽灵发布）
+        assertFalse(ctl2.fire(listOf(FrozenChunk(0, 99)), listOf("Y"), 99)) // 防幽灵发布=false
+        assertEquals(10, StreamingShardBroker.shards["p_a"]!!.tailFrom)
+    }
+
+    @Test
+    fun `onRebuild 清发布且冷启回零`() {
+        StreamingShardBroker.register("t_a", "p_a") {}
+        val ctl = StreamingShardBroker.controllerFor("p_a")!!
+        ctl.fire(listOf(FrozenChunk(0, 10)), listOf("AAAA\n\n"), 10)
+        ctl.onRebuild()
+        assertFalse(ctl.hasPublished())
+        assertEquals(0, ctl.coldStartOrigin())
+        assertNull(ctl.coldStartPlan())
+        assertFalse(StreamingShardBroker.shards.containsKey("p_a"))
+    }
+
+    // ===== 2026-10-04 覆盖审计补口：fallback 控制器身份缓存与 clearAll =====
+
+    @Test
+    fun `fallback 控制器缓存身份稳定且随 shards 失效移除`() {
+        StreamingShardBroker.register("t1", "p1") { }
+        val ctl = StreamingShardBroker.controllerFor("p1")!!
+        assertTrue(ctl.fire(listOf(FrozenChunk(0, 4)), listOf("abcd"), 4))
+        StreamingShardBroker.unregister("p1")
+        // 已发布未注册：兜底可得且身份稳定（2026-10-03 不变量修复）
+        val fb1 = StreamingShardBroker.controllerFor("p1")
+        val fb2 = StreamingShardBroker.controllerFor("p1")
+        assertNotNull(fb1)
+        assertSame(fb1, fb2)
+        // 发布撤除（onRebuild）后 shards 无此 part → 缓存必须被移除，不得返回僵尸控制器
+        fb1!!.onRebuild()
+        assertNull(StreamingShardBroker.controllerFor("p1"))
+    }
+
+    @Test
+    fun `clearAll 清空 registrations 与 shards（会话切换防跨会话陈旧）`() {
+        StreamingShardBroker.register("t1", "p1") { }
+        StreamingShardBroker.controllerFor("p1")!!
+            .fire(listOf(FrozenChunk(0, 4)), listOf("abcd"), 4)
+        StreamingShardBroker.clearAll()
+        assertNull("clearAll 后未注册不得有控制器", StreamingShardBroker.controllerFor("p1"))
+    }
+
+}

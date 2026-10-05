@@ -53,3 +53,9 @@ nul
 # 三面回归运行时（含真实密钥/隔离 HOME/测试仓库——setup-secrets.sh 从宿主提取，绝不入库）
 scripts/regression/runtime/
 scripts/regression/.env
+
+# 10h 人类模拟专用文件夹（日志/证据不入库；mock/driver 脚本由 README 说明）
+human-sim-10h/logs/
+human-sim-10h/evidence/
+human-sim-10h/reports/
+human-sim-10h/mockllm/node_modules/

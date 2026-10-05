@@ -262,7 +262,6 @@
     <string name="chat_message_delete_failed">Не вдалося видалити повідомлення</string>
     <string name="chat_stats_ttft">TTFT</string>
     <string name="chat_stats_tokens_per_second">токенів/с</string>
-    <string name="chat_msg_tail_summary">%1$d кроків · %2$d інструментів</string>
     <string name="a11y_message_detail">Деталі повідомлення</string>
     <string name="chat_stats_session_title">Статистика сесії</string>
     <string name="chat_stats_summary">%1$d раундів · %2$d кроків · %3$s LLM · %4$s інструментів</string>
@@ -500,6 +499,7 @@
     <string name="server_settings_oauth_browser_hint">Завершіть авторизацію у вашому браузері. Це вікно закриється автоматично.</string>
     <string name="chat_error_view_page">Сторінка</string>
     <string name="chat_error_view_code">Код</string>
+    <string name="math_block_badge">Формула</string>
     <string name="chat_save_image">Зберегти зображення</string>
     <string name="chat_image_saved">Зображення збережено</string>
     <string name="chat_image_save_failed">Не вдалося зберегти зображення</string>

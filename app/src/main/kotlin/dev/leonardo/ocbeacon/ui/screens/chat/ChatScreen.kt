@@ -657,8 +657,15 @@ fun ChatScreen(
     // #252：shell 输出三级 provider（迁自 TaskSheet：事件输出 → 消息流回填 → REST 拉取）——
     // 前移到 Scaffold 之前供输入栏上方 ShellJobsStrip 复用。
     val shellOutputs = remember { mutableStateMapOf<String, String?>() }
-    val allPartsMap by viewModel.chatRepositoryExposed.getAllPartsMap()
-        .collectAsStateWithLifecycle(initialValue = emptyMap())
+    // #442 B案 节奏收编：shell 输出解析（Tool.Completed 输出=结构性数据）同切
+    // 结构性视图——流式 delta 批零滴答（旗标关回退全量热视图）。
+    val allPartsMap by (
+        if (dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
+            viewModel.chatRepositoryExposed.getStructuralPartsMap()
+        } else {
+            viewModel.chatRepositoryExposed.getAllPartsMap()
+        }
+        ).collectAsStateWithLifecycle(initialValue = emptyMap())
     val shellOutputResolver = remember(viewModel.sessionId, allPartsMap) {
         { shell: ShellJob ->
             shell.output
@@ -935,17 +942,36 @@ fun ChatScreen(
                             compactionEntriesForSession.mapNotNull { it.messageId }.toSet()
                         }
                         // [#437 卡顿诊断批次] 滚动期 UI 快照冻结：流式中 messageState.messages
-                        // 每 48ms 新实例 → rawMessages/displayItems/chatEntries 全链重算 +
+                        // 每 100ms 新实例 → rawMessages/displayItems/chatEntries 全链重算 +
                         // LazyColumn 全可见 item 重组（组合风暴落在滚动帧 = 非贴底滑动卡顿）。
                         // ScrollHold 已在 pilot 层挡 append，此处把同一语义补到快照层：
                         // holding 期间派生冻结在最近快照（实例相等 → 下游 remember 全命中 →
                         // 零重算零重组），settle 后首个新快照一次追平（与 append 追平同帧）。
                         // A/B 开关 JankHoldGate（debug.ocbeacon.jankhold），确证后转默认开。
+                        // #442 B案（B6 真机定罪修正 R8）：节奏收编后 messageState 流式期
+                        // 本就静止——冻结语义无事可做，但 `holding` 直读仍随贴底跟随
+                        // 每滚动帧翻转 → ChatScreen 级重组经不稳定参数链重跑
+                        // ChatMessageList（CML-tick ~10/s 的残余驱动者）。旗标开=按
+                        // 裁决退役该读（B案关闭时行为逐字节不变）。
                         val jkFrozenRef = remember { arrayOfNulls<List<ChatMessage>>(1) }
                         val jkFrozenStateRef = remember { arrayOfNulls<dev.leonardo.ocbeacon.ui.screens.chat.MessageListState>(1) }
-                        val jkHold = dev.leonardo.ocbeacon.ui.screens.chat.markdown.JankHoldGate.enabled &&
+                        // [B3] 动机埋点：jkHold 退役声明（一次性）——验证旗标开时
+                        // 冻结链确已旁路（holding 直读不再驱动本屏重组）
+                        remember(dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
+                            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
+                                dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled
+                            ) {
+                                dev.leonardo.ocbeacon.logging.AppLogger.d(
+                                    "B3",
+                                    "jkHold retired — 节奏收编后快照本就静止，holding 直读退役防 ChatScreen 重组",
+                                )
+                            }
+                            true
+                        }
+                        val jkHold = !dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled &&
+                            dev.leonardo.ocbeacon.ui.screens.chat.markdown.JankHoldGate.enabled &&
                             dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingScrollHold.holding
-                        // messageState 一并冻结（二十四世轮终修）：否则其每 48ms 新实例
+                        // messageState 一并冻结（二十四世轮终修）：否则其每 100ms 新实例
                         // 经传参旁路触发 ChatMessageList 整体重组（三千行函数体重跑），
                         // 冻结 rawMessages 无效的实证正源于此洞——滚动期快照静止语义补全。
                         val jkMsgState = if (jkHold && jkFrozenStateRef[0] != null) {
@@ -1021,7 +1047,7 @@ fun ChatScreen(
                                 ) { pair -> syntheticEventIdentityKey(pair.second) },
                             )
                             // #452 四点计时 P-display：displayItems 差量写入后规模
-                            //（size 变化才打——流式期 rawMessages 每 48ms 新实例，
+                            //（size 变化才打——流式期 rawMessages 每 100ms 新实例，
                             // 无门控会以 ~20/s 刷屏，见 MsgDiag 移除教训）。
                             if (dev.leonardo.ocbeacon.BuildConfig.DEBUG &&
                                 displayItemsState.size != lastDisplayLogSize[0]
