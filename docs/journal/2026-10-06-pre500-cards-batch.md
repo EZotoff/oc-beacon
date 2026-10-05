@@ -58,3 +58,35 @@
 - 冷进补灌另立 **#521**（journal 折叠方向）。
 
 V1（静态）/V2（探测折入）两面不受勘误影响。教训：能力位「服务器有没有某域」的结论必须锚服务器源码，客户端降级桩不是证据。
+
+## 真机 E2E 四腿验证（2026-10-06 03:23–03:42）
+
+设备：小米 houji（无线 adb，192.168.1.110，serial `adb-e69a99d8-yzT17Y._adb-tls-connect._tcp`；mDNS 自动连接）。APK=当日 assembleDevDebug（含 #495 勘误），`adb install -r` 覆盖装。入口全部走 debug intent 冷启（force-stop 后 am start，规避 #500 热启动失效面）；V1 经 debug-entry.sh（4199 自动拉起 opencode-v1.service），V2/DSH 手工同款 extras。每腿前置 force-stop beta 孪生包。
+
+### #495 三服务器 FAB 菜单断言 — 全 PASS
+- V1（4199，Lighthouse 会话）：菜单展开=TODO/智能体/Shell(+第4项半遮挡)——**TODO 在** ✓（视觉判读 /tmp/v1_fab1.png）
+- V2（4096，打招呼问候会话）：菜单=智能体/Shell/排队队列——**TODO 无** ✓（/tmp/v2_fab.png；三条目与 V2 能力位逐项吻合：AGENT 通用/SHELL=TERMINAL/QUEUE=QUEUE）
+- DSH（3080 live，Quicksort 会话，~/.dsh/token 交换 rejected 但存量 Cookie 有效）：菜单=TODO/智能体/目标/排队队列——**TODO 在** ✓（/tmp/dsh_fab.png；无 Shell=TERMINAL 缺席正确）
+- 注：三腿菜单文字节点在 uiautomator dump 中全部假阴性（Compose 弹窗），截图+视觉判读为地面真相（既有教训再现）。
+
+### #494 DSH 权限下拉键盘保持 — 全 PASS（关键断言 dumpsys 仪器级）
+- 聚焦输入框 → `mInputShown=true`
+- 点「完全访问」pill（下拉开：只读/工作区写入/完全访问 三档，视觉确认）→ **`mInputShown=true` 不变** ✓（修复前 focusable=true 夺窗焦点必收键盘）
+- 同屏双证：下拉与软键盘共存（/tmp/dsh_perm.png 视觉确认）
+- 选「工作区写入」→ pill 标签翻转生效（dump 唯一命中工作区写入）+ `mInputShown=true` 仍持 ✓；测毕还原「完全访问」（dump 3×完全访问/0×工作区写入）
+- 坑：下拉选项对 dump 持续失明（3 retry），选项坐标经截图视觉定位（1200x2670 与设备像素 1:1）；一次误 tap 落菜单外触发 onDismissRequest（可作为 focusable=false 下拉仍正常开合的旁证）。
+
+### #499 流式烟雾（V2 4096，SQL 注入指南 800 词轮）— PASS
+- MDPilot 全程流动（113 行：append 34ch/10ch/4ch 批节奏 + gate release + held size 毕业交接）
+- **RESETKEY=0**（零重建风暴）；TurnFin 正常落账；无 FATAL（唯一 AndroidRuntime 命中系他进程 VM exit 0 假阳性）
+- MDResize 30 行仅 1 负向：`card=SiDT… h=256 d=-128` 与 TurnFin 同刻、**非流式卡**（流式卡 hW3… 全程 +66~68px 正单调至 1748）→ 定性为推理卡完结收缩（合法换装形态，非 #499 回归；非 #515 fire 形态——本轮零 shard fire）
+- 终态渲染完好（视觉：自检表格/六章大纲/行内码样式正常，无空白块/乱码）
+
+### #489 FileViewer 高亮（V2 MCP 排查会话，read .bashrc 工具卡）— PASS
+- 触发链：prompt 令模型 read ~/.bashrc → 「读取 · .bashrc」工具卡 → 卡右侧⧉钮（onOpenFile→TOOL_SNAPSHOT）→ FileViewerOverlay 全屏打开（首行 `Read file /home/leonardo/.bashrc, lines 1-179`）
+- **四色 shell 高亮实证**：注释灰/关键字(case·esac·shopt·return)橙/字符串与参数展开蓝/默认白（/tmp/v2_viewer2.png 视觉判读）——修复后 HighlightBuilder 渲染路径活体正常
+- 边界说明：end+1 的 1 字符级差异仪器与视觉均不可分辨（该精度由单测差分断言钉死）；真机面=渲染路径无回归+多色着色在位。
+
+### 环境痕迹（如实记录）
+- V2 用户既有会话新增两条测试消息：打招呼问候（SQL 指南轮，正文含 6 节+2 Kotlin 代码块+1 表格）+ 微信MCP排查（read .bashrc 轮）；宿主 /home/leonardo 根目录 6 分钟窗内零新文件（模型未落盘）
+- DSH live 会话权限档测毕已还原「完全访问」

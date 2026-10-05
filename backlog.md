@@ -95,11 +95,13 @@
   - v1-v2-differences #85 明文要求 V2 隐藏 Todo 入口未落地——2026-09-07 审计 E-1 漏网项；修法=入口挂能力位。
   - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D1
   - 2026-10-06 勘误：DSH 面判断错误——「DSH 无 todo 域」不成立（0.2.0 dsh-tool-todo 存在；todo/write 帧事件 app 已映射 live 渲染；审计 D1「恒空表」实为客户端桩行为）。已修正（a后续commit）：DshServerAdapter 静态声明 TODOS + getSessionTodos 恢复空表降级，DSH 入口恢复显示；冷进补灌缺口另立 #521。V1/V2 面不受影响。
+  - 2026-10-06 真机 E2E 三服务器全 PASS：V1 菜单含 TODO / V2-beta 菜单无 TODO（智能体/Shell/排队队列）/ DSH 菜单含 TODO（含目标、无 Shell）——三腿条目集与能力位模型逐项吻合。证据 journal 同批。
 
 - [~] **#494 DSH 权限预设下拉夺焦点收键盘——与 #361「菜单不得收键盘」裁决冲突** `keyboard`
   - PermissionPresetSelector 用默认 DropdownMenu（focusable=true）→ DSH 输入框聚焦时点权限 pill 键盘收起；同屏 busy 气泡已按 #361 显式 focusable=false 保键盘。
   - 仅 DSH 渲染该控件 → 同类轻量选择两套键盘策略按端不同（用户键盘不一致感知的真正近亲）；修法=同款焦点策略或非夺焦点容器。
   - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D5
+  - 2026-10-06 真机 E2E 全 PASS：DSH 会话 mInputShown 全程 true（聚焦/点pill开下拉/选档/选后四点采样）+ 下拉与键盘同屏视觉双证 + 工作区写入选档生效后还原。证据 journal 同批。
 
 - [ ] **#493 模型抽屉键盘保持——切模型不收键盘（三端共享改造）** `keyboard`
   - 真机实测三端一致为「收起→抽屉→回弹」（ModalBottomSheet 独立窗口必夺焦点）；2026-09-30 用户裁决基准=不收键盘。
@@ -109,6 +111,8 @@
 - [~] **#489 FileViewer 语法高亮 span 多染一字符（PhraseLocation.end exclusive 语义误用 end+1）** `ui` `bug`
   - 高亮影响面调研副产物（2026-09-30）：highlights 库 PhraseLocation.end 为 exclusive 语义（官方 README emphasis(13,25)→ExampleClass 占 13..24 + NumericLiteralLocator 测试双证），HighlightBuilder.kt:39 的 end+1 使每个高亮短语尾部多染 1 字符
   - 证据链与修复建议见 docs/research/2026-09-30-code-syntax-highlighting-impact-analysis.md §1.1.d；修复=去掉 +1（一行）+ 对照既有单测；注意与聊天域高亮组件（#488）的防御写法保持同语义
+  - 2026-10-06 真机 E2E：V2 read 工具卡→⧉→FileViewerOverlay 打开 ~/.bashrc，四色 shell 高亮实证（注释灰/关键字橙/字符串蓝/默认白）渲染路径无回归；1字符级精度由单测差分断言钉死。证据 journal 2026-10-06-pre500-cards-batch
+  - 仪器可断言面已全部覆盖，余肉眼拍板项：日常使用中高亮短语尾字符观感。
 
 ## P3 — 观察与低价值改进
 
@@ -125,6 +129,7 @@
 - [~] **#499 cleanup**
   - 摘要补全（2026-09-30 盘点，正文原落 journal §7.7）：过渡装备清扫——JankHold/STREAMING_MD_PILOT 等 B案后死代码整体退役（probe 按 keep-probes 裁决保留）；前置=#442 验收+旗标提升后执行；#510 已退役五族不含此二者（五文件仍有引用）
   - 2026-10-06 范围内实施（b933d882）：STREAMING_MD_PILOT/STABLE_REVEAL_PILOT 两旗标+死分支已退役（全量 3904 绿）。范围修正：JankHoldGate 与 STREAM_DELTA_BUS 仍承重——stable 均 false（B案未升 stable），JankHold 冻结链在 stable 活体；待 SHARD/DELTA_BUS 升 stable 后再清余下。证据 journal 2026-10-06-pre500-cards-batch
+  - 2026-10-06 真机流式烟雾（V2 长文轮）PASS：MDPilot 流动/RESETKEY=0/唯一负向 d 定性推理卡完结收缩（非流式卡、与 TurnFin 同刻）/TurnFin 落账/终态渲染完好。证据 journal 同批。
 
 - [ ] **#498 render**
   - 摘要补全（2026-09-30 盘点，正文原落 journal）：CJK 粗体闭界——闭界星号后紧跟 CJK 字符（如 **……。**学）渲染为字面星号；服务端原文+markdown 库 flanking 行为，旧路径同渲染非回归（journal 2026-10-01-442 §7）
