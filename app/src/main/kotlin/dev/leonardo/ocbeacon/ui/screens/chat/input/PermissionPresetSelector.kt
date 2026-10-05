@@ -91,6 +91,9 @@ internal fun PermissionPresetSelector(
             expanded = expanded && !isCustom,
             onDismissRequest = { expanded = false },
             containerColor = MaterialTheme.colorScheme.surface,
+            // #361/#494：focusable=false 不夺窗口焦点——输入框聚焦时点开不收键盘
+            //（与 ChatScreenBottomBar busy 气泡同款焦点策略）
+            properties = androidx.compose.ui.window.PopupProperties(focusable = false),
         ) {
             options.forEach { option ->
                 DropdownMenuItem(
