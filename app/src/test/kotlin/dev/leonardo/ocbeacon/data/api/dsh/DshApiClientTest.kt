@@ -140,19 +140,13 @@ class DshApiClientTest {
         val api = client(MockEngine { respond(ok("{}"), HttpStatusCode.OK, jsonHeaders()) })
         assertFalse(api.backgroundSession(conn, "s"))
         assertTrue(api.activeSessions(conn).isEmpty())
+        // #495 勘误：DSH 有 todo 域但 wire 无 REST hydrate 端点——空表降级（冷进补灌另立卡）
+        assertTrue(api.getSessionTodos(conn, "s").isEmpty())
         assertTrue(api.listSessionStatus(conn).isEmpty())
         assertTrue(api.getSessionDiff(conn, "s").isEmpty())
         assertFalse(api.executeCommand(conn, "s", "cmd"))
         assertTrue(api.fetchSessionStatus(conn).isSuccess)
         assertTrue(api.fetchSessionStatus(conn).getOrDefault(emptyMap()).isEmpty())
-    }
-
-    /** #495：getSessionTodos 退出降级家族——诚实失败（喂能力探测，空表成功=入口泄漏）。 */
-    @Test
-    fun `getSessionTodos throws instead of empty-list degradation`() = runTest {
-        val api = client(MockEngine { respond(ok("{}"), HttpStatusCode.OK, jsonHeaders()) })
-        val ex = runCatching { api.getSessionTodos(conn, "s") }.exceptionOrNull()
-        assertTrue(ex is UnsupportedServerCapability)
     }
 
     @Test

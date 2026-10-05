@@ -93,8 +93,9 @@ object ServerFeatures {
     /** 目标（goal）动作面板。 */
     val GOALS = ServerFeature("core.goals")
 
-    /** 会话 TODO 域（/session todo 端点 + todo.updated 事件）。V1 恒有；V2 beta
-     *  无路由（静态缺席，端点探测成功才折入——dev 分支已重新实现）；DSH 无此域。 */
+    /** 会话 TODO 域。V1 恒有（/session todo 端点）；V2 beta 无路由（静态缺席，
+     *  端点探测成功才折入——dev 分支已重新实现）；DSH 走 todo/write 帧事件流
+     *  （无 REST hydrate 端点，冷进补灌另立卡）。 */
     val TODOS = ServerFeature("core.todos")
 
     /** 消息 👍/👎 反馈。 */

@@ -125,8 +125,8 @@ class ServerCapabilitiesDerivationTest {
         // 既有子能力
         assertFalse(has(c, ServerFeatures.SESSION_SHARE))
         assertFalse(has(c, ServerFeatures.SESSION_BACKGROUND))
-        // #495：DSH 无 todo 域——TODOS 不派生（getSessionTodos 桩诚实失败）
-        assertFalse(has(c, ServerFeatures.TODOS))
+        // #495 勘误：DSH 有 todo 域（todo/write 帧事件）——TODOS 静态声明
+        assertTrue(has(c, ServerFeatures.TODOS))
         assertFalse(has(c, ServerFeatures.SESSION_DELETE))
         assertFalse(has(c, ServerFeatures.SESSION_REVERT))
         assertFalse(has(c, ServerFeatures.FILE_READ))

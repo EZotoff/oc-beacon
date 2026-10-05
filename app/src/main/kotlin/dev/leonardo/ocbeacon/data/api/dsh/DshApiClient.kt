@@ -1012,10 +1012,11 @@ class DshApiClient @Inject constructor(
         )
     }
 
-    // #495：DSH 无 todo 域——诚实失败而非空表常量（本家族其余成员保持 V1 常量
-    // 降级先例；唯此方法喂能力探测，空表成功会让 FAB TODO 入口以恒空态泄漏）。
-    override suspend fun getSessionTodos(conn: ServerConnection, sessionId: String): List<TodoItem> =
-        throw UnsupportedServerCapability("getSessionTodos", conn.serverType.name)
+    // #495 勘误（2026-10-06）：DSH **有** todo 域（dsh-tool-todo，todo/write 帧事件，
+    // live 已映射 TodoUpdated）——但 wire 是事件溯源，无 REST hydrate 端点，故本
+    // 桩维持空表降级（能力位 TODOS 由 adapter 静态声明，不靠本探测）。冷进补灌
+    // （journal 折叠 last todo/write 快照）另立卡。
+    override suspend fun getSessionTodos(conn: ServerConnection, sessionId: String): List<TodoItem> = emptyList()
 
     override suspend fun backgroundSession(conn: ServerConnection, sessionId: String): Boolean = false
 
