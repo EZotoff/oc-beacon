@@ -133,6 +133,11 @@ const CORPORA = [];
   }
 }
 
+// 语料名（演示控制面 [c:<名>] 用；顺序与 CORPORA 一一对应）
+const CORPUS_NAMES = ["wide-table", "code-long", "nested-lists", "mixed-stress", "long-paragraphs",
+  "short-reply", "cjk-table", "headings-only", "checklist-quote", "giant-single", "progressive-table", "multi-section"];
+const PROFILES = ["fast", "normal", "slow", "bursty", "stall-mid", "line", "megachunk", "abort-mid"];
+
 // ---------- 速率画像 ----------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let counter = 0;
@@ -214,9 +219,17 @@ const server = http.createServer((req, res) => {
     const flat = messages.map((m) => (m.content || "")).join(" ").toLowerCase();
     const isTitle = flat.includes("title") && flat.length < 400;
     const isSdkProbe = flat.includes("sdk probe");
-    const corpusIdx = idx % CORPORA.length;
+    // 演示控制面（2026-10-05 桶A验收）：消息含 [c:<语料名>] / [p:<画像名>] 时
+    // 定向出稿；无指令行为不变（轮转语料+随机画像）——soak 复跑语义保持
+    let corpusIdx = idx % CORPORA.length;
+    let profile = isSdkProbe || isTitle ? "fast" : pickProfile(rng);
+    if (!isSdkProbe && !isTitle) {
+      const mc = flat.match(/\[c:([a-z0-9-]+)\]/);
+      if (mc) { const k = CORPUS_NAMES.indexOf(mc[1]); if (k >= 0) corpusIdx = k; }
+      const mp = flat.match(/\[p:([a-z-]+)\]/);
+      if (mp && PROFILES.indexOf(mp[1]) >= 0) profile = mp[1];
+    }
     const text = isSdkProbe ? "hello from mock sdk probe one two three" : (isTitle ? "Soak turn " + idx : CORPORA[corpusIdx]);
-    const profile = isSdkProbe || isTitle ? "fast" : pickProfile(rng);
     const wantsStream = parsed.stream !== false;
 
     const chunkJson = (delta, finish) => JSON.stringify({
