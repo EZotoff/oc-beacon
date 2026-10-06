@@ -63,12 +63,14 @@
   - 2026-10-06 调研+首修（journal 2026-10-06-515）：勘误「1.9s 慢灌=refeedPacing」（实为自然 delta，冻结前缀 34ms 由 #g0 全高渲染）；定谳三事实：换装原子无塌洞/涟漪（r3 两帧沉降带，机制未钉死）/hitch 40-64ms（12Mbps 录屏放大至 850ms=观测污染）。F3 状态交接因库 append-only 约束弃；落地 F2：Arm 期预热解析入 MarkdownParsedStateCache+StreamShardContent 缓存接线（+3 单测，harness 实证 cached=true）。残留：涟漪观察面+hitch 余量可感知性→待用户验收裁决；mock 完结振荡独立立卡 #523
   - 2026-10-06 用户裁决 B+C：B 已落地（GRADUATE_MIN_CHARS 2000→4000，#437 19-27ms@4k 失衡点校准；E2E：eof-fire 零 fire+multi-section 4062 双块 cached=true；journal §6）；C 涟漪定罪接力计划在 journal §7（锚定破雾→影子态双喂候选）
   - 2026-10-06 C 终局（journal §8）：互相关锚定后涟漪证伪——换装帧像素差(d=10-13)与正常增长步同级不可分，r3 涟漪带系尾部增长位移误归因；影子态双喂按证据不需要；4k+ 残余 fire 无可复现可见缺陷。B+F2+C 三面收口，待用户验收
+  - 2026-10-06 E2E 矩阵（journal §9）：21 轮零崩溃/零 RESETKEY/全 cached，乱操作风暴 3 fire 正确；FAIL 标签均期望表误差（门槛行为 4062/8423/12741 精确）。异常候选取证中：line 画像 arm=0+-20646、wide-table -128×3、code-long 围栏不 arm
 
 ## P1 — 核心功能需求
 
 
 - [ ] **#523 mock 路径完结振荡——TurnFin 对齐 tail 96↔158 六周期 churn（shard-unreg+pilot 复位循环）** `v1,streaming,completion`
   - V1 mock-md 完结 reconcile 条目身份churn：完结消息换 id 走整树换装而非 #509/#510 原地换名；tail 冻结尾行闪 3-4 次；#g0 不受扰；LongCat 轮无此形态 → docs/journal/2026-10-06-515-eof-megafire-window.md §4
+  - 2026-10-06 #515 E2E 矩阵扩展定性（journal 2026-10-06-515 §10）：①完结塌缩间歇性、多语料（-20646/-2116/-3219/-4024 全轮拆 96）；②新增 fire 后变体：wide-table fire 后 tail 224↔96 振荡×2（21:39:25 原生证据）；③非 mock 独占疑点待查（矩阵全走 mock-md；真模型轮 r1-r3 未见——但需系统性真模型矩阵确认）。取证日志 /tmp/515-forensics-*.log
 
 - [~] **#512 DSH 密码登录插件（dsh-password-login）——免捞 token 的会话铸造/密码生命周期/轮换全员下线** `dsh` `auth` `infra`
   - 独立仓库纯宿主插件（照 keepalive 骨架，GitHub 分发，零客户端 bundle）：未设密码态回环免密铸票 + 密码登录书签页 + 轮换即撤销全体会话（admit 包装 epoch）；oc-beacon 与浏览器均为消费者
