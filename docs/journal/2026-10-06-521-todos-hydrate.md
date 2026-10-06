@@ -33,3 +33,9 @@
 - 单测：DshApiClientTest 135（+三态/键缺席/首页兜底）、DshEventMapperTest 101（+todos 键 3 例）；全量 3909/3909 绿。
 - **真机腿挂起**：小米 houji 无线 adb 死亡（mDNS 记录残留 192.168.1.110:41571 拒连，多轮重试无端口轮换，USB 未插；按定规不动系统设置）——待设备恢复后补真机冷进一验即可收口（模拟器已全链实证）。
 - 探针（#521-probe ×3）按 keep-probes 裁决保留 DEBUG-only。
+
+## 真机腿前置就绪（2026-10-06 15:4x，待设备物理恢复）
+
+- 设备状态：houji 无线 adb 监听死亡（mDNS 应答器活着但 41571 拒连；30000-50000 全端口扫描零开放=无端口轮换；USB 未插；adb server 重启无效）。按定规不动设备系统设置——需用户插 USB 或重开「无线调试」。
+- 已前置：容器 dsh 重启带三受信形态（10.0.2.2:8181 / 127.0.0.1:8181 / 192.168.1.147:8181）；目标会话在列且 todos 键热（3 条）；LAN 直连 Bearer devpass 200；APK=dd957af0 已构建。
+- 恢复后 runbook（两接法任一）：①adb reverse tcp:8181 tcp:8181 + debug_url http://127.0.0.1:8181；②直连 debug_url http://192.168.1.147:8181（无需 reverse）。均带 --es debug_server_type dsh --es debug_password devpass --es debug_name PW-521-Device。流程：logcat -c → force-stop → intent → 会话列表点「用 todo_write 建立任务清单」→ FAB(≈1015,1840@1200x2670) → TODO → 截图+vision 断言 3 条（2✅+1🔄）→ logcat #521-probe 无空覆写 → 恶劣场景加验（容器删 todos 行+kill -9+重启再冷进一次）→ PASS 即迁移关卡。
