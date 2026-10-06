@@ -140,13 +140,42 @@ class DshApiClientTest {
         val api = client(MockEngine { respond(ok("{}"), HttpStatusCode.OK, jsonHeaders()) })
         assertFalse(api.backgroundSession(conn, "s"))
         assertTrue(api.activeSessions(conn).isEmpty())
-        // #495 勘误：DSH 有 todo 域但 wire 无 REST hydrate 端点——空表降级（冷进补灌另立卡）
+        // #521：getSessionTodos 改真读 session.list 投影——空响应（行缺席）→ 空表降级
         assertTrue(api.getSessionTodos(conn, "s").isEmpty())
         assertTrue(api.listSessionStatus(conn).isEmpty())
         assertTrue(api.getSessionDiff(conn, "s").isEmpty())
         assertFalse(api.executeCommand(conn, "s", "cmd"))
         assertTrue(api.fetchSessionStatus(conn).isSuccess)
         assertTrue(api.fetchSessionStatus(conn).getOrDefault(emptyMap()).isEmpty())
+    }
+
+    @Test
+    fun `getSessionTodos reads todos projection from session list`() = runTest {
+        // #521：权威现值 = session.list 行 projections.values.todos（dsh-tool-todo 投影）
+        val engine = MockEngine {
+            respond(
+                ok(
+                    """
+                    {"items":[
+                      {"sessionId":"s1","projections":{"asOfSeq":10,"values":{"todos":[
+                        {"content":"接入投影帧","status":"in_progress"},
+                        {"content":"写单测","status":"pending"}]}}},
+                      {"sessionId":"s2","projections":{"asOfSeq":3,"values":{"todos":null}}}
+                    ]}
+                    """.trimIndent()
+                ),
+                HttpStatusCode.OK, jsonHeaders(),
+            )
+        }
+        val api = client(engine)
+        val todos = api.getSessionTodos(conn, "s1")
+        assertEquals(2, todos.size)
+        assertEquals("接入投影帧", todos[0].content)
+        assertEquals("in_progress", todos[0].status)
+        assertEquals("medium", todos[0].priority)
+        assertEquals("/api/session.list", captureRequests(engine).first().url.encodedPath)
+        // null tombstone（服务端 turn/start 清空）与投影缺席同归空表
+        assertTrue(api.getSessionTodos(conn, "s2").isEmpty())
     }
 
     @Test

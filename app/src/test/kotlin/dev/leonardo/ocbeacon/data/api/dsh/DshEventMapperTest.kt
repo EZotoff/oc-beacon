@@ -503,10 +503,55 @@ class DshEventMapperTest {
         val mapped = DshEventMapper.mapFrame(
             "session/projection",
             json.parseToJsonElement(
-                """{"type":"session/projection","sessionId":"s1","key":"todos","value":{"items":[]},"seq":9}"""
+                """{"type":"session/projection","sessionId":"s1","key":"title","value":"t","seq":9}"""
             ).jsonObject,
         )
         assertEquals(listOf(DshMappedEvent.Ignored(DshIgnoreReason.PROJECTION)), mapped)
+    }
+
+    // ============ todos 投影整值帧（#521 冷进补灌） ============
+
+    @Test
+    fun `projection todos frame maps whole value to TodoUpdated`() {
+        val mapped = DshEventMapper.mapFrame(
+            "session/projection",
+            json.parseToJsonElement(
+                """{"type":"session/projection","sessionId":"s1","key":"todos",""" +
+                    """"value":[{"content":"接入投影帧","status":"in_progress"},{"content":"写单测","status":"completed"}],"seq":21}"""
+            ).jsonObject,
+        )
+        val updated = eventsOf(mapped).single() as SseEvent.TodoUpdated
+        assertEquals("s1", updated.sessionId)
+        assertEquals(2, updated.todos.size)
+        assertEquals("接入投影帧", updated.todos[0].content)
+        assertEquals("in_progress", updated.todos[0].status)
+        assertEquals("medium", updated.todos[0].priority)
+        assertEquals("completed", updated.todos[1].status)
+    }
+
+    @Test
+    fun `projection todos null tombstone maps to empty list`() {
+        // 服务端 turn/start 清空（apply: turn/start → null）——空表覆写非畸形
+        val mapped = DshEventMapper.mapFrame(
+            "session/projection",
+            json.parseToJsonElement(
+                """{"type":"session/projection","sessionId":"s1","key":"todos","value":null,"seq":22}"""
+            ).jsonObject,
+        )
+        val updated = eventsOf(mapped).single() as SseEvent.TodoUpdated
+        assertEquals("s1", updated.sessionId)
+        assertTrue(updated.todos.isEmpty())
+    }
+
+    @Test
+    fun `projection todos malformed value is ignored`() {
+        val mapped = DshEventMapper.mapFrame(
+            "session/projection",
+            json.parseToJsonElement(
+                """{"type":"session/projection","sessionId":"s1","key":"todos","value":"oops","seq":23}"""
+            ).jsonObject,
+        )
+        assertEquals(listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED)), mapped)
     }
 
     // ============ permissions 投影整值帧（#283-a2） ============

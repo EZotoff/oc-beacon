@@ -131,8 +131,8 @@ class DshServerAdapter @Inject constructor(
         add(ServerFeatures.PLAN)
         // turn 级计时（ttftMs / tokensPerSecond / runMs）——DSH 投影面专属
         add(ServerFeatures.TURN_TIMING)
-        // todo 域（0.2.0 dsh-tool-todo）：todo/write 帧事件流（app 已映射 TodoUpdated
-        // live 渲染）；服务器无 REST hydrate 端点——冷进补灌走 journal 折叠（独立卡）
+        // todo 域（0.2.0 dsh-tool-todo）：todo/write 帧事件流（live 渲染）+ todos
+        // 投影（session/control baseline 与 session.list 行，冷进补灌——#521）
         add(ServerFeatures.TODOS)
     }
 

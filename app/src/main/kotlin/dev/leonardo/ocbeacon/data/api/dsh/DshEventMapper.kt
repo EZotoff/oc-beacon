@@ -399,6 +399,24 @@ object DshEventMapper {
                         else -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
                     }
                 }
+                "todos" -> {
+                    // #521：todos 投影（dsh-tool-todo 注册 wire 整值）= 服务端权威
+                    // 现值——冷进补灌主通道是 session/control baseline（WS onOpen 全量
+                    // 携带），live 与 todo/write 事件映射同值幂等。null tombstone =
+                    // 服务端 turn/start 清空语义（apply: turn/start → null），映射
+                    // 空表（同 goal/permissions/plan 键语义）。
+                    when (val value = payload["value"]) {
+                        is JsonNull -> listOf(
+                            DshMappedEvent.Sse(SseEvent.TodoUpdated(sessionId = sid, todos = emptyList()))
+                        )
+                        is JsonArray -> listOf(
+                            DshMappedEvent.Sse(
+                                SseEvent.TodoUpdated(sessionId = sid, todos = mapTodoItems(value))
+                            )
+                        )
+                        else -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+                    }
+                }
                 // 其余投影键（title…）：本任务不消费
                 else -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.PROJECTION))
             }
@@ -1856,7 +1874,13 @@ object DshEventMapper {
 
     /** todo/write → TodoUpdated（整快照 last-wins 直配）；DSH 无优先级 → medium。 */
     private fun mapTodoWrite(sessionId: String, data: JsonObject): List<DshMappedEvent> {
-        val todos = (data.arr("todos") ?: emptyList()).mapNotNull { el ->
+        val todos = mapTodoItems(data.arr("todos") ?: emptyList())
+        return listOf(DshMappedEvent.Sse(SseEvent.TodoUpdated(sessionId = sessionId, todos = todos)))
+    }
+
+    /** todos 条目行 → Todo（todo/write 事件与 todos 投影值同形，单源映射）。 */
+    private fun mapTodoItems(elements: List<JsonElement>): List<SseEvent.TodoUpdated.Todo> =
+        elements.mapNotNull { el ->
             (el as? JsonObject)?.let {
                 SseEvent.TodoUpdated.Todo(
                     content = it.str("content") ?: "",
@@ -1865,8 +1889,6 @@ object DshEventMapper {
                 )
             }
         }
-        return listOf(DshMappedEvent.Sse(SseEvent.TodoUpdated(sessionId = sessionId, todos = todos)))
-    }
 
     /** session/title → SessionUpdated（title + 事件时刻驱动排序位；其余字段最小占位）。 */
     private fun mapSessionTitle(sessionId: String, time: Long, data: JsonObject): List<DshMappedEvent> =

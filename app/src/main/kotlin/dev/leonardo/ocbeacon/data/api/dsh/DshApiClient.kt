@@ -1012,11 +1012,24 @@ class DshApiClient @Inject constructor(
         )
     }
 
-    // #495 勘误（2026-10-06）：DSH **有** todo 域（dsh-tool-todo，todo/write 帧事件，
-    // live 已映射 TodoUpdated）——但 wire 是事件溯源，无 REST hydrate 端点，故本
-    // 桩维持空表降级（能力位 TODOS 由 adapter 静态声明，不靠本探测）。冷进补灌
-    // （journal 折叠 last todo/write 快照）另立卡。
-    override suspend fun getSessionTodos(conn: ServerConnection, sessionId: String): List<TodoItem> = emptyList()
+    // #521（2026-10-06）：DSH 无 REST todo 端点——权威现值改读 session.list 行的
+    // projections.values.todos（dsh-tool-todo 投影：服务端已折叠 last-write-wins，
+    // turn/start 清空）。probeTodoCapability 同位 hydrate 由此拿到真值；冷进补灌
+    // 双通道 = 本读 + session/control baseline 投影帧（mapper todos 键）。行缺席 /
+    // 投影缺席 / 值 null（未写或 turn/start 已清）→ 空表（能力位 TODOS 由 adapter
+    // 静态声明，不依赖本探测成败）。
+    override suspend fun getSessionTodos(conn: ServerConnection, sessionId: String): List<TodoItem> {
+        val row = sessionRowOf(conn, sessionId) ?: return emptyList()
+        val todos = row.dshObj("projections")?.dshObj("values")?.get("todos")
+        if (todos !is JsonArray) return emptyList()
+        return todos.filterIsInstance<JsonObject>().map {
+            TodoItem(
+                content = it.dshStr("content") ?: "",
+                status = it.dshStr("status") ?: "pending",
+                priority = "medium",
+            )
+        }
+    }
 
     override suspend fun backgroundSession(conn: ServerConnection, sessionId: String): Boolean = false
 
@@ -1178,16 +1191,19 @@ class DshApiClient @Inject constructor(
     }
 
     /**
-     * V012 session.list 行查找（page 读上界 + 地址装配共源）：0.1.2 无
-     * session.get，list 是唯一权威源。会话缺席 → IllegalStateException。
+     * V012 session.list 行查找（page 读上界 + 地址装配 + todos 投影读共源）：
+     * 0.1.2 无 session.get，list 是唯一权威源。会话缺席 → null（调用方自定降级）。
      */
-    private suspend fun sessionListItemOf(conn: ServerConnection, sessionId: String): JsonObject {
-        val value = rpc.call(conn, "session.list", buildJsonObject {}) { it }.getOrElse { e -> throw e }
+    private suspend fun sessionRowOf(conn: ServerConnection, sessionId: String): JsonObject? {
+        val value = rpc.call(conn, "session.list", buildJsonObject {}) { it }.getOrNull() ?: return null
         return (value.dshArr("items") ?: emptyList())
             .filterIsInstance<JsonObject>()
             .firstOrNull { it.dshStr("sessionId") == sessionId }
-            ?: throw IllegalStateException("DSH session not found: $sessionId")
     }
+
+    /** 同 [sessionRowOf] 但会话缺席抛 IllegalStateException（page 上界等硬依赖路径）。 */
+    private suspend fun sessionListItemOf(conn: ServerConnection, sessionId: String): JsonObject =
+        sessionRowOf(conn, sessionId) ?: throw IllegalStateException("DSH session not found: $sessionId")
 
     /**
      * 导出根治（#276 后端接口补全）：GET {base}/api/session.export?sessionId=
