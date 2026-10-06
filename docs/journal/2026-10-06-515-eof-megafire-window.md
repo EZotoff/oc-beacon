@@ -101,3 +101,17 @@ TurnFin（52.629）对齐起 **tail 96↔158 振荡 6 个 d=-62 周期（~1.6s�
 3. **long-paragraphs -2116×2：#523 完结塌缩**——tail 正常长至 1303ch/2212px 后 TurnFin 时刻整段拆到 96（完结换名走整树换装）。
 
 **§9/§10 总结论：#515 修复面（门槛 4000+预热+缓存）在 21 轮矩阵+乱操作风暴+竞态画像下零缺陷**（零崩溃/零 RESETKEY/零 ANR/fire 门槛步进精确/全 cached）；全部残余异常（完结塌缩·fire 后 tail 振荡·间歇性）归属 #523 churn 族——其触发面比立卡时认知更广（非仅 mock/完结：含 fire 后变体、多语料间歇）。#523 卡已更新扩展定性。
+
+## §11 全量补测（2026-10-06 晚，用户裁决：全部补齐含 soak）
+
+**真模型 V1 腿**（LongCat zen + deepseek-chat ×8 轮，模型选择带 dump 验证）：零崩溃/零 RESETKEY；**#523 实锤非 mock 独占**——LongCat 轮 TurnFin 时刻 2736→233（-2503）、deepseek 轮 -2732/-326，间歇 2/4；且 18:55 轮（B 之前构建）已存在=非本批回归。V1 真模型 fire 未练成：模型不遵长度指令（1975/223 字档）——如实登记（fire 路径由 mock 矩阵 15+ 次与 V2 腿覆盖）。
+
+**V2 腿**（4201 无认证直连 deepseek）：**真模型 fire 达成**——doc 9.1k，`arm origin=9088 prewarmChunks=4` → `fire chunks=4` → 全 cached=true（含 #523 churn 期重组合）。**#523 在 V2 复现**（TurnFin 后 -3001/-2675/-3001 循环塌缩）——与 10-05 定罪第三例同源互证。
+
+**DSH 腿**（dsh-pw-demo@8181，#521 runbook 配方：无 debug_username）：流式+完结健康（TurnFin t_seq-session/u_dsh-sys 信封键族）、零 fire（2.4k<4000 正确）、**零负向 d**——DSH 完结不走 #523 换名 reconcile（正差 +2055=完结批揭示非塌缩）。**意外事件**：首轮发送后 app 内容区空白（进程活/主线程 idle 非冻结/窗口聚焦）——force-stop 即愈，全量证据存 /tmp/515-dsh-blank.log（22820 行）待析；与 DSH send 的因果未定（不排除 MENU 保活键扰动）。
+
+**beta 腿**：BetaDebug 包安装+冷启成功，但 debug intent extras 不路由（落连接屏）——按身份覆盖处理（STREAM_SHARD_PILOT/DELTA_BUS 与 dev 同值同码，dev 已全验证），intent 路由差异登记待查小项。
+
+**基建发现**：①mock abort-mid 触发 opencode V1 **服务端无限自动重试**（abort→error→retry，1h+ 每 16s 一次 call 213-273）——已杀循环并把 abort-mid 移出 soak 随机池（指令直达保留）；②矩阵脚本曾因陈旧 a11y dump 假选模（real2/3 轮被 mock 污染已识别，选择加验证后修复）；③真模型长文指令遵从差（600 字/节→1975 字）。
+
+**隔夜 soak 已上线**（22:52 起 10h，pid 798519）：mockmd 全语料轮转（eof-fire 含）×画像（abort-mid 已移出）×人类行为模型（随机滑动/阅读/中断/探索），driver-515.py（mDNS serial+4101 接线副本）。晨检：human-sim-10h/reports/driver.log 台账 + review.sh 巡检。

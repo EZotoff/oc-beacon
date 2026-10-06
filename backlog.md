@@ -71,6 +71,7 @@
 - [ ] **#523 mock 路径完结振荡——TurnFin 对齐 tail 96↔158 六周期 churn（shard-unreg+pilot 复位循环）** `v1,streaming,completion`
   - V1 mock-md 完结 reconcile 条目身份churn：完结消息换 id 走整树换装而非 #509/#510 原地换名；tail 冻结尾行闪 3-4 次；#g0 不受扰；LongCat 轮无此形态 → docs/journal/2026-10-06-515-eof-megafire-window.md §4
   - 2026-10-06 #515 E2E 矩阵扩展定性（journal 2026-10-06-515 §10）：①完结塌缩间歇性、多语料（-20646/-2116/-3219/-4024 全轮拆 96）；②新增 fire 后变体：wide-table fire 后 tail 224↔96 振荡×2（21:39:25 原生证据）；③非 mock 独占疑点待查（矩阵全走 mock-md；真模型轮 r1-r3 未见——但需系统性真模型矩阵确认）。取证日志 /tmp/515-forensics-*.log
+  - 2026-10-06 晚补测升级定性：真模型实锤（LongCat -2503/deepseek -2732@TurnFin，间歇 2/4）+ V2 复现（-3001×2 循环）——mock/V1真模型/V2 全中；DSH 不走此路径（零负向）。B 前构建已存在=非 #515 批回归。优先级升 P0 候选
 
 - [~] **#512 DSH 密码登录插件（dsh-password-login）——免捞 token 的会话铸造/密码生命周期/轮换全员下线** `dsh` `auth` `infra`
   - 独立仓库纯宿主插件（照 keepalive 骨架，GitHub 分发，零客户端 bundle）：未设密码态回环免密铸票 + 密码登录书签页 + 轮换即撤销全体会话（admit 包装 epoch）；oc-beacon 与浏览器均为消费者

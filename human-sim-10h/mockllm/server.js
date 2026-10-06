@@ -158,7 +158,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let counter = 0;
 
 function pickProfile(rng) {
-  if (rng() < 0.05) return "abort-mid";
+  // 2026-10-06 #515 补测：abort-mid 移出随机池（指令 [p:abort-mid] 仍直达）——
+  // 实证 V1 opencode 对 provider abort 服务端无限自动重试（matrix 轮后 1h+ 每 16s
+  // 一次 call 213-273），soak 期会烧穿且把会话卡死。
+  if (false && rng() < 0.05) return "abort-mid";
   const pool = ["fast", "normal", "normal", "slow", "bursty", "stall-mid", "line", "megachunk"];
   return pool[Math.floor(rng() * pool.length)];
 }
