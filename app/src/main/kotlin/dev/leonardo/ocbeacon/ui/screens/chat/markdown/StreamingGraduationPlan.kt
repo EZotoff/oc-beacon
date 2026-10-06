@@ -32,8 +32,20 @@ internal data class FrozenChunk(val from: Int, val to: Int)
  */
 internal data class StreamingGraduation(val chunks: List<FrozenChunk>, val tailFrom: Int)
 
-/** 毕业积累门槛（新增冻结量不足则继续攒——限制毕业频率与重建成本）。 */
-internal const val GRADUATE_MIN_CHARS = 2000
+/**
+ * 毕业积累门槛（新增冻结量不足则继续攒——限制毕业频率与重建成本）。
+ *
+ * #515 校准（2026-10-06，2000→4000）：fire 换装帧在视口内有结构代价
+ * （hitch ~40-64ms + 渲染器交换沉降，journal 2026-10-06-515 §1.2）——门槛即
+ * 「多少量才值一次换装」。2000 使 2-4k 文档在尾端恰好单发巨批 fire（#515
+ * 定罪形态）。4000 的依据：①#437 S16/S20 实测单容器 ~4000 字时每批组合/
+ * 测量 19-27ms——4k 是 O(总长) 成本的失衡点，≤4k 文档单容器每批 ≤~20ms
+ * 且滚动期 appends 暂缓（#437 R3 ScrollHold）只打静止帧（无可掉动画帧，
+ * 感知无害）；②2-4k 档（#515 类）自此流中零 fire——完结走 pilot 即终态，
+ * 离屏后由既有静态分片接管，类别级消除换装可见件；③4k+ 大文档保留毕业
+ * 保护，fire 频率减半（每 ~4000ch 一次）。
+ */
+internal const val GRADUATE_MIN_CHARS = 4000
 
 /** 单冻结块字符上限（贪心打包界；无内部边界的巨块允许超限独占）。 */
 internal const val GRADUATE_MAX_CHUNK_CHARS = 4000

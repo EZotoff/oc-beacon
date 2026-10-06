@@ -58,3 +58,17 @@ TurnFin（52.629）对齐起 **tail 96↔158 振荡 6 个 d=-62 周期（~1.6s�
 ## §5 状态
 
 #515 本批：调研定谳（§1 勘误+三事实）+ F2 修复落地验证 + harness 基建（mockllm eof-fire 语料/mockmd provider/确定性配方）。**未达完结**：①涟漪机制待钉死（观察面）；②hitch 余量 ~60ms 是否可感知待用户裁决；③#523 完结振荡独立追。验证门槛：完整 E2E（模拟器+真机）+ 用户验收。
+
+## §6 路线 B 落地（2026-10-06，用户裁决 B+C 并行）
+
+**校准**：GRADUATE_MIN_CHARS 2000→4000。依据（注释内同文）：①#437 S16/S20 实测单容器 ~4000 字每批组合/测量 19-27ms=O(总长) 失衡点；≤4k 单容器每批 ≤~20ms 且滚动期 appends 暂缓（#437 R3）只打静止帧（无可掉动画帧）；②2-4k 档（#515 类）自此流中零 fire——完结走 pilot 即终态+离屏静态分片，类别级消除换装可见件；③4k+ 保留毕业保护，fire 频率减半。单一真相源（machine 默认引用常量；测试全显式传参）。
+
+**E2E（真机，门槛版）**：①eof-fire 语料（2209ch）**零 fire**（全程单容器；TurnFin 时刻 d=-4024 为 #523 mock 完结 reconcile 域，非本修）；②multi-section（~8KB）`shard arm origin=4062 → fire chunks=2（3488+574）`——双块 **cached=true**（F2 预热经 previewFirePlan 正确预测多块）。全量单测绿。
+
+## §7 路线 C 接力计划（涟漪定罪，未开工）
+
+对象：4k+ 文档残余 fire 换装（B 后唯一仍有 fire 的类别）的涟漪（r3 两帧沉降带）+hitch 余量（~布局/组合成本）。步骤：
+1. 锚定破雾：gfxinfo framestats（帧完成 ns 时间戳）× VDRAW logcat 关联 × 视频帧三方对齐——此前两轮视觉判读冲突+锚点±0.7s 是定位阻塞点；
+2. 复现面：mock multi-section [p:slow]（唯一确定 4k+ fire 源）+ 4Mbps 录屏；
+3. 候选面（按嫌疑序）：terminalSuccessSlot 尾随空白跳过在 seam 的间距差（#517 语义只对终末块成立，mid-stream shard 尾随空白是否该跳？）/ MarkdownElement includeSpacer 空白子节点间距 / Turn 条目与 StreamChunk Box 宽度-内边距差 / **442 spec §2 影子态双喂未实现**（换装帧尾块「内容恒等⇒高度恒等」是设计内承诺，A2 简化掉——尾块出生空帧与涟漪的同源候选）；
+4. 修法约束：F3 状态交接已证不可行（append-only）；影子态双喂 = spec 原设计回归，先在 harness 量化涟漪量级再定是否值得。

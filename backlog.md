@@ -61,6 +61,7 @@
   - 2026-10-05 #502 验收轮机内复发轻量形态（V1 LongCat 散文+代码 4042 字轮）：流末正常毕业 fire（tail=48ch 小尾，非巨批）同样触发重建窗——SGB ENTRIES n=28 → HFLICK PLAN 26→28 add=[#g0,#p] 条目插入 → 宿主 item 子树销毁重建（ItemP enter/leave 24ms 双翻转）→ 卡 4063→96 存根（d=-3967）→ pilot retained 40ms 回灌恢复（远快于在册 1.9s 慢灌）。结论①重建窗是 fire 的结构性代价（任何 fire 都插条目重排），巨批只是拉长窗口；结论②恢复速度取决于 pilot 保持链（本案 B3 live override 热路径在）。取证 journal 2026-10-05-a §6
   - 2026-10-05 第三次（V2@4201 LongCat 教程轮 t+16s 流中）：4810→96 d=-4714 后 2-chunk 恢复——毕业 fire 条目重排在两协议一致复现
   - 2026-10-06 调研+首修（journal 2026-10-06-515）：勘误「1.9s 慢灌=refeedPacing」（实为自然 delta，冻结前缀 34ms 由 #g0 全高渲染）；定谳三事实：换装原子无塌洞/涟漪（r3 两帧沉降带，机制未钉死）/hitch 40-64ms（12Mbps 录屏放大至 850ms=观测污染）。F3 状态交接因库 append-only 约束弃；落地 F2：Arm 期预热解析入 MarkdownParsedStateCache+StreamShardContent 缓存接线（+3 单测，harness 实证 cached=true）。残留：涟漪观察面+hitch 余量可感知性→待用户验收裁决；mock 完结振荡独立立卡 #523
+  - 2026-10-06 用户裁决 B+C：B 已落地（GRADUATE_MIN_CHARS 2000→4000，#437 19-27ms@4k 失衡点校准；E2E：eof-fire 零 fire+multi-section 4062 双块 cached=true；journal §6）；C 涟漪定罪接力计划在 journal §7（锚定破雾→影子态双喂候选）
 
 ## P1 — 核心功能需求
 
