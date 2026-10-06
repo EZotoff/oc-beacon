@@ -76,9 +76,11 @@
 
 ## P2 — 优化与锦上添花
 
-- [ ] **#521 DSH TODO 冷进补灌——journal todo/write 快照折叠（live 已渲染，历史面缺口）** `dsh` `session`
+- [~] **#521 DSH TODO 冷进补灌——journal todo/write 快照折叠（live 已渲染，历史面缺口）** `dsh` `session`
   - DSH 有 todo 域（0.2.0 dsh-tool-todo；todo/write 帧事件经 DshEventMapper:741 live 渲染 TodoUpdated）；wire 事件溯源无 REST hydrate 端点——冷进会话 TodoSheet 空到下一次写。
   - 修法方向：DshHistoryFolder 折叠 journal 内 last todo/write 快照 → EventDispatcher.hydrateTodos（V1 REST hydrate 同位）。#495 勘误副产物（2026-10-06）。
+  - 设计转向（2026-10-06 实施时）：原方向 journal 折叠被服务端源码否决——dsh-tool-todo 注册 todos 投影（wire 整值，turn/start 清空），session/control baseline 每次 WS onOpen 全量携带 + session.list 行内嵌 projections.values。改双通道：(1) DshEventMapper session/projection 增 todos 键（baseline 合成帧/增量帧/null tombstone→空表）；(2) DshApiClient.getSessionTodos 真读 session.list 行投影（修 stub 空表覆写竞态）。commit 655b4498，3907/3907 绿。
+  - E2E 定罪+根修二轮（dd957af0）：模拟器冷进首轮 TodoSheet 空——竞态=probe REST（服务器持久 cache 冷 miss 时 todos 键缺席→空表）onSuccess 无条件覆写盖掉 backfill/帧已补灌真值，纯时序。根修=三态语义（键缺席=无数据→抛失败不 hydrate；值 null=turn/start 清空合法空态→空表；数组=真值）+ listMessages 首页（before=null）transcriptEvents 附带 fold 最后一笔 TodoUpdated（journal 源，takeLast(1) 防翻页倒退）。复现实验（删 cache todos 行+重启）终态 PASS：sheet 3 条完整。服务器腿实证：真实 todo_write 提交后 REST list 行/WS baseline 均携带；进会话 follow 流激活会话物化 cache。真机腿挂起：无线 adb 死亡（mDNS 残留端口拒连），待设备恢复补验。3909/3909 绿。
 
 - [ ] **#519 DSH 完结换装后思考卡消失——权威消息 content 无 reasoning part，流中思考内容完结即蒸发** `dsh` `streaming` `completion`
   - 真机（2026-10-06 quicksort 轮）：流中 reasoning part（dsh-t1s1_reasoning_ord_0，443 字节 payload）正常渲染+计时；完结 seq 换装后权威消息（seq-...b7e40eebd）parts 仅 3 个 text（4564/390/4555 字符）零 reasoning——思考卡随换装消失，重进亦无。与 #501（正文换装砸出）同族的 reasoning 面：流中可见完结即失
@@ -100,6 +102,7 @@
 - [ ] **#522 B案升 stable 后余留装备清扫——JankHoldGate A/B 开关 + STREAM_DELTA_BUS 旗标退役（#499 余留范围）** `chore` `refactor`
   - 前置：STREAM_SHARD_PILOT / STREAM_DELTA_BUS 升 stable 并观察一批——当前 stable 均 false，JankHold 冻结链在 stable 仍是承重活体（B案开=旁路），现退役会回归 stable 流式滚动组合风暴。
   - 清扫面：JankHoldGate system-prop A/B、ChatScreen jkHold 冻结链（含 B3 埋点）、STREAM_DELTA_BUS 旗标与旁路分支；probe 按 keep-probes 裁决保留。#499 于 2026-10-06 完成范围内部迁移，余留拆本卡。
+  - 2026-10-06 承接评估：前置未达维持——stable 双旗标（STREAM_SHARD_PILOT/STREAM_DELTA_BUS）仍 false（build.gradle.kts stable 块），JankHold 冻结链在 stable 仍是承重活体，现清扫=回归 stable 流式滚动组合风暴。beta 侧两旗标已升 true（2026-10-06 裁决），观察窗进行中；待 stable 随批提升后再开工本卡。
 
 - [ ] **#520 soak 判读签名扩充：流中 MDPilot append 静默 × MDResize d=h 爆发耦合判别（冻结渲染形态）** `soak` `streaming` `infra`
   - #511 收口裁决 A 的尾项（2026-10-06）：#484 签名集（零负向 d/零 RESETKEY）对爆发式正向形态失明——#513 冻结渲染（d=h 单步满高+流中零渐进）在 10-04 soak 全程在场未被抓
