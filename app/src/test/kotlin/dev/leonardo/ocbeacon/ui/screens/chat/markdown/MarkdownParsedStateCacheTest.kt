@@ -91,4 +91,22 @@ class MarkdownParsedStateCacheTest {
         // Loading,缓存将永远 miss——此测试先红,提示重新评估分档阈值)
         assertTrue(parsedState("# hi") !is State.Loading)
     }
+
+    // ===== #515（2026-10-06）：武装期预热 =====
+
+    @Test
+    fun `prewarmShardParseSync 入缓存且幂等`() {
+        MarkdownParsedStateCache.clearForTest()
+        val texts = listOf("# A\n\u6d4b\u8bd5\n\n", "## B\nsecond\n\n")
+        prewarmShardParseSync(texts)
+        assertEquals(2, MarkdownParsedStateCache.size())
+        texts.forEach { assertNotNull(MarkdownParsedStateCache.get(it)) }
+        // 幂等：重复预热不新增条目
+        prewarmShardParseSync(texts)
+        assertEquals(2, MarkdownParsedStateCache.size())
+        // 空列表零动作
+        prewarmShardParseSync(emptyList())
+        assertEquals(2, MarkdownParsedStateCache.size())
+        MarkdownParsedStateCache.clearForTest()
+    }
 }

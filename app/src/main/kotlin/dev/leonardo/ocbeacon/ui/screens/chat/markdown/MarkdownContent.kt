@@ -52,11 +52,14 @@ import com.mikepenz.markdown.utils.getUnescapedTextInNode
 import com.mikepenz.markdown.model.rememberMarkdownState
 import com.mikepenz.markdown.model.MarkdownState
 import com.mikepenz.markdown.model.State
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
 
 import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
@@ -988,6 +991,29 @@ internal object MarkdownParsedStateCache {
 }
 
 /**
+ * #515（2026-10-06）：武装期预热解析同步核——把冻结块文本解析入
+ * [MarkdownParsedStateCache]（幂等：已在缓存则跳过）。调用方（pilot Arm 分支）
+ * 经 [prewarmShardParse] 走后台线程；换装帧 [StreamShardContent] 缓存命中，
+ * 免同步 parseMarkdown（真机实证换装帧 hitch 的主分量，47ms 中 parse
+ * ≈20-40ms）。解析为纯函数（自建 AST），线程安全；缓存同步 LRU。
+ */
+internal fun prewarmShardParseSync(texts: List<String>) {
+    for (t in texts) {
+        if (MarkdownParsedStateCache.get(t) == null) {
+            MarkdownParsedStateCache.put(t, parseMarkdown(t))
+        }
+    }
+}
+
+private val ShardPrewarmScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+/** #515：预热异步壳（fire-and-forget；Fire 先于完成时为 cache miss，回落同步解析）。 */
+internal fun prewarmShardParse(texts: List<String>) {
+    if (texts.isEmpty()) return
+    ShardPrewarmScope.launch { prewarmShardParseSync(texts) }
+}
+
+/**
  * #428:同步解析的 MarkdownState——remember 时内联 parse 出终态,无 Loading 帧。
  *
  * 库的 [com.mikepenz.markdown.model.parseMarkdown] 为非 suspend 纯函数入口
@@ -1016,15 +1042,23 @@ private fun rememberSyncMarkdownState(content: String, isUser: Boolean): Markdow
 /**
  * #442 R2 分片唤醒（A2）：流式冻结块渲染——归一化切片（pilot 归一化坐标，
  * 已是终态形态，#471③ 同源）同步解析 + preParsed 通道（无 Loading 空窗：
- * 换装帧首组合即全高）。冻结内容不可变 → remember(text) 单次解析；item
- * 回收重组合按 text 重解析（A2 接受；后续可接 SyncParseCache）。
+ * 换装帧首组合即全高）。冻结内容不可变 → remember(text) 单次解析。
+ * #515（2026-10-06）：接 [MarkdownParsedStateCache]——pilot Arm 期预热
+ * （[prewarmShardParse]）后换装帧命中免同步 parse（hitch 主分量）；item
+ * 回收重组合同键命中（A2 注释「后续可接 SyncParseCache」兑现）。
  */
 @Composable
 internal fun StreamShardContent(markdown: String, textColor: Color, trimTrailingBlockGap: Boolean = false) {
-    val parsed = remember(markdown) { parseMarkdown(markdown) }
-    // [507-shard] #507 消失取证：冻结块组合事实（文本量）+ 实测高度
+    // [507-shard] #515 增补：入场缓存命中事实（预热是否赶在换装帧前——命中
+    // = 换装帧免同步 parse）。读取在 remember 前，防 miss-回填污染探针。
+    val cacheHitAtCompose = MarkdownParsedStateCache.get(markdown) != null
+    val parsed = remember(markdown) {
+        MarkdownParsedStateCache.get(markdown)
+            ?: parseMarkdown(markdown).also { MarkdownParsedStateCache.put(markdown, it) }
+    }
     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-        android.util.Log.w("507-shard", "shardContent len=" + markdown.length)
+        android.util.Log.w("507-shard", "shardContent len=" + markdown.length +
+            " cached=" + cacheHitAtCompose)
     }
     Box(
         modifier = Modifier

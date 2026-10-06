@@ -131,11 +131,26 @@ const CORPORA = [];
     }
     CORPORA.push(d.join("\n"));
   }
+
+  // 13. eof-fire（#515 配方，2026-10-06）：8 节 ~270ch、节内无空行、节间单空行
+  // + 收尾句——累计 1890<2000 直至第 8 节末 → 单发巨批 fire（尾=收尾句）。
+  {
+    const d = ["# Eof Fire Document", ""];
+    for (let s = 1; s <= 8; s++) {
+      d.push("## Section " + s);
+      let para = "Section " + s + " body: ";
+      let w = 0;
+      while (para.length < 250) { para += "w" + s + "-" + w + " "; w++; }
+      d.push(para.trim(), "");
+    }
+    d.push("This closing sentence is the tail after the final blank run.");
+    CORPORA.push(d.join("\n"));
+  }
 }
 
 // 语料名（演示控制面 [c:<名>] 用；顺序与 CORPORA 一一对应）
 const CORPUS_NAMES = ["wide-table", "code-long", "nested-lists", "mixed-stress", "long-paragraphs",
-  "short-reply", "cjk-table", "headings-only", "checklist-quote", "giant-single", "progressive-table", "multi-section"];
+  "short-reply", "cjk-table", "headings-only", "checklist-quote", "giant-single", "progressive-table", "multi-section", "eof-fire"];
 const PROFILES = ["fast", "normal", "slow", "bursty", "stall-mid", "line", "megachunk", "abort-mid"];
 
 // ---------- 速率画像 ----------

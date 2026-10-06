@@ -391,6 +391,21 @@ internal fun rememberPilotStreamingMarkdownState(
                 nowMs = android.os.SystemClock.elapsedRealtime(),
             )
             when (act) {
+                is SplitAction.Arm -> {
+                    // #515（2026-10-06）：武装期预热解析——按 Fire 同参预演毕业计划
+                    //（previewFirePlan 与 onBatch 触发分支同参同函数，块逐字节一致），
+                    // 冻结块文本后台解析入 MarkdownParsedStateCache。换装帧
+                    // StreamShardContent 命中即免同步 parseMarkdown（真机实测
+                    // 换装帧 hitch 主分量，#515 调研 §1.2）。Fire 先于预热完成时
+                    // miss 回落同步解析（行为不变）；武装解除则仅余 LRU 条目。
+                    val preview = shardMachine.previewFirePlan(normalized, act.armedOrigin)
+                    prewarmShardParse(preview.chunks.map { c -> normalized.substring(c.from, c.to) })
+                    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                        AppLogger.i("MDPilot", "shard arm origin=" + act.armedOrigin +
+                            " prewarmChunks=" + preview.chunks.size +
+                            " prewarmChars=" + (act.armedOrigin - shardMachine.plan.tailFrom))
+                    }
+                }
                 is SplitAction.Fire -> {
                     // #503 R2 事务性：发布成功才落账/推进——未注册（回收竞态）
                     // 返回 false 时账本与 pilot 原地不动，下批重试

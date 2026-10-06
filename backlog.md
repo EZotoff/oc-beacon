@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#523**（2026-10-06 #522 B案升 stable 后余留装备清扫——Jank）。
+**编号**：全局递增，不回收。下一编号：**#524**（2026-10-06 #523 mock 路径完结振荡——TurnFin 对齐）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
@@ -60,9 +60,13 @@
   - → docs/journal/2026-10-05-a.md §3
   - 2026-10-05 #502 验收轮机内复发轻量形态（V1 LongCat 散文+代码 4042 字轮）：流末正常毕业 fire（tail=48ch 小尾，非巨批）同样触发重建窗——SGB ENTRIES n=28 → HFLICK PLAN 26→28 add=[#g0,#p] 条目插入 → 宿主 item 子树销毁重建（ItemP enter/leave 24ms 双翻转）→ 卡 4063→96 存根（d=-3967）→ pilot retained 40ms 回灌恢复（远快于在册 1.9s 慢灌）。结论①重建窗是 fire 的结构性代价（任何 fire 都插条目重排），巨批只是拉长窗口；结论②恢复速度取决于 pilot 保持链（本案 B3 live override 热路径在）。取证 journal 2026-10-05-a §6
   - 2026-10-05 第三次（V2@4201 LongCat 教程轮 t+16s 流中）：4810→96 d=-4714 后 2-chunk 恢复——毕业 fire 条目重排在两协议一致复现
+  - 2026-10-06 调研+首修（journal 2026-10-06-515）：勘误「1.9s 慢灌=refeedPacing」（实为自然 delta，冻结前缀 34ms 由 #g0 全高渲染）；定谳三事实：换装原子无塌洞/涟漪（r3 两帧沉降带，机制未钉死）/hitch 40-64ms（12Mbps 录屏放大至 850ms=观测污染）。F3 状态交接因库 append-only 约束弃；落地 F2：Arm 期预热解析入 MarkdownParsedStateCache+StreamShardContent 缓存接线（+3 单测，harness 实证 cached=true）。残留：涟漪观察面+hitch 余量可感知性→待用户验收裁决；mock 完结振荡独立立卡 #523
 
 ## P1 — 核心功能需求
 
+
+- [ ] **#523 mock 路径完结振荡——TurnFin 对齐 tail 96↔158 六周期 churn（shard-unreg+pilot 复位循环）** `v1,streaming,completion`
+  - V1 mock-md 完结 reconcile 条目身份churn：完结消息换 id 走整树换装而非 #509/#510 原地换名；tail 冻结尾行闪 3-4 次；#g0 不受扰；LongCat 轮无此形态 → docs/journal/2026-10-06-515-eof-megafire-window.md §4
 
 - [~] **#512 DSH 密码登录插件（dsh-password-login）——免捞 token 的会话铸造/密码生命周期/轮换全员下线** `dsh` `auth` `infra`
   - 独立仓库纯宿主插件（照 keepalive 骨架，GitHub 分发，零客户端 bundle）：未设密码态回环免密铸票 + 密码登录书签页 + 轮换即撤销全体会话（admit 包装 epoch）；oc-beacon 与浏览器均为消费者
