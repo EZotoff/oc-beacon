@@ -293,10 +293,19 @@ class ChatViewModel @Inject constructor(
             val sid = sessionLifecycle.sessionIdFlow.first { it.isNotEmpty() }
             val result = runCatching { sessionRepository.getSessionTodos(serverId, sid).getOrThrow() }
             _todoCapable.value = result.isSuccess
-            if (result.isFailure) {
-                dev.leonardo.ocbeacon.logging.AppLogger.i(
+            if (BuildConfig.DEBUG) {
+                AppLogger.d(
                     "ChatViewModel",
-                    "todo capability probe failed (hiding TODO tab): " + serverId,
+                    "#521-probe getSessionTodos sid=" + sid.take(16) +
+                        " -> " + (result.getOrNull()?.let { "ok n=" + it.size } ?: "fail"),
+                )
+            }
+            if (result.isFailure) {
+                // V2：隐藏 TODO 入口（运行时探测缺席）；DSH：静态声明不受影响
+                //（#521 三态语义——cache 冷 miss 抛失败防空表覆写，属预期路径）
+                AppLogger.i(
+                    "ChatViewModel",
+                    "todo capability probe failed (V2 hides entry; statically-declared servers unaffected): " + serverId,
                 )
             }
         }
@@ -1061,7 +1070,7 @@ class ChatViewModel @Inject constructor(
                     }
                 }.onFailure { e ->
                     if (e is CancellationException) throw e
-                    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                    if (BuildConfig.DEBUG) {
                         AppLogger.d(TAG, "session tokens bootstrap skipped: ${e.message}")
                     }
                 }

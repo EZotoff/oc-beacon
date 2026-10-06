@@ -57,6 +57,11 @@ class MiscEventHandler @Inject constructor() : SseEventHandler {
 
     /** REST hydrate（进会话补首屏 todo，2026-08-20）；与 SSE 路径同型幂等覆盖。 */
     fun setTodos(sessionId: String, todos: List<SseEvent.TodoUpdated.Todo>) {
+        if (BuildConfig.DEBUG) {
+            AppLogger.d(
+                "MiscEventHandler", "#521-probe setTodos sid=" + sessionId.take(16) + " n=" + todos.size,
+            )
+        }
         _todos.update { it + (sessionId to todos) }
     }
 
@@ -83,7 +88,15 @@ class MiscEventHandler @Inject constructor() : SseEventHandler {
 
     override fun handle(event: SseEvent, serverId: String): Boolean {
         return when (event) {
-            is SseEvent.TodoUpdated -> { _todos.update { it + (event.sessionId to event.todos) }; true }
+            is SseEvent.TodoUpdated -> {
+                if (BuildConfig.DEBUG) {
+                    AppLogger.d(
+                        "MiscEventHandler",
+                        "#521-probe TodoUpdated sid=" + event.sessionId.take(16) + " n=" + event.todos.size,
+                    )
+                }
+                _todos.update { it + (event.sessionId to event.todos) }; true
+            }
             is SseEvent.CommandsChanged -> { _commandsChanged.tryEmit(Unit); true } // #285：全局注册表通知
             // #323：command/run|done → 反馈行卡态（配对纯函数折叠，本类只做容器写）
             is SseEvent.CommandRunStarted -> {

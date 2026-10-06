@@ -6,6 +6,7 @@ import dev.leonardo.ocbeacon.data.api.UnsupportedServerCapability
 import dev.leonardo.ocbeacon.domain.model.DshGoalRef
 import dev.leonardo.ocbeacon.domain.model.ServerConnection
 import dev.leonardo.ocbeacon.domain.model.ServerType
+import dev.leonardo.ocbeacon.domain.model.SseEvent
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -140,8 +141,9 @@ class DshApiClientTest {
         val api = client(MockEngine { respond(ok("{}"), HttpStatusCode.OK, jsonHeaders()) })
         assertFalse(api.backgroundSession(conn, "s"))
         assertTrue(api.activeSessions(conn).isEmpty())
-        // #521：getSessionTodos 改真读 session.list 投影——空响应（行缺席）→ 空表降级
-        assertTrue(api.getSessionTodos(conn, "s").isEmpty())
+        // #521 三态语义：row 缺席（cache 冷 miss）→ 失败（防空表覆写竞态），非空表降级
+        val absent = runCatching { api.getSessionTodos(conn, "s") }
+        assertTrue(absent.isFailure && absent.exceptionOrNull() is IllegalStateException)
         assertTrue(api.listSessionStatus(conn).isEmpty())
         assertTrue(api.getSessionDiff(conn, "s").isEmpty())
         assertFalse(api.executeCommand(conn, "s", "cmd"))
@@ -174,8 +176,22 @@ class DshApiClientTest {
         assertEquals("in_progress", todos[0].status)
         assertEquals("medium", todos[0].priority)
         assertEquals("/api/session.list", captureRequests(engine).first().url.encodedPath)
-        // null tombstone（服务端 turn/start 清空）与投影缺席同归空表
+        // null 值（服务端 turn/start 清空后的合法空态）→ emptyList
         assertTrue(api.getSessionTodos(conn, "s2").isEmpty())
+    }
+
+    @Test
+    fun `getSessionTodos fails when todos projection key absent`() = runTest {
+        // #521 三态语义：行在但 values.todos 键缺席（持久 cache 冷 miss，重启丢
+        // 未 flush 行）——无数据 → 失败（onSuccess 空表覆写会竞态盖掉回放/帧真值）
+        val engine = MockEngine {
+            respond(
+                ok("""{"items":[{"sessionId":"s1","projections":{"asOfSeq":9,"values":{"goal":null}}}]}"""),
+                HttpStatusCode.OK, jsonHeaders(),
+            )
+        }
+        val keyAbsent = runCatching { client(engine).getSessionTodos(conn, "s1") }
+        assertTrue(keyAbsent.isFailure && keyAbsent.exceptionOrNull() is IllegalStateException)
     }
 
     @Test
@@ -414,6 +430,26 @@ class DshApiClientTest {
         assertEquals(1, page.messages[1].parts.size) // chunk 不进历史 fold
         assertNotNull(page.nextCursor) // hasMore=true → 下一页游标（页内最小 seq）
         assertEquals("5", page.nextCursor)
+    }
+
+    @Test
+    fun `listMessages first page carries last TodoUpdated as fallback only`() = runTest {
+        // #521 二层兜底：首页（before=null）携带 fold 内最后一笔 TodoUpdated；
+        // 旧页（before!=null）不携带（防新→旧翻页把快照倒退回旧值）
+        fun historyWithTodos() = """{"entries":[
+            {"event":{"type":"user/message","seq":5,"time":11,"data":{"content":[{"type":"text","text":"hi"}],"source":{"kind":"user"}}}},
+            {"event":{"type":"todo/write","seq":6,"time":12,"data":{"todos":[{"content":"旧清单","status":"pending"}]}}},
+            {"event":{"type":"todo/write","seq":7,"time":13,"data":{"todos":[{"content":"接入投影帧","status":"completed"},{"content":"真机验证","status":"in_progress"}]}}}
+        ],"hasMore":true}""".trimIndent()
+        val engine = MockEngine { respond(ok(historyWithTodos()), HttpStatusCode.OK, jsonHeaders()) }
+        val first = client(engine).listMessages(conn, "s-1")
+        val todos = first.transcriptEvents.filterIsInstance<SseEvent.TodoUpdated>()
+        assertEquals(1, todos.size) // takeLast(1)：只带最后一笔
+        assertEquals(2, todos.single().todos.size)
+        assertEquals("真机验证", todos.single().todos[1].content)
+        assertEquals("in_progress", todos.single().todos[1].status)
+        val older = client(engine).listMessages(conn, "s-1", before = "5")
+        assertTrue(older.transcriptEvents.filterIsInstance<SseEvent.TodoUpdated>().isEmpty())
     }
 
     /**

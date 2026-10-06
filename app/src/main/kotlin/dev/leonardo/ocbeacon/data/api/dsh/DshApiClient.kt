@@ -1015,19 +1015,31 @@ class DshApiClient @Inject constructor(
     // #521（2026-10-06）：DSH 无 REST todo 端点——权威现值改读 session.list 行的
     // projections.values.todos（dsh-tool-todo 投影：服务端已折叠 last-write-wins，
     // turn/start 清空）。probeTodoCapability 同位 hydrate 由此拿到真值；冷进补灌
-    // 双通道 = 本读 + session/control baseline 投影帧（mapper todos 键）。行缺席 /
-    // 投影缺席 / 值 null（未写或 turn/start 已清）→ 空表（能力位 TODOS 由 adapter
-    // 静态声明，不依赖本探测成败）。
+    // 多通道 = 本读 + session/control baseline 投影帧（mapper todos 键）+ listMessages
+    // 首页 TodoUpdated 兜底。
+    // **三态语义（E2E 定罪 2026-10-06）**：行/投影/todos 键**缺席** = 服务器持久
+    // cache 冷 miss（重启丢未 flush 行）——**无数据**，抛失败让 repository 跳过
+    // hydrate（返回空表会被 onSuccess 无条件覆写，竞态时序下盖掉回放/帧已补灌
+    // 的真值）；值 **null** = turn/start 清空后的合法空态 → emptyList（覆写正确）；
+    // 数组 = 真值。
     override suspend fun getSessionTodos(conn: ServerConnection, sessionId: String): List<TodoItem> {
-        val row = sessionRowOf(conn, sessionId) ?: return emptyList()
-        val todos = row.dshObj("projections")?.dshObj("values")?.get("todos")
-        if (todos !is JsonArray) return emptyList()
-        return todos.filterIsInstance<JsonObject>().map {
-            TodoItem(
-                content = it.dshStr("content") ?: "",
-                status = it.dshStr("status") ?: "pending",
-                priority = "medium",
-            )
+        val row = sessionRowOf(conn, sessionId)
+            ?: throw IllegalStateException("DSH todos unavailable: session row absent for $sessionId")
+        val values = row.dshObj("projections")?.dshObj("values")
+            ?: throw IllegalStateException("DSH todos unavailable: projections absent for $sessionId")
+        if (!values.containsKey("todos")) {
+            throw IllegalStateException("DSH todos unavailable: projection key absent (cold cache) for $sessionId")
+        }
+        return when (val todos = values["todos"]) {
+            is JsonNull -> emptyList()
+            is JsonArray -> todos.filterIsInstance<JsonObject>().map {
+                TodoItem(
+                    content = it.dshStr("content") ?: "",
+                    status = it.dshStr("status") ?: "pending",
+                    priority = "medium",
+                )
+            }
+            else -> throw IllegalStateException("DSH todos unavailable: unexpected value shape")
         }
     }
 
@@ -1139,10 +1151,20 @@ class DshApiClient @Inject constructor(
         val nextCursor = if (hasMore && minSeq != Long.MAX_VALUE) minSeq.toString() else null
         // #378：同窗卡族事件随页携带——历史加载方（SessionRepositoryImpl）dispatch
         // 后命令/压缩卡按 commandId/compactionId 幂等重建（与重连回填等价）。
+        // #521 二层兜底：**仅首页**（before=null = 最新窗口）附带 fold 内最后一笔
+        // TodoUpdated（journal 源）——服务器重启丢投影持久 cache 行时 REST 读空
+        //（cachedSnapshot cache-only，实测 2026-10-06），journal 折叠仍可用。只取
+        // takeLast(1)：整快照 last-wins 无歧义；旧页（before!=null）不携带，防
+        // 「新→旧」翻页把更新快照倒退回旧值。
+        val todosFallback = if (before == null) {
+            fold.sseEvents.filterIsInstance<SseEvent.TodoUpdated>().takeLast(1)
+        } else {
+            emptyList()
+        }
         return MessagePage(
             messages = messages,
             nextCursor = nextCursor,
-            transcriptEvents = DshTranscriptEvents.cardFamily(fold.sseEvents),
+            transcriptEvents = DshTranscriptEvents.cardFamily(fold.sseEvents) + todosFallback,
         )
     }
 
