@@ -1,6 +1,6 @@
 # 521-todos-hydrate（2026-10-06）
 
-> 状态：进行中
+> 状态：已完结（2026-10-06 真机腿 PASS 后迁移关卡）
 > 关联：（spec 路径，若有）·（issue 编号，若有）
 > 来源：用户反馈 / grilling / E2E / 顺带发现
 
@@ -39,3 +39,28 @@
 - 设备状态：houji 无线 adb 监听死亡（mDNS 应答器活着但 41571 拒连；30000-50000 全端口扫描零开放=无端口轮换；USB 未插；adb server 重启无效）。按定规不动设备系统设置——需用户插 USB 或重开「无线调试」。
 - 已前置：容器 dsh 重启带三受信形态（10.0.2.2:8181 / 127.0.0.1:8181 / 192.168.1.147:8181）；目标会话在列且 todos 键热（3 条）；LAN 直连 Bearer devpass 200；APK=dd957af0 已构建。
 - 恢复后 runbook（两接法任一）：①adb reverse tcp:8181 tcp:8181 + debug_url http://127.0.0.1:8181；②直连 debug_url http://192.168.1.147:8181（无需 reverse）。均带 --es debug_server_type dsh --es debug_password devpass --es debug_name PW-521-Device。流程：logcat -c → force-stop → intent → 会话列表点「用 todo_write 建立任务清单」→ FAB(≈1015,1840@1200x2670) → TODO → 截图+vision 断言 3 条（2✅+1🔄）→ logcat #521-probe 无空覆写 → 恶劣场景加验（容器删 todos 行+kill -9+重启再冷进一次）→ PASS 即迁移关卡。
+
+## 真机腿 E2E PASS（2026-10-06 17:19-17:21，houji 无线 adb 端口轮换 46835 恢复）
+
+- 连接：用户重开无线调试 → mDNS 双记录（新 46835 有效/旧 41571 残留）→ adb connect 46835。
+- 鉴权自愈实证（真机首见）：probe 401 → TokenNeeded → **auth recovered via PasswordMint(devpass)** → Online(protocol=V012, authenticated=true)——#512 回落链在 adb reverse（非回环对端）形态下工作。
+- 常态冷进全用户路径 PASS：force-stop → debug intent（PW-521-Device @127.0.0.1:8181 reverse→容器）→ 会话列表首位「用 todo_write 建立任务清单」→ 点进 → FAB(1120,2020@1200x2670) → TODO(1010,1352, 带角标"1") → **TodoSheet 渲染 3 条完整**（接入 todos 投影帧✅/写映射单测✅/真机验证冷进补灌🔄紫点），无空态文案。
+- 数据链（#521-probe 15 条）：连接期 dispatch last-wins n=3 → 进会话 setTodos n=3 + getSessionTodos **ok n=3**（真机 REST 读真值）→ TodoUpdated n=3 持续，**全程零空覆写**。
+- 恶劣场景（cache 丢行）真机不另造：尝试删 todos 行+kill -9+重启后 REST 冷读已带 3 条——服务器启动期 journal 折叠自动重落 cache 行（自愈路径实证）；KEY-ABSENT 竞态场景由模拟器复现实验+三态单测锁定（dd957af0），真机重复制造服务器竞态不可控且收益低。
+- 结论：三通道（REST/WS baseline/journal 兜底）在真机合力呈现 n=3 终态；完整 E2E 矩阵（模拟器双场景+真机常态+服务器腿实证+3909 单测）齐备。
+
+## 已完结卡片迁入（2026-10-06）
+
+### **#521 DSH TODO 冷进补灌——journal todo/write 快照折叠（live 已渲染，历史面缺口）** `dsh` `session`
+  - DSH 有 todo 域（0.2.0 dsh-tool-todo；todo/write 帧事件经 DshEventMapper:741 live 渲染 TodoUpdated）；wire 事件溯源无 REST hydrate 端点——冷进会话 TodoSheet 空到下一次写。
+  - 修法方向：DshHistoryFolder 折叠 journal 内 last todo/write 快照 → EventDispatcher.hydrateTodos（V1 REST hydrate 同位）。#495 勘误副产物（2026-10-06）。
+  - 设计转向（2026-10-06 实施时）：原方向 journal 折叠被服务端源码否决——dsh-tool-todo 注册 todos 投影（wire 整值，turn/start 清空），session/control baseline 每次 WS onOpen 全量携带 + session.list 行内嵌 projections.values。改双通道：(1) DshEventMapper session/projection 增 todos 键（baseline 合成帧/增量帧/null tombstone→空表）；(2) DshApiClient.getSessionTodos 真读 session.list 行投影（修 stub 空表覆写竞态）。commit 655b4498，3907/3907 绿。
+  - E2E 定罪+根修二轮（dd957af0）：模拟器冷进首轮 TodoSheet 空——竞态=probe REST（服务器持久 cache 冷 miss 时 todos 键缺席→空表）onSuccess 无条件覆写盖掉 backfill/帧已补灌真值，纯时序。根修=三态语义（键缺席=无数据→抛失败不 hydrate；值 null=turn/start 清空合法空态→空表；数组=真值）+ listMessages 首页（before=null）transcriptEvents 附带 fold 最后一笔 TodoUpdated（journal 源，takeLast(1) 防翻页倒退）。复现实验（删 cache todos 行+重启）终态 PASS：sheet 3 条完整。服务器腿实证：真实 todo_write 提交后 REST list 行/WS baseline 均携带；进会话 follow 流激活会话物化 cache。真机腿挂起：无线 adb 死亡（mDNS 残留端口拒连），待设备恢复补验。3909/3909 绿。
+  - 真机腿 PASS（2026-10-06 17:19）：PasswordMint 自愈→Online、冷进 TodoSheet 3 条完整（2✅+1🔄）、probe 链 ok n=3 零空覆写（15 条探针）。恶劣场景由模拟器复现+单测锁定；真机删行实验实证服务器启动期 journal 自愈重落。完整 E2E 矩阵齐备，按 2026-10-06 验收委派裁决迁移关卡。
+  - 迁入依据：完整端到端矩阵 PASS（用户 2026-10-06 裁决：完整 E2E 过即可完全关卡）：模拟器双场景（常态+cache 丢行恶劣复现）+ 真机常态冷进（TodoSheet 3 条视觉断言+probe 链零空覆写+PasswordMint 自愈）+ 服务器腿（真实 todo_write 提交后 REST/WS baseline 双通道实证）+ 单测 3909/3909；过程抓到并根修空表覆写竞态（dd957af0 三态语义+journal 首页兜底）。（backlog.sh migrate 2026-10-06）
+
+## 完结收口
+
+- 完整 E2E 矩阵（用户裁决门槛）：模拟器常态+恶劣（cache 丢行）双场景 PASS、真机常态冷进 PASS（TodoSheet 3 条视觉断言 / probe 链 15 条零空覆写 / PasswordMint 自愈 Online）、服务器腿 REST+WS baseline 双通道实证、单测 3909/3909。
+- 过程增量：E2E 定罪空表覆写竞态并三态根修（dd957af0）；原「journal 折叠」方向被服务端投影事实升级为三通道设计（655b4498）。
+- 卡片迁移依据：2026-10-06 验收委派裁决（完整 E2E 过即可关卡）。
