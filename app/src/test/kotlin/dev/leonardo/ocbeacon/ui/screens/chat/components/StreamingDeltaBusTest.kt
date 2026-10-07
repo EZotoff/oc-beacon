@@ -63,6 +63,29 @@ class StreamingDeltaBusTest {
     }
 
     @Test
+    fun `terminal part never published nor re-armed (#523 F2)`() {
+        motive("终态纪律：完结后滞留 delta 批触发的全量发布不得把已终态 part 写回 bus" +
+            "（B3 override 复活 → contentTerminal 翻 false → 终态揭示失效 = 完结塌缩放大器）")
+        // ① 纯终态首次发布：不入 bus
+        StreamingDeltaBus.publishParts(listOf(text("p1", "done text", end = 123L)))
+        assertNull("终态 part 首发不入", StreamingDeltaBus.live.value["p1"])
+        // ② 活跃期建立覆盖 → 同批内混入终态 part：活跃照常、终态撤销既有
+        StreamingDeltaBus.publishParts(listOf(text("p2", "streaming")))
+        assertTrue(StreamingDeltaBus.live.value.containsKey("p2"))
+        StreamingDeltaBus.publishParts(listOf(
+            text("p1", "done text", end = 123L),
+            text("p2", "streaming more"),
+            Part.Reasoning(
+                id = "p3", sessionId = "s1", messageId = "m1", text = "final thought",
+                time = Part.Reasoning.Time(start = 1L, end = 456L),
+            ),
+        ))
+        assertNull("终态 Text 撤销既有覆盖", StreamingDeltaBus.live.value["p1"])
+        assertNull("终态 Reasoning 不入 bus", StreamingDeltaBus.live.value["p3"])
+        assertEquals("活跃 part 不受同批终态影响", "streaming more", StreamingDeltaBus.live.value["p2"]?.text)
+    }
+
+    @Test
     fun `clearPart and clearParts drop coverage`() {
         motive("终态/批量撤销通道——完结与 REST 合并族的让位机制")
         StreamingDeltaBus.publishParts(listOf(text("p1", "a"), text("p2", "b")))
