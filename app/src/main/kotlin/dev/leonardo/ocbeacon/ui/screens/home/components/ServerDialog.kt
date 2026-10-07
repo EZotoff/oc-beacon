@@ -261,17 +261,20 @@ internal fun ServerDialog(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
-
-                        OutlinedTextField(
-                            value = password,
-                            onValueChange = { password = it },
-                            label = { Text(stringResource(R.string.server_password)) },
-                            visualTransformation = PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
                     }
+
+                    // #512 补口：DSH 密码框放开（可留空）——插件服务器的访问密码
+                    // 可在建站/编辑时直接填好（回落链 PasswordMint 消费，免横幅一步）；
+                    // 留空则保持横幅输入流程。OpenCode 分支维持原状。
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text(stringResource(R.string.server_password)) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     Surface(
                         shape = ShapeTokens.medium,
@@ -326,9 +329,10 @@ internal fun ServerDialog(
                                 onSave(
                                     finalName,
                                     normalizedUrl,
-                                    // DSH 无鉴权：字段已隐藏，恒定占位值（DSH 传输层忽略 auth）
+                                    // DSH 无用户名语义（传输层忽略 auth 用户名）：恒定占位
                                     if (isDsh) "opencode" else username.ifBlank { "opencode" },
-                                    if (isDsh) "" else password,
+                                    // #512：DSH 密码不再强制清空——插件访问密码可选预填
+                                    password,
                                     autoConnect,
                                     serverType
                                 )

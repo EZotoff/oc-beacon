@@ -123,7 +123,7 @@
     <string name="server_url_example">例如：http://192.168.0.10:4199 或 https://my-server:443</string>
     <string name="server_type_opencode">OpenCode</string>
     <string name="server_type_dsh">DSH</string>
-    <string name="server_type_dsh_hint">无需用户名和密码。USB 连接请先执行 adb reverse tcp:3080 tcp:3080</string>
+    <string name="server_type_dsh_hint">可选填访问密码：留空则连接后按横幅提示输入。USB 连接请先执行 adb reverse tcp:3080 tcp:3080</string>
     <string name="server_url_example_dsh">例如：http://127.0.0.1:3080（USB 经 adb reverse tcp:3080 tcp:3080）</string>
     <string name="server_add">添加服务器</string>
     <string name="session_rename">重命名会话</string>

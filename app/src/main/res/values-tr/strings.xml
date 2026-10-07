@@ -121,7 +121,7 @@
     <string name="server_url_example">örn. http://192.168.0.10:4199 veya https://my-server:443</string>
     <string name="server_type_opencode">OpenCode</string>
     <string name="server_type_dsh">DSH</string>
-    <string name="server_type_dsh_hint">Kullanıcı adı ve şifre gerekmez. USB için önce adb reverse tcp:3080 tcp:3080 komutunu çalıştırın</string>
+    <string name="server_type_dsh_hint">İsteğe bağlı erişim parolası: bağlantıdan sonra banner üzerinden girmek için boş bırakın. USB için önce adb reverse tcp:3080 tcp:3080 çalıştırın</string>
     <string name="server_url_example_dsh">örn. http://127.0.0.1:3080 USB üzerinden (adb reverse tcp:3080 tcp:3080)</string>
     <string name="server_add">Sunucu Ekle</string>
     <string name="session_rename">Oturumu Yeniden Adlandır</string>
