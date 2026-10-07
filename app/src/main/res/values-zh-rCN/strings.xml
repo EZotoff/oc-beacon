@@ -82,7 +82,6 @@
     <string name="icon">图标</string>
     <string name="add">添加</string>
     <string name="draft">草稿</string>
-    <string name="assign_tag">添加标签</string>
     <string name="tag_management_title">标签管理</string>
     <string name="new_tag">新增标签</string>
     <string name="edit_tag">编辑标签</string>
@@ -275,7 +274,6 @@
     <string name="chat_default_model">默认模型</string>
     <string name="chat_manage_models">管理模型</string>
     <string name="chat_output_truncated">输出已被服务器截断。完整输出已保存至：%1$s</string>
-    <string name="chat_question_label">问题</string>
     <string name="chat_permission_label">权限：%1$s</string>
     <string name="chat_interrupted">已中断：%1$s</string>
     <string name="chat_retry">重试 #%1$d：%2$s</string>
@@ -335,7 +333,6 @@
     <string name="chat_session_renamed">会话已重命名</string>
     <string name="chat_session_rename_failed">重命名失败</string>
     <string name="chat_menu_open_workspace">查看工作空间</string>
-    <string name="menu_quick_navigate">快速定位</string>
     <string name="menu_fork_session">分叉会话</string>
     <string name="menu_compact_session">压缩会话</string>
     <string name="menu_share_session">分享会话</string>
@@ -461,7 +458,6 @@
     <string name="server_settings_models">模型</string>
     <string name="server_settings_models_desc">模型可见性与默认设置</string>
     <string name="sessions_create_folder">新建目录</string>
-    <string name="sessions_create_folder_title">新建目录</string>
     <string name="sessions_create_folder_name_label">目录名称</string>
     <string name="sessions_create_folder_name_placeholder">my-project</string>
     <string name="sessions_create_folder_invalid_name">请输入有效的目录名称</string>
@@ -608,6 +604,9 @@
     <string name="sessions_view_folders">文件夹</string>
     <string name="sessions_view_recent">最近</string>
     <string name="sessions_clear_search">清除搜索</string>
+    <string name="terminal_copy">复制</string>
+    <string name="terminal_paste">粘贴</string>
+    <string name="terminal_more">更多…</string>
     <string name="terminal_new_tab">新建</string>
     <string name="terminal_keyboard">键盘</string>
     <string name="terminal_reconnect_tab">重连标签</string>
@@ -741,7 +740,9 @@
     <string name="dsh_job_status_failed">失败</string>
     <string name="shell_status_failed">失败</string>
     <string name="task_toolbar_action">任务转后台</string>
-    <string name="task_toolbar_subagents">%1$d 个子智能体正在前台运行</string>
+    <plurals name="task_toolbar_subagents">
+        <item quantity="other">%1$d 个子智能体正在前台运行</item>
+    </plurals>
     <string name="task_sheet_empty_subagents">没有运行中的子智能体</string>
     <string name="task_sheet_empty_shells">没有 Shell 命令</string>
     <!-- 2026-08-13：任务面板前台/后台标记 -->
@@ -861,10 +862,6 @@
     <string name="dsh_token_dialog_hint">密码或令牌</string>
     <string name="dsh_token_dialog_connect">连接</string>
     <string name="dsh_token_dialog_rejected">服务器拒绝了凭据。请检查后重试。</string>
-    <string name="server_pair_help_title">首次配对</string>
-    <string name="server_pair_help_manual">先连接；如需凭据，按提示输入访问密码（旧版服务器使用令牌）</string>
-    <string name="server_pair_help_adb">USB（dev 构建）：在宿主机运行 ./scripts/dsh-pair.sh，令牌自动注入</string>
-    <string name="server_pair_help_deeplink">或在宿主机运行 ./scripts/dsh-pair.sh --lan，扫描/点击 ocbeacon:// 链接自动填表</string>
 
     <!-- #324① DSH provider 目录/自定义增删 -->
     <string name="dsh_settings_loopback_required">此操作需要环回连接（adb reverse 到 127.0.0.1）。</string>

@@ -73,7 +73,7 @@
   - 真机（2026-10-06 quicksort 轮）：流中 reasoning part（dsh-t1s1_reasoning_ord_0，443 字节 payload）正常渲染+计时；完结 seq 换装后权威消息（seq-...b7e40eebd）parts 仅 3 个 text（4564/390/4555 字符）零 reasoning——思考卡随换装消失，重进亦无。与 #501（正文换装砸出）同族的 reasoning 面：流中可见完结即失
   - 待查：DSH 服务器权威 content 是否本就不含 reasoning（服务器侧形状）vs app 端 DshEventMapper 换装丢弃；对照 DSH 0.2.0 wire 文档 block 序列
 
-- [ ] **#514 DSH legacy token 基建退役（#512 批次④）——捞日志/adb 注入/深链配对清退** `dsh` `auth` `infra`
+- [~] **#514 DSH legacy token 基建退役（#512 批次④）——捞日志/adb 注入/深链配对清退** `dsh` `auth` `infra`
   - 前置：#512 dsh-password-login 插件用顺后另裁范围（用户已裁决方向，2026-10-05）。
   - 清退候选：宿主侧 token 镜像脚本（~/.dsh/sync-dsh-web-token.sh）、scripts/dsh-pair.sh 配对/adb 注入链、DshPairingParser 深链解析。
   - 预判保留：app 内 legacy 兜底（exchangeToken/token 持久化/输入 UI=回落链末级，服务无插件服务器）。开工时先列影响面清单请裁决再动手。
@@ -86,7 +86,7 @@
 
 ## P3 — 观察与低价值改进
 
-- [ ] **#531 文案清理二期——重复键合并/plurals 化/大小写全面统一** `i18n` `chore`
+- [~] **#531 文案清理二期——重复键合并/plurals 化/大小写全面统一** `i18n` `chore`
   - 一期已清 42 死键+9 修正（2026-10-08）；二期余项：add_tag/assign_tag 等同文重复键合并（需动调用点）、task_toolbar_subagents (s) hack 转 plurals（ar 六形态）、按钮/标题大小写全面 harmonize、chat_question_label androidTest 引用清退
   - → journal: docs/journal/2026-10-07-dsh-standard-bugs.md §13
 

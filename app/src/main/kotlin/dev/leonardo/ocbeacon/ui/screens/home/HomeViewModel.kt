@@ -47,8 +47,6 @@ data class HomeUiState(
     val connectionErrors: Map<String, String> = emptyMap(),
     val showAddServerDialog: Boolean = false,
     val editingServer: ServerConfig? = null,
-    /** #325②：配对深链预填的 DSH 服务器地址（null = 无预填）。 */
-    val pairPrefillUrl: String? = null,
     val isLoading: Boolean = true,
 )
 
@@ -267,20 +265,12 @@ class HomeViewModel @Inject constructor(
         _uiState.update { it.copy(showAddServerDialog = true, editingServer = null) }
     }
 
-    /**
-     * #325②：配对深链预填——打开添加对话框并预填 DSH 地址（token 已在
-     * 深链到达时后台交换；此处只填表，保存仍由用户确认）。
-     */
-    fun prefillAddServerDialog(url: String) {
-        _uiState.update { it.copy(showAddServerDialog = true, editingServer = null, pairPrefillUrl = url) }
-    }
-
     fun showEditServerDialog(server: ServerConfig) {
         _uiState.update { it.copy(showAddServerDialog = true, editingServer = server) }
     }
 
     fun hideServerDialog() {
-        _uiState.update { it.copy(showAddServerDialog = false, editingServer = null, pairPrefillUrl = null) }
+        _uiState.update { it.copy(showAddServerDialog = false, editingServer = null) }
     }
 
     fun saveServer(

@@ -80,7 +80,6 @@
     <string name="icon">Symbol</string>
     <string name="add">Hinzufügen</string>
     <string name="draft">Entwurf</string>
-    <string name="assign_tag">Tag hinzufügen</string>
     <string name="tag_management_title">Tag-Verwaltung</string>
     <string name="new_tag">Tag hinzufügen</string>
     <string name="edit_tag">Tag bearbeiten</string>
@@ -272,7 +271,6 @@
     <string name="chat_default_model">Standardmodell</string>
     <string name="chat_manage_models">Modelle verwalten</string>
     <string name="chat_output_truncated">Ausgabe vom Server gekürzt. Vollständige Ausgabe gespeichert unter: %1$s</string>
-    <string name="chat_question_label">Frage</string>
     <string name="chat_permission_label">Berechtigung: %1$s</string>
     <string name="chat_interrupted">Unterbrochen: %1$s</string>
     <string name="chat_retry">Wiederholung #%1$d: %2$s</string>
@@ -444,7 +442,6 @@
     <string name="server_settings_models">Modelle</string>
     <string name="server_settings_models_desc">Modell-Sichtbarkeit und Standardwerte</string>
     <string name="sessions_create_folder">Verzeichnis erstellen</string>
-    <string name="sessions_create_folder_title">Verzeichnis erstellen</string>
     <string name="sessions_create_folder_name_label">Verzeichnisname</string>
     <string name="sessions_create_folder_name_placeholder">my-project</string>
     <string name="sessions_create_folder_invalid_name">Gib einen gültigen Verzeichnisnamen ein</string>
@@ -594,6 +591,9 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="sessions_view_folders">Ordner</string>
     <string name="sessions_view_recent">Letzte</string>
     <string name="sessions_clear_search">Suche löschen</string>
+    <string name="terminal_copy">Kopieren</string>
+    <string name="terminal_paste">Einfügen</string>
+    <string name="terminal_more">Mehr…</string>
     <string name="terminal_new_tab">Neu</string>
     <string name="terminal_keyboard">Tastatur</string>
     <string name="terminal_reconnect_tab">Tab neu verbinden</string>
@@ -692,7 +692,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="report_attach_full_log">Vollständiges Diagnoseprotokoll anhängen (geheimes Gist; für jeden mit dem Link lesbar)</string>
     <string name="report_close">Schließen</string>
     <string name="diagnostics_title">Diagnose</string>
-    <string name="menu_quick_navigate">Schnellnavigation</string>
     <string name="pdf_next_page">Nächste Seite</string>
     <string name="pdf_previous_page">Vorherige Seite</string>
     <string name="server_settings_oauth_failed">OAuth konnte nicht abgeschlossen werden</string>
@@ -738,7 +737,10 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="dsh_job_status_failed">Fehlgeschlagen</string>
     <string name="shell_status_failed">Fehlgeschlagen</string>
     <string name="task_toolbar_action">Aufgabe in den Hintergrund verschieben</string>
-    <string name="task_toolbar_subagents">%1$d Subagent(en) im Vordergrund aktiv</string>
+    <plurals name="task_toolbar_subagents">
+        <item quantity="one">%1$d Subagent läuft im Vordergrund</item>
+        <item quantity="other">%1$d Subagents laufen im Vordergrund</item>
+    </plurals>
     <string name="task_sheet_empty_subagents">Keine laufenden Subagenten</string>
     <string name="task_sheet_empty_shells">Keine Shell-Befehle</string>
     <!-- 2026-08-13：任务面板前台/后台标记 -->
@@ -858,10 +860,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="dsh_token_dialog_hint">Passwort oder Token</string>
     <string name="dsh_token_dialog_connect">Verbinden</string>
     <string name="dsh_token_dialog_rejected">Zugangsdaten vom Server abgelehnt. Bitte prüfen und erneut versuchen.</string>
-    <string name="server_pair_help_title">Erstkopplung</string>
-    <string name="server_pair_help_manual">Zuerst verbinden; falls Zugangsdaten nötig sind, das Zugangspasswort bei Aufforderung eingeben (ältere Server verwenden einen Token)</string>
-    <string name="server_pair_help_adb">USB (Dev-Builds): Führen Sie ./scripts/dsh-pair.sh auf dem Host aus — das Token wird automatisch eingefügt</string>
-    <string name="server_pair_help_deeplink">Oder führen Sie ./scripts/dsh-pair.sh --lan auf dem Host aus und scannen oder tippen Sie auf den ocbeacon://-Link, um dieses Formular vorzufüllen</string>
 
     <!-- #324① DSH provider 目录/自定义增删 -->
     <string name="dsh_settings_loopback_required">Diese Aktion erfordert eine Loopback-Verbindung (adb reverse zu 127.0.0.1).</string>

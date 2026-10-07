@@ -80,7 +80,6 @@
     <string name="icon">الأيقونة</string>
     <string name="add">إضافة</string>
     <string name="draft">مسودة</string>
-    <string name="assign_tag">إضافة وسم</string>
     <string name="tag_management_title">إدارة الوسوم</string>
     <string name="new_tag">إضافة وسم</string>
     <string name="edit_tag">تعديل الوسم</string>
@@ -288,7 +287,6 @@
     <string name="chat_default_model">النموذج الافتراضي</string>
     <string name="chat_manage_models">إدارة النماذج</string>
     <string name="chat_output_truncated">تم اقتطاع المخرجات بواسطة الخادم. المخرجات الكاملة محفوظة في: %1$s</string>
-    <string name="chat_question_label">سؤال</string>
     <string name="chat_permission_label">الإذن: %1$s</string>
     <string name="chat_interrupted">تم الإيقاف: %1$s</string>
     <string name="chat_retry">إعادة المحاولة رقم #%1$d: %2$s</string>
@@ -460,7 +458,6 @@
     <string name="server_settings_models">النماذج</string>
     <string name="server_settings_models_desc">ظهور النماذج والإعدادات الافتراضية</string>
     <string name="sessions_create_folder">إنشاء مجلد</string>
-    <string name="sessions_create_folder_title">إنشاء مجلد</string>
     <string name="sessions_create_folder_name_label">اسم المجلد</string>
     <string name="sessions_create_folder_name_placeholder">my-project</string>
     <string name="sessions_create_folder_invalid_name">أدخل اسم مجلد صالح</string>
@@ -610,6 +607,9 @@
     <string name="sessions_view_folders">المجلدات</string>
     <string name="sessions_view_recent">الأحدث</string>
     <string name="sessions_clear_search">مسح البحث</string>
+    <string name="terminal_copy">نسخ</string>
+    <string name="terminal_paste">لصق</string>
+    <string name="terminal_more">المزيد…</string>
     <string name="terminal_new_tab">جديد</string>
     <string name="terminal_keyboard">لوحة المفاتيح</string>
     <string name="terminal_reconnect_tab">إعادة اتصال العلامة</string>
@@ -708,7 +708,6 @@
     <string name="report_attach_full_log">إرفاق سجل التشخيص الكامل (gist سري؛ يمكن لأي شخص لديه الرابط قراءته)</string>
     <string name="report_close">إغلاق</string>
     <string name="diagnostics_title">التشخيص</string>
-    <string name="menu_quick_navigate">تنقل سريع</string>
     <string name="pdf_next_page">الصفحة التالية</string>
     <string name="pdf_previous_page">الصفحة السابقة</string>
     <string name="server_settings_oauth_failed">فشل إكمال OAuth</string>
@@ -754,7 +753,14 @@
     <string name="dsh_job_status_failed">فشل</string>
     <string name="shell_status_failed">فشل</string>
     <string name="task_toolbar_action">نقل المهمة إلى الخلفية</string>
-    <string name="task_toolbar_subagents">%1$d وكيل فرعي نشط في المقدمة</string>
+    <plurals name="task_toolbar_subagents">
+        <item quantity="zero">لا يوجد مشغّل فرعي يعمل في المقدمة</item>
+        <item quantity="one">%1$d مشغّل فرعي يعمل في المقدمة</item>
+        <item quantity="two">مشغّلان فرعيان يعملان في المقدمة</item>
+        <item quantity="few">%1$d مشغّلات فرعية تعمل في المقدمة</item>
+        <item quantity="many">%1$d مشغّلًا فرعيًا يعمل في المقدمة</item>
+        <item quantity="other">%1$d مشغّلين فرعيين يعملون في المقدمة</item>
+    </plurals>
     <string name="task_sheet_empty_subagents">لا توجد وكلاء فرعيون قيد التشغيل</string>
     <string name="task_sheet_empty_shells">لا توجد أوامر شل</string>
     <!-- 2026-08-13：任务面板前台/后台标记 -->
@@ -874,10 +880,6 @@
     <string name="dsh_token_dialog_hint">كلمة المرور أو الرمز</string>
     <string name="dsh_token_dialog_connect">اتصال</string>
     <string name="dsh_token_dialog_rejected">رفض الخادم بيانات الاعتماد. تحقق منها وحاول مرة أخرى.</string>
-    <string name="server_pair_help_title">الإقران الأول</string>
-    <string name="server_pair_help_manual">اتصل أولاً؛ وإذا طُلبت بيانات الاعتماد، أدخل كلمة مرور الوصول عند المطالبة (الخوادم القديمة تستخدم رمزاً)</string>
-    <string name="server_pair_help_adb">عبر USB (إصدارات التطوير): شغّل ./scripts/dsh-pair.sh على المضيف — يتم إدخال الرمز تلقائيًا</string>
-    <string name="server_pair_help_deeplink">أو شغّل ./scripts/dsh-pair.sh --lan على المضيف وامسح رابط ocbeacon:// أو انقر عليه لتعبئة هذا النموذج تلقائيًا</string>
 
     <!-- #324① DSH provider 目录/自定义增删 -->
     <string name="dsh_settings_loopback_required">يتطلب هذا الإجراء اتصال loopback (عبر adb reverse إلى 127.0.0.1).</string>

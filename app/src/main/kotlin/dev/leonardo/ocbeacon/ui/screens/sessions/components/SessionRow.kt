@@ -575,7 +575,7 @@ private fun SessionDetailsDialog(
                         colors = ButtonTokens.filledColors(),
                         border = ButtonTokens.amoledBorder(),
                     ) {
-                        Text(stringResource(R.string.assign_tag))
+                        Text(stringResource(R.string.add_tag))
                     }
                     // 同步动作（#353 打磨并入动作栈）：同步中→「取消同步」可打断；
                     // 已同步→禁用（drain 已全量）；其余→「同步全部历史」可触发

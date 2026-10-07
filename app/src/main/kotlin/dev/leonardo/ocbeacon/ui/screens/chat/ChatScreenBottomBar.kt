@@ -36,6 +36,7 @@ import dev.leonardo.ocbeacon.ui.components.ConfirmDialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextRange
@@ -110,7 +111,7 @@ internal fun ChatScreenBottomBar(
     val clipboard = LocalClipboard.current
     val taskUi by viewModel.taskUiState.collectAsStateWithLifecycle()
     val taskToolbarText = if (taskUi.foregroundSubagentCount > 0) {
-        stringResource(R.string.task_toolbar_subagents, taskUi.foregroundSubagentCount)
+        pluralStringResource(R.plurals.task_toolbar_subagents, taskUi.foregroundSubagentCount, taskUi.foregroundSubagentCount)
     } else ""
     // #276 能力位门控：DSH 无 command 执行端点——斜杠命令面板与 /cmd 发送拦截均停用
     val serverCapabilities by viewModel.serverCapabilities.collectAsStateWithLifecycle()

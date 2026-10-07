@@ -80,7 +80,6 @@
     <string name="icon">Іконка</string>
     <string name="add">Додати</string>
     <string name="draft">Чернетка</string>
-    <string name="assign_tag">Додати тег</string>
     <string name="tag_management_title">Керування тегами</string>
     <string name="new_tag">Додати тег</string>
     <string name="edit_tag">Редагувати тег</string>
@@ -280,7 +279,6 @@
     <string name="chat_default_model">Модель за замовчуванням</string>
     <string name="chat_manage_models">Керувати моделями</string>
     <string name="chat_output_truncated">Вивід скорочено сервером. Повний вивід збережено в: %1$s</string>
-    <string name="chat_question_label">Питання</string>
     <string name="chat_permission_label">Дозвіл: %1$s</string>
     <string name="chat_interrupted">Перервано: %1$s</string>
     <string name="chat_retry">Повтор #%1$d: %2$s</string>
@@ -452,7 +450,6 @@
     <string name="server_settings_models">Моделі</string>
     <string name="server_settings_models_desc">Видимість моделей та типові налаштування</string>
     <string name="sessions_create_folder">Створити каталог</string>
-    <string name="sessions_create_folder_title">Створити каталог</string>
     <string name="sessions_create_folder_name_label">Назва каталогу</string>
     <string name="sessions_create_folder_name_placeholder">my-project</string>
     <string name="sessions_create_folder_invalid_name">Введіть коректну назву каталогу</string>
@@ -602,6 +599,9 @@
     <string name="sessions_view_folders">Папки</string>
     <string name="sessions_view_recent">Нещодавні</string>
     <string name="sessions_clear_search">Очистити пошук</string>
+    <string name="terminal_copy">Копіювати</string>
+    <string name="terminal_paste">Вставити</string>
+    <string name="terminal_more">Більше…</string>
     <string name="terminal_new_tab">Нова</string>
     <string name="terminal_keyboard">Клавіатура</string>
     <string name="terminal_reconnect_tab">Перепідключити</string>
@@ -700,7 +700,6 @@
     <string name="report_attach_full_log">Додати повний діагностичний журнал (таємний gist; доступний кожному, хто має посилання)</string>
     <string name="report_close">Закрити</string>
     <string name="diagnostics_title">Діагностика</string>
-    <string name="menu_quick_navigate">Швидка навігація</string>
     <string name="pdf_next_page">Наступна сторінка</string>
     <string name="pdf_previous_page">Попередня сторінка</string>
     <string name="server_settings_oauth_failed">Не вдалося завершити OAuth</string>
@@ -746,7 +745,10 @@
     <string name="dsh_job_status_failed">Не виконано</string>
     <string name="shell_status_failed">Не виконано</string>
     <string name="task_toolbar_action">Перемістити завдання у фон</string>
-    <string name="task_toolbar_subagents">%1$d субагент(ів) на передньому плані</string>
+    <plurals name="task_toolbar_subagents">
+        <item quantity="one">%1$d субагент працює на передньому плані</item>
+        <item quantity="other">%1$d субагентів працює на передньому плані</item>
+    </plurals>
     <string name="task_sheet_empty_subagents">Немає запущених субагентів</string>
     <string name="task_sheet_empty_shells">Немає команд shell</string>
     <!-- 2026-08-13：任务面板前台/后台标记 -->
@@ -866,10 +868,6 @@
     <string name="dsh_token_dialog_hint">Пароль або токен</string>
     <string name="dsh_token_dialog_connect">Підключитися</string>
     <string name="dsh_token_dialog_rejected">Облікові дані відхилено сервером. Перевірте їх і спробуйте ще раз.</string>
-    <string name="server_pair_help_title">Перше з\'єднання</string>
-    <string name="server_pair_help_manual">Спочатку підключіться; якщо потрібні облікові дані, введіть пароль доступу після запиту (застарілі сервери використовують токен)</string>
-    <string name="server_pair_help_adb">Через USB (dev-збірки): запустіть ./scripts/dsh-pair.sh на хості — токен буде введено автоматично</string>
-    <string name="server_pair_help_deeplink">Або запустіть ./scripts/dsh-pair.sh --lan на хості та відскануйте або торкніться посилання ocbeacon://, щоб заповнити цю форму</string>
 
     <!-- #324① DSH provider 目录/自定义增删 -->
     <string name="dsh_settings_loopback_required">Ця дія потребує loopback-з\'єднання (adb reverse до 127.0.0.1).</string>

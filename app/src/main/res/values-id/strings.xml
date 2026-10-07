@@ -215,7 +215,6 @@
     <string name="chat_default_model">Model bawaan</string>
     <string name="chat_manage_models">Kelola model</string>
     <string name="chat_output_truncated">Output dipotong oleh server. Output lengkap disimpan di: %1$s</string>
-    <string name="chat_question_label">Pertanyaan</string>
     <string name="chat_permission_label">Izin: %1$s</string>
     <string name="chat_interrupted">Dihentikan: %1$s</string>
     <string name="chat_retry">Ulang #%1$d: %2$s</string>
@@ -357,7 +356,6 @@
     <string name="icon">Ikon</string>
     <string name="add">Tambah</string>
     <string name="draft">Draf</string>
-    <string name="assign_tag">Tambah tag</string>
     <string name="tag_management_title">Manajemen tag</string>
     <string name="new_tag">Tambah tag</string>
     <string name="edit_tag">Edit tag</string>
@@ -450,7 +448,6 @@
     <string name="server_settings_models">Model</string>
     <string name="server_settings_models_desc">Visibilitas dan default model</string>
     <string name="sessions_create_folder">Buat direktori</string>
-    <string name="sessions_create_folder_title">Buat direktori</string>
     <string name="sessions_create_folder_name_label">Nama direktori</string>
     <string name="sessions_create_folder_name_placeholder">my-project</string>
     <string name="sessions_create_folder_invalid_name">Masukkan nama direktori yang valid</string>
@@ -600,6 +597,9 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="sessions_view_folders">Folder</string>
     <string name="sessions_view_recent">Terbaru</string>
     <string name="sessions_clear_search">Hapus pencarian</string>
+    <string name="terminal_copy">Salin</string>
+    <string name="terminal_paste">Tempel</string>
+    <string name="terminal_more">Lainnya…</string>
     <string name="terminal_new_tab">Baru</string>
     <string name="terminal_keyboard">Keyboard</string>
     <string name="terminal_reconnect_tab">Hubungkan ulang tab</string>
@@ -698,7 +698,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="report_attach_full_log">Lampirkan log diagnostik lengkap (gist rahasia; dapat dibaca siapa pun yang memiliki tautannya)</string>
     <string name="report_close">Tutup</string>
     <string name="diagnostics_title">Diagnostik</string>
-    <string name="menu_quick_navigate">Navigasi cepat</string>
     <string name="pdf_next_page">Halaman berikutnya</string>
     <string name="pdf_previous_page">Halaman sebelumnya</string>
     <string name="server_settings_oauth_failed">Gagal menyelesaikan OAuth</string>
@@ -744,7 +743,10 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="dsh_job_status_failed">Gagal</string>
     <string name="shell_status_failed">Gagal</string>
     <string name="task_toolbar_action">Pindahkan tugas ke latar belakang</string>
-    <string name="task_toolbar_subagents">%1$d subagen berjalan di latar depan</string>
+    <plurals name="task_toolbar_subagents">
+        <item quantity="one">%1$d subagen berjalan di latar depan</item>
+        <item quantity="other">%1$d subagen berjalan di latar depan</item>
+    </plurals>
     <string name="task_sheet_empty_subagents">Tidak ada subagen yang berjalan</string>
     <string name="task_sheet_empty_shells">Tidak ada perintah shell</string>
     <!-- 2026-08-13：任务面板前台/后台标记 -->
@@ -864,10 +866,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="dsh_token_dialog_hint">Kata sandi atau token</string>
     <string name="dsh_token_dialog_connect">Hubungkan</string>
     <string name="dsh_token_dialog_rejected">Kredensial ditolak oleh server. Periksa dan coba lagi.</string>
-    <string name="server_pair_help_title">Pemasangan pertama</string>
-    <string name="server_pair_help_manual">Sambungkan dulu; jika kredensial diperlukan, masukkan kata sandi akses saat diminta (server lama menggunakan token)</string>
-    <string name="server_pair_help_adb">USB (build dev): jalankan ./scripts/dsh-pair.sh di host — token disuntikkan otomatis</string>
-    <string name="server_pair_help_deeplink">Atau jalankan ./scripts/dsh-pair.sh --lan di host lalu pindai atau ketuk tautan ocbeacon:// untuk mengisi formulir ini</string>
 
     <!-- #324① DSH provider 目录/自定义增删 -->
     <string name="dsh_settings_loopback_required">Tindakan ini memerlukan koneksi loopback (adb reverse ke 127.0.0.1).</string>

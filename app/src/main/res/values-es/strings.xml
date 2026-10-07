@@ -80,7 +80,6 @@
     <string name="icon">Icono</string>
     <string name="add">Añadir</string>
     <string name="draft">Borrador</string>
-    <string name="assign_tag">Añadir etiqueta</string>
     <string name="tag_management_title">Gestión de etiquetas</string>
     <string name="new_tag">Añadir etiqueta</string>
     <string name="edit_tag">Editar etiqueta</string>
@@ -272,7 +271,6 @@
     <string name="chat_default_model">Modelo predeterminado</string>
     <string name="chat_manage_models">Administrar modelos</string>
     <string name="chat_output_truncated">Salida truncada por el servidor. La salida completa se guardó en: %1$s</string>
-    <string name="chat_question_label">Pregunta</string>
     <string name="chat_permission_label">Permiso: %1$s</string>
     <string name="chat_interrupted">Interrumpido: %1$s</string>
     <string name="chat_retry">Reintento #%1$d: %2$s</string>
@@ -444,7 +442,6 @@
     <string name="server_settings_models">Modelos</string>
     <string name="server_settings_models_desc">Visibilidad y valores predeterminados de modelos</string>
     <string name="sessions_create_folder">Crear directorio</string>
-    <string name="sessions_create_folder_title">Crear directorio</string>
     <string name="sessions_create_folder_name_label">Nombre del directorio</string>
     <string name="sessions_create_folder_name_placeholder">my-project</string>
     <string name="sessions_create_folder_invalid_name">Ingresa un nombre de directorio válido</string>
@@ -594,6 +591,9 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="sessions_view_folders">Carpetas</string>
     <string name="sessions_view_recent">Recientes</string>
     <string name="sessions_clear_search">Borrar búsqueda</string>
+    <string name="terminal_copy">Copiar</string>
+    <string name="terminal_paste">Pegar</string>
+    <string name="terminal_more">Más…</string>
     <string name="terminal_new_tab">Nueva</string>
     <string name="terminal_keyboard">Teclado</string>
     <string name="terminal_reconnect_tab">Reconectar pestaña</string>
@@ -692,7 +692,6 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="report_attach_full_log">Adjuntar el registro de diagnóstico completo (gist secreto; legible por cualquiera con el enlace)</string>
     <string name="report_close">Cerrar</string>
     <string name="diagnostics_title">Diagnóstico</string>
-    <string name="menu_quick_navigate">Navegación rápida</string>
     <string name="pdf_next_page">Página siguiente</string>
     <string name="pdf_previous_page">Página anterior</string>
     <string name="server_settings_oauth_failed">Error al completar OAuth</string>
@@ -738,7 +737,10 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="dsh_job_status_failed">Fallido</string>
     <string name="shell_status_failed">Fallido</string>
     <string name="task_toolbar_action">Mover tarea a segundo plano</string>
-    <string name="task_toolbar_subagents">%1$d subagente(s) ejecutándose en primer plano</string>
+    <plurals name="task_toolbar_subagents">
+        <item quantity="one">%1$d subagente ejecutándose en primer plano</item>
+        <item quantity="other">%1$d subagentes ejecutándose en primer plano</item>
+    </plurals>
     <string name="task_sheet_empty_subagents">No hay subagentes en ejecución</string>
     <string name="task_sheet_empty_shells">No hay comandos shell</string>
     <!-- 2026-08-13：任务面板前台/后台标记 -->
@@ -858,10 +860,6 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="dsh_token_dialog_hint">Contraseña o token</string>
     <string name="dsh_token_dialog_connect">Conectar</string>
     <string name="dsh_token_dialog_rejected">El servidor rechazó la credencial. Compruébala e inténtalo de nuevo.</string>
-    <string name="server_pair_help_title">Emparejamiento inicial</string>
-    <string name="server_pair_help_manual">Conecta primero; si se requiere credencial, introduce la contraseña de acceso cuando se solicite (los servidores antiguos usan token)</string>
-    <string name="server_pair_help_adb">USB (versiones dev): ejecute ./scripts/dsh-pair.sh en el host; el token se inyecta automáticamente</string>
-    <string name="server_pair_help_deeplink">O ejecute ./scripts/dsh-pair.sh --lan en el host y escanee o toque el enlace ocbeacon:// para rellenar este formulario</string>
 
     <!-- #324① DSH provider 目录/自定义增删 -->
     <string name="dsh_settings_loopback_required">Esta acción requiere una conexión loopback (adb reverse a 127.0.0.1).</string>

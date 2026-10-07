@@ -213,44 +213,6 @@ internal fun ServerDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // #325：DSH 首次配对辅助区（三通道指引——粘贴手动[现状]/
-                    // adb 注入[dev]/深链填表；轻量自有形态，无新增依赖）
-                    if (isDsh) {
-                        Surface(
-                            shape = ShapeTokens.medium,
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = AlphaTokens.FAINT),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = AlphaTokens.FAINT)),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                                verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.server_pair_help_title),
-                                    style = MaterialTheme.typography.titleSmall,
-                                )
-                                Text(
-                                    text = stringResource(R.string.server_pair_help_manual),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    text = stringResource(R.string.server_pair_help_adb),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    text = stringResource(R.string.server_pair_help_deeplink),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-
                     // #276：DSH 无鉴权（§2.1）——用户名/密码字段隐藏
                     if (!isDsh) {
                         OutlinedTextField(

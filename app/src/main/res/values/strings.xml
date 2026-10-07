@@ -4,7 +4,7 @@
     
     <!-- Home Screen -->
     <string name="home_title">OC Beacon</string>
-    <string name="home_add_server">Add Server</string>
+    <string name="home_add_server">Add server</string>
     <string name="home_no_servers">No servers configured</string>
     <string name="home_server_health_good">Connected</string>
     <string name="home_connect">Connect</string>
@@ -17,7 +17,7 @@
     <string name="home_battery_message">Background connections may be killed. Tap to disable optimization.</string>
     
     <!-- Server Management -->
-    <string name="server_name">Server Name</string>
+    <string name="server_name">Server name</string>
     <string name="server_name_hint">My OpenCode Server</string>
     <string name="server_url">Server URL</string>
     <string name="server_url_hint">http://192.168.1.100:4199</string>
@@ -32,7 +32,7 @@
     <string name="server_save">Save</string>
     <string name="server_cancel">Cancel</string>
     <string name="server_delete">Delete</string>
-    <string name="server_add">Add Server</string>
+    <string name="server_add">Add server</string>
     <string name="server_invalid_url">Invalid URL format</string>
     <string name="server_auto_connect">Auto-connect on app launch</string>
     <string name="server_auto_connect_desc">Automatically connect when the app starts</string>
@@ -40,9 +40,8 @@
     <!-- Session Screen -->
     <string name="sessions_title">Sessions</string>
     <string name="search_sessions">Search sessions…</string>
-    <string name="sessions_new">New Session</string>
+    <string name="sessions_new">New session</string>
     <string name="sessions_create_folder">Create directory</string>
-    <string name="sessions_create_folder_title">Create directory</string>
     <string name="sessions_create_folder_name_label">Directory name</string>
     <string name="sessions_create_folder_name_placeholder">my-project</string>
     <string name="sessions_create_folder_invalid_name">Enter a valid directory name</string>
@@ -59,7 +58,7 @@
     <string name="sessions_retrying">Retrying</string>
     <string name="session_pending_question">Pending answer</string>
     <string name="session_pending_approval">Pending approval</string>
-    <string name="sessions_create_session">Create Session</string>
+    <string name="sessions_create_session">Create session</string>
     <string name="session_status_idle">Idle</string>
     <string name="session_status_busy">Working…</string>
     <string name="session_status_retry_countdown">Retrying in %1$d s</string>
@@ -71,18 +70,18 @@
     <string name="command_feedback_completed">Completed</string>
     <string name="command_feedback_failed">Failed</string>
     <string name="command_feedback_a11y_running">Command execution in progress</string>
-    <string name="session_rename">Rename Session</string>
+    <string name="session_rename">Rename session</string>
     <string name="session_rename_title">Title</string>
     <string name="session_rename_button">Rename</string>
-    <string name="session_delete">Delete Session</string>
+    <string name="session_delete">Delete session</string>
     <string name="session_delete_confirm">Delete \"%1$s\"? This cannot be undone.</string>
     <string name="session_menu_archive">Archive</string>
     <string name="session_archived_section_title">Archived (%1$d)</string>
     <string name="session_archive_failed">Failed to archive session</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
-    <string name="session_directory_details">Directory Details</string>
-    <string name="session_session_details">Session Details</string>
+    <string name="session_directory_details">Directory details</string>
+    <string name="session_session_details">Session details</string>
     <string name="session_details_name">Name</string>
     <string name="session_untitled">Untitled session</string>
     <string name="session_unknown_error">Unknown error</string>
@@ -103,7 +102,7 @@
     <string name="session_details_diff_summary">+%1$d −%2$d (%3$d files)</string>
 
     <!-- #271：会话历史同步（drain）状态——唯一展示面=长按菜单（2026-08-30 四轮定稿） -->
-    <string name="session_sync_section">History Sync</string>
+    <string name="session_sync_section">History sync</string>
     <string name="session_sync_state_none">Not synced</string>
     <string name="session_sync_state_syncing">Syncing…</string>
     <string name="session_sync_state_synced">Synced</string>
@@ -269,7 +268,6 @@
     <string name="chat_default_model">Default model</string>
     <string name="chat_manage_models">Manage models</string>
     <string name="chat_output_truncated">Output truncated by server. Full output saved to: %1$s</string>
-    <string name="chat_question_label">Question</string>
     <string name="chat_permission_label">Permission: %1$s</string>
     <string name="chat_interrupted">Interrupted: %1$s</string>
     <string name="chat_retry">Retry #%1$d: %2$s</string>
@@ -311,7 +309,10 @@
     <string name="queue_action_failed">Queue action failed</string>
     <string name="shell_status_failed">Failed</string>
     <string name="task_toolbar_action">Move task to background</string>
-    <string name="task_toolbar_subagents">%1$d subagent(s) running in foreground</string>
+    <plurals name="task_toolbar_subagents">
+        <item quantity="one">%1$d subagent running in foreground</item>
+        <item quantity="other">%1$d subagents running in foreground</item>
+    </plurals>
     <string name="task_sheet_empty_subagents">No running subagents</string>
     <string name="task_sheet_empty_shells">No shell commands</string>
     <!-- 2026-08-13：任务面板前台/后台标记（子代理阻塞主会话 = 前台） -->
@@ -368,7 +369,7 @@
     <!-- Patch File Actions -->
     
     <!-- Permissions -->
-    <string name="permission_title">Permission Required</string>
+    <string name="permission_title">Permission required</string>
     <string name="permission_allow_once">Once</string>
     <string name="permission_allow_always">Always</string>
     <string name="permission_deny">Reject</string>
@@ -425,8 +426,8 @@
     <string name="settings_confirm_send_desc">Show confirmation dialog before sending a message</string>
     <string name="settings_section_general">General</string>
     <string name="settings_section_appearance">Appearance</string>
-    <string name="settings_section_chat_display">Chat Display</string>
-    <string name="settings_section_chat_behavior">Chat Behavior</string>
+    <string name="settings_section_chat_display">Chat display</string>
+    <string name="settings_section_chat_behavior">Chat behavior</string>
     <string name="settings_section_notifications">Notifications</string>
     <string name="settings_section_advanced">Advanced</string>
     <string name="settings_confirm_send_title">Send message?</string>
@@ -509,10 +510,10 @@
     <string name="notification_test_body">If you can see this notification, delivery is working.</string>
     <string name="a11y_settings_notif_test">Send test notification</string>
     <string name="a11y_settings_notif_system">System notification settings</string>
-    <string name="dialog_select_reconnect_mode">Select Reconnect Mode</string>
+    <string name="dialog_select_reconnect_mode">Select reconnect mode</string>
 
     <!-- Server Settings -->
-    <string name="server_settings_title">Server Settings</string>
+    <string name="server_settings_title">Server settings</string>
     <string name="server_settings_providers">Providers</string>
     <string name="server_settings_providers_desc">Enable or disable providers for this server</string>
     <string name="server_settings_providers_connected">Connected</string>
@@ -548,24 +549,24 @@
     <string name="loading">Loading…</string>
     
     <!-- Dialogs -->
-    <string name="dialog_select_theme">Select Theme</string>
-    <string name="dialog_select_language">Select Language</string>
+    <string name="dialog_select_theme">Select theme</string>
+    <string name="dialog_select_language">Select language</string>
     
     <!-- Notifications -->
     <string name="notification_channel_connection">OpenCode Connection</string>
     <string name="notification_channel_connection_desc">Persistent connection to OpenCode server</string>
-    <string name="notification_channel_tasks">Turn Notifications</string>
+    <string name="notification_channel_tasks">Turn notifications</string>
     <string name="notification_channel_tasks_desc">Notifications when a turn completes</string>
     <string name="notification_channel_tasks_silent">Turn Notifications (Silent)</string>
     <string name="notification_channel_tasks_silent_desc">Silent notifications when a turn completes</string>
-    <string name="notification_channel_permissions">Permission Requests</string>
+    <string name="notification_channel_permissions">Permission requests</string>
     <string name="notification_channel_permissions_desc">Notifications when OpenCode needs permissions</string>
-    <string name="notification_channel_questions">Question Requests</string>
+    <string name="notification_channel_questions">Question requests</string>
     <string name="notification_channel_questions_desc">Notifications when OpenCode asks a question</string>
     <string name="notification_connected">Connected to %1$s</string>
     <string name="notification_connecting">Connecting to %1$s…</string>
     <string name="notification_connected_count">Connected to %1$d of %2$d servers</string>
-    <string name="notification_disconnect_all">Disconnect All</string>
+    <string name="notification_disconnect_all">Disconnect all</string>
     <string name="notification_inbox_title">OC Beacon — %1$d/%2$d connected</string>
     <string name="notification_status_connected">Connected</string>
     <string name="notification_status_connecting">Connecting…</string>
@@ -593,7 +594,7 @@
     <string name="favorites_title">Favorites</string>
     <string name="all">All</string>
     <string name="remove_favorite">Remove from favorites</string>
-    <string name="add_tag">Add Tag</string>
+    <string name="add_tag">Add tag</string>
     <string name="tag_name">Tag name</string>
     <string name="color">Color</string>
     <string name="icon">Icon</string>
@@ -608,7 +609,6 @@
     <string name="delete_tag_title">Delete tag</string>
     <string name="delete_tag_message">Delete \"%1$s\"? All session assignments will be removed.</string>
     <string name="draft">Draft</string>
-    <string name="assign_tag">Add Tag</string>
     <string name="quick_navigate">Quick navigate</string>
     <string name="question">Question</string>
     <string name="no_questions">No questions</string>
@@ -643,8 +643,7 @@
     <string name="chat_moved_to_background">Moved to background</string>
 
     <!-- Chat menu actions -->
-    <string name="chat_menu_open_workspace">View Workspace</string>
-    <string name="menu_quick_navigate">Quick navigate</string>
+    <string name="chat_menu_open_workspace">View workspace</string>
     <string name="menu_fork_session">Fork session</string>
     <string name="menu_compact_session">Compact session</string>
     <string name="menu_review_changes">Review changes</string>
@@ -692,10 +691,10 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="update_available">Update available: v%1$s</string>
     <string name="update_download_install">Download &amp; Install</string>
     <string name="update_downloading">Downloading… %1$d%%</string>
-    <string name="update_ready_to_install">Install Now</string>
+    <string name="update_ready_to_install">Install now</string>
     <string name="update_error">Update check failed</string>
     <string name="update_installer_launch_failed">Unable to launch installer</string>
-    <string name="update_view_release">View Release</string>
+    <string name="update_view_release">View release</string>
 
     <!-- Accessibility: contentDescription for decorative icons in settings -->
     <string name="a11y_settings_language">Language</string>
@@ -795,6 +794,9 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="search_filter_time_30d">Last 30 days</string>
     <string name="search_content_no_hits">No message matches</string>
     <!-- Terminal tabs -->
+    <string name="terminal_copy">Copy</string>
+    <string name="terminal_paste">Paste</string>
+    <string name="terminal_more">More…</string>
     <string name="terminal_new_tab">New</string>
     <string name="terminal_keyboard">Keyboard</string>
     <string name="terminal_reconnect_tab">Reconnect tab</string>
@@ -943,10 +945,6 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="dsh_token_dialog_hint">Password or token</string>
     <string name="dsh_token_dialog_connect">Connect</string>
     <string name="dsh_token_dialog_rejected">Credential rejected by the server. Check it and try again.</string>
-    <string name="server_pair_help_title">First-time pairing</string>
-    <string name="server_pair_help_manual">Connect first; if a credential is required, enter the access password when prompted (legacy servers use a token)</string>
-    <string name="server_pair_help_adb">USB (dev builds): run ./scripts/dsh-pair.sh on the host — the token is injected automatically</string>
-    <string name="server_pair_help_deeplink">Or run ./scripts/dsh-pair.sh --lan on the host and scan or tap the ocbeacon:// link to pre-fill this form</string>
     <!-- #324① DSH provider 目录/自定义增删 -->
     <string name="dsh_settings_loopback_required">This action needs a loopback connection (adb reverse to 127.0.0.1).</string>
     <string name="dsh_providers_section_title">DSH provider directory</string>

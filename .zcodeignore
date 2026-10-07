@@ -1,0 +1,126 @@
+# Gradle
+.gradle/
+build/
+/local.properties
+gradle/gradle-daemon-jvm.properties
+
+# Android Studio
+.idea/
+*.iml
+*.ipr
+*.iws
+captures/
+.navigation/
+lint/
+
+# Build outputs
+*.apk
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+out/
+.externalNativeBuild
+.cxx/
+
+# Keystore files
+*.jks
+*.keystore
+app/keystore/*
+# 例外：debug keystore 入库钉死签名身份（#259，非机密，密码公开惯例）
+!app/keystore/debug.jks
+
+# Log files
+*.log
+
+# Local config
+local.properties
+vcs.xml
+
+# OS
+.DS_Store
+
+# Obsidian editor workspace（个人学习专区实时状态，不入库）
+docs/learning/.obsidian/
+
+# AI tool artifacts
+.superpowers/
+.worktrees/
+.post-dev-verification/
+.replicant/
+replicant/
+.run/
+
+# Temp files
+null
+tmp_diff.txt
+lokit.lock
+*.tmp
+/tmp-verify/
+/.tmp-verify/
+
+# Test evidence screenshots
+docs/test-evidence/
+test_screenshots/
+screenshots/
+eng.traineddata
+
+# Maestro local run data
+.maestro/
+
+# E2E test screenshots
+*.png
+*.jpg
+
+# Git worktrees
+/.worktrees/
+
+# 验证产物（截图/诊断日志）
+/verify-shots/
+
+nul
+*.swp
+.probe
+
+# 三面回归运行时（含真实密钥/隔离 HOME/测试仓库——setup-secrets.sh 从宿主提取，绝不入库）
+scripts/regression/runtime/
+scripts/regression/.env
+
+# 10h 人类模拟专用文件夹（日志/证据不入库；mock/driver 脚本由 README 说明）
+human-sim-10h/logs/
+human-sim-10h/evidence/
+human-sim-10h/reports/
+human-sim-10h/mockllm/node_modules/
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+node_modules/
+bower_components/
+jspm_packages/
+__pycache__/
+site-packages/
+venv/
+coverage/
+htmlcov/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+cdk.out/
+*.egg-info/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）

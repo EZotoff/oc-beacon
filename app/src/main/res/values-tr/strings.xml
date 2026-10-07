@@ -80,7 +80,6 @@
     <string name="icon">Simge</string>
     <string name="add">Ekle</string>
     <string name="draft">Taslak</string>
-    <string name="assign_tag">Etiket ekle</string>
     <string name="tag_management_title">Etiket yönetimi</string>
     <string name="new_tag">Etiket ekle</string>
     <string name="edit_tag">Etiketi düzenle</string>
@@ -272,7 +271,6 @@
     <string name="chat_default_model">Varsayılan model</string>
     <string name="chat_manage_models">Modelleri yönet</string>
     <string name="chat_output_truncated">Çıktı sunucu tarafından kesildi. Tam çıktı şu konuma kaydedildi: %1$s</string>
-    <string name="chat_question_label">Soru</string>
     <string name="chat_permission_label">İzin: %1$s</string>
     <string name="chat_interrupted">Yarıda kesildi: %1$s</string>
     <string name="chat_retry">Yeniden deneme #%1$d: %2$s</string>
@@ -444,7 +442,6 @@
     <string name="server_settings_models">Modeller</string>
     <string name="server_settings_models_desc">Model görünürlüğü ve varsayılanlar</string>
     <string name="sessions_create_folder">Dizin oluştur</string>
-    <string name="sessions_create_folder_title">Dizin oluştur</string>
     <string name="sessions_create_folder_name_label">Dizin adı</string>
     <string name="sessions_create_folder_name_placeholder">my-project</string>
     <string name="sessions_create_folder_invalid_name">Geçerli bir dizin adı girin</string>
@@ -594,6 +591,9 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="sessions_view_folders">Klasörler</string>
     <string name="sessions_view_recent">Son</string>
     <string name="sessions_clear_search">Aramayı temizle</string>
+    <string name="terminal_copy">Kopyala</string>
+    <string name="terminal_paste">Yapıştır</string>
+    <string name="terminal_more">Diğer…</string>
     <string name="terminal_new_tab">Yeni</string>
     <string name="terminal_keyboard">Klavye</string>
     <string name="terminal_reconnect_tab">Sekmeyi yeniden bağla</string>
@@ -692,7 +692,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="report_attach_full_log">Tam tanılama günlüğünü ekle (gizli gist; bağlantıya sahip herkes okuyabilir)</string>
     <string name="report_close">Kapat</string>
     <string name="diagnostics_title">Tanılama</string>
-    <string name="menu_quick_navigate">Hızlı gezinme</string>
     <string name="pdf_next_page">Sonraki sayfa</string>
     <string name="pdf_previous_page">Önceki sayfa</string>
     <string name="server_settings_oauth_failed">OAuth tamamlanamadı</string>
@@ -738,7 +737,10 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="dsh_job_status_failed">Başarısız</string>
     <string name="shell_status_failed">Başarısız</string>
     <string name="task_toolbar_action">Görevi arka plana taşı</string>
-    <string name="task_toolbar_subagents">Ön planda %1$d alt ajan çalışıyor</string>
+    <plurals name="task_toolbar_subagents">
+        <item quantity="one">%1$d alt ajan ön planda çalışıyor</item>
+        <item quantity="other">%1$d alt ajan ön planda çalışıyor</item>
+    </plurals>
     <string name="task_sheet_empty_subagents">Çalışan alt ajan yok</string>
     <string name="task_sheet_empty_shells">Shell komutu yok</string>
     <!-- 2026-08-13：任务面板前台/后台标记 -->
@@ -858,10 +860,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="dsh_token_dialog_hint">Parola veya token</string>
     <string name="dsh_token_dialog_connect">Bağlan</string>
     <string name="dsh_token_dialog_rejected">Kimlik bilgisi sunucu tarafından reddedildi. Kontrol edip tekrar deneyin.</string>
-    <string name="server_pair_help_title">İlk eşleştirme</string>
-    <string name="server_pair_help_manual">Önce bağlanın; kimlik bilgisi gerekiyorsa istendiğinde erişim parolasını girin (eski sunucular token kullanır)</string>
-    <string name="server_pair_help_adb">USB (dev sürümleri): ana makinede ./scripts/dsh-pair.sh çalıştırın — token otomatik olarak enjekte edilir</string>
-    <string name="server_pair_help_deeplink">Veya ana makinede ./scripts/dsh-pair.sh --lan çalıştırın ve bu formu doldurmak için ocbeacon:// bağlantısını tarayın veya dokunun</string>
 
     <!-- #324① DSH provider 目录/自定义增删 -->
     <string name="dsh_settings_loopback_required">Bu işlem bir loopback bağlantısı gerektirir (adb reverse ile 127.0.0.1).</string>
