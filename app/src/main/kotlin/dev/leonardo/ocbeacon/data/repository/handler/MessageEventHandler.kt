@@ -683,6 +683,13 @@ class MessageEventHandler @Inject constructor(
                     // 的适用边界。
                     val kept = MessageMergeEngine.earliestCreated(existing.time.created, event.info.time.created)
                     if (kept != event.info.time.created) {
+                        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                            AppLogger.w(
+                                TAG,
+                                "[524-guard] block created backshift " + event.info.id.takeLast(14) +
+                                    " " + existing.time.created + "<-" + event.info.time.created,
+                            )
+                        }
                         event.info.copy(time = event.info.time.copy(created = kept))
                     } else {
                         event.info
@@ -996,6 +1003,13 @@ class MessageEventHandler @Inject constructor(
                 ) {
                     val kept = MessageMergeEngine.earliestCreated(fromRow.time.created, toRow.time.created)
                     if (kept != toRow.time.created) {
+                        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                            AppLogger.w(
+                                TAG,
+                                "[524-swap] keep send-time created " + event.toId.takeLast(14) +
+                                    " " + toRow.time.created + "->" + kept,
+                            )
+                        }
                         val fixed = toRow.copy(time = toRow.time.copy(created = kept))
                         msgs.removeAt(toIdx)
                         val key = fixed.time.created

@@ -84,6 +84,28 @@ object DshEventMapper {
     private val stepStartTimes = HashMap<String, Long>()
 
     /**
+     * #524：prompt 发送时刻记忆（rpcId → 客户端播种时刻）。DSH journal 的
+     * user/message entry 事件信封 time=落盘时刻（实测晚于真实发送 ~1s，journal
+     * 协议无创建时刻字段——session.v4.jsonl 实证 data 仅 content/id/role/source），
+     * 直接作 created 会把提问行排到同 turn 首个输出之下（「回复出现在我消息
+     * 上方」）。ChatRepositoryImpl 播种 pending-<rpcId> 时登记；mapUserMessage
+     * 对 source.rpcId 命中者取 min(信封 time, 发送时刻)——live 事件与 journal
+     * fold 输出同 mapper，两路统一修正。上界同 stepStartTimes 防御清空。
+     */
+    private val promptAdmitTimes = HashMap<String, Long>()
+
+    fun notePromptAdmitted(rpcId: String, admittedAtMillis: Long) {
+        if (promptAdmitTimes.size > 128) promptAdmitTimes.clear()
+        promptAdmitTimes[rpcId] = admittedAtMillis
+    }
+
+    private fun promptCreatedTime(rpcId: String?, envelopeTime: Long): Long {
+        if (rpcId == null) return envelopeTime
+        val admitted = promptAdmitTimes[rpcId] ?: return envelopeTime
+        return if (admitted in 1 until envelopeTime) admitted else envelopeTime
+    }
+
+    /**
      * #507 块级起止时刻（key = "sid:turn:step|ordinal"）：实况 block-start 记
      * 起始；前驱块结束=后继 block-start 时刻（块严格顺序，DSH 的 block-end 帧
      * 被服务端压到流尾、时间戳为投递时刻非真实完成——不能用作结束）。整装
@@ -1000,7 +1022,13 @@ object DshEventMapper {
                     Message.User(
                         id = id,
                         sessionId = sessionId,
-                        time = TimeInfo(created = time),
+                        // #524：rpcId 命中发送时刻记忆 → 取 min（journal 信封 time=
+                        // 落盘时刻，晚于真实发送；live 事件与 journal fold 输出
+                        // 同 mapper，两路统一）
+                        time = TimeInfo(created = promptCreatedTime(
+                            data.obj("source")?.str("rpcId")?.takeIf { it.isNotBlank() },
+                            time,
+                        )),
                         injectionKind = injectionKind,
                     )
                 )

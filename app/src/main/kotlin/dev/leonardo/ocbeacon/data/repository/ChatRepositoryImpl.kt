@@ -237,6 +237,12 @@ class ChatRepositoryImpl @Inject constructor(
             if (BuildConfig.DEBUG) {
                 AppLogger.d("ChatRepository", "[send-seed] user message ${admission.id} (SSE 回显前本地播种)")
             }
+            // #524：登记 prompt 发送时刻（DSH journal 信封 time=落盘时刻晚于真实
+            // 发送，mapper 对 source.rpcId 命中者取 min——live 与 journal fold 统一）
+            admission.id.removePrefix("pending-").takeIf { it.isNotBlank() }?.let { rpcId ->
+                dev.leonardo.ocbeacon.data.api.dsh.DshEventMapper
+                    .notePromptAdmitted(rpcId, System.currentTimeMillis())
+            }
             eventDispatcher.processEvent(
                 SseEvent.MessageUpdated(
                     Message.User(

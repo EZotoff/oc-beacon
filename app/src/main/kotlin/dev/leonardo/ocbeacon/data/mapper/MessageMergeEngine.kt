@@ -595,6 +595,12 @@ internal object MessageMergeEngine {
         // 发送路径标记（V2 REST 持久化载荷无 delivery 字段）——保留既有标记，
         // 避免 L3 兜底刷新/分页回补/重进会话后插话徽标丢失。
         if (sse is Message.User) {
+            // #524 边界（评审撤回）：此处不加 created min 防线——V2 真机钟形
+            // （OrderTest fixture 注释：SSE user 信封比 REST 持久化 created 早
+            // 13-50ms）下 min 会把 user 行挤回 agent-switched 信封 Older 侧 =
+            // #485 锚定失序回归。DSH 的 upsert 覆盖面改在数据源修（mapper
+            // promptAdmitTimes 记忆，live/fold 输出统一），重启后 fold 无记忆的
+            // 场景留作已知残余（重进旧会话 ~1s 错位，非 live 主诉面）。
             return if (sse.viaSteer && rest is Message.User) rest.copy(viaSteer = true) else rest
         }
         if (sse !is Message.Assistant) return rest
