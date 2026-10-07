@@ -108,9 +108,27 @@ internal suspend fun buildContentState(
     val mergedStatuses: Map<String, SessionStatus> =
         data.statuses + data.pendingQuestionIds.associateWith { SessionStatus.Asking }
 
+    // Subagent roll-up：/session/status 只反映各会话自身状态，而列表隐藏
+    // 子会话（parentId != null）——父会话在子 agent 运行时会显示 Idle。
+    // 这里把子树中的 Busy 上卷到父级（仅覆盖 Idle；Asking 等显式状态优先）。
+    val childrenByParent = data.sessions
+        .filter { !it.parentId.isNullOrEmpty() }
+        .groupBy { it.parentId!! }
+    fun hasBusyDescendant(sessionId: String, seen: MutableSet<String>): Boolean {
+        if (!seen.add(sessionId)) return false
+        return childrenByParent[sessionId].orEmpty().any { child ->
+            mergedStatuses[child.id] == SessionStatus.Busy || hasBusyDescendant(child.id, seen)
+        }
+    }
+
     // #311：SessionItem 构建（RECENT 主列表与已归档列表共用形状）
     val toSessionItem: (dev.leonardo.ocbeacon.domain.model.Session) -> SessionItem = { session ->
-        val status = mergedStatuses[session.id] ?: SessionStatus.Idle
+        val own = mergedStatuses[session.id] ?: SessionStatus.Idle
+        val status = if (own == SessionStatus.Idle && hasBusyDescendant(session.id, mutableSetOf())) {
+            SessionStatus.Busy
+        } else {
+            own
+        }
         SessionItem(
             session = session,
             status = status,

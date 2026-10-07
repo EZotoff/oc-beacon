@@ -37,7 +37,7 @@ class ShardEligibilityAndAnchorTest {
         renderItems = items.toList(),
         isEmpty = items.isEmpty(),
         errorText = null, agentName = null, modelId = null,
-        durationMs = null, turnStartMs = null, stepFinishes = emptyList(),
+        durationMs = null, turnStartMs = null, completedTimeMs = null, stepFinishes = emptyList(),
         taskAgentName = null, copyText = null,
     )
 
