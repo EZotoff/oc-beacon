@@ -117,3 +117,15 @@ V1/V2 域 read=`filePath[,offset,limit]`、edit=`filePath,oldString,newString`�
 | 基线恢复 | rotate 回滚 pw512test→devpass + 冷启 | ✅ devpass 铸票 200；app 2s 恢复连接 |
 
 **留待用户主观面**：①浏览器书签页/设置面板（PC 侧，实现期 49 断言已覆盖，建议眼验一次）；②app 内手改密码字段的 UX（本矩阵以 debug intent 为代理）；③新密码下真手指发一条消息。
+
+## §8 #512 真机端到端（2026-10-07 22:05-22:40，手工 UI 路径 + curl 扮演另一操作者）
+
+| 段 | 操作（全部 app 真实 UI） | 结果 |
+|---|---|---|
+| A 手工配置 | Home→添加服务器→DSH 类型表单（名称/URL 两字段；IME 开合态坐标漂移×3 踩坑后成功）→保存→连接 | ✅ 保存成功；连接命中**回落链第一级**（同 URL 共享缓存 Cookie，probe authenticated=true） |
+| A′ 重复后端守卫 | 与已连 DSH-8181 同 URL 连接 | ✅ `HomeViewModel: shares backend…rejecting`（#34 守卫如实呈现红字「该服务器已连接」） |
+| B WS 全链 | 新配置下进「你好」会话发消息 | ✅ 消息发出→流式回复+思考卡+工具卡渲染→journal 落盘（386KB） |
+| C rotate 打断 | curl rotate devpass→e2epw2（旧密 401 实证）→ force-stop 正常冷启 | ✅ 回落链逐级打光有日志：`session mint 401(free)`→`token exchange rejected 401`→`auth recovery failed`→`SseConnManager: token required — waiting for token input`；UI 断线横幅+HTTP 401 错误行，无崩溃；`debug_profile` 纯导航腿系文档漂移（未实现），改用生产路径 ACTION_OPEN_SESSION 深链可达会话列表（横幅挂 SESSION_LIST_HEADER） |
+| E 清理 | rotate 回滚 devpass（铸票 200 实证）+ 删除 DSH-PW-E2E 条目（datastore 0 残留）+ debug-entry 基线恢复 | ✅ 全清 |
+
+**遗留观察（登记待查，不阻塞 #512）**：TokenNeeded 态下（rotate 后无存储密码），Home 卡片无「会话」入口（isConnected 门控）、卡上无齿轮（serverSettingsReadyIds 需 providers 成功）——设计路径=FGS 常驻通知点击（ACTION_OPEN_SESSION）进会话列表看「输入令牌」横幅；远端自动化三次尝试未在可视窗内捕到横幅（tokenNeeded 集合时机性清空嫌疑：SseConnectionManager:327 路径）。**用户手指验收点**：rotate 后从通知点进会话列表，横幅应出现且可输新密码。若复现不出=真 UX 缺口另立卡。
