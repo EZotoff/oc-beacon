@@ -893,15 +893,15 @@
     <string name="crash_notice_body_no_time">前回のセッションで予期しないクラッシュが発生しました。詳細は診断で確認できます。</string>
     <string name="crash_notice_view">表示</string>
     <string name="crash_notice_dismiss">閉じる</string>
-    <string name="dsh_token_banner_text">このサーバーにはアクセストークンが必要です</string>
+    <string name="dsh_token_banner_text">このサーバーにはアクセス資格情報が必要です</string>
     <string name="dsh_token_banner_action">トークンを入力</string>
-    <string name="dsh_token_dialog_title">アクセストークンが必要です</string>
-    <string name="dsh_token_dialog_message">サーバーの起動行からトークンまたは完全な URL を貼り付けてください（token=... を含みます）。</string>
-    <string name="dsh_token_dialog_hint">トークンまたは URL</string>
+    <string name="dsh_token_dialog_title">アクセス資格情報が必要</string>
+    <string name="dsh_token_dialog_message">このサーバーのアクセスパスワードを入力するか、旧式サーバーの場合はトークンまたは完全な URL（token=…）を貼り付けてください。</string>
+    <string name="dsh_token_dialog_hint">パスワードまたはトークン</string>
     <string name="dsh_token_dialog_connect">接続</string>
     <string name="dsh_token_dialog_rejected">トークンがサーバーに拒否されました。確認してもう一度お試しください。</string>
     <string name="server_pair_help_title">初回ペアリング</string>
-    <string name="server_pair_help_manual">手動：このサーバーを保存して接続し、上部バナーの「トークンを入力」をタップしてサーバー起動行のトークンを貼り付けてください</string>
+    <string name="server_pair_help_manual">先に接続してください。資格情報が必要な場合は、プロンプトに従ってアクセスパスワードを入力してください（旧式サーバーはトークンを使用）</string>
     <string name="server_pair_help_adb">USB（dev ビルド）：ホストで ./scripts/dsh-pair.sh を実行するとトークンが自動注入されます</string>
     <string name="server_pair_help_deeplink">またはホストで ./scripts/dsh-pair.sh --lan を実行し、ocbeacon:// リンクをスキャンまたはタップしてこのフォームを自動入力できます</string>
 

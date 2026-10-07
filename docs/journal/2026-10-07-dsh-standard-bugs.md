@@ -139,3 +139,15 @@ V1/V2 域 read=`filePath[,offset,limit]`、edit=`filePath,oldString,newString`�
 **附带**：干跑还撞见 monkey 启动落 LeakCanary/BACK 落系统设置两坑（均未触碰设置退出）。
 
 **基线已恢复**：drypw1→devpass（铸票 200），app debug-entry 2s 重连。
+
+## §10 #512 密码输入侧修复（2026-10-07 23:05-23:15）
+
+**改动**：
+- `DshConnectionRegistry.mintSessionWithPassword`（公开包装既有 #512 铸票；cookie 入注册表→awaitCookie 轮询自动续行）
+- `DshTokenEntryViewModel.submit`：插件密码铸票**优先**（成功即存 ServerConfig.password——回落链持久凭据源；不 trim 精确字节）→ 失败回落 legacy 令牌交换（无插件服务器）→ 两败=Rejected
+- 文案中性化 5 键（凭据/密码或令牌/密码优先说明/表单配对行压缩）×15 语言，i18n-check 917 键全过
+- 单测 5 例（优先序/回落/双败/非令牌短路/同值免写）+ 全量套件绿
+
+**真机重演（fixpw1 轮）**：rotate→冷启 TokenNeeded→深链横幅（新文案「此服务器需要访问凭据」）→对话框输 fixpw1→`mintSession` 执行→**横幅消失恢复**→force-stop 正常冷启**零令牌提示自动重连**（密码持久化实证）。
+**坑位记录**：IME 开态对话框按钮位移（关态 1636→开态 1175）——自动化须开态实时坐标；StrictMode 主线程读响应体警告（legacy exchangeToken 同款模式，polish 项不阻塞）。
+**基线已恢复**：devpass + app 存储同步。待用户「演示」口令。

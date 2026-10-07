@@ -893,15 +893,15 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="crash_notice_body_no_time">Son oturumda beklenmeyen bir çökme yaşandı. Ayrıntılar tanılama bölümünde.</string>
     <string name="crash_notice_view">Görüntüle</string>
     <string name="crash_notice_dismiss">Kapat</string>
-    <string name="dsh_token_banner_text">Bu sunucu bir erişim belirteci gerektiriyor</string>
+    <string name="dsh_token_banner_text">Bu sunucu erişim kimlik bilgisi gerektiriyor</string>
     <string name="dsh_token_banner_action">Belirteç gir</string>
-    <string name="dsh_token_dialog_title">Erişim belirteci gerekli</string>
-    <string name="dsh_token_dialog_message">Sunucunun başlangıç satırından belirteci veya tam URL\'yi yapıştırın (token=... içerir).</string>
-    <string name="dsh_token_dialog_hint">Belirteç veya URL</string>
+    <string name="dsh_token_dialog_title">Erişim kimlik bilgisi gerekli</string>
+    <string name="dsh_token_dialog_message">Bu sunucunun erişim parolasını girin ya da eski sunucular için token / tam URL (token=…) yapıştırın.</string>
+    <string name="dsh_token_dialog_hint">Parola veya token</string>
     <string name="dsh_token_dialog_connect">Bağlan</string>
     <string name="dsh_token_dialog_rejected">Belirteç sunucu tarafından reddedildi. Kontrol edip tekrar deneyin.</string>
     <string name="server_pair_help_title">İlk eşleştirme</string>
-    <string name="server_pair_help_manual">Manuel: bu sunucuyu kaydedip bağlayın, ardından bannerdaki "Token gir"e dokunun ve sunucu başlatma satırındaki tokeni yapıştırın</string>
+    <string name="server_pair_help_manual">Önce bağlanın; kimlik bilgisi gerekiyorsa istendiğinde erişim parolasını girin (eski sunucular token kullanır)</string>
     <string name="server_pair_help_adb">USB (dev sürümleri): ana makinede ./scripts/dsh-pair.sh çalıştırın — token otomatik olarak enjekte edilir</string>
     <string name="server_pair_help_deeplink">Veya ana makinede ./scripts/dsh-pair.sh --lan çalıştırın ve bu formu doldurmak için ocbeacon:// bağlantısını tarayın veya dokunun</string>
 

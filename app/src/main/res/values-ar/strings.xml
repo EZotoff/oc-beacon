@@ -909,15 +909,15 @@
     <string name="crash_notice_body_no_time">حدث تعطل غير متوقع في الجلسة السابقة. التفاصيل متاحة في قسم التشخيص.</string>
     <string name="crash_notice_view">عرض</string>
     <string name="crash_notice_dismiss">تجاهل</string>
-    <string name="dsh_token_banner_text">يتطلب هذا الخادم رمز دخول</string>
+    <string name="dsh_token_banner_text">يتطلب هذا الخادم بيانات اعتماد وصول</string>
     <string name="dsh_token_banner_action">إدخال الرمز</string>
-    <string name="dsh_token_dialog_title">رمز الدخول مطلوب</string>
-    <string name="dsh_token_dialog_message">الصق الرمز أو عنوان URL الكامل من سطر بدء تشغيل الخادم (يحتوي على token=...).</string>
-    <string name="dsh_token_dialog_hint">الرمز أو عنوان URL</string>
+    <string name="dsh_token_dialog_title">بيانات الاعتماد مطلوبة</string>
+    <string name="dsh_token_dialog_message">أدخل كلمة مرور الوصول لهذا الخادم، أو الصق الرمز / الرابط الكامل (token=…) للخوادم القديمة.</string>
+    <string name="dsh_token_dialog_hint">كلمة المرور أو الرمز</string>
     <string name="dsh_token_dialog_connect">اتصال</string>
     <string name="dsh_token_dialog_rejected">رفض الخادم الرمز. تحقق منه وحاول مجددًا.</string>
     <string name="server_pair_help_title">الإقران الأول</string>
-    <string name="server_pair_help_manual">يدويًا: احفظ هذا الخادم واتصل به، ثم انقر على "إدخال الرمز" في الشريط العلوي والصق الرمز من سطر بدء تشغيل الخادم</string>
+    <string name="server_pair_help_manual">اتصل أولاً؛ وإذا طُلبت بيانات الاعتماد، أدخل كلمة مرور الوصول عند المطالبة (الخوادم القديمة تستخدم رمزاً)</string>
     <string name="server_pair_help_adb">عبر USB (إصدارات التطوير): شغّل ./scripts/dsh-pair.sh على المضيف — يتم إدخال الرمز تلقائيًا</string>
     <string name="server_pair_help_deeplink">أو شغّل ./scripts/dsh-pair.sh --lan على المضيف وامسح رابط ocbeacon:// أو انقر عليه لتعبئة هذا النموذج تلقائيًا</string>
 

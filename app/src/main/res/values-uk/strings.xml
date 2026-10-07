@@ -901,15 +901,15 @@
     <string name="crash_notice_body_no_time">У попередньому сеансі стався неочікуваний збій. Подробиці — у розділі діагностики.</string>
     <string name="crash_notice_view">Переглянути</string>
     <string name="crash_notice_dismiss">Закрити</string>
-    <string name="dsh_token_banner_text">Цей сервер потребує токен доступу</string>
+    <string name="dsh_token_banner_text">Цей сервер потребує облікових даних доступу</string>
     <string name="dsh_token_banner_action">Ввести токен</string>
-    <string name="dsh_token_dialog_title">Потрібен токен доступу</string>
-    <string name="dsh_token_dialog_message">Вставте токен або повну URL-адресу з рядка запуску сервера (містить token=...).</string>
-    <string name="dsh_token_dialog_hint">Токен або URL</string>
+    <string name="dsh_token_dialog_title">Потрібні облікові дані доступу</string>
+    <string name="dsh_token_dialog_message">Введіть пароль доступу цього сервера або вставте токен / повну URL-адресу (token=…) для застарілих серверів.</string>
+    <string name="dsh_token_dialog_hint">Пароль або токен</string>
     <string name="dsh_token_dialog_connect">Підключитися</string>
     <string name="dsh_token_dialog_rejected">Сервер відхилив токен. Перевірте його та спробуйте ще раз.</string>
     <string name="server_pair_help_title">Перше з\'єднання</string>
-    <string name="server_pair_help_manual">Вручну: збережіть і під\'єднайте цей сервер, потім торкніться "Ввести токен" на банері та вставте токен із рядка запуску сервера</string>
+    <string name="server_pair_help_manual">Спочатку підключіться; якщо потрібні облікові дані, введіть пароль доступу після запиту (застарілі сервери використовують токен)</string>
     <string name="server_pair_help_adb">Через USB (dev-збірки): запустіть ./scripts/dsh-pair.sh на хості — токен буде введено автоматично</string>
     <string name="server_pair_help_deeplink">Або запустіть ./scripts/dsh-pair.sh --lan на хості та відскануйте або торкніться посилання ocbeacon://, щоб заповнити цю форму</string>
 

@@ -891,15 +891,15 @@
     <string name="crash_notice_body_no_time">Un plantage inattendu s\'est produit lors de la dernière session. Détails dans les diagnostics.</string>
     <string name="crash_notice_view">Voir</string>
     <string name="crash_notice_dismiss">Ignorer</string>
-    <string name="dsh_token_banner_text">Ce serveur exige un jeton d\'accès</string>
+    <string name="dsh_token_banner_text">Ce serveur exige un identifiant d\'accès</string>
     <string name="dsh_token_banner_action">Saisir le jeton</string>
-    <string name="dsh_token_dialog_title">Jeton d\'accès requis</string>
-    <string name="dsh_token_dialog_message">Collez le jeton ou l\'URL complète de la ligne de démarrage du serveur (elle contient token=...).</string>
-    <string name="dsh_token_dialog_hint">Jeton ou URL</string>
+    <string name="dsh_token_dialog_title">Identifiant d\'accès requis</string>
+    <string name="dsh_token_dialog_message">Saisissez le mot de passe d\'accès de ce serveur, ou collez le jeton / l\'URL complète (token=…) pour les anciens serveurs.</string>
+    <string name="dsh_token_dialog_hint">Mot de passe ou jeton</string>
     <string name="dsh_token_dialog_connect">Connecter</string>
     <string name="dsh_token_dialog_rejected">Jeton rejeté par le serveur. Vérifiez-le et réessayez.</string>
     <string name="server_pair_help_title">Premier jumelage</string>
-    <string name="server_pair_help_manual">Manuel : enregistrez et connectez ce serveur, puis touchez « Saisir le jeton » sur la bannière et collez le jeton de la ligne de démarrage du serveur</string>
+    <string name="server_pair_help_manual">Connectez-vous d\'abord ; si un identifiant est requis, saisissez le mot de passe d\'accès à la demande (les anciens serveurs utilisent un jeton)</string>
     <string name="server_pair_help_adb">USB (versions dev) : exécutez ./scripts/dsh-pair.sh sur l\'hôte — le jeton est injecté automatiquement</string>
     <string name="server_pair_help_deeplink">Ou exécutez ./scripts/dsh-pair.sh --lan sur l\'hôte et scannez ou touchez le lien ocbeacon:// pour préremplir ce formulaire</string>
 

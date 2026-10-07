@@ -899,15 +899,15 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="crash_notice_body_no_time">Terjadi crash tak terduga pada sesi terakhir. Detailnya tersedia di diagnostik.</string>
     <string name="crash_notice_view">Lihat</string>
     <string name="crash_notice_dismiss">Tutup</string>
-    <string name="dsh_token_banner_text">Server ini memerlukan token akses</string>
+    <string name="dsh_token_banner_text">Server ini memerlukan kredensial akses</string>
     <string name="dsh_token_banner_action">Masukkan token</string>
-    <string name="dsh_token_dialog_title">Token akses diperlukan</string>
-    <string name="dsh_token_dialog_message">Tempel token atau URL lengkap dari baris startup server (berisi token=...).</string>
-    <string name="dsh_token_dialog_hint">Token atau URL</string>
+    <string name="dsh_token_dialog_title">Kredensial akses diperlukan</string>
+    <string name="dsh_token_dialog_message">Masukkan kata sandi akses server ini, atau tempel token / URL lengkap (token=…) untuk server lama.</string>
+    <string name="dsh_token_dialog_hint">Kata sandi atau token</string>
     <string name="dsh_token_dialog_connect">Hubungkan</string>
     <string name="dsh_token_dialog_rejected">Token ditolak oleh server. Periksa dan coba lagi.</string>
     <string name="server_pair_help_title">Pemasangan pertama</string>
-    <string name="server_pair_help_manual">Manual: simpan dan sambungkan server ini, lalu ketuk "Masukkan token" pada banner dan tempel token dari baris mulai server</string>
+    <string name="server_pair_help_manual">Sambungkan dulu; jika kredensial diperlukan, masukkan kata sandi akses saat diminta (server lama menggunakan token)</string>
     <string name="server_pair_help_adb">USB (build dev): jalankan ./scripts/dsh-pair.sh di host — token disuntikkan otomatis</string>
     <string name="server_pair_help_deeplink">Atau jalankan ./scripts/dsh-pair.sh --lan di host lalu pindai atau ketuk tautan ocbeacon:// untuk mengisi formulir ini</string>
 

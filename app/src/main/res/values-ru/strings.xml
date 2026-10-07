@@ -902,15 +902,15 @@
     <string name="crash_notice_body_no_time">В прошлом сеансе произошёл неожиданный сбой. Подробности — в разделе диагностики.</string>
     <string name="crash_notice_view">Открыть</string>
     <string name="crash_notice_dismiss">Скрыть</string>
-    <string name="dsh_token_banner_text">Этому серверу требуется токен доступа</string>
+    <string name="dsh_token_banner_text">Этот сервер требует учётные данные доступа</string>
     <string name="dsh_token_banner_action">Ввести токен</string>
-    <string name="dsh_token_dialog_title">Требуется токен доступа</string>
-    <string name="dsh_token_dialog_message">Вставьте токен или полный URL из строки запуска сервера (содержит token=...).</string>
-    <string name="dsh_token_dialog_hint">Токен или URL</string>
+    <string name="dsh_token_dialog_title">Требуются учётные данные доступа</string>
+    <string name="dsh_token_dialog_message">Введите пароль доступа этого сервера или вставьте токен / полный URL (token=…) для устаревших серверов.</string>
+    <string name="dsh_token_dialog_hint">Пароль или токен</string>
     <string name="dsh_token_dialog_connect">Подключиться</string>
     <string name="dsh_token_dialog_rejected">Сервер отклонил токен. Проверьте его и попробуйте снова.</string>
     <string name="server_pair_help_title">Первое сопряжение</string>
-    <string name="server_pair_help_manual">Вручную: сохраните и подключите этот сервер, затем нажмите «Ввести токен» на баннере и вставьте токен из строки запуска сервера</string>
+    <string name="server_pair_help_manual">Сначала подключитесь; если требуются учётные данные, введите пароль доступа по запросу (устаревшие серверы используют токен)</string>
     <string name="server_pair_help_adb">По USB (dev-сборки): выполните ./scripts/dsh-pair.sh на хосте — токен будет введён автоматически</string>
     <string name="server_pair_help_deeplink">Или выполните ./scripts/dsh-pair.sh --lan на хосте и отсканируйте или нажмите ссылку ocbeacon://, чтобы заполнить эту форму</string>
 

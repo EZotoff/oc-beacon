@@ -325,6 +325,15 @@ class DshConnectionRegistry @Inject constructor(
     }
 
     /**
+     * #512 验收补口（对话框密码输入侧）：插件 `/session` 密码铸票——Bearer=<密码>
+     * 成功即 cookie 入注册表（连接循环 awaitCookie 轮询自然续行，与 legacy
+     * token 交换同机制）。输入侧凭据持久化（ServerConfig.password）由调用方
+     * （DshTokenEntryViewModel）在成功后落库。
+     */
+    suspend fun mintSessionWithPassword(authority: String, password: String): Boolean =
+        mintSession(normalize(authority), password)
+
+    /**
      * launch token 交换（0.1.2）：GET {base}/?token=… → 303 + Set-Cookie → 持久化。
      *
      * @return 成功=true；401/5xx/无 Set-Cookie=false（token 无效或服务异常，

@@ -978,15 +978,15 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="crash_notice_body_no_time">An unexpected crash occurred during the last session. Details are available in diagnostics.</string>
     <string name="crash_notice_view">View</string>
     <string name="crash_notice_dismiss">Dismiss</string>
-    <string name="dsh_token_banner_text">This server requires an access token</string>
+    <string name="dsh_token_banner_text">This server requires an access credential</string>
     <string name="dsh_token_banner_action">Enter token</string>
-    <string name="dsh_token_dialog_title">Access token required</string>
-    <string name="dsh_token_dialog_message">Paste the token or the full URL from the server startup line (it contains token=...).</string>
-    <string name="dsh_token_dialog_hint">Token or URL</string>
+    <string name="dsh_token_dialog_title">Access credential required</string>
+    <string name="dsh_token_dialog_message">Enter this server\'s access password, or paste the token / full URL (token=…) for legacy servers.</string>
+    <string name="dsh_token_dialog_hint">Password or token</string>
     <string name="dsh_token_dialog_connect">Connect</string>
     <string name="dsh_token_dialog_rejected">Token rejected by the server. Check it and try again.</string>
     <string name="server_pair_help_title">First-time pairing</string>
-    <string name="server_pair_help_manual">Manual: save and connect this server, then tap "Enter token" on the banner and paste the token from the server startup line</string>
+    <string name="server_pair_help_manual">Connect first; if a credential is required, enter the access password when prompted (legacy servers use a token)</string>
     <string name="server_pair_help_adb">USB (dev builds): run ./scripts/dsh-pair.sh on the host — the token is injected automatically</string>
     <string name="server_pair_help_deeplink">Or run ./scripts/dsh-pair.sh --lan on the host and scan or tap the ocbeacon:// link to pre-fill this form</string>
     <!-- #324① DSH provider 目录/自定义增删 -->
