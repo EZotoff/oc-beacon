@@ -56,3 +56,15 @@
 **smoke 验证（0.15h，17 周期 37 集）**：判读器两处缺陷当场修正——①groups() 索引 0 基误当 1 基（我引入的回归，合成样本集抓出）；②同 item 相邻两卡同 E1 号被 merge 成假脏段（fiso/host 连续性+topY 跳 232=两卡间距定罪=判读器误报，加「落后复升」切割）；negRESIZE 9 条全部与收起集配对（−458=H，收起设计行为，10h 流式 soak 无收起故基线 0）。终判：**21 集 0 脏、门 37/37 stable=2 p50=24ms、镜像 15/15 精确、PASS**。驱动器两缺陷修正：swipe 少参（TypeError 当场抓）；卡行 y 过滤 2200 误杀 2338 的真卡行（定向点击放宽 2380）。
 
 **5h 正式跑**：pid 678475，started 04:39，deadline 09:45（progress.json 为准）；巡检 cron 每 40min（死亡复活/增量判读/脏即取证定罪/终盘多维判读+Room 直查+关卡处置）。smoke 产率 ~140 集/h → 预计 ~700 集。
+
+## §3.1 巡检 04:36
+
+- 04:36 巡检：alive pid=678475，8 周期/181 卡发现/32 PLACED；增量判读 PASS（8 集 0 脏、门 14/14 stable=2、镜像 3/3、negRESIZE 6 全配对、零 THREW/FATAL）。
+
+## §4 soak 域内第二缺陷：抬底过期塌缩（04:42 单帧定罪 + 根修）
+
+**定罪**（04:47 巡检 negRESIZE 未配对 7 条，全部同 item t_msg_0e36bd4aa001、d 恒 −4490）：
+- 04:42:54.871 RESIZE 15982→11492（−4490，手势中）→ 04:42:55.016 steady-report d=4490 → .018 RESIZE 11492→15982（+4490）——147ms 全高塌缩回长；
+- 04:42:59 实证 `[DEBUG-FLOOR] cold-floor effH=9558 measured=0 count=1/2`（同 item 另一卡）——**回收-展开态重组合后重内容异步组合逾经典冷窗**：count 过 2 后 floor 失效、内容 measured 仍 0 → 盒上报 0 → item −H 手势中塌缩 → 落地 +H 回长 = 可见闪跳。既有缺陷（01e4ba2b 冷窗设计），非静止门所致；同族第三位（展开竞态/收起竞态/抬底过期）。
+**根修（消除源）**：`coldFloorEligible(fraction,animating,count,measuredH)`——窗口=经典冷窗(count≤2) ∨ **内容未组合(measuredH==0)**。零高绝不可能是 finalHCache>0 展开卡的合法终态→零高续抬无陈旧风险；内容合法变矮（>0）仍由 count>2 真测接管走 steady（旧行为保留）；animating 期照旧不抬（抬底不进锚点基维持）。
+**验证**：ColdFloorEligibleTest 5/5 + AnchorQuiesce 8/8；全量套件另行留痕；新 APK 已装真机。按目标循环：旧 soak（04:32-04:53，21min/63 集 0 脏）作废，重启全新 5h。

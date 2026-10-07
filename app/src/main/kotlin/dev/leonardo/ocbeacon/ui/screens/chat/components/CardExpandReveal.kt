@@ -1807,6 +1807,17 @@ internal fun settleFrameAdvances(measures: Int, lastMeasures: Int, measuredH: In
     measures > 0 && measures == lastMeasures && measuredH > 0
 
 /**
+ * #529 soak 根修(纯函数可单测,2026-10-08 04:42 单帧定罪):冷抬底资格。
+ * 窗口 = 经典冷窗(measureCount≤2)∨ **内容未组合(measuredH==0)**——重内容
+ * 异步组合可逾经典冷窗(真机实测 ~150ms/count3+ 仍 measured=0),floor 过期
+ * →盒上报 0→item −H 手势中塌缩→落地 +H 回长(RESIZE 15982→11492→15982)。
+ * 零高绝不可能是 finalHCache>0 展开卡的合法终态,故零高续抬无陈旧风险
+ * (内容合法变矮≠内容为零,变矮仍由 count>2 真测接管走 steady 配对)。
+ */
+internal fun coldFloorEligible(fraction: Float, animating: Boolean, measureCount: Int, measuredH: Int): Boolean =
+    fraction >= 1f && !animating && (measureCount <= 2 || measuredH == 0)
+
+/**
  * #422 内容沉降:展开 tween 前等待「内容驱动的重测」静止。
  *
  * 为什么必须:placeable 缓存只在 tween 窗口生效,而首测往往不是终测——
@@ -1985,7 +1996,12 @@ private class CardExpandGeometryNode(
         // (rememberSaveable)跨回收存活:冷首测(measureCount≤2)以已知终高占位,
         // 迟到内容落地时高度已正确=零增量零弃配;陈旧 floor(内容变矮)由 count>2
         // 真测接管,差值走 steady 正常配对。animating 期不抬(episode 独占)。
-        val floorH = if (clock.measureCount <= 2 && clock.fraction >= 1f && !clock.animating) {
+        // #529 soak 定罪(2026-10-08 04:42 单帧):重内容异步组合可逾 count≤2 窗
+        // (~150ms,measured 恒 0 至 count3+)——floor 过期→盒上报 0→item −H 塌缩
+        // →内容落地 +H 回长(RESIZE 15982→11492→15982,147ms)=手势中可见闪跳。
+        // 根修:内容未组合(measured==0)期间 floor 持续有效——零高绝不可能是
+        // finalHCache>0 展开卡的合法终态,无陈旧抬底风险(内容变矮≠内容为零)。
+        val floorH = if (coldFloorEligible(clock.fraction, clock.animating, clock.measureCount, placeable.height)) {
             floorProvider()
         } else {
             0
