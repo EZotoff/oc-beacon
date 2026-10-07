@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#531**（2026-10-07 #530 会话页导航弹回 Home + 渲染面黑屏挂起（演）。
+**编号**：全局递增，不回收。下一编号：**#532**（2026-10-08 #531 文案清理二期——重复键合并/plurals 化/）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
@@ -62,18 +62,6 @@
   - → journal: docs/journal/2026-10-07-dsh-standard-bugs.md
   - 观察窗（用户裁决 2026-10-07）：至 2026-10-14 无跳变反馈即完结；期间再遇立即 logcat 取证
 
-- [~] **#512 DSH 密码登录插件（dsh-password-login）——免捞 token 的会话铸造/密码生命周期/轮换全员下线** `dsh` `auth` `infra`
-  - 独立仓库纯宿主插件（照 keepalive 骨架，GitHub 分发，零客户端 bundle）：未设密码态回环免密铸票 + 密码登录书签页 + 轮换即撤销全体会话（admit 包装 epoch）；oc-beacon 与浏览器均为消费者
-  - app 侧回落链（有效 Cookie→免密铸→带密铸→legacy token），ServerConfig.password 双语义零新 UI；四批实施（骨架/密码/撤销/legacy 退役）
-  - 设计经五轮 grill 全裁决收敛；环境事实锚定 dsh 0.2.0-rc.2 源码实证
-  - → [spec](docs/specs/2026-10-05-512-dsh-password-login-design.md)
-  - 2026-10-05 追加裁决（卡片摘要中「零客户端 bundle」以此为准）：①web 登录改用浏览器原生 HTTP Basic 单密码弹窗（用户名忽略），自绘登录表单废弃；②密码管理面板回归 scope——客户端 bundle 注入 dsh 设置页，UI 一律消费 dsh 宿主 UI 原语（keepalive primitives.ts 先例），禁止引入第三方 UI 组件库；③自绘「记住我」废弃，记忆职责归浏览器密码管理器。spec 已同步（§A/§B/§E/§G/§K/Out of Scope）。
-  - 修订 2026-10-05：恢复「回收所有会话」按钮（POST /revoke，裁决 #21 推翻）——不改密只踢人+调用者自动换票+未设密码态生效且跨重启保持；动机=yml 热改不撤票缺口。spec §B 已修订。
-  - 二次修订 2026-10-05：/revoke 改绝对语义——不自动换票，回收=全员下线含点击者本人（用户裁决；rotate 仍保留改密者存活）；面板文案/单测/E2E 同步（49 断言）。
-  - 根路径弹跳（2026-10-05）：无 token 未认证 GET / → 303 /plugins/dsh-password-login/login（authorizeIndex 包装，stale 让位官方 401）——消除回收后缓存空壳与 401 白页两种困惑；F05 零配置全链断言。
-  - E2E 干跑定罪（2026-10-07 22:39）：DshTokenDialog submit 只走 extractDshToken+legacy exchangeToken(/?token= 303 交换)——插件服务器的密码无输入路径（rotate 后无法经 UI 登回；此前矩阵用 debug intent 存密码掩盖）。横幅可达性本身没问题（TokenNeeded 活跃时会话列表 y=188 稳定出现）。修法=submit 先试插件 /session Bearer（成功→存 ServerConfig.password+cookie 入注册表），回落 legacy token 交换；文案同步中性化（用户已质疑启动行令牌教程段）
-  - 表单密码框补口（2026-10-07 23:30-23:47）：DSH 新建/编辑表单放出可选密码框（原 isDsh 隐藏+保存清空），提示文案更新×15；隔离证明=rotate 杀 cookie 后 auth recovered via PasswordMint（表单密码驱动铸票直连零横幅）；编辑路径=app 内改密码 UX
-
 ## P2 — 优化与锦上添花
 
 - [ ] **#530 会话页导航弹回 Home + 渲染面黑屏挂起（演示尾段两现）** `uiux` `nav`
@@ -97,6 +85,10 @@
   - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §一
 
 ## P3 — 观察与低价值改进
+
+- [ ] **#531 文案清理二期——重复键合并/plurals 化/大小写全面统一** `i18n` `chore`
+  - 一期已清 42 死键+9 修正（2026-10-08）；二期余项：add_tag/assign_tag 等同文重复键合并（需动调用点）、task_toolbar_subagents (s) hack 转 plurals（ar 六形态）、按钮/标题大小写全面 harmonize、chat_question_label androidTest 引用清退
+  - → journal: docs/journal/2026-10-07-dsh-standard-bugs.md §13
 
 - [ ] **#522 B案升 stable 后余留装备清扫——JankHoldGate A/B 开关 + STREAM_DELTA_BUS 旗标退役（#499 余留范围）** `chore` `refactor`
   - 前置：STREAM_SHARD_PILOT / STREAM_DELTA_BUS 升 stable 并观察一批——当前 stable 均 false，JankHold 冻结链在 stable 仍是承重活体（B案开=旁路），现退役会回归 stable 流式滚动组合风暴。

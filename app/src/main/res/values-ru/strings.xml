@@ -59,27 +59,12 @@
     <string name="chat_stop">Остановить</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->
-    <string name="pending_sheet_title">Очередь</string>
-    <string name="pending_tab_stacked">В очереди %1$d</string>
-    <string name="pending_tab_todo">TODO %1$d/%2$d</string>
     <string name="pending_tab_todo_plain">TODO</string>
-    <string name="pending_continue">Продолжить</string>
-    <string name="pending_clear">Очистить</string>
-    <string name="pending_clear_confirm_title">Очистить очередь сообщений?</string>
-    <string name="pending_clear_confirm_text">%1$d сообщений из очереди будет удалено.</string>
-    <string name="pending_edit_dialog_title">Изменить сообщение в очереди</string>
-    <string name="pending_item_edit">Изменить</string>
-    <string name="pending_item_delete">Удалить</string>
-    <string name="pending_item_send">Отправить сейчас</string>
-    <string name="pending_item_sending">Отправка…</string>
     <string name="todo_empty">Нет элементов TODO</string>
     <string name="chat_empty">Начать сессию</string>
     <string name="chat_copy">Копировать</string>
     <string name="table_copy_cell">Копировать ячейку</string>
     <string name="table_copy_table">Копировать таблицу (TSV)</string>
-    <string name="terminal_copy">Копировать</string>
-    <string name="terminal_paste">Вставить</string>
-    <string name="terminal_more">Ещё…</string>
     <string name="chat_compressing_context">Сжатие контекста: %1$s</string>
     <string name="chat_compressing_context_plain">Сжатие контекста…</string>
     <string name="chat_revert">Отменить изменения</string>
@@ -154,12 +139,7 @@
     <!-- UI hardcoded strings (i18n) -->
     <string name="favorites_title">Избранное</string>
     <string name="all">Все</string>
-    <string name="no_favorites">Пока нет избранных сессий</string>
-    <string name="server_not_connected">Сервер не подключён</string>
-    <string name="server_not_connected_desc">%1$s не подключён. Подключитесь, чтобы просмотреть эту сессию.</string>
     <string name="remove_favorite">Убрать из избранного</string>
-    <string name="more_actions">Другие действия</string>
-    <string name="offline_suffix">· Не подключён</string>
     <string name="add_tag">Добавить тег</string>
     <string name="tag_name">Название тега</string>
     <string name="color">Цвет</string>
@@ -175,7 +155,6 @@
     <string name="no_sessions_with_tag">Нет сессий с этим тегом</string>
     <string name="delete_tag_title">Удалить тег</string>
     <string name="delete_tag_message">Удалить «%1$s»? Все назначения сессий будут удалены.</string>
-    <string name="tag_label">Тег</string>
     <string name="no_tags_placeholder">Нет меток, нажмите кнопку ниже, чтобы создать</string>
     <string name="quick_navigate">Быстрая навигация</string>
     <string name="question">Вопрос</string>
@@ -184,7 +163,6 @@
     <string name="source">Исходный код</string>
     <string name="copy_all">Копировать всё</string>
     <string name="no_text">(нет текста)</string>
-    <string name="custom_input">Свой ввод</string>
     <string name="input_answer">Введите ответ</string>
     <string name="pdf_load_failed">Не удалось загрузить PDF</string>
     <string name="unknown_error">Неизвестная ошибка</string>
@@ -217,7 +195,6 @@
     <string name="session_pending_approval">Ожидает одобрения</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
-    <string name="chat_response">Ответ</string>
     <plurals name="chat_status_edits_plural">
         <item quantity="one">%1$d изменение</item>
         <item quantity="few">%1$d изменения</item>
@@ -241,8 +218,6 @@
     <string name="chat_status_searching">Поиск по коду</string>
     <string name="chat_status_fetching_url">Получение URL</string>
     <string name="chat_status_running_subagent">Выполняется субагент</string>
-    <string name="chat_task_completed">Ход завершён</string>
-    <string name="chat_task_failed">Задача не выполнена</string>
     <string name="chat_event_tool_catalog_changed">Каталог инструментов изменён</string>
     <string name="chat_event_task_completed">Субагент завершён</string>
     <string name="chat_event_task_failed">Сбой субагента</string>
@@ -300,8 +275,6 @@
     <string name="chat_stats_tools">Инструменты</string>
     <string name="chat_stats_expand">Показать подробности раунда</string>
     <string name="chat_stats_collapse">Скрыть подробности раунда</string>
-    <string name="chat_subagent_completed_notification">Субагент завершён</string>
-    <string name="chat_subagent_failed_notification">Сбой субагента</string>
     <string name="chat_status_updating_tasks">Обновление задач</string>
     <string name="chat_status_thinking">Думает</string>
     <string name="chat_tool_running_command">Выполнение команды…</string>
@@ -529,7 +502,6 @@
     <string name="session_details_updated">Обновлена</string>
     <string name="session_details_diff">Diff</string>
     <string name="session_details_diff_summary">+%1$d −%2$d (%3$d файлов)</string>
-    <string name="chat_thinking_complete">Думал %1$s</string>
     <string name="chat_thinking_complete_unknown">Размышление завершено</string>
     <string name="chat_token_usage_total">%,d токенов</string>
     <string name="chat_token_input">Вход</string>
@@ -549,7 +521,7 @@
     <string name="permission_reject_button">Отклонить</string>
     <string name="settings_auto_approve_rules">Правила автоодобрения</string>
     <string name="settings_auto_allow_permissions">Автоматически разрешать все запросы разрешений</string>
-    <string name="settings_auto_allow_permissions_desc">Автоматически отвечает \'Всегда разрешать\'. Правила сохраняются навсегда — только для доверенных серверов.</string>
+    <string name="settings_auto_allow_permissions_desc">Автоматически отвечает \'Всегда\'. Правила сохраняются навсегда — только для доверенных серверов.</string>
     <string name="settings_no_auto_approve_rules">Нет сохранённых правил автоодобрения</string>
     <string name="settings_delete_rule">Удалить правило</string>
     <string name="settings_expand_reasoning">Авторазворачивать размышление</string>
@@ -559,7 +531,6 @@
     <string name="chat_webfetch_prompt">Запрос: %s</string>
     <string name="tool_web_search">WebSearch</string>
     <string name="chat_context_usage">Контекст: %1$d%%</string>
-    <string name="chat_retry_send">Повторить</string>
     <string name="chat_title_placeholder">Чат</string>
     <string name="chat_context_detail_title">Детали использования контекста</string>
     <string name="a11y_settings_auto_allow_permissions">Автоматически разрешать все запросы разрешений</string>
@@ -596,7 +567,7 @@
     <string name="chat_locate_message_not_found">Сообщение не найдено в этой сессии</string>
     <string name="a11y_icon_add">Добавить</string>
     <string name="a11y_icon_share">Поделиться</string>
-    <string name="a11y_icon_unlink">Отвязать</string>
+    <string name="a11y_icon_unlink">Отменить общий доступ</string>
     <string name="a11y_icon_terminal">Терминал</string>
     <string name="a11y_icon_copy_all">Копировать всё</string>
     <string name="a11y_icon_compress">Сжать</string>
@@ -611,7 +582,6 @@
     <string name="a11y_icon_description">Описание</string>
     <string name="a11y_icon_image">Изображение</string>
     <string name="a11y_icon_file">Файл</string>
-    <string name="a11y_icon_question">Вопрос от агента</string>
     <string name="a11y_icon_collapse">Свернуть</string>
     <string name="a11y_icon_expand">Развернуть</string>
     <string name="a11y_icon_dismiss">Закрыть</string>
@@ -642,7 +612,6 @@
     <string name="connection_error_title">Сервер недоступен</string>
     <string name="connection_error_retrying_in">Повторная попытка через %1$d с…</string>
     <string name="connection_error_switch_server">Переключиться на другой сервер</string>
-    <string name="chat_thinking_in_progress">Думает… %1$s</string>
     <string name="mcp_servers_title">Серверы MCP</string>
     <string name="mcp_no_servers">Серверы MCP не настроены</string>
     <string name="chat_context_composition">Состав контекста (оценка)</string>
@@ -675,7 +644,6 @@
     <string name="settings_chat_font_compact">Компактный</string>
     <string name="settings_turn_dividers">Разделители хода</string>
     <string name="settings_turn_dividers_desc">Показывать разделители между сообщениями в одном ходе</string>
-    <string name="viewer_loading_progress">Загрузка: %1$d / %2$d строк</string>
     <string name="viewer_large_file_warning">Большой файл (%1$d строк) — производительность может снизиться</string>
     <string name="workspace_search_hint">Введите текст для поиска файлов</string>
     <string name="workspace_search_no_results">Нет подходящих файлов</string>
@@ -777,20 +745,12 @@
     <string name="dsh_job_status_killed">Завершено принудительно</string>
     <string name="dsh_job_status_completed">Завершено</string>
     <string name="dsh_job_status_failed">Не выполнено</string>
-    <string name="dsh_jobs_empty">Нет фоновых задач</string>
     <string name="shell_status_failed">Не выполнено</string>
     <string name="task_toolbar_action">Переместить задачу в фоновый режим</string>
     <string name="task_toolbar_subagents">%1$d субагент(ов) на переднем плане</string>
-    <string name="a11y_icon_tasks">Действия задач</string>
-    <string name="task_sheet_subagents_tab">Субагенты</string>
-    <string name="task_sheet_shells_tab">Shell</string>
     <string name="task_sheet_empty_subagents">Нет запущенных субагентов</string>
     <string name="task_sheet_empty_shells">Нет команд shell</string>
-    <string name="task_sheet_title">Задачи</string>
     <!-- 2026-08-13：任务面板前台/后台标记 -->
-    <string name="task_foreground">Передний план</string>
-    <string name="task_background">Фон</string>
-    <string name="task_sheet_history_tab">История</string>
     <string name="shell_kill">Удалить shell</string>
     <string name="shell_close">Закрыть</string>
     <string name="shell_no_output">Вывода пока нет</string>
@@ -821,7 +781,6 @@
     <!-- #322：DSH 服务器历史命中（session/search） -->
     <string name="search_server_hits">Совпадения в сессиях</string>
     <string name="search_server_more">Показаны только первые 20 совпадений</string>
-    <string name="search_content_coverage_hint">Полная история не синхронизирована для этой сессии</string>
     <string name="search_content_hit_count">%1$d сообщений</string>
     <string name="search_filter_role_all">Все роли</string>
     <string name="search_filter_menu">Фильтр</string>
@@ -855,7 +814,6 @@
     <string name="agent_preset_cards_title">Выберите пресет агента</string>
     <string name="server_settings_default_agent_preset">Пресет агента по умолчанию для новых сессий</string>
     <string name="session_details_agent_preset">Пресет агента</string>
-    <string name="a11y_icon_agent_preset">Пресет агента</string>
     <string name="server_settings_defaults_loopback_hint">Стандартные уровни доступны только через loopback-соединение. Используйте adb reverse (127.0.0.1) для управления ими.</string>
     <!-- ============ Goal (backlog #286) / Context pressure ============ -->
     <string name="toolbar_goal">Цель</string>
@@ -903,12 +861,12 @@
     <string name="crash_notice_view">Открыть</string>
     <string name="crash_notice_dismiss">Скрыть</string>
     <string name="dsh_token_banner_text">Этот сервер требует учётные данные доступа</string>
-    <string name="dsh_token_banner_action">Ввести токен</string>
+    <string name="dsh_token_banner_action">Ввести учётные данные</string>
     <string name="dsh_token_dialog_title">Требуются учётные данные доступа</string>
     <string name="dsh_token_dialog_message">Введите пароль доступа этого сервера или вставьте токен / полный URL (token=…) для устаревших серверов.</string>
     <string name="dsh_token_dialog_hint">Пароль или токен</string>
     <string name="dsh_token_dialog_connect">Подключиться</string>
-    <string name="dsh_token_dialog_rejected">Сервер отклонил токен. Проверьте его и попробуйте снова.</string>
+    <string name="dsh_token_dialog_rejected">Сервер отклонил учётные данные. Проверьте их и попробуйте снова.</string>
     <string name="server_pair_help_title">Первое сопряжение</string>
     <string name="server_pair_help_manual">Сначала подключитесь; если требуются учётные данные, введите пароль доступа по запросу (устаревшие серверы используют токен)</string>
     <string name="server_pair_help_adb">По USB (dev-сборки): выполните ./scripts/dsh-pair.sh на хосте — токен будет введён автоматически</string>

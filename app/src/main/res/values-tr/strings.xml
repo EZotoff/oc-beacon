@@ -73,12 +73,7 @@
     <!-- UI hardcoded strings (i18n) -->
     <string name="favorites_title">Favoriler</string>
     <string name="all">Tümü</string>
-    <string name="no_favorites">Henüz favori oturum yok</string>
-    <string name="server_not_connected">Sunucu bağlı değil</string>
-    <string name="server_not_connected_desc">%1$s bağlı değil. Bu oturumu görüntülemek için bağlanın.</string>
     <string name="remove_favorite">Favorilerden kaldır</string>
-    <string name="more_actions">Diğer işlemler</string>
-    <string name="offline_suffix">· Bağlı değil</string>
     <string name="add_tag">Etiket ekle</string>
     <string name="tag_name">Etiket adı</string>
     <string name="color">Renk</string>
@@ -94,7 +89,6 @@
     <string name="no_sessions_with_tag">Bu etikete sahip oturum yok</string>
     <string name="delete_tag_title">Etiketi sil</string>
     <string name="delete_tag_message">\"%1$s\" silinsin mi? Tüm oturum atamaları kaldırılacak.</string>
-    <string name="tag_label">Etiket</string>
     <string name="no_tags_placeholder">Etiket yok, aşağıdaki düğmeye dokunun</string>
     <string name="quick_navigate">Hızlı gezinme</string>
     <string name="question">Soru</string>
@@ -103,7 +97,6 @@
     <string name="source">Kaynak</string>
     <string name="copy_all">Tümünü kopyala</string>
     <string name="no_text">(metin yok)</string>
-    <string name="custom_input">Özel giriş</string>
     <string name="input_answer">Cevabı girin</string>
     <string name="pdf_load_failed">PDF yüklenemedi</string>
     <string name="unknown_error">Bilinmeyen hata</string>
@@ -135,26 +128,11 @@
     <string name="chat_stop">Dur</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->
-    <string name="pending_sheet_title">Kuyruk</string>
-    <string name="pending_tab_stacked">Kuyrukta %1$d</string>
-    <string name="pending_tab_todo">TODO %1$d/%2$d</string>
     <string name="pending_tab_todo_plain">TODO</string>
-    <string name="pending_continue">Devam et</string>
-    <string name="pending_clear">Temizle</string>
-    <string name="pending_clear_confirm_title">Kuyruktaki mesajlar temizlensin mi?</string>
-    <string name="pending_clear_confirm_text">Kuyruktaki %1$d mesaj kaldırılacak.</string>
-    <string name="pending_edit_dialog_title">Kuyruktaki mesajı düzenle</string>
-    <string name="pending_item_edit">Düzenle</string>
-    <string name="pending_item_delete">Sil</string>
-    <string name="pending_item_send">Şimdi gönder</string>
-    <string name="pending_item_sending">Gönderiliyor…</string>
     <string name="todo_empty">TODO öğesi yok</string>
     <string name="chat_copy">Kopyala</string>
     <string name="table_copy_cell">Hücreyi kopyala</string>
     <string name="table_copy_table">Tabloyu kopyala (TSV)</string>
-    <string name="terminal_copy">Kopyala</string>
-    <string name="terminal_paste">Yapıştır</string>
-    <string name="terminal_more">Diğer…</string>
     <string name="chat_compressing_context">Bağlam sıkıştırılıyor: %1$s</string>
     <string name="chat_compressing_context_plain">Bağlam sıkıştırılıyor…</string>
     <string name="chat_revert">Geri al</string>
@@ -197,7 +175,6 @@
     <string name="session_pending_approval">Onay bekleniyor</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
-    <string name="chat_response">Cevap</string>
     <plurals name="chat_status_edits_plural">
         <item quantity="one">%1$d düzenleme</item>
         <item quantity="other">%1$d düzenleme</item>
@@ -215,8 +192,6 @@
     <string name="chat_status_searching">Codebase\'de aranıyor</string>
     <string name="chat_status_fetching_url">URL alınıyor</string>
     <string name="chat_status_running_subagent">Alt ajan çalıştırılıyor</string>
-    <string name="chat_task_completed">Tur tamamlandı</string>
-    <string name="chat_task_failed">Görev başarısız</string>
     <string name="chat_event_tool_catalog_changed">Araç kataloğu değişti</string>
     <string name="chat_event_task_completed">Alt ajan tamamlandı</string>
     <string name="chat_event_task_failed">Alt ajan başarısız</string>
@@ -274,8 +249,6 @@
     <string name="chat_stats_tools">Araçlar</string>
     <string name="chat_stats_expand">Tur ayrıntılarını göster</string>
     <string name="chat_stats_collapse">Tur ayrıntılarını gizle</string>
-    <string name="chat_subagent_completed_notification">Alt ajan tamamlandı</string>
-    <string name="chat_subagent_failed_notification">Alt ajan başarısız</string>
     <string name="chat_status_updating_tasks">Görevler güncelleniyor</string>
     <string name="chat_status_thinking">Düşünüyor</string>
     <string name="chat_tool_running_command">Komut çalıştırılıyor…</string>
@@ -520,7 +493,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="session_details_updated">Güncelleme</string>
     <string name="session_details_diff">Diff</string>
     <string name="session_details_diff_summary">+%1$d −%2$d (%3$d dosya)</string>
-    <string name="chat_thinking_complete">%1$s düşündü</string>
     <string name="chat_thinking_complete_unknown">Düşünme tamamlandı</string>
     <string name="chat_token_usage_total">%,d token</string>
     <string name="chat_token_input">Giriş</string>
@@ -540,7 +512,7 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="permission_reject_button">Reddet</string>
     <string name="settings_auto_approve_rules">Otomatik onay kuralları</string>
     <string name="settings_auto_allow_permissions">Tüm izin isteklerini otomatik izin ver</string>
-    <string name="settings_auto_allow_permissions_desc">Her isteğe otomatik \'Her zaman izin ver\' yanıtı verir. Kurallar kalıcı saklanır — yalnızca güvenilen sunucularda.</string>
+    <string name="settings_auto_allow_permissions_desc">Her isteğe otomatik \'Her zaman\' yanıtı verir. Kurallar kalıcı saklanır — yalnızca güvenilen sunucularda.</string>
     <string name="settings_no_auto_approve_rules">Kayıtlı otomatik onay kuralı yok</string>
     <string name="settings_delete_rule">Kuralı sil</string>
     <string name="settings_expand_reasoning">Akıl yürütmeyi otomatik genişlet</string>
@@ -550,7 +522,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="chat_webfetch_prompt">İstem: %s</string>
     <string name="tool_web_search">WebSearch</string>
     <string name="chat_context_usage">Bağlam: %1$d%%</string>
-    <string name="chat_retry_send">Yeniden dene</string>
     <string name="chat_title_placeholder">Chat</string>
     <string name="chat_context_detail_title">Bağlam kullanım detayları</string>
     <string name="a11y_settings_auto_allow_permissions">Tüm izin isteklerini otomatik izin ver</string>
@@ -587,7 +558,7 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="chat_locate_message_not_found">Bu oturumda mesaj bulunamadı</string>
     <string name="a11y_icon_add">Ekle</string>
     <string name="a11y_icon_share">Paylaş</string>
-    <string name="a11y_icon_unlink">Bağlantıyı kaldır</string>
+    <string name="a11y_icon_unlink">Paylaşmayı kaldır</string>
     <string name="a11y_icon_terminal">Terminal</string>
     <string name="a11y_icon_copy_all">Tümünü kopyala</string>
     <string name="a11y_icon_compress">Sıkıştır</string>
@@ -602,7 +573,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="a11y_icon_description">Açıklama</string>
     <string name="a11y_icon_image">Görüntü</string>
     <string name="a11y_icon_file">Dosya</string>
-    <string name="a11y_icon_question">Ajandan soru</string>
     <string name="a11y_icon_collapse">Daralt</string>
     <string name="a11y_icon_expand">Genişlet</string>
     <string name="a11y_icon_dismiss">Kapat</string>
@@ -633,7 +603,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="connection_error_title">Sunucuya ulaşılamıyor</string>
     <string name="connection_error_retrying_in">%1$ds sonra yeniden deneniyor…</string>
     <string name="connection_error_switch_server">Başka bir sunucuya geç</string>
-    <string name="chat_thinking_in_progress">Düşünüyor… %1$s</string>
     <string name="mcp_servers_title">MCP Sunucuları</string>
     <string name="mcp_no_servers">Yapılandırılmış MCP sunucusu yok</string>
     <string name="chat_context_composition">Bağlam oluşumu (tahmini)</string>
@@ -666,7 +635,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="settings_chat_font_compact">Kompakt</string>
     <string name="settings_turn_dividers">Tur ayırıcıları</string>
     <string name="settings_turn_dividers_desc">Aynı turdaki mesajlar arasında ayırıcıları göster</string>
-    <string name="viewer_loading_progress">Yükleniyor: %1$d / %2$d satır</string>
     <string name="viewer_large_file_warning">Büyük dosya (%1$d satır) — performans etkilenebilir</string>
     <string name="workspace_search_hint">Dosya aramak için yazın</string>
     <string name="workspace_search_no_results">Eşleşen dosya yok</string>
@@ -768,20 +736,12 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="dsh_job_status_killed">Sonlandırıldı</string>
     <string name="dsh_job_status_completed">Tamamlandı</string>
     <string name="dsh_job_status_failed">Başarısız</string>
-    <string name="dsh_jobs_empty">Arka plan görevi yok</string>
     <string name="shell_status_failed">Başarısız</string>
     <string name="task_toolbar_action">Görevi arka plana taşı</string>
     <string name="task_toolbar_subagents">Ön planda %1$d alt ajan çalışıyor</string>
-    <string name="a11y_icon_tasks">Görev etkinlikleri</string>
-    <string name="task_sheet_subagents_tab">Alt ajanlar</string>
-    <string name="task_sheet_shells_tab">Shell</string>
     <string name="task_sheet_empty_subagents">Çalışan alt ajan yok</string>
     <string name="task_sheet_empty_shells">Shell komutu yok</string>
-    <string name="task_sheet_title">Görevler</string>
     <!-- 2026-08-13：任务面板前台/后台标记 -->
-    <string name="task_foreground">Ön plan</string>
-    <string name="task_background">Arka plan</string>
-    <string name="task_sheet_history_tab">Geçmiş</string>
     <string name="shell_kill">Shell kaldır</string>
     <string name="shell_close">Kapat</string>
     <string name="shell_no_output">Henüz çıktı yok</string>
@@ -812,7 +772,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <!-- #322：DSH 服务器历史命中（session/search） -->
     <string name="search_server_hits">Oturum eşleşmeleri</string>
     <string name="search_server_more">Yalnızca ilk 20 eşleşme gösteriliyor</string>
-    <string name="search_content_coverage_hint">Bu oturum için tüm geçmiş eşitlenmedi</string>
     <string name="search_content_hit_count">%1$d mesaj</string>
     <string name="search_filter_role_all">Tüm roller</string>
     <string name="search_filter_menu">Filtrele</string>
@@ -846,7 +805,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="agent_preset_cards_title">Ajan ön ayarı seç</string>
     <string name="server_settings_default_agent_preset">Yeni oturumlar için varsayılan ajan ön ayarı</string>
     <string name="session_details_agent_preset">Ajan ön ayarı</string>
-    <string name="a11y_icon_agent_preset">Ajan ön ayarı</string>
     <string name="server_settings_defaults_loopback_hint">Varsayılan kademelere yalnızca loopback bağlantısı üzerinden erişilebilir. Yönetmek için adb reverse (127.0.0.1) kullanın.</string>
     <!-- ============ Goal (backlog #286) / Context pressure ============ -->
     <string name="toolbar_goal">Hedef</string>
@@ -894,12 +852,12 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="crash_notice_view">Görüntüle</string>
     <string name="crash_notice_dismiss">Kapat</string>
     <string name="dsh_token_banner_text">Bu sunucu erişim kimlik bilgisi gerektiriyor</string>
-    <string name="dsh_token_banner_action">Belirteç gir</string>
+    <string name="dsh_token_banner_action">Kimlik bilgisi gir</string>
     <string name="dsh_token_dialog_title">Erişim kimlik bilgisi gerekli</string>
     <string name="dsh_token_dialog_message">Bu sunucunun erişim parolasını girin ya da eski sunucular için token / tam URL (token=…) yapıştırın.</string>
     <string name="dsh_token_dialog_hint">Parola veya token</string>
     <string name="dsh_token_dialog_connect">Bağlan</string>
-    <string name="dsh_token_dialog_rejected">Belirteç sunucu tarafından reddedildi. Kontrol edip tekrar deneyin.</string>
+    <string name="dsh_token_dialog_rejected">Kimlik bilgisi sunucu tarafından reddedildi. Kontrol edip tekrar deneyin.</string>
     <string name="server_pair_help_title">İlk eşleştirme</string>
     <string name="server_pair_help_manual">Önce bağlanın; kimlik bilgisi gerekiyorsa istendiğinde erişim parolasını girin (eski sunucular token kullanır)</string>
     <string name="server_pair_help_adb">USB (dev sürümleri): ana makinede ./scripts/dsh-pair.sh çalıştırın — token otomatik olarak enjekte edilir</string>

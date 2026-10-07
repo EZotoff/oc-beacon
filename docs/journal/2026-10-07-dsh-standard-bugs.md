@@ -169,3 +169,31 @@ V1/V2 域 read=`filePath[,offset,limit]`、edit=`filePath,oldString,newString`�
 ## §12 表单密码演示（2026-10-08 00:00，用户口令后执行）
 
 五拍全绿：首页+表单（密码框+新文案上屏）→ 当面填 名称/URL/密码 → 保存 → 断开旧条目后连接 → **probe authenticated=true 直连零横幅**（日志实证）→ 会话列表进入 ✓。收尾：DSH-DEMO 删除（datastore 零残留）+ 基线 2s 恢复。
+
+## 已完结卡片迁入（2026-10-08）
+
+### **#512 DSH 密码登录插件（dsh-password-login）——免捞 token 的会话铸造/密码生命周期/轮换全员下线** `dsh` `auth` `infra`
+  - 独立仓库纯宿主插件（照 keepalive 骨架，GitHub 分发，零客户端 bundle）：未设密码态回环免密铸票 + 密码登录书签页 + 轮换即撤销全体会话（admit 包装 epoch）；oc-beacon 与浏览器均为消费者
+  - app 侧回落链（有效 Cookie→免密铸→带密铸→legacy token），ServerConfig.password 双语义零新 UI；四批实施（骨架/密码/撤销/legacy 退役）
+  - 设计经五轮 grill 全裁决收敛；环境事实锚定 dsh 0.2.0-rc.2 源码实证
+  - → [spec](docs/specs/2026-10-05-512-dsh-password-login-design.md)
+  - 2026-10-05 追加裁决（卡片摘要中「零客户端 bundle」以此为准）：①web 登录改用浏览器原生 HTTP Basic 单密码弹窗（用户名忽略），自绘登录表单废弃；②密码管理面板回归 scope——客户端 bundle 注入 dsh 设置页，UI 一律消费 dsh 宿主 UI 原语（keepalive primitives.ts 先例），禁止引入第三方 UI 组件库；③自绘「记住我」废弃，记忆职责归浏览器密码管理器。spec 已同步（§A/§B/§E/§G/§K/Out of Scope）。
+  - 修订 2026-10-05：恢复「回收所有会话」按钮（POST /revoke，裁决 #21 推翻）——不改密只踢人+调用者自动换票+未设密码态生效且跨重启保持；动机=yml 热改不撤票缺口。spec §B 已修订。
+  - 二次修订 2026-10-05：/revoke 改绝对语义——不自动换票，回收=全员下线含点击者本人（用户裁决；rotate 仍保留改密者存活）；面板文案/单测/E2E 同步（49 断言）。
+  - 根路径弹跳（2026-10-05）：无 token 未认证 GET / → 303 /plugins/dsh-password-login/login（authorizeIndex 包装，stale 让位官方 401）——消除回收后缓存空壳与 401 白页两种困惑；F05 零配置全链断言。
+  - E2E 干跑定罪（2026-10-07 22:39）：DshTokenDialog submit 只走 extractDshToken+legacy exchangeToken(/?token= 303 交换)——插件服务器的密码无输入路径（rotate 后无法经 UI 登回；此前矩阵用 debug intent 存密码掩盖）。横幅可达性本身没问题（TokenNeeded 活跃时会话列表 y=188 稳定出现）。修法=submit 先试插件 /session Bearer（成功→存 ServerConfig.password+cookie 入注册表），回落 legacy token 交换；文案同步中性化（用户已质疑启动行令牌教程段）
+  - 表单密码框补口（2026-10-07 23:30-23:47）：DSH 新建/编辑表单放出可选密码框（原 isDsh 隐藏+保存清空），提示文案更新×15；隔离证明=rotate 杀 cookie 后 auth recovered via PasswordMint（表单密码驱动铸票直连零横幅）；编辑路径=app 内改密码 UX
+  - 迁入依据：用户验收（2026-10-08 00:05 演示后「应该没啥问题了」）：宿主矩阵+回落链+对话框密码+表单密码+生命周期+双场演示全绿（backlog.sh migrate 2026-10-08）
+
+## §13 文案清理一期（Explore 全量审计 + 主批次执行）
+
+**审计**：只读代理扫 values/strings.xml 913 键 + 代码引用，三类发现（死串 42+1/遗留 5/一致性 9），死键抽 6 个亲验（含前缀误匹配排除）。
+
+**执行（×15 文件）**：
+- 删 42 死键（旧堆积面板 12/旧任务面板 6/旧完成事件 4/思维状态 2/终端菜单 3/a11y 3/散键 12）——913→871 string + 4 plurals = 875 键
+- #512 收尾遗漏：dsh_token_banner_action「Enter token→Enter credential」、dsh_token_dialog_rejected「Token→Credential rejected」（与密码优先流程自洽）
+- 一致性：a11y_icon_unlink「Unlink→Unshare」（对齐 cmd_unshare）、dialog_select_reconnect_mode 补 Title Case、tool_search_pattern/path 标签首字母大写、question_single/multi_choice「SINGLE/MULTI→Single/Multi」、settings_auto_allow_permissions_desc 引用按钮名 ×13 语言同步为实际按钮值（zh/ja 本就匹配）
+
+**裁决保留**：dsh_token_dialog_hint「Password or token」（两形态都收，准确）；server_pair_help_adb/deeplink（dsh-pair.sh legacy 机制仍在，#514 联动清退）；chat_label_agent「Agent」（DSH 智能体特性术语，非笔误）。**反向澄清**：about_opencode_url 的 anomalyco 仓库是现行为（勿改回 sst）。
+
+**验证**：i18n-check 875×14 PASSED；compileDevDebugKotlin 绿。

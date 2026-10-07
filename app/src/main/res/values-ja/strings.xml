@@ -73,12 +73,7 @@
     <!-- UI hardcoded strings (i18n) -->
     <string name="favorites_title">お気に入り</string>
     <string name="all">すべて</string>
-    <string name="no_favorites">お気に入りのセッションはまだありません</string>
-    <string name="server_not_connected">サーバー未接続</string>
-    <string name="server_not_connected_desc">%1$s は未接続です。接続してこのセッションを表示してください。</string>
     <string name="remove_favorite">お気に入りから削除</string>
-    <string name="more_actions">その他の操作</string>
-    <string name="offline_suffix">· 未接続</string>
     <string name="add_tag">タグを追加</string>
     <string name="tag_name">タグ名</string>
     <string name="color">色</string>
@@ -94,7 +89,6 @@
     <string name="no_sessions_with_tag">このタグのセッションはありません</string>
     <string name="delete_tag_title">タグを削除</string>
     <string name="delete_tag_message">「%1$s」を削除しますか?すべてのセッション割り当てが削除されます。</string>
-    <string name="tag_label">タグ</string>
     <string name="no_tags_placeholder">タグがありません。下のボタンをタップして作成</string>
     <string name="quick_navigate">クイックナビゲーション</string>
     <string name="question">質問</string>
@@ -103,7 +97,6 @@
     <string name="source">ソース</string>
     <string name="copy_all">すべてコピー</string>
     <string name="no_text">(テキストなし)</string>
-    <string name="custom_input">カスタム入力</string>
     <string name="input_answer">回答を入力</string>
     <string name="pdf_load_failed">PDFの読み込みに失敗しました</string>
     <string name="unknown_error">不明なエラー</string>
@@ -135,26 +128,11 @@
     <string name="chat_stop">停止</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->
-    <string name="pending_sheet_title">キュー</string>
-    <string name="pending_tab_stacked">キュー %1$d</string>
-    <string name="pending_tab_todo">TODO %1$d/%2$d</string>
     <string name="pending_tab_todo_plain">TODO</string>
-    <string name="pending_continue">続ける</string>
-    <string name="pending_clear">クリア</string>
-    <string name="pending_clear_confirm_title">キュー中のメッセージをクリアしますか？</string>
-    <string name="pending_clear_confirm_text">キュー中のメッセージ%1$d件が削除されます。</string>
-    <string name="pending_edit_dialog_title">キュー中のメッセージを編集</string>
-    <string name="pending_item_edit">編集</string>
-    <string name="pending_item_delete">削除</string>
-    <string name="pending_item_send">今すぐ送信</string>
-    <string name="pending_item_sending">送信中…</string>
     <string name="todo_empty">TODOアイテムはありません</string>
     <string name="chat_copy">コピー</string>
     <string name="table_copy_cell">セルをコピー</string>
     <string name="table_copy_table">表をコピー（TSV）</string>
-    <string name="terminal_copy">コピー</string>
-    <string name="terminal_paste">貼り付け</string>
-    <string name="terminal_more">その他…</string>
     <string name="chat_compressing_context">コンテキストを圧縮中: %1$s</string>
     <string name="chat_compressing_context_plain">コンテキストを圧縮中…</string>
     <string name="chat_revert">元に戻す</string>
@@ -197,7 +175,6 @@
     <string name="session_pending_approval">承認待ち</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
-    <string name="chat_response">応答</string>
     <plurals name="chat_status_edits_plural">
         <item quantity="one">%1$d件の編集</item>
         <item quantity="other">%1$d件の編集</item>
@@ -215,8 +192,6 @@
     <string name="chat_status_searching">コードベース検索中</string>
     <string name="chat_status_fetching_url">URL取得中</string>
     <string name="chat_status_running_subagent">サブエージェント実行中</string>
-    <string name="chat_task_completed">ターン完了</string>
-    <string name="chat_task_failed">タスク失敗</string>
     <string name="chat_event_tool_catalog_changed">ツールカタログが変更されました</string>
     <string name="chat_event_task_completed">サブエージェント完了</string>
     <string name="chat_event_task_failed">サブエージェント失敗</string>
@@ -274,8 +249,6 @@
     <string name="chat_stats_tools">ツール</string>
     <string name="chat_stats_expand">ターンの詳細を表示</string>
     <string name="chat_stats_collapse">ターンの詳細を隠す</string>
-    <string name="chat_subagent_completed_notification">サブエージェント完了</string>
-    <string name="chat_subagent_failed_notification">サブエージェント失敗</string>
     <string name="chat_status_updating_tasks">タスク更新中</string>
     <string name="chat_status_thinking">思考中</string>
     <string name="chat_tool_running_command">コマンド実行中…</string>
@@ -520,7 +493,6 @@
     <string name="session_details_updated">更新日時</string>
     <string name="session_details_diff">Diff</string>
     <string name="session_details_diff_summary">+%1$d −%2$d (%3$d ファイル)</string>
-    <string name="chat_thinking_complete">%1$s考察済み</string>
     <string name="chat_thinking_complete_unknown">思考完了</string>
     <string name="chat_token_usage_total">%,dトークン</string>
     <string name="chat_token_input">入力</string>
@@ -550,7 +522,6 @@
     <string name="chat_webfetch_prompt">プロンプト: %s</string>
     <string name="tool_web_search">WebSearch</string>
     <string name="chat_context_usage">コンテキスト: %1$d%%</string>
-    <string name="chat_retry_send">再試行</string>
     <string name="chat_title_placeholder">Chat</string>
     <string name="chat_context_detail_title">コンテキスト使用詳細</string>
     <string name="a11y_settings_auto_allow_permissions">すべての権限リクエストを自動許可</string>
@@ -587,7 +558,7 @@
     <string name="chat_locate_message_not_found">このセッションでメッセージが見つかりません</string>
     <string name="a11y_icon_add">追加</string>
     <string name="a11y_icon_share">共有</string>
-    <string name="a11y_icon_unlink">リンク解除</string>
+    <string name="a11y_icon_unlink">共有を解除</string>
     <string name="a11y_icon_terminal">端末</string>
     <string name="a11y_icon_copy_all">すべてコピー</string>
     <string name="a11y_icon_compress">圧縮</string>
@@ -602,7 +573,6 @@
     <string name="a11y_icon_description">説明</string>
     <string name="a11y_icon_image">画像</string>
     <string name="a11y_icon_file">ファイル</string>
-    <string name="a11y_icon_question">エージェントからの質問</string>
     <string name="a11y_icon_collapse">折り畳む</string>
     <string name="a11y_icon_expand">展開</string>
     <string name="a11y_icon_dismiss">閉じる</string>
@@ -633,7 +603,6 @@
     <string name="connection_error_title">サーバーに接続できません</string>
     <string name="connection_error_retrying_in">%1$d秒後に再試行…</string>
     <string name="connection_error_switch_server">他のサーバーに切替</string>
-    <string name="chat_thinking_in_progress">思考中… %1$s</string>
     <string name="mcp_servers_title">MCPサーバー</string>
     <string name="mcp_no_servers">MCPサーバーが設定されていません</string>
     <string name="chat_context_composition">コンテキスト構成（推定）</string>
@@ -666,7 +635,6 @@
     <string name="settings_chat_font_compact">コンパクト</string>
     <string name="settings_turn_dividers">ターン区切り線</string>
     <string name="settings_turn_dividers_desc">同じターン内のメッセージ間に区切り線を表示する</string>
-    <string name="viewer_loading_progress">読み込み中: %1$d / %2$d 行</string>
     <string name="viewer_large_file_warning">大容量ファイル (%1$d 行) — パフォーマンスに影響する場合があります</string>
     <string name="workspace_search_hint">入力してファイルを検索</string>
     <string name="workspace_search_no_results">一致するファイルがありません</string>
@@ -768,20 +736,12 @@
     <string name="dsh_job_status_killed">強制終了</string>
     <string name="dsh_job_status_completed">完了</string>
     <string name="dsh_job_status_failed">失敗</string>
-    <string name="dsh_jobs_empty">バックグラウンドタスクはありません</string>
     <string name="shell_status_failed">失敗</string>
     <string name="task_toolbar_action">タスクをバックグラウンドに移動</string>
     <string name="task_toolbar_subagents">フォアグラウンドで実行中のサブエージェント %1$d 件</string>
-    <string name="a11y_icon_tasks">タスクアクティビティ</string>
-    <string name="task_sheet_subagents_tab">サブエージェント</string>
-    <string name="task_sheet_shells_tab">シェル</string>
     <string name="task_sheet_empty_subagents">実行中のサブエージェントはありません</string>
     <string name="task_sheet_empty_shells">シェルコマンドはありません</string>
-    <string name="task_sheet_title">タスク</string>
     <!-- 2026-08-13：任务面板前台/后台标记 -->
-    <string name="task_foreground">フォアグラウンド</string>
-    <string name="task_background">バックグラウンド</string>
-    <string name="task_sheet_history_tab">履歴</string>
     <string name="shell_kill">シェルを削除</string>
     <string name="shell_close">閉じる</string>
     <string name="shell_no_output">まだ出力はありません</string>
@@ -812,7 +772,6 @@
     <!-- #322：DSH 服务器历史命中（session/search） -->
     <string name="search_server_hits">セッションの一致</string>
     <string name="search_server_more">先頭の20件のみ表示</string>
-    <string name="search_content_coverage_hint">このセッションの全履歴は未同期です</string>
     <string name="search_content_hit_count">%1$d 件のメッセージ</string>
     <string name="search_filter_role_all">すべてのロール</string>
     <string name="search_filter_menu">絞り込み</string>
@@ -846,7 +805,6 @@
     <string name="agent_preset_cards_title">エージェントプリセットを選択</string>
     <string name="server_settings_default_agent_preset">新規セッションのデフォルトエージェントプリセット</string>
     <string name="session_details_agent_preset">エージェントプリセット</string>
-    <string name="a11y_icon_agent_preset">エージェントプリセット</string>
     <string name="server_settings_defaults_loopback_hint">デフォルト階層にはループバック接続でのみアクセスできます。管理するには adb reverse（127.0.0.1）で接続してください。</string>
     <!-- ============ Goal (backlog #286) / Context pressure ============ -->
     <string name="toolbar_goal">目標</string>
@@ -894,12 +852,12 @@
     <string name="crash_notice_view">表示</string>
     <string name="crash_notice_dismiss">閉じる</string>
     <string name="dsh_token_banner_text">このサーバーにはアクセス資格情報が必要です</string>
-    <string name="dsh_token_banner_action">トークンを入力</string>
+    <string name="dsh_token_banner_action">資格情報を入力</string>
     <string name="dsh_token_dialog_title">アクセス資格情報が必要</string>
     <string name="dsh_token_dialog_message">このサーバーのアクセスパスワードを入力するか、旧式サーバーの場合はトークンまたは完全な URL（token=…）を貼り付けてください。</string>
     <string name="dsh_token_dialog_hint">パスワードまたはトークン</string>
     <string name="dsh_token_dialog_connect">接続</string>
-    <string name="dsh_token_dialog_rejected">トークンがサーバーに拒否されました。確認してもう一度お試しください。</string>
+    <string name="dsh_token_dialog_rejected">サーバーに資格情報が拒否されました。確認してもう一度お試しください。</string>
     <string name="server_pair_help_title">初回ペアリング</string>
     <string name="server_pair_help_manual">先に接続してください。資格情報が必要な場合は、プロンプトに従ってアクセスパスワードを入力してください（旧式サーバーはトークンを使用）</string>
     <string name="server_pair_help_adb">USB（dev ビルド）：ホストで ./scripts/dsh-pair.sh を実行するとトークンが自動注入されます</string>

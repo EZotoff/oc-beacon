@@ -73,12 +73,7 @@
     <!-- UI hardcoded strings (i18n) -->
     <string name="favorites_title">Обране</string>
     <string name="all">Усі</string>
-    <string name="no_favorites">Поки немає обраних сесій</string>
-    <string name="server_not_connected">Сервер не підключено</string>
-    <string name="server_not_connected_desc">%1$s не підключено. Підключіться, щоб переглянути цю сесію.</string>
     <string name="remove_favorite">Прибрати з обраного</string>
-    <string name="more_actions">Інші дії</string>
-    <string name="offline_suffix">· Не підключено</string>
     <string name="add_tag">Додати тег</string>
     <string name="tag_name">Назва тега</string>
     <string name="color">Колір</string>
@@ -94,7 +89,6 @@
     <string name="no_sessions_with_tag">Немає сесій з цим тегом</string>
     <string name="delete_tag_title">Видалити тег</string>
     <string name="delete_tag_message">Видалити «%1$s»? Усі призначення сесій буде видалено.</string>
-    <string name="tag_label">Тег</string>
     <string name="no_tags_placeholder">Немає тегів, натисніть кнопку нижче</string>
     <string name="quick_navigate">Швидка навігація</string>
     <string name="question">Питання</string>
@@ -103,7 +97,6 @@
     <string name="source">Вихідний код</string>
     <string name="copy_all">Копіювати все</string>
     <string name="no_text">(немає тексту)</string>
-    <string name="custom_input">Власне введення</string>
     <string name="input_answer">Введіть відповідь</string>
     <string name="pdf_load_failed">Не вдалося завантажити PDF</string>
     <string name="unknown_error">Невідома помилка</string>
@@ -135,26 +128,11 @@
     <string name="chat_stop">Зупинити</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->
-    <string name="pending_sheet_title">Черга</string>
-    <string name="pending_tab_stacked">У черзі %1$d</string>
-    <string name="pending_tab_todo">TODO %1$d/%2$d</string>
     <string name="pending_tab_todo_plain">TODO</string>
-    <string name="pending_continue">Продовжити</string>
-    <string name="pending_clear">Очистити</string>
-    <string name="pending_clear_confirm_title">Очистити чергу повідомлень?</string>
-    <string name="pending_clear_confirm_text">%1$d повідомлень із черги буде видалено.</string>
-    <string name="pending_edit_dialog_title">Редагувати повідомлення в черзі</string>
-    <string name="pending_item_edit">Редагувати</string>
-    <string name="pending_item_delete">Видалити</string>
-    <string name="pending_item_send">Надіслати зараз</string>
-    <string name="pending_item_sending">Надсилання…</string>
     <string name="todo_empty">Немає елементів TODO</string>
     <string name="chat_copy">Копіювати</string>
     <string name="table_copy_cell">Копіювати комірку</string>
     <string name="table_copy_table">Копіювати таблицю (TSV)</string>
-    <string name="terminal_copy">Копіювати</string>
-    <string name="terminal_paste">Вставити</string>
-    <string name="terminal_more">Більше…</string>
     <string name="chat_compressing_context">Стиснення контексту: %1$s</string>
     <string name="chat_compressing_context_plain">Стиснення контексту…</string>
     <string name="chat_revert">Відмінити зміни</string>
@@ -197,7 +175,6 @@
     <string name="session_pending_approval">Очікує затвердження</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
-    <string name="chat_response">Відповідь</string>
     <plurals name="chat_status_edits_plural">
         <item quantity="one">%1$d зміна</item>
         <item quantity="few">%1$d зміни</item>
@@ -221,8 +198,6 @@
     <string name="chat_status_searching">Пошук у кодовій базі</string>
     <string name="chat_status_fetching_url">Отримання URL</string>
     <string name="chat_status_running_subagent">Виконується субагент</string>
-    <string name="chat_task_completed">Хід завершено</string>
-    <string name="chat_task_failed">Завдання не виконано</string>
     <string name="chat_event_tool_catalog_changed">Каталог інструментів змінено</string>
     <string name="chat_event_task_completed">Субагент завершено</string>
     <string name="chat_event_task_failed">Збій субагента</string>
@@ -280,8 +255,6 @@
     <string name="chat_stats_tools">Інструменти</string>
     <string name="chat_stats_expand">Показати деталі раунду</string>
     <string name="chat_stats_collapse">Сховати деталі раунду</string>
-    <string name="chat_subagent_completed_notification">Субагент завершено</string>
-    <string name="chat_subagent_failed_notification">Збій субагента</string>
     <string name="chat_status_updating_tasks">Оновлення завдань</string>
     <string name="chat_status_thinking">Думає</string>
     <string name="chat_tool_running_command">Виконання команди…</string>
@@ -528,7 +501,6 @@
     <string name="session_details_updated">Оновлена</string>
     <string name="session_details_diff">Diff</string>
     <string name="session_details_diff_summary">+%1$d −%2$d (%3$d файлів)</string>
-    <string name="chat_thinking_complete">Думав %1$s</string>
     <string name="chat_thinking_complete_unknown">Обдумування завершено</string>
     <string name="chat_token_usage_total">%,d токенів</string>
     <string name="chat_token_input">Ввід</string>
@@ -548,7 +520,7 @@
     <string name="permission_reject_button">Відхилити</string>
     <string name="settings_auto_approve_rules">Правила автозатвердження</string>
     <string name="settings_auto_allow_permissions">Автоматично дозволяти всі запити дозволів</string>
-    <string name="settings_auto_allow_permissions_desc">Автоматично відповідає \'Завжди дозволяти\'. Правила зберігаються постійно — лише з надійними серверами.</string>
+    <string name="settings_auto_allow_permissions_desc">Автоматично відповідає \'Завжди\'. Правила зберігаються постійно — лише з надійними серверами.</string>
     <string name="settings_no_auto_approve_rules">Немає збережених правил автозатвердження</string>
     <string name="settings_delete_rule">Видалити правило</string>
     <string name="settings_expand_reasoning">Автоматично розгортати міркування</string>
@@ -558,7 +530,6 @@
     <string name="chat_webfetch_prompt">Запит: %s</string>
     <string name="tool_web_search">WebSearch</string>
     <string name="chat_context_usage">Контекст: %1$d%%</string>
-    <string name="chat_retry_send">Повторити</string>
     <string name="chat_title_placeholder">Чат</string>
     <string name="chat_context_detail_title">Деталі використання контексту</string>
     <string name="a11y_settings_auto_allow_permissions">Автоматично дозволяти всі запити дозволів</string>
@@ -595,7 +566,7 @@
     <string name="chat_locate_message_not_found">Повідомлення не знайдено в цій сесії</string>
     <string name="a11y_icon_add">Додати</string>
     <string name="a11y_icon_share">Поділитися</string>
-    <string name="a11y_icon_unlink">Відм’язати</string>
+    <string name="a11y_icon_unlink">Скасувати спільний доступ</string>
     <string name="a11y_icon_terminal">Термінал</string>
     <string name="a11y_icon_copy_all">Копіювати все</string>
     <string name="a11y_icon_compress">Стиснути</string>
@@ -610,7 +581,6 @@
     <string name="a11y_icon_description">Опис</string>
     <string name="a11y_icon_image">Зображення</string>
     <string name="a11y_icon_file">Файл</string>
-    <string name="a11y_icon_question">Питання від агента</string>
     <string name="a11y_icon_collapse">Згорнути</string>
     <string name="a11y_icon_expand">Розгорнути</string>
     <string name="a11y_icon_dismiss">Закрити</string>
@@ -641,7 +611,6 @@
     <string name="connection_error_title">Сервер недоступний</string>
     <string name="connection_error_retrying_in">Повторна спроба через %1$dс…</string>
     <string name="connection_error_switch_server">Перемкнутися на інший сервер</string>
-    <string name="chat_thinking_in_progress">Думає… %1$s</string>
     <string name="mcp_servers_title">Сервери MCP</string>
     <string name="mcp_no_servers">Сервери MCP не налаштовано</string>
     <string name="chat_context_composition">Склад контексту (приблизно)</string>
@@ -674,7 +643,6 @@
     <string name="settings_chat_font_compact">Компактний</string>
     <string name="settings_turn_dividers">Роздільники ходів</string>
     <string name="settings_turn_dividers_desc">Показувати роздільники між повідомленнями в одному ході</string>
-    <string name="viewer_loading_progress">Завантаження: %1$d / %2$d рядків</string>
     <string name="viewer_large_file_warning">Великий файл (%1$d рядків) — продуктивність може знизитися</string>
     <string name="workspace_search_hint">Введіть текст для пошуку файлів</string>
     <string name="workspace_search_no_results">Немає відповідних файлів</string>
@@ -776,20 +744,12 @@
     <string name="dsh_job_status_killed">Примусово завершено</string>
     <string name="dsh_job_status_completed">Завершено</string>
     <string name="dsh_job_status_failed">Не виконано</string>
-    <string name="dsh_jobs_empty">Немає фонових задач</string>
     <string name="shell_status_failed">Не виконано</string>
     <string name="task_toolbar_action">Перемістити завдання у фон</string>
     <string name="task_toolbar_subagents">%1$d субагент(ів) на передньому плані</string>
-    <string name="a11y_icon_tasks">Дії завдань</string>
-    <string name="task_sheet_subagents_tab">Субагенти</string>
-    <string name="task_sheet_shells_tab">Shell</string>
     <string name="task_sheet_empty_subagents">Немає запущених субагентів</string>
     <string name="task_sheet_empty_shells">Немає команд shell</string>
-    <string name="task_sheet_title">Завдання</string>
     <!-- 2026-08-13：任务面板前台/后台标记 -->
-    <string name="task_foreground">Передній план</string>
-    <string name="task_background">Фон</string>
-    <string name="task_sheet_history_tab">Історія</string>
     <string name="shell_kill">Видалити shell</string>
     <string name="shell_close">Закрити</string>
     <string name="shell_no_output">Виводу ще немає</string>
@@ -820,7 +780,6 @@
     <!-- #322：DSH 服务器历史命中（session/search） -->
     <string name="search_server_hits">Збіги в сесіях</string>
     <string name="search_server_more">Показано лише перші 20 збігів</string>
-    <string name="search_content_coverage_hint">Повна історія не синхронізована для цієї сесії</string>
     <string name="search_content_hit_count">Повідомлень: %1$d</string>
     <string name="search_filter_role_all">Усі ролі</string>
     <string name="search_filter_menu">Фільтр</string>
@@ -854,7 +813,6 @@
     <string name="agent_preset_cards_title">Виберіть пресет агента</string>
     <string name="server_settings_default_agent_preset">Пресет агента за замовчуванням для нових сесій</string>
     <string name="session_details_agent_preset">Пресет агента</string>
-    <string name="a11y_icon_agent_preset">Пресет агента</string>
     <string name="server_settings_defaults_loopback_hint">Стандартні рівні доступні лише через loopback-з\'єднання. Використовуйте adb reverse (127.0.0.1), щоб керувати ними.</string>
     <!-- ============ Goal (backlog #286) / Context pressure ============ -->
     <string name="toolbar_goal">Мета</string>
@@ -902,12 +860,12 @@
     <string name="crash_notice_view">Переглянути</string>
     <string name="crash_notice_dismiss">Закрити</string>
     <string name="dsh_token_banner_text">Цей сервер потребує облікових даних доступу</string>
-    <string name="dsh_token_banner_action">Ввести токен</string>
+    <string name="dsh_token_banner_action">Ввести облікові дані</string>
     <string name="dsh_token_dialog_title">Потрібні облікові дані доступу</string>
     <string name="dsh_token_dialog_message">Введіть пароль доступу цього сервера або вставте токен / повну URL-адресу (token=…) для застарілих серверів.</string>
     <string name="dsh_token_dialog_hint">Пароль або токен</string>
     <string name="dsh_token_dialog_connect">Підключитися</string>
-    <string name="dsh_token_dialog_rejected">Сервер відхилив токен. Перевірте його та спробуйте ще раз.</string>
+    <string name="dsh_token_dialog_rejected">Облікові дані відхилено сервером. Перевірте їх і спробуйте ще раз.</string>
     <string name="server_pair_help_title">Перше з\'єднання</string>
     <string name="server_pair_help_manual">Спочатку підключіться; якщо потрібні облікові дані, введіть пароль доступу після запиту (застарілі сервери використовують токен)</string>
     <string name="server_pair_help_adb">Через USB (dev-збірки): запустіть ./scripts/dsh-pair.sh на хості — токен буде введено автоматично</string>
