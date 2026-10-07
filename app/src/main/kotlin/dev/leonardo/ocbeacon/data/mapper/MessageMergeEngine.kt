@@ -563,6 +563,27 @@ internal object MessageMergeEngine {
         .sortedBy { it.time.created }
 
     /**
+     * #524：消息 created 单调防线（只许更早，不许更晚；0=未知可填充）。
+     *
+     * 根因（DSH 真机 2026-10-07 定罪）：DSH journal 对 user prompt entry 的
+     * 完结 touch 事件（deliverables/turn 关联）信封 time=touch 时刻，mapper
+     * `created = 事件 time` 把 user 行 created 后移到完结时刻（实测 -86 提问
+     * entry 从发送时刻漂到 14:02:06，晚于最终输出 -88 的 14:02:05.683）→
+     * created 升序把提问行翻到输出之下 = 「回复出现在我消息上方」。created
+     * 是固有属性（消息创建时刻），SSE/DSH live 域的后续事件不得后移它。
+     *
+     * **适用边界**：仅 SSE/live 合并域（[dev.leonardo.ocbeacon.data.repository
+     * .handler.MessageEventHandler.handleMessageUpdated]）——REST 合并域
+     * （[mergeMessageMeta]/#485）不适用：V2 SSE 的 created 为客户端钟（早
+     * 0.5-1s），REST 权威值更晚且必须采纳，一刀切「只许更早」会破坏服务端
+     * 真相序（MessageMergeEngineOrderTest 钉死）。DSH 的 journal 历史回放与
+     * 实况同走 SSE dispatch 路径（DshMessageAssembler 同路径契约），不受此
+     * 边界影响。
+     */
+    fun earliestCreated(existing: Long, incoming: Long): Long =
+        if (existing in 1 until incoming) existing else incoming
+
+    /**
      * 合并消息的 SSE 和 REST 版本。
      * SSE 对内容更新（流式传输），但 REST 可能有 SSE 尚未投递的完成信息。
      *

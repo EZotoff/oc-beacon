@@ -380,6 +380,31 @@ class MessageMergeEngineTest {
         assertFalse(plain.viaSteer)
     }
 
+    // ============ #524：created 单调防线（DSH entry touch 后移族） ============
+
+    @Test
+    fun `earliestCreated 三态 - 后移拦、前移放、未知填充`() {
+        // 后移拦截：既有非零 created，incoming 更晚 → 保既有
+        assertEquals(100L, MessageMergeEngine.earliestCreated(100L, 200L))
+        // 前移放行：incoming 更早（#485 REST 权威 created 前跳）→ 采纳
+        assertEquals(50L, MessageMergeEngine.earliestCreated(100L, 50L))
+        // 未知填充：既有 0（骨架/未知）→ 采纳 incoming
+        assertEquals(200L, MessageMergeEngine.earliestCreated(0L, 200L))
+        // 等值幂等
+        assertEquals(100L, MessageMergeEngine.earliestCreated(100L, 100L))
+    }
+
+    @Test
+    fun `mergeMessageMeta user 行 REST 域不设防线 - 更晚的权威值照常采纳`() {
+        // #524 边界钉死：防线仅在 SSE/live 合并域（handleMessageUpdated）——
+        // REST 域（#485 V2）SSE created 为客户端钟（早 0.5-1s），更晚的 REST
+        // 权威值必须采纳（服务端真相序），否则 #485 回归
+        val sse = Message.User(id = "u1", sessionId = "s1", time = TimeInfo(created = 1_000L))
+        val rest = Message.User(id = "u1", sessionId = "s1", time = TimeInfo(created = 61_000L))
+        val merged = MessageMergeEngine.mergeMessageMeta(sse, rest) as Message.User
+        assertEquals("REST 域采纳更晚的权威 created（#485）", 61_000L, merged.time.created)
+    }
+
     // ============ #453：Tool state time 继承（累积计时锚保全） ============
 
     private fun pendingTool(id: String, start: Long) = Part.Tool(

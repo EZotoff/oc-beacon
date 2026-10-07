@@ -41,11 +41,36 @@ class MessageEventHandlerTest {
         val msg = testUserMessage("m1", "s1")
         handler.handleMessageUpdated(SseEvent.MessageUpdated(msg))
 
-        val updated = msg.copy(time = TimeInfo(created = msg.time.created + 1000))
+        // created 保持不变（#524 防线域：后移会被拦），差异落在 completed——
+        // 原 +1000 变体撞防线，见下方专测
+        val updated = msg.copy(time = TimeInfo(created = msg.time.created, completed = 1_234L))
         handler.handleMessageUpdated(SseEvent.MessageUpdated(updated))
 
         assertEquals(1, handler.messages.value["s1"]!!.size)
         assertEquals(updated, handler.messages.value["s1"]!![0])
+    }
+
+    /** #524：SSE/live 域 user 行 created 单调防线（DSH entry touch 后移族）。 */
+    @Test
+    fun `handles MessageUpdated - user created 后移被防线拦下`() {
+        val msg = testUserMessage("m1", "s1").copy(time = TimeInfo(created = 1_000L))
+        handler.handleMessageUpdated(SseEvent.MessageUpdated(msg))
+
+        // DSH journal touch 事件形态：同 id、更晚的 created（完结时刻）
+        val touched = msg.copy(time = TimeInfo(created = 61_000L))
+        handler.handleMessageUpdated(SseEvent.MessageUpdated(touched))
+
+        val row = handler.messages.value["s1"]!![0] as Message.User
+        assertEquals("created 后移被拦（保发送时刻，排序不翻转）", 1_000L, row.time.created)
+
+        // 前移（更早的权威修正）不受限
+        val earlier = msg.copy(time = TimeInfo(created = 500L))
+        handler.handleMessageUpdated(SseEvent.MessageUpdated(earlier))
+        assertEquals(
+            "前移放行",
+            500L,
+            (handler.messages.value["s1"]!![0] as Message.User).time.created,
+        )
     }
 
     @Test

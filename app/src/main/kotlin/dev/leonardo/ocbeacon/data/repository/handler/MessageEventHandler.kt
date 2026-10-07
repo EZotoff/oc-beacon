@@ -674,6 +674,19 @@ class MessageEventHandler @Inject constructor(
                         event.info,
                         MessageMergeEngine.mergeAssistantMeta(existing, event.info),
                     )
+                } else if (existing is Message.User && event.info is Message.User) {
+                    // #524：user 行 created 单调防线（SSE/DSH live 域）——DSH journal
+                    // 对 prompt entry 的完结 touch 事件信封 time=touch 时刻（deliverables/
+                    // turn 关联），原整替换把 created 后移到完结时刻 → 提问行翻到输出
+                    // 之下（「回复出现在我消息上方」真机定罪）。REST 合并域不设此防线
+                    // （#485 V2 须采纳更晚的 REST 权威值）——见 earliestCreated KDoc
+                    // 的适用边界。
+                    val kept = MessageMergeEngine.earliestCreated(existing.time.created, event.info.time.created)
+                    if (kept != event.info.time.created) {
+                        event.info.copy(time = event.info.time.copy(created = kept))
+                    } else {
+                        event.info
+                    }
                 } else {
                     event.info
                 }
@@ -967,7 +980,34 @@ class MessageEventHandler @Inject constructor(
             if (fromIdx < 0) return@update current  // 幂等 no-op（已换/从未在场）
             if (msgs.any { it.id == event.toId }) {
                 // 双源并入：toId 行保留（Room 权威种子），fromId 行撤下
+                val fromRow = msgs[fromIdx]
                 msgs.removeAt(fromIdx)
+                // #524：并入保发送时刻——fromId 为 pending-*（乐观播种，created=
+                // 客户端发送时刻）时，权威行 created 取 min：DSH journal 的 prompt
+                // entry 信封 time=落盘时刻，原生晚于 turn 首输出（实测 -23 晚
+                // 0.65s），原并入直接采纳会把提问行排到首段输出之下（「回复出现
+                // 在我消息上方」的次级形态）。created 变早时按序移位（列表
+                // created 升序不变量）。V2（#485）方向相反（REST 权威更早），min
+                // 语义下权威早值照常采纳，不受影响。
+                val toIdx = msgs.indexOfFirst { it.id == event.toId }
+                val toRow = msgs.getOrNull(toIdx)
+                if (toRow is Message.User && fromRow is Message.User &&
+                    fromRow.id.startsWith("pending-") && fromRow.time.created > 0
+                ) {
+                    val kept = MessageMergeEngine.earliestCreated(fromRow.time.created, toRow.time.created)
+                    if (kept != toRow.time.created) {
+                        val fixed = toRow.copy(time = toRow.time.copy(created = kept))
+                        msgs.removeAt(toIdx)
+                        val key = fixed.time.created
+                        var lo = 0
+                        var hi = msgs.size
+                        while (lo < hi) {
+                            val mid = (lo + hi) ushr 1
+                            if (msgs[mid].time.created <= key) lo = mid + 1 else hi = mid
+                        }
+                        msgs.add(lo, fixed)
+                    }
+                }
             } else {
                 val row = msgs[fromIdx]
                 msgs[fromIdx] = when (row) {
