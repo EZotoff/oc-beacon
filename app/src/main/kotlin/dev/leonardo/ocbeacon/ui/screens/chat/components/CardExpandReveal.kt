@@ -1446,12 +1446,16 @@ internal fun CardExpandReveal(
                 // (LEAP 帧 pre-draw 读 1144、绘制期才见 -3536 → 顶开帧上屏;err=4 的
                 // 小修正同样晚 44ms)。onPlaced 在放置相派发(先于 pre-draw),FLUSH 相
                 // 读到的即本帧地面真值。onGloballyPositioned 保留(兜底 + PLACED 日志)。
-                revealTopY.floatValue = it.positionInRoot().y
-                coordStamp.intValue = clock.lastReportedH
+                if (it.isAttached) {
+                    revealTopY.floatValue = it.positionInRoot().y
+                    coordStamp.intValue = clock.lastReportedH
+                }
             }
             .onGloballyPositioned {
-                revealTopY.floatValue = it.positionInRoot().y
-                coordStamp.intValue = clock.lastReportedH
+                if (it.isAttached) {
+                    revealTopY.floatValue = it.positionInRoot().y
+                    coordStamp.intValue = clock.lastReportedH
+                }
                 // #423 批次四c:放置回调即时修正——坐标回调虽晚于 measure,但早于
                 // 下一 pre-draw(真机:LEAP 帧 .377 回调/.380 绘制,而 pre-draw 读数
                 // 滞后到 .887)。回调到达即 dispatch,把修正提前整整一个卡顿窗;
