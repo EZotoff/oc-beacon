@@ -113,6 +113,10 @@
     <string name="server_url_example">es. http://192.168.0.10:4199 o https://my-server:443</string>
     <string name="server_type_opencode">OpenCode</string>
     <string name="server_type_dsh">DSH</string>
+    <string name="dsh_plugin_hint_icon">Informazioni sul plugin password</string>
+    <string name="dsh_plugin_hint_title">Plugin password</string>
+    <string name="dsh_plugin_hint_message">Installa il plugin dsh-password-login sul tuo server DSH per accedere con una password di accesso — niente più token dai log del server. I passaggi di installazione sono nel README.</string>
+    <string name="dsh_plugin_hint_link">Guida d\'installazione (GitHub)</string>
     <string name="server_type_dsh_hint">Password di accesso facoltativa: lasciala vuota per inserirla dal banner dopo la connessione. Per USB, esegui prima adb reverse tcp:3080 tcp:3080</string>
     <string name="server_url_example_dsh">es. http://127.0.0.1:3080 via USB (adb reverse tcp:3080 tcp:3080)</string>
     <string name="server_add">Aggiungi server</string>

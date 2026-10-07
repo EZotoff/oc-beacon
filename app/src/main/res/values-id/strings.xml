@@ -22,6 +22,10 @@
     <string name="server_url_example">misal: http://192.168.0.10:4199 atau https://my-server:443</string>
     <string name="server_type_opencode">OpenCode</string>
     <string name="server_type_dsh">DSH</string>
+    <string name="dsh_plugin_hint_icon">Tentang plugin kata sandi</string>
+    <string name="dsh_plugin_hint_title">Plugin kata sandi</string>
+    <string name="dsh_plugin_hint_message">Pasang plugin dsh-password-login di server DSH Anda untuk masuk dengan kata sandi akses — tanpa mencari token dari log server. Langkah instalasi ada di README.</string>
+    <string name="dsh_plugin_hint_link">Panduan instalasi (GitHub)</string>
     <string name="server_type_dsh_hint">Kata sandi akses opsional: biarkan kosong untuk memasukkannya dari banner setelah terhubung. Untuk USB, jalankan dulu adb reverse tcp:3080 tcp:3080</string>
     <string name="server_url_example_dsh">cth: http://127.0.0.1:3080 lewat USB (adb reverse tcp:3080 tcp:3080)</string>
     <string name="server_username">Username</string>

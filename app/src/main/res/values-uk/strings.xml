@@ -113,6 +113,10 @@
     <string name="server_url_example">наприклад, http://192.168.0.10:4199 або https://my-server:443</string>
     <string name="server_type_opencode">OpenCode</string>
     <string name="server_type_dsh">DSH</string>
+    <string name="dsh_plugin_hint_icon">Про плагін пароля</string>
+    <string name="dsh_plugin_hint_title">Плагін пароля</string>
+    <string name="dsh_plugin_hint_message">Встановіть плагін dsh-password-login на сервер DSH, щоб входити за паролем доступу — без вудіння токенів із логів сервера. Кроки встановлення — у README.</string>
+    <string name="dsh_plugin_hint_link">Керівництво зі встановлення (GitHub)</string>
     <string name="server_type_dsh_hint">Необовʼязковий пароль доступу: залиште порожнім, щоб ввести його через банер після підключення. Для USB спочатку виконайте adb reverse tcp:3080 tcp:3080</string>
     <string name="server_url_example_dsh">напр., http://127.0.0.1:3080 через USB (adb reverse tcp:3080 tcp:3080)</string>
     <string name="server_add">Додати сервер</string>

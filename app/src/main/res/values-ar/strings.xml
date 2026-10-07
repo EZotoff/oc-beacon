@@ -113,6 +113,10 @@
     <string name="server_url_example">مثال: http://192.168.0.10:4199 أو https://my-server:443</string>
     <string name="server_type_opencode">OpenCode</string>
     <string name="server_type_dsh">DSH</string>
+    <string name="dsh_plugin_hint_icon">حول إضافة كلمة المرور</string>
+    <string name="dsh_plugin_hint_title">إضافة كلمة المرور</string>
+    <string name="dsh_plugin_hint_message">ثبّت إضافة dsh-password-login على خادم DSH للدخول بكلمة مرور وصول مباشرة — دون البحث عن الرمز في سجلات الخادم. خطوات التثبيت في README.</string>
+    <string name="dsh_plugin_hint_link">دليل التثبيت (GitHub)</string>
     <string name="server_type_dsh_hint">كلمة مرور وصول اختيارية: اتركها فارغة لإدخالها من الشريط بعد الاتصال. لـ USB، شغّل adb reverse tcp:3080 tcp:3080 أولاً</string>
     <string name="server_url_example_dsh">مثال: http://127.0.0.1:3080 عبر USB (adb reverse tcp:3080 tcp:3080)</string>
     <string name="server_add">إضافة خادم</string>

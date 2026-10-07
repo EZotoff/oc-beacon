@@ -113,6 +113,10 @@
     <string name="server_url_example">例: http://192.168.0.10:4199 または https://my-server:443</string>
     <string name="server_type_opencode">OpenCode</string>
     <string name="server_type_dsh">DSH</string>
+    <string name="dsh_plugin_hint_icon">パスワードプラグインについて</string>
+    <string name="dsh_plugin_hint_title">パスワードプラグイン</string>
+    <string name="dsh_plugin_hint_message">DSH サーバーに dsh-password-login プラグインをインストールすると、アクセスパスワードで直接ログインでき、サーバーログからトークンを探す必要はありません。インストール手順は README を参照してください。</string>
+    <string name="dsh_plugin_hint_link">インストールガイド（GitHub）</string>
     <string name="server_type_dsh_hint">オプションのアクセスパスワード：空欄にすると接続後にバナーから入力できます。USB の場合は先に adb reverse tcp:3080 tcp:3080 を実行してください</string>
     <string name="server_url_example_dsh">例: http://127.0.0.1:3080（USB は adb reverse tcp:3080 tcp:3080 経由）</string>
     <string name="server_add">サーバー追加</string>
