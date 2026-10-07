@@ -621,6 +621,9 @@ internal fun CardExpandReveal(
     // 以实测对账修正开环 δ 账本累积的视口漂移(边缘残量/锚点翻转会计误差)。
     val revealTopY = remember { androidx.compose.runtime.mutableFloatStateOf(Float.NaN) }
 
+    /** #526b 取证：reveal 盒实占高度（onSizeChanged 写入；PLACED 探针读）。 */
+    val revealBoxH = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+
     /**
      * #423 批次十:绘制真值(在 drawWithContent 内采样——该时刻读到的布局值
      * 即实际渲染值,天然过滤多遍测量的幻影放置)。逐帧双写的闭环反馈源:
@@ -1487,10 +1490,11 @@ internal fun CardExpandReveal(
     // (抬底条件 floor>measured 自然失效)。remember(finalHCache) 稳定引用,
     // lambda 闭包读 state=布局相订阅,缓存更新自动失效重测。
     val floorProvider = remember(finalHCache) { { finalHCache.value } }
-    Box(
+        Box(
         modifier = modifier
             .clipToBounds()
             .cardExpandGeometry(clock, floorProvider)
+            .onSizeChanged { revealBoxH.intValue = it.height }
             .onPlaced {
                 // #423 批次四:布局相写入。真机取证(09-22):onGloballyPositioned 实测
                 // 在绘制期才派发——晚于 pre-draw,FLUSH 修正器在增长落地帧只能读到陈旧值
@@ -1538,14 +1542,20 @@ internal fun CardExpandReveal(
                     }
                 }
                 if (BuildConfig.DEBUG && clock.animating) {
+                    // #526b 取证增补：boxH（reveal 盒实占高）+ host（宿主 item 尺寸）——
+                    // E1 脏样本（回收后首展开 topY+H）解码需要分清「盒高漂移」还是
+                    // 「item 内其它增长」还是「滚动双算」。
                     AppLogger.d(
                         "PRD",
                         "E" + episodeSeq.intValue + " PLACED t=" + System.nanoTime() +
                             " topY=" + revealTopY.floatValue.toInt() +
+                            " boxH=" + revealBoxH.intValue +
                             " rep=" + clock.lastReportedH + " abs=" + clock.absorbedPx +
                             " f=" + "%.3f".format(clock.fraction) +
                             " fii=" + listState.firstVisibleItemIndex +
-                            " fiso=" + listState.firstVisibleItemScrollOffset,
+                            " fiso=" + listState.firstVisibleItemScrollOffset +
+                            " host=" + (listState.layoutInfo.visibleItemsInfo
+                                .firstOrNull { it.key == hostItemKey }?.size ?: -1),
                     )
                 }
                 // 批次二:FLUSH 宿主在场时排干由 pre-draw 单点执行(placed 触发
