@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#525**（2026-10-07 #524 DSH 回复出现在提问上方——journal p）。
+**编号**：全局递增，不回收。下一编号：**#529**（2026-10-07 #528 DSH 压缩报错后会话崩溃(CardExpand）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
@@ -53,8 +53,25 @@
 
 ## P0 — 主流程阻塞
 
+- [ ] **#528 DSH 压缩报错后会话崩溃(CardExpandReveal 布局坐标)** `dsh` `crash`
+  - 压缩报错(summary not smaller)后布局期 onPlaced 对已脱离节点 positionInRoot 抛 IllegalStateException 致 FATAL
+  - 修法:isAttached 守卫(CardExpandReveal.kt:1449/1453)
+
 ## P1 — 核心功能需求
 
+
+- [ ] **#527 DSH 工具卡实参键 snake_case 失配(读取卡标题/路径全空)** `dsh` `uiux`
+  - DSH wire 用 file_path/old_string/new_string;卡片读 filePath/path/oldString——read/write/edit 标题、打开按钮、内容全灭
+  - 修法:extractToolInput 单点键规范化(V1/V2 行为不变:无 snake 键不受影响)
+
+- [ ] **#526 DSH 展开收起方向不稳定(有时向上推动)** `dsh` `uiux` `scroll`
+  - standard agent 下思考卡展开有时向上推;怀疑降级路径(流式 turn)或锚归一化 host 键失配
+  - 待真机复现+[DEBUG-466]探针定罪
+
+- [ ] **#525 DSH 上下文注入排序在提问下方** `dsh` `uiux`
+  - journal 里 runtime-context(user/message kind!=user) 与 agent 指令(system/message)信封时刻 ≥ 提问;#524 把提问回拨到真实发送时刻后注入族整体落到提问下方
+  - 修法:DshEventMapper 轮内注入台账+repack 校正事件(handler earliestCreated min 合并兜底)
+  - → journal: docs/journal/2026-10-07-dsh-standard-bugs.md
 
 - [ ] **#524 DSH 回复出现在提问上方——journal prompt entry 信封 time 晚于输出（created 后移族双形态）** `dsh,ordering,completion`
   - DSH journal 对 prompt entry 的事件信封 time 语义=落盘/touch 时刻而非发送时刻：①完结 touch 把 created 后移 30s+（提问翻到全部输出之下）；②原生 0.65s 错位（journal 落盘晚于首输出）。双修：SSE/live 域 created 单调防线（earliestCreated，REST 域不设防保 #485）+ swap 双源并入保 pending 发送时刻并按序移位。真机复测视觉序恢复

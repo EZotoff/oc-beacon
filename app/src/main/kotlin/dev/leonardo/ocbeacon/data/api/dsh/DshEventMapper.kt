@@ -1,6 +1,7 @@
 package dev.leonardo.ocbeacon.data.api.dsh
 
 import dev.leonardo.ocbeacon.domain.model.DshMessageId
+import dev.leonardo.ocbeacon.BuildConfig
 import dev.leonardo.ocbeacon.domain.model.Message
 import dev.leonardo.ocbeacon.domain.model.Part
 import dev.leonardo.ocbeacon.domain.model.PartIdContract
@@ -82,6 +83,56 @@ object DshEventMapper {
      * 上界保护：>128 条整体清空（防御性，正常在途步个位数）。
      */
     private val stepStartTimes = HashMap<String, Long>()
+
+    /**
+     * #525：轮内注入族排序台账（key = sessionId）。journal 实证（session-7300b09e）：
+     * runtime-context 注入（user/message，source.kind≠user）写在提问**之后**（+1ms），
+     * agent 指令（system/message）与提问**同毫秒**——#524 把提问 created 回拨到真实
+     * 发送时刻后，注入族信封时刻恒晚于提问 → 整体落到提问气泡下方。修法：注入族
+     * 必须整体钉在提问上方——提问落位或新注入到达时 repack，按首见序分配
+     * created = T_prompt−n … T_prompt−1（首见者最高），值变小者补发 MessageUpdated
+     * 校正事件（消费端 #524-guard earliestCreated 取 min，旧值无害；校正载荷复用
+     * 已发射消息副本，role/injectionKind 不丢）。turn/start|turn/end 清台账。
+     */
+    private class TurnInjectionLedger {
+        val order = ArrayList<String>()
+        val emitted = HashMap<String, Message.User>()
+        var promptCreated: Long? = null
+    }
+
+    private val turnInjections = HashMap<String, TurnInjectionLedger>()
+
+    /** #525：登记轮内 user 族消息（提问记时刻；注入记序）并 repack 出校正事件。
+     * 台账为 turn/start 武装制（DSH 每轮必发 turn/start——journal 实证；未见轮
+     * 边界的流保持原行为，测试与中途接入的降级路径天然隔离）。 */
+    private fun noteTurnUserMessage(sessionId: String, message: Message.User): List<DshMappedEvent> {
+        val ledger = turnInjections[sessionId] ?: return emptyList()
+        if (message.injectionKind == null) {
+            ledger.promptCreated = message.time.created
+        } else {
+            if (!ledger.emitted.containsKey(message.id)) ledger.order.add(message.id)
+            ledger.emitted[message.id] = message
+        }
+        val tp = ledger.promptCreated ?: return emptyList()
+        val n = ledger.order.size
+        if (n == 0) return emptyList()
+        val corrections = mutableListOf<DshMappedEvent>()
+        ledger.order.forEachIndexed { i, id ->
+            val target = tp - (n - i)
+            val emitted = ledger.emitted[id] ?: return@forEachIndexed
+            if (target < emitted.time.created) {
+                ledger.emitted[id] = emitted.copy(time = TimeInfo(created = target))
+                corrections += DshMappedEvent.Sse(
+                    SseEvent.MessageUpdated(ledger.emitted[id]!!)
+                )
+                if (BuildConfig.DEBUG) {
+                    AppLogger.d(TAG, "[525-inject-repack] " + id.takeLast(12) + " " +
+                        emitted.time.created + "->" + target + " slot=" + (n - i) + "/" + n)
+                }
+            }
+        }
+        return corrections
+    }
 
     /**
      * #524：prompt 发送时刻记忆（rpcId → 客户端播种时刻）。DSH journal 的
@@ -715,6 +766,11 @@ object DshEventMapper {
             // #411：step/start 另记起始时刻（逐轮 TTFT 派生；权威语义 =
             // dsh-session-stats openStep 折叠——step/start 开步、assistant/message 结算）。
             "turn/start", "step/start" -> {
+                // #525：turn/start 武装轮内注入台账（上限防御：并发会话个位数）
+                if (type == "turn/start") {
+                    if (turnInjections.size > 32) turnInjections.clear()
+                    turnInjections[sessionId] = TurnInjectionLedger()
+                }
                 val turnNo = data.long("turn")
                 val stepNo = data.long("step")
                 if (turnNo != null && stepNo != null) {
@@ -756,6 +812,7 @@ object DshEventMapper {
                 // #507：块起止时刻同域清理（|ordinal 后缀不参与前缀匹配）
                 blockStartTimes.keys.removeAll { it.startsWith("$sessionId:") }
                 blockEndTimes.keys.removeAll { it.startsWith("$sessionId:") }
+                turnInjections.remove(sessionId) // #525 轮界清台账
                 val idle = DshMappedEvent.Sse(SseEvent.SessionIdle(sessionId, time.takeIf { it > 0 }))
                 val reason = data.obj("reason")
                 when (reason?.str("kind")) {
@@ -1016,24 +1073,27 @@ object DshEventMapper {
                 .joinToString("") { it.str("text") ?: "" }
                 .takeIf { it.isNotBlank() && SystemInjection.isPureReminder(it) }
                 ?.let { "context" }
+        val userMessage = Message.User(
+                id = id,
+                sessionId = sessionId,
+                // #524：rpcId 命中发送时刻记忆 → 取 min（journal 信封 time=
+                // 落盘时刻，晚于真实发送；live 事件与 journal fold 输出
+                // 同 mapper，两路统一）
+                time = TimeInfo(created = promptCreatedTime(
+                    data.obj("source")?.str("rpcId")?.takeIf { it.isNotBlank() },
+                    time,
+                )),
+                injectionKind = injectionKind,
+            )
         val events = mutableListOf<DshMappedEvent>(
             DshMappedEvent.Sse(
                 SseEvent.MessageUpdated(
-                    Message.User(
-                        id = id,
-                        sessionId = sessionId,
-                        // #524：rpcId 命中发送时刻记忆 → 取 min（journal 信封 time=
-                        // 落盘时刻，晚于真实发送；live 事件与 journal fold 输出
-                        // 同 mapper，两路统一）
-                        time = TimeInfo(created = promptCreatedTime(
-                            data.obj("source")?.str("rpcId")?.takeIf { it.isNotBlank() },
-                            time,
-                        )),
-                        injectionKind = injectionKind,
-                    )
+                    userMessage
                 )
             )
         )
+        // #525：注入族 repack 校正（提问到达时把同轮注入钉到提问上方）
+        events += noteTurnUserMessage(sessionId, userMessage)
         // #356 echo→持久原子换装：RPC 提交的持久回显（source=user-rpc.rpccdId，
         // MessageSourceMap 契约）把本地 pending-<rpcId> echo 气泡**原地换名**为持久
         // 消息（#509：MessageIdSwapped 替代 MessageRemoved 拆除——行不离开列表，
@@ -1133,17 +1193,21 @@ object DshEventMapper {
         val sourceKind = message.obj("source")?.str("kind")
         val injectionKind = sourceKind?.takeIf { it.isNotBlank() } ?: "system"
         val events = mutableListOf<DshMappedEvent>()
-        events += DshMappedEvent.Sse(
-            SseEvent.MessageUpdated(
-                Message.User(
+        val systemUserMessage = Message.User(
                     id = id,
                     sessionId = sessionId,
                     role = "system",
                     time = TimeInfo(created = time),
                     injectionKind = injectionKind,
                 )
+        events += DshMappedEvent.Sse(
+            SseEvent.MessageUpdated(
+                systemUserMessage
             )
         )
+        // #525：agent 指令同为轮内注入族（journal 实证与提问同毫秒甚至更晚，
+        // 需 repack 钉到提问上方）
+        events += noteTurnUserMessage(sessionId, systemUserMessage)
         content.forEachIndexed { i, el ->
             val block = el as? JsonObject ?: return@forEachIndexed
             when (block.str("type")) {

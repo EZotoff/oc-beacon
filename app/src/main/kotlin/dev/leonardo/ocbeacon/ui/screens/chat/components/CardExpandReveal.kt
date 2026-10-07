@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.MeasureResult
 import androidx.compose.ui.layout.MeasureScope
@@ -552,14 +553,64 @@ internal fun CardExpandReveal(
     // #508:宿主 item 身份在组合层读取(LaunchedEffect 协程内不可读 CompositionLocal)
     val hostItemKey = LocalCardExpandHostKey.current
     if (listState == null || LocalInStreamingTurn.current) {
-        // 降级:出厂过渡(与 2026-08-30 终局一致)
-        AnimatedVisibility(
-            visible = visible,
-            enter = CardExpandEnterTransition,
-            exit = CardExpandExitTransition,
-            modifier = modifier,
-        ) {
-            content()
+        // #526 定罪探针：降级路径（无 listState=非会话列表场景 / 流式 turn）不
+        // 走反射锚定——DSH 展开方向不稳定疑涉此路径，toggle 时打点判别。
+        if (BuildConfig.DEBUG) {
+            val prevVis = remember { androidx.compose.runtime.mutableStateOf(visible) }
+            if (prevVis.value != visible) {
+                AppLogger.d(
+                    "CardExpand",
+                    "[DEBUG-526] degrade toggle visible=" + visible +
+                        " reason=" + (if (listState == null) "no-list-state" else "in-streaming-turn") +
+                        " host=" + hostItemKey.toString().take(24),
+                )
+                prevVis.value = visible
+            }
+        }
+        // #526 根修：流式降级路径展开保顶。降级机件零配对——输出流式期展开
+        // 思考卡时，贴底跟随族把展开增量当流式增长滚掉（卡头连同上方整体上推
+        // H＝用户「有时候向上展开」；完成后走机件路径反射锚定＝「向下展开」，
+        // 两态交替即「不稳定」）。保顶语义与机件路径 (fii, fiso+H) 同式：toggle
+        // 时记 (fii,fiso) 与盒高，AV 尺寸稳定后按 Δ 一次性反射回锚。恢复后视口
+        // 自然离底，后续流式增长按读历史族免派发——下方延展、上方纹丝不动。
+        val degradeH = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+        if (listState != null) {
+            val toggled = remember { androidx.compose.runtime.mutableStateOf(visible) }
+            LaunchedEffect(visible) {
+                if (toggled.value == visible) return@LaunchedEffect // 首组合同值非 toggle
+                toggled.value = visible
+                val before = degradeH.intValue
+                val fii = listState.firstVisibleItemIndex
+                val fiso = listState.firstVisibleItemScrollOffset
+                var last = -1
+                var stable = 0
+                var waited = 0
+                while (stable < 3 && waited < 40) { // AV spring ~300ms；上限 ~650ms
+                    withFrameNanos { }
+                    waited++
+                    val s = degradeH.intValue
+                    if (s == last) stable++ else {
+                        stable = 0
+                        last = s
+                    }
+                }
+                val delta = degradeH.intValue - before
+                if (delta != 0) {
+                    LazyListReflection.requestScrollToItemNoCancel(listState, fii, fiso + delta)
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.d("CardExpand", "[DEBUG-526] top-pin restore fii=$fii fiso=$fiso +Δ=$delta")
+                    }
+                }
+            }
+        }
+        Box(modifier = modifier.onSizeChanged { degradeH.intValue = it.height }) {
+            AnimatedVisibility(
+                visible = visible,
+                enter = CardExpandEnterTransition,
+                exit = CardExpandExitTransition,
+            ) {
+                content()
+            }
         }
         return
     }
@@ -1446,12 +1497,20 @@ internal fun CardExpandReveal(
                 // (LEAP 帧 pre-draw 读 1144、绘制期才见 -3536 → 顶开帧上屏;err=4 的
                 // 小修正同样晚 44ms)。onPlaced 在放置相派发(先于 pre-draw),FLUSH 相
                 // 读到的即本帧地面真值。onGloballyPositioned 保留(兜底 + PLACED 日志)。
-                revealTopY.floatValue = it.positionInRoot().y
-                coordStamp.intValue = clock.lastReportedH
+                // #528:isAttached 守卫——压缩/换装等批量移除窗口内,LazyList 对已在
+                // 拆除途中的节点仍会派发放置回调,此刻 positionInRoot 抛
+                // IllegalStateException(真机 19:21:41 FATAL,压缩报错后 40s 复现)。
+                // 已脱离节点的坐标无意义,跳过写入(episode 协程随组合销毁同归于尽)。
+                if (it.isAttached) {
+                    revealTopY.floatValue = it.positionInRoot().y
+                    coordStamp.intValue = clock.lastReportedH
+                }
             }
             .onGloballyPositioned {
-                revealTopY.floatValue = it.positionInRoot().y
-                coordStamp.intValue = clock.lastReportedH
+                if (it.isAttached) {
+                    revealTopY.floatValue = it.positionInRoot().y
+                    coordStamp.intValue = clock.lastReportedH
+                }
                 // #423 批次四c:放置回调即时修正——坐标回调虽晚于 measure,但早于
                 // 下一 pre-draw(真机:LEAP 帧 .377 回调/.380 绘制,而 pre-draw 读数
                 // 滞后到 .887)。回调到达即 dispatch,把修正提前整整一个卡顿窗;

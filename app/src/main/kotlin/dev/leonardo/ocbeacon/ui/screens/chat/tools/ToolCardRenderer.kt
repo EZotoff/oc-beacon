@@ -241,15 +241,35 @@ internal fun ToolCallCard(
 
 /**
  * 提取通用工具输入值。
+ *
+ * #527：DSH wire 实参键为 snake_case（journal 实证：read/write/edit 恒
+ * `file_path`，edit 另有 `old_string`/`new_string`），而卡片层读取链是
+ * `filePath`/`path`/`oldString`（V1/V2 惯例）——失配时 read/write/edit 卡
+ * 标题、路径、打开文件按钮全部落空。此处单点补 camelCase 别名键（原键
+ * 保留；V1/V2 无 snake 键，行为不变）。
  */
 internal fun extractToolInput(tool: Part.Tool): Map<String, kotlinx.serialization.json.JsonElement> {
-    return when (val state = tool.state) {
+    val raw = when (val state = tool.state) {
         is ToolState.Pending -> state.input
         is ToolState.Running -> state.input
         is ToolState.Completed -> state.input
         is ToolState.Error -> state.input
     }
+    if (raw.isEmpty()) return raw
+    val aliased = raw.toMutableMap()
+    for ((snake, camel) in TOOL_INPUT_KEY_ALIASES) {
+        val v = raw[snake] ?: continue
+        if (!aliased.containsKey(camel)) aliased[camel] = v
+    }
+    return aliased
 }
+
+/** #527：DSH snake_case → 卡片层 camelCase 别名（仅补缺席键，不覆盖既有）。 */
+private val TOOL_INPUT_KEY_ALIASES = listOf(
+    "file_path" to "filePath",
+    "old_string" to "oldString",
+    "new_string" to "newString",
+)
 
 internal fun extractToolOutput(tool: Part.Tool): String {
     return when (val s = tool.state) {
