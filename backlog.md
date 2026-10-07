@@ -56,10 +56,13 @@
 ## P1 — 核心功能需求
 
 
-- [ ] **#523 mock 路径完结振荡——TurnFin 对齐 tail 96↔158 六周期 churn（shard-unreg+pilot 复位循环）** `v1,streaming,completion`
+- [~] **#523 mock 路径完结振荡——TurnFin 对齐 tail 96↔158 六周期 churn（shard-unreg+pilot 复位循环）** `v1,streaming,completion`
   - V1 mock-md 完结 reconcile 条目身份churn：完结消息换 id 走整树换装而非 #509/#510 原地换名；tail 冻结尾行闪 3-4 次；#g0 不受扰；LongCat 轮无此形态 → docs/journal/2026-10-06-515-eof-megafire-window.md §4
   - 2026-10-06 #515 E2E 矩阵扩展定性（journal 2026-10-06-515 §10）：①完结塌缩间歇性、多语料（-20646/-2116/-3219/-4024 全轮拆 96）；②新增 fire 后变体：wide-table fire 后 tail 224↔96 振荡×2（21:39:25 原生证据）；③非 mock 独占疑点待查（矩阵全走 mock-md；真模型轮 r1-r3 未见——但需系统性真模型矩阵确认）。取证日志 /tmp/515-forensics-*.log
   - 2026-10-06 晚补测升级定性：真模型实锤（LongCat -2503/deepseek -2732@TurnFin，间歇 2/4）+ V2 复现（-3001×2 循环）——mock/V1真模型/V2 全中；DSH 不走此路径（零负向）。B 前构建已存在=非 #515 批回归。优先级升 P0 候选
+  - 2026-10-07 调研勘误+根修前两击（journal 2026-10-07-523 §1-§3）：①勘误——V1 完结不换 id（raw SSE×2 + REST 三方对照：流式/完结/REST part id 同为 prt_ 全形态、消息 id 稳定），「完结换名走整树换装」定性推翻（msg_110db0b2 系 user id 误读；裸 xid 系探针 takeLast(14) 截断）；②真机制=完结三击（SSE 完结链毁尾块 MC 重建 6/6 必现 / REST upsert 二连击+bus 对已终态 part 重发布=公共放大器 / CHUNK 静态分片接管换血 #g→#c 键族）；③形态二（wide-table -128×3）=完结三击短尾形态非独立缺陷；④F1 计划侧互斥 + F2 bus 终态纪律已落地（fadcb0d6，+3 单测全量绿）；⑤DSH 免疫解释=完结事件链干净（单事件换名）。修复前基线 8 轮存 journal §3.1，修复后复测进行中
+  - 2026-10-07 击1 根修落地（journal §4）：F1+F2 复测 8 轮击2/击3 全消、击1 仍必现（7/7）→ 链条钉死=contentTerminal 依赖 liveText/会话投影组合时序（重建实例首帧误判 false→限速慢铺 196ms）→ G2 修判定数据源（part.time.end 优先，dfd7aa23）→ 复测 2/2 完结塌缩归零+MC 实例存活（retained=true 连续，销毁不再发生）。完整验证矩阵（longpara×8+wide-table×4+short×2）进行中
+  - 2026-10-07 终报（journal §5）：三修落地（F1 fadcb0d6 计划侧互斥 / F2 fadcb0d6 bus 终态纪律 / G2 dfd7aa23 终态判定接数据源）验证链闭合——mock 矩阵 14 轮完结塌缩 0/12（基线 6/6）+形态二归零；V1/V2 DeepSeek 真模型腿完结零负向（V2 retained=true 跨完结存活，曾复现的 -3001×2 零复现）；滚动竞态健康。残余负向=fire 换装帧（#515 验收接受面，4k+ 文档 hitch 40-64ms）。verify 态待用户终验收
 
 - [~] **#512 DSH 密码登录插件（dsh-password-login）——免捞 token 的会话铸造/密码生命周期/轮换全员下线** `dsh` `auth` `infra`
   - 独立仓库纯宿主插件（照 keepalive 骨架，GitHub 分发，零客户端 bundle）：未设密码态回环免密铸票 + 密码登录书签页 + 轮换即撤销全体会话（admit 包装 epoch）；oc-beacon 与浏览器均为消费者
