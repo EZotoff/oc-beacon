@@ -79,3 +79,41 @@ V1/V2 域 read=`filePath[,offset,limit]`、edit=`filePath,oldString,newString`�
 3. 增补探针实证：settle 期间 reveal 盒实占高=finalHCache 抬底值（boxH=194 @ f=0.001, rep=0）——抬底使 item 在锚点捕获窗内已有 +194 槽位；宿主尺寸跨遍测量传播（subcompose 多 pass）与反射待定区消费的交错是竞态面。
 4. 15 轮机器复现（慢节奏 6+快节奏 fling 即点 9）均未触发——脏节奏需真手指的滚动余尾+立即点击（或预热在途点击）。
 **下一步（待用户再遇）**：PLACED 已含 boxH/host 字段，用户复现后 `adb logcat -d | grep -E "PLACED|expand-anchor"` 一条命令即可解码交错序列；修法方向=抬底不进锚点基（floor 与反射原子窗对齐）或锚点捕获排除非静止视口。
+
+## 已完结卡片迁入（2026-10-07）
+
+### **#525 DSH 上下文注入排序在提问下方** `dsh` `uiux`
+  - journal 里 runtime-context(user/message kind!=user) 与 agent 指令(system/message)信封时刻 ≥ 提问;#524 把提问回拨到真实发送时刻后注入族整体落到提问下方
+  - 修法:DshEventMapper 轮内注入台账+repack 校正事件(handler earliestCreated min 合并兜底)
+  - → journal: docs/journal/2026-10-07-dsh-standard-bugs.md
+  - 迁入依据：用户验收 OK（2026-10-07 晚）（backlog.sh migrate 2026-10-07）
+
+### **#526 DSH 展开收起方向不稳定(有时向上推动)** `dsh` `uiux` `scroll`
+  - standard agent 下思考卡展开有时向上推;怀疑降级路径(流式 turn)或锚归一化 host 键失配
+  - 待真机复现+[DEBUG-466]探针定罪
+  - 迁入依据：用户验收 OK（2026-10-07 晚）（backlog.sh migrate 2026-10-07）
+
+### **#527 DSH 工具卡实参键 snake_case 失配(读取卡标题/路径全空)** `dsh` `uiux`
+  - DSH wire 用 file_path/old_string/new_string;卡片读 filePath/path/oldString——read/write/edit 标题、打开按钮、内容全灭
+  - 修法:extractToolInput 单点键规范化(V1/V2 行为不变:无 snake 键不受影响)
+  - 迁入依据：用户验收 OK（2026-10-07 晚）（backlog.sh migrate 2026-10-07）
+
+### **#528 DSH 压缩报错后会话崩溃(CardExpandReveal 布局坐标)** `dsh` `crash`
+  - 压缩报错(summary not smaller)后布局期 onPlaced 对已脱离节点 positionInRoot 抛 IllegalStateException 致 FATAL
+  - 修法:isAttached 守卫(CardExpandReveal.kt:1449/1453)
+  - 迁入依据：用户验收 OK（2026-10-07 晚）（backlog.sh migrate 2026-10-07）
+
+## §7 #512 真机验收矩阵（dsh-pw-demo@8181，app=dev 包真机 + 宿主 curl 驱动服务端）
+
+| 场景 | 方法 | 结果 |
+|---|---|---|
+| 基线四端点 | curl：status 无凭据/带密铸/configured/根路径 | ✅ 401 / {ok,v:1} / {configured:true,stale:false} / 303→/login（根路径弹跳实测） |
+| revoke 绝对语义 | 带票 POST /revoke → 发起者旧票立即 401 | ✅ {ok,v:1}；点击者本人同灭 |
+| 形态一：活 WS 存活 | revoke 后 3s logcat 观测 | ✅ 零断线/零错误，进程存活（admit 只在升级时查=设计边界实证） |
+| 形态三：冷启自动重铸 | revoke 后 force-stop+冷启（密码未变） | ✅ 2s entry OK，Debug channel activated，journal fold 已流出（回落链：旧票 401→带密铸新票） |
+| rotate 服务端四态 | rotate devpass→pw512test 后三探 | ✅ 旧密 401 / 新密 200 / 旋转前旧票 401（全员下线） |
+| rotate app 侧·旧密码拒绝 | 冷启携旧 devpass | ✅ logcat `DshConnRegistry: token exchange rejected: HTTP 401`；UI 缓存壳（会话列表缓存呈现，无崩溃），错误面截图 /tmp/v512_authfail.png |
+| rotate app 侧·改密者存活 | 冷启携新 pw512test | ✅ 2s entry OK |
+| 基线恢复 | rotate 回滚 pw512test→devpass + 冷启 | ✅ devpass 铸票 200；app 2s 恢复连接 |
+
+**留待用户主观面**：①浏览器书签页/设置面板（PC 侧，实现期 49 断言已覆盖，建议眼验一次）；②app 内手改密码字段的 UX（本矩阵以 debug intent 为代理）；③新密码下真手指发一条消息。
