@@ -60,6 +60,7 @@
   - DSH journal 对 prompt entry 的事件信封 time 语义=落盘/touch 时刻而非发送时刻：①完结 touch 把 created 后移 30s+（提问翻到全部输出之下）；②原生 0.65s 错位（journal 落盘晚于首输出）。双修：SSE/live 域 created 单调防线（earliestCreated，REST 域不设防保 #485）+ swap 双源并入保 pending 发送时刻并按序移位。真机复测视觉序恢复
   - 2026-10-07 根修落地（journal 2026-10-07-523-churn §7）：双防线（SSE/live 域 created 单调防线 + swap 并入保 pending 发送时刻+移位），+4 单测全量 3917 绿；真机复测视觉树序恢复（提问在全部输出上方 ✓）。遗留小项：Room 终值快照与内存修正的落盘时序一次不一致观察（不挡视觉），复核中
   - 2026-10-07 二轮纠正+终修（journal §7.4）：用户复验视觉序仍错（首版树序误读）→ 探针钉死第三条写回路径（完结后 upsert:MergeStrategy 基线刷新覆盖修正）+ journal 协议实证（user/message entry 无创建时刻字段，data 仅 content/id/role/source）→ 终修=源头 mapper promptAdmitTimes 记忆（rpcId→播种时刻，live/fold 统一）+撤回 mergeMessageMeta 防线（V2 #485 锚定回归风险）。终验：Room+视觉 y 坐标双证 user 在全部输出上方。残余：重启后重进旧会话 ~1s 错位（记忆不持久，登记）
+  - 2026-10-07 系统性矩阵（journal §7.5）：批次1 steer/2 连发排队/3a 重进/3b 冷启正常轮/4 切换/5 V1V2 回归全过（V2 #485 信封槽位未破坏、V1 完结塌缩 0）；3c 冷启重进原始 bug 会话残余复现（预期内，触发面=冷启×prompt 落盘晚于早期输出 35s 的多工具轮），修复方向=记忆持久化或上游 journal 补字段
 
 - [~] **#523 mock 路径完结振荡——TurnFin 对齐 tail 96↔158 六周期 churn（shard-unreg+pilot 复位循环）** `v1,streaming,completion`
   - V1 mock-md 完结 reconcile 条目身份churn：完结消息换 id 走整树换装而非 #509/#510 原地换名；tail 冻结尾行闪 3-4 次；#g0 不受扰；LongCat 轮无此形态 → docs/journal/2026-10-06-515-eof-megafire-window.md §4
