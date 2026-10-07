@@ -47,3 +47,22 @@
 ## §4 已知边界
 - #525：多提问同轮（罕见）注入按最新提问 repack；流中接入（无 turn/start）保持原行为。
 - #526：保顶窗内（~650ms）用户主动滚动会被回锚覆盖——真手指复验若观感不佳再议窗口缩短。
+
+## §5 V1/V2 影响面核查（2026-10-07 20:12-20:14，用户红线指令）
+
+### 改动面枚举（a7f8d413 共享文件 hunk 级）
+- CardExpandReveal.kt（V1/V2/DSH 共用）3 hunks：①import；②**降级分支**（流式/无 listState 早退块——机件路径零字节改动）；③onPlaced/onGloballyPositioned isAttached 守卫（仅跳过原本必崩的读取）。
+- ToolCardRenderer.kt 1 hunk：extractToolInput 别名（`!containsKey(camel)` 才补——camel 键在场永不覆盖）。
+- DshEventMapper.kt：DSH 专属管线，V1/V2 不经此路径。
+
+### 实证一：Room 全历史键集普查（别名链对 V1/V2 是死代码）
+V1/V2 域 read=`filePath[,offset,limit]`、edit=`filePath,oldString,newString`、write=`filePath,content`、bash=`command`——**零 snake_case 键**；DSH 域恒 snake_case。别名触发条件（snake 键在场）在 V1/V2 永不成立。
+
+### 实证二：真机 V1（4199）思考卡回归
+三卡两轮 toggle：`expand (7,128)+194 host=9` ↔ `close-post (7,322)`、`expand (7,322)+128 host=11 norm->8:84` ↔ `close (7,322)` 镜像平衡；贴底构型 `pinned=true` 语义保留；零 [DEBUG-526]、零崩溃、进程存活。
+
+### 实证三：真机 V2（4096）回归
+读取卡「读取 · .bashrc」标题/路径渲染正常（extractToolInput live 证明）；思考卡多轮 toggle `expand fii=0 fiso=0 +H=194 host=7 norm->7:194 pinned=true`——与修前签名逐字段一致；零崩溃。
+
+### 诚实披露：V1/V2 唯一行为面变化
+#526 降级保顶对 V1/V2 **流式期**展开思考卡同样生效（此前该场景=裸 AV+贴底跟随可能上推，现为保顶下展）——与用户「往下展开上方不动」的期望同向；完成态（V1/V2 日常 99% 场景）机件路径零变化。单测全量绿（含 V2 #485 OrderTest 锚定回归护栏）。若 V1/V2 流式期观感异常，[DEBUG-526] 探针可定位，再议是否按服务器分域。
