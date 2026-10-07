@@ -151,3 +151,17 @@ V1/V2 域 read=`filePath[,offset,limit]`、edit=`filePath,oldString,newString`�
 **真机重演（fixpw1 轮）**：rotate→冷启 TokenNeeded→深链横幅（新文案「此服务器需要访问凭据」）→对话框输 fixpw1→`mintSession` 执行→**横幅消失恢复**→force-stop 正常冷启**零令牌提示自动重连**（密码持久化实证）。
 **坑位记录**：IME 开态对话框按钮位移（关态 1636→开态 1175）——自动化须开态实时坐标；StrictMode 主线程读响应体警告（legacy exchangeToken 同款模式，polish 项不阻塞）。
 **基线已恢复**：devpass + app 存储同步。待用户「演示」口令。
+
+## §11 #512 登录流程演示（2026-10-07 23:22-23:29，用户口令后执行）
+
+| 拍 | 内容 | 结果 |
+|---|---|---|
+| 1 | 开场在线（DSH 会话列表，devpass） | ✅ |
+| 2 | 服务端 rotate devpass→demo2026 | ✅ {ok} |
+| 3 | force-stop+正常冷启→自动重连失败→`token required`→深链进会话列表 | ✅ 横幅「此服务器需要访问凭据」上屏 |
+| 4 | 点横幅→对话框（新文案）→输 demo2026→提交 | ✅ |
+| 5 | 恢复验证 | ✅ 横幅消失、连接恢复（用户全程真机观看） |
+| 彩蛋 | 会话内发消息 | ⚠️ 跳过：导航两度弹回 Home + 应用渲染面黑屏挂起（窗口在/进程活）；核心五拍已完整，彩蛋系已验证路径（E2E B 段）非本次修复面 |
+| 收尾 | demo2026→devpass 回滚 + debug-entry 基线 | ✅ 2s 恢复 |
+
+**新登记嫌疑（未定罪）**：会话页在多次深链导航+IME 操作后弹回 Home ×2、最终渲染面黑屏（进程 20939 存活、mCurrentFocus 正常）——force-stop 后恢复。与今日改动无交集路径（纯导航/渲染），另立观察。
