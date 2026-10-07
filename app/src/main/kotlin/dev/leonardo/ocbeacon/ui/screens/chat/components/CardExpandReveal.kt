@@ -244,6 +244,17 @@ private const val SETTLE_STABLE_FRAMES = 2
 private const val MAX_SETTLE_MS = 600f
 
 /**
+ * #529:锚点捕获静止门——指纹计稳帧数(同 settle 判稳约定:连续 N 帧不变)。
+ */
+private const val ANCHOR_QUIESCE_STABLE_FRAMES = 2
+
+/**
+ * #529:锚点捕获静止门墙钟上限(ms)。回收重组合后 item 异步内容落地风暴
+ * 有界;超时按现状捕获(E3+ 恒稳,零感知不受影响)。
+ */
+private const val ANCHOR_QUIESCE_MAX_MS = 200f
+
+/**
  * 纯时钟状态(可单测):fraction 驱动 + 上报高度记账 + δ 计算。
  *
  * 帧内契约:动画相 [advance] → dispatchRawDelta(δ);measure 相 [onMeasure]
@@ -827,6 +838,12 @@ internal fun CardExpandReveal(
                     // exit-CANCELLED 定案)。缓存的真正价值=跨回收高度预知(floor)。
                     clock.warmup()
                     settleUntilContentStable(clock)
+                    // #529:锚点捕获静止门——E1(回收重组合后首个展开集)恰逢滚动
+                    // 余尾+item 异步内容跨测量遍落地,捕获基在「捕获→待定区消费」
+                    // 窗内漂移=反射绝对位双计/半计(真机两脏样本 topY+H/+H/2)。
+                    // settle 只管本卡内容;此处把静止契约扩到整列基(滚动+全部可见
+                    // item 尺寸),随后才读 H 与锚点(基静后读数即最新)。
+                    awaitAnchorQuiescence(listState)
                     // #430:派发目标=**落地高度**(lastMeasuredH),不再 maxOf 缓存——
                     // v4 分批下落地≠缓存终值,按缓存超额派发=中位伪滚动(前向容量被
                     // 提前吃掉)+ 边缘重试白跑;窗外增量由稳态配对(#430)逐帧接管。
@@ -977,6 +994,10 @@ internal fun CardExpandReveal(
                     }
                     // ② 单步原子闭合(镜像展开的 withMutableSnapshot+dispatch:
                     //   首个放置即含塌缩+位移,中间态从构造上不存在)
+                    // #529:收起锚点解析同走静止门——回收重组合实例的首收起集与
+                    // 2026-09-28 已修的回收竞态(close-anchor consumed=0 兜底)同族;
+                    // 向后折叠链消费的 item 尺寸谱同样要求静止基。rep 在门后读取。
+                    awaitAnchorQuiescence(listState)
                     val rep = clock.lastReportedH
                     if (BuildConfig.DEBUG) {
                         AppLogger.d(
@@ -1815,6 +1836,71 @@ private suspend fun settleUntilContentStable(clock: CardExpandClock) {
             "CardExpand",
             "[DEBUG-422] settle done frames=" + stableFrames +
                 " measures=" + clock.measureCount + " H=" + clock.lastMeasuredH,
+        )
+    }
+}
+
+/**
+ * #529 锚点捕获静止门判定(纯函数可单测):本帧基指纹与上帧一致即计稳一帧。
+ * null=首帧(无基线,不得计稳——防「未观测≠静止」的假稳,同 settle 判稳语义)。
+ */
+internal fun anchorQuiesceAdvances(currentFp: String, lastFp: String?): Boolean =
+    lastFp != null && currentFp == lastFp
+
+/**
+ * #529:锚点基指纹——fii/fiso + 可见 item 尺寸谱。
+ * 反射目标 (fii,fiso±H) 的绝对位语义(=捕获位±H,同遍 measure 原子消费)建立在
+ * 「捕获→待定区消费之间该基不变」上:任何可见 item 的尺寸变化或锚位漂移都会
+ * 使同一 (idx,off) 请求的绝对落点漂移——正是 E1 脏样本(回收重组合后首个
+ * 展开集,真机 topY+H 整额双计/+H/2 半计)的竞态面。settle 只保证**本卡**
+ * 内容静止;item 内其它部分(同轮其余卡/文本/图片)与滚动余尾不在其管辖。
+ */
+internal fun anchorBasisFingerprint(fii: Int, fiso: Int, itemSizes: List<Pair<Int, Int>>): String {
+    val sb = StringBuilder(24 + itemSizes.size * 10)
+    sb.append(fii).append(':').append(fiso).append('|')
+    for ((idx, size) in itemSizes) sb.append(idx).append('=').append(size).append(',')
+    return sb.toString()
+}
+
+private fun LazyListState.anchorBasisFingerprint(): String = anchorBasisFingerprint(
+    firstVisibleItemIndex,
+    firstVisibleItemScrollOffset,
+    layoutInfo.visibleItemsInfo.map { it.index to it.size },
+)
+
+/**
+ * #529:锚点捕获静止门——展开/收起的反射锚点捕获前等待布局基静止:
+ * 滚动余尾(isScrollInProgress)期间基恒漂,直接重置计稳;之后要求基指纹
+ * 连续 [ANCHOR_QUIESCE_STABLE_FRAMES] 帧不变。有界([ANCHOR_QUIESCE_MAX_MS]):
+ * 超时按现状捕获,不回退任何既有行为(同实例后续集 E3+ 恒稳,典型代价
+ * 2-3 帧 ≈17-50ms,被 computing 过渡/幕布吸收不可感知)。
+ */
+private suspend fun awaitAnchorQuiescence(listState: LazyListState) {
+    val t0 = System.nanoTime()
+    var lastFp: String? = null
+    var stableFrames = 0
+    while (stableFrames < ANCHOR_QUIESCE_STABLE_FRAMES) {
+        if ((System.nanoTime() - t0) / 1_000_000f >= ANCHOR_QUIESCE_MAX_MS) break
+        withFrameNanos { }
+        if (listState.isScrollInProgress) {
+            // 滚动余尾/兄弟卡稳态派发(dispatchRawDelta 亦置位):基恒在漂,不计稳
+            stableFrames = 0
+            lastFp = null
+            continue
+        }
+        val fp = listState.anchorBasisFingerprint()
+        if (anchorQuiesceAdvances(fp, lastFp)) {
+            stableFrames++
+        } else {
+            stableFrames = 0
+            lastFp = fp
+        }
+    }
+    if (BuildConfig.DEBUG) {
+        AppLogger.d(
+            "CardExpand",
+            "[DEBUG-529] anchor-quiesce stable=" + stableFrames +
+                " ms=" + ((System.nanoTime() - t0) / 1_000_000f).toInt(),
         )
     }
 }
