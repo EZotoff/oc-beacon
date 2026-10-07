@@ -64,6 +64,7 @@
   - 2026-10-06 用户裁决 B+C：B 已落地（GRADUATE_MIN_CHARS 2000→4000，#437 19-27ms@4k 失衡点校准；E2E：eof-fire 零 fire+multi-section 4062 双块 cached=true；journal §6）；C 涟漪定罪接力计划在 journal §7（锚定破雾→影子态双喂候选）
   - 2026-10-06 C 终局（journal §8）：互相关锚定后涟漪证伪——换装帧像素差(d=10-13)与正常增长步同级不可分，r3 涟漪带系尾部增长位移误归因；影子态双喂按证据不需要；4k+ 残余 fire 无可复现可见缺陷。B+F2+C 三面收口，待用户验收
   - 2026-10-06 E2E 矩阵（journal §9）：21 轮零崩溃/零 RESETKEY/全 cached，乱操作风暴 3 fire 正确；FAIL 标签均期望表误差（门槛行为 4062/8423/12741 精确）。异常候选取证中：line 画像 arm=0+-20646、wide-table -128×3、code-long 围栏不 arm
+  - 2026-10-07 soak 终报（journal §12）：6.88h/132 轮（05:51 无线 adb 断连中止，非 app 侧）——零崩溃/零 RESETKEY/零 ANR；fire×8 全 ≥4000；cached miss=0（整夜零竞速失败）；负向 d 与 CONTENT-BLINK 全归已知三族（换装预期塌缩/#523 churn/静态收编）无新签名。#515 验证链闭合（单测+矩阵+三端+soak），verify 态待用户终验收
 
 ## P1 — 核心功能需求
 
