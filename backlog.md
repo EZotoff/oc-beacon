@@ -61,12 +61,16 @@
   - PLACED 探针已增补 boxH/host 两字段；15 轮机器复现未触发（需真手指滚动余尾+速点节奏）；嫌疑=finalHCache 抬底/预热/重组合在锚点捕获窗内的交错
   - → journal: docs/journal/2026-10-07-dsh-standard-bugs.md
   - 观察窗（用户裁决 2026-10-07）：至 2026-10-14 无跳变反馈即完结；期间再遇立即 logcat 取证
+  - 根修已落地（1efbce1a 2026-10-08）：锚点捕获静止门——展开/收起反射锚点捕获前等滚动静止+整列基指纹计稳（有界200ms）；抬底理论已勘误排除（boxH 探针=内层自然高非槽位）；真机 E1/E2/E3/E4 四集全绿 topY 恒定
+  - 观察窗照旧至 2026-10-14：机器节奏本就复现不了脏样本，终验=用户再遇或期满；再遇时 grep 加 DEBUG-529 签名可分辨门超时 vs 新机制
+  - → journal: docs/journal/2026-10-08-529-expand-anchor-quiesce.md
 
 ## P2 — 优化与锦上添花
 
 - [ ] **#532 DSH 表单 tab 密码插件提示图标 + 插件 README 安装说明** `dsh` `uiux` `docs`
   - 新建/编辑服务器 DSH tab 旁 ℹ️ 图标→弹窗简述插件+GitHub 链接；插件 README 八节重写（安装三式/首设三途/rotate·revoke/十项注意事项）
   - ⚠️ GitHub 仓库尚未创建——链接暂用 LeoNardo-LB/dsh-password-login，需建仓推送后生效
+  - GitHub 仓库已建并推送（2026-10-08）：github.com/LeoNardo-LB/dsh-password-login（public，master）——app 链接与 README 安装命令即刻生效
 
 - [ ] **#530 会话页导航弹回 Home + 渲染面黑屏挂起（演示尾段两现）** `uiux` `nav`
   - #512 演示尾段：会话页在多次深链+IME 操作后两度弹回 Home，最终窗口在/进程活但渲染面全黑（force-stop 恢复）
