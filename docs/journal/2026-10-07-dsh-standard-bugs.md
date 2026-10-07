@@ -165,3 +165,7 @@ V1/V2 域 read=`filePath[,offset,limit]`、edit=`filePath,oldString,newString`�
 | 收尾 | demo2026→devpass 回滚 + debug-entry 基线 | ✅ 2s 恢复 |
 
 **新登记嫌疑（未定罪）**：会话页在多次深链导航+IME 操作后弹回 Home ×2、最终渲染面黑屏（进程 20939 存活、mCurrentFocus 正常）——force-stop 后恢复。与今日改动无交集路径（纯导航/渲染），另立观察。
+
+## §12 表单密码演示（2026-10-08 00:00，用户口令后执行）
+
+五拍全绿：首页+表单（密码框+新文案上屏）→ 当面填 名称/URL/密码 → 保存 → 断开旧条目后连接 → **probe authenticated=true 直连零横幅**（日志实证）→ 会话列表进入 ✓。收尾：DSH-DEMO 删除（datastore 零残留）+ 基线 2s 恢复。
