@@ -158,7 +158,15 @@ internal fun MessageCardAssistant(
     // D2-L22：原 if(isAmoled) 两分支相同（死条件）——直接取 onSurface
     val textColor = MaterialTheme.colorScheme.onSurface
 
-    if (renderableTurn.isEmpty) return
+    // #523 击1 取证：空 turn 早退此前无日志——「无日志空帧」假说（renderItems
+    // 瞬空 → PartContent key 槽位消失 → MC remember 域销灭 → 完结塌缩）的
+    // 唯一盲区。DEBUG-only，正常路径零成本。
+    if (renderableTurn.isEmpty) {
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+            android.util.Log.w("GapDiag", "items[0]=EMPTY turn=" + currentMessage.message.id.takeLast(12))
+        }
+        return
+    }
 
     val compact = LocalChatDensity.current == ChatDensity.Compact
     val hapticView = LocalView.current
@@ -263,14 +271,16 @@ internal fun MessageCardAssistant(
         ) {
             // 渲染预计算项 —— 组合期间零过滤/零分组。
             // #517 GapDiag：全路径 renderItems 倾倒（DEBUG-only 探针）
+            // #523：item 签名打**全量 part.id**（takeLast(6) 掩盖了前缀差异——
+            // 完结击1 取证需要确认权威 part 是否换代 id/顺序）
             if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                 val sig = renderableTurn.renderItems.joinToString(" | ") { it ->
                     when (it) {
                         is RenderItem.TurnDivider -> "DIVIDER"
-                        is RenderItem.RepeatingTool -> "REP{" + it.part.id.takeLast(6) + "x" + it.count + "}"
+                        is RenderItem.RepeatingTool -> "REP{" + it.part.id + "x" + it.count + "}"
                         is RenderItem.SyntheticNotice -> "NOTICE"
                         is RenderItem.GroupedParts -> when (val g = it.group) {
-                            is PartGroup.Single -> "S{" + g.part.id.takeLast(6) + ":" + g.part.javaClass.simpleName + "}"
+                            is PartGroup.Single -> "S{" + g.part.id + ":" + g.part.javaClass.simpleName + "}"
                             is PartGroup.Context -> "CTX{" + g.parts.size + "}"
                             else -> "GRP{" + it.group.javaClass.simpleName + "}"
                         }

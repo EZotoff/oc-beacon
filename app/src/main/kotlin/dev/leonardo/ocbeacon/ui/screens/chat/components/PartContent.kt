@@ -188,10 +188,18 @@ private fun PartContentInner(
                     // #518①：内容终态推导——①bus 覆盖曾建立后消失（流经本进程、
                     // 完结让位）②会话空闲且无覆盖（冷组合的已完结 part——
                     // shardHold 冷续 pilot 同样存在扣留尾）。两者任一即终态。
+                    // #523 G2（终态判定的数据源修正）：③数据层终态（time.end 非空
+                    //——完结权威已落位，end 后无合法增量，#266 终态守卫同语义）
+                    // 优先于 ①②——①② 依赖 liveText/会话投影的组合时序，重建实例
+                    // 首帧（collectAsState initial=null 尚未发射、idle 投影未传播）
+                    // 会误判 false → pilot 首跑走限速慢铺而非 #518① 单帧追平
+                    //（真机 r1：734+400+332 三帧 196ms 爬升）。part 对象在组合帧
+                    // 即携带权威 time.end，不依赖时序。
+                    val dataTerminal = part.time?.end != null
                     val liveSeen = remember(part.id) { androidx.compose.runtime.mutableStateOf(false) }
                     if (liveText != null) liveSeen.value = true
-                    val contentTerminal = liveText == null &&
-                        (liveSeen.value || !LocalSessionStreaming.current)
+                    val contentTerminal = dataTerminal || (liveText == null &&
+                        (liveSeen.value || !LocalSessionStreaming.current))
                     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
                         dev.leonardo.ocbeacon.logging.AppLogger.d(
                             "GapDiag",
