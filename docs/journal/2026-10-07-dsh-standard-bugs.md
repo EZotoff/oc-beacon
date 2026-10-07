@@ -129,3 +129,13 @@ V1/V2 域 read=`filePath[,offset,limit]`、edit=`filePath,oldString,newString`�
 | E 清理 | rotate 回滚 devpass（铸票 200 实证）+ 删除 DSH-PW-E2E 条目（datastore 0 残留）+ debug-entry 基线恢复 | ✅ 全清 |
 
 **遗留观察（登记待查，不阻塞 #512）**：TokenNeeded 态下（rotate 后无存储密码），Home 卡片无「会话」入口（isConnected 门控）、卡上无齿轮（serverSettingsReadyIds 需 providers 成功）——设计路径=FGS 常驻通知点击（ACTION_OPEN_SESSION）进会话列表看「输入令牌」横幅；远端自动化三次尝试未在可视窗内捕到横幅（tokenNeeded 集合时机性清空嫌疑：SseConnectionManager:327 路径）。**用户手指验收点**：rotate 后从通知点进会话列表，横幅应出现且可输新密码。若复现不出=真 UX 缺口另立卡。
+
+## §9 #512 演示干跑（2026-10-07 22:36-22:40）
+
+**干跑链**：rotate devpass→drypw1 → app 冷启 → `token required — waiting for token input: DSH-8181` → ACTION_OPEN_SESSION 深链 → **横幅稳定出现**（y=188「此服务器需要访问令牌」+输入钮，E2E 时的缺席系状态时机非可达性缺陷）→ 对话框输 drypw1 提交 → **横幅不消失、无恢复**。
+
+**根因**：`DshTokenEntryViewModel.submit` → `extractDshToken(raw)` + `DshConnectionRegistry.exchangeToken`（仅 legacy `GET /?token=…` 303+Set-Cookie 交换，DshConnectionRegistry.kt:333）。插件服务器密码在此路径无解——**#512 验收阻塞项**：spec §H「现有 token/密码手输 UI 兼作两者入口」的对话框侧未实现（回落链消费侧已实现）。
+
+**附带**：干跑还撞见 monkey 启动落 LeakCanary/BACK 落系统设置两坑（均未触碰设置退出）。
+
+**基线已恢复**：drypw1→devpass（铸票 200），app debug-entry 2s 重连。

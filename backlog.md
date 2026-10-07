@@ -53,10 +53,6 @@
 
 ## P0 — 主流程阻塞
 
-- [ ] **#528 DSH 压缩报错后会话崩溃(CardExpandReveal 布局坐标)** `dsh` `crash`
-  - 压缩报错(summary not smaller)后布局期 onPlaced 对已脱离节点 positionInRoot 抛 IllegalStateException 致 FATAL
-  - 修法:isAttached 守卫(CardExpandReveal.kt:1449/1453)
-
 ## P1 — 核心功能需求
 
 
@@ -64,33 +60,7 @@
   - 用户 21:11-21:12 实测两脏样本：均为 E1（回收重组合后首个展开集）topY+H/+H/2 位移，一例集后还有 +198 校正帧；E3+ 全干净
   - PLACED 探针已增补 boxH/host 两字段；15 轮机器复现未触发（需真手指滚动余尾+速点节奏）；嫌疑=finalHCache 抬底/预热/重组合在锚点捕获窗内的交错
   - → journal: docs/journal/2026-10-07-dsh-standard-bugs.md
-
-- [ ] **#527 DSH 工具卡实参键 snake_case 失配(读取卡标题/路径全空)** `dsh` `uiux`
-  - DSH wire 用 file_path/old_string/new_string;卡片读 filePath/path/oldString——read/write/edit 标题、打开按钮、内容全灭
-  - 修法:extractToolInput 单点键规范化(V1/V2 行为不变:无 snake 键不受影响)
-
-- [ ] **#526 DSH 展开收起方向不稳定(有时向上推动)** `dsh` `uiux` `scroll`
-  - standard agent 下思考卡展开有时向上推;怀疑降级路径(流式 turn)或锚归一化 host 键失配
-  - 待真机复现+[DEBUG-466]探针定罪
-
-- [ ] **#525 DSH 上下文注入排序在提问下方** `dsh` `uiux`
-  - journal 里 runtime-context(user/message kind!=user) 与 agent 指令(system/message)信封时刻 ≥ 提问;#524 把提问回拨到真实发送时刻后注入族整体落到提问下方
-  - 修法:DshEventMapper 轮内注入台账+repack 校正事件(handler earliestCreated min 合并兜底)
-  - → journal: docs/journal/2026-10-07-dsh-standard-bugs.md
-
-- [ ] **#524 DSH 回复出现在提问上方——journal prompt entry 信封 time 晚于输出（created 后移族双形态）** `dsh,ordering,completion`
-  - DSH journal 对 prompt entry 的事件信封 time 语义=落盘/touch 时刻而非发送时刻：①完结 touch 把 created 后移 30s+（提问翻到全部输出之下）；②原生 0.65s 错位（journal 落盘晚于首输出）。双修：SSE/live 域 created 单调防线（earliestCreated，REST 域不设防保 #485）+ swap 双源并入保 pending 发送时刻并按序移位。真机复测视觉序恢复
-  - 2026-10-07 根修落地（journal 2026-10-07-523-churn §7）：双防线（SSE/live 域 created 单调防线 + swap 并入保 pending 发送时刻+移位），+4 单测全量 3917 绿；真机复测视觉树序恢复（提问在全部输出上方 ✓）。遗留小项：Room 终值快照与内存修正的落盘时序一次不一致观察（不挡视觉），复核中
-  - 2026-10-07 二轮纠正+终修（journal §7.4）：用户复验视觉序仍错（首版树序误读）→ 探针钉死第三条写回路径（完结后 upsert:MergeStrategy 基线刷新覆盖修正）+ journal 协议实证（user/message entry 无创建时刻字段，data 仅 content/id/role/source）→ 终修=源头 mapper promptAdmitTimes 记忆（rpcId→播种时刻，live/fold 统一）+撤回 mergeMessageMeta 防线（V2 #485 锚定回归风险）。终验：Room+视觉 y 坐标双证 user 在全部输出上方。残余：重启后重进旧会话 ~1s 错位（记忆不持久，登记）
-  - 2026-10-07 系统性矩阵（journal §7.5）：批次1 steer/2 连发排队/3a 重进/3b 冷启正常轮/4 切换/5 V1V2 回归全过（V2 #485 信封槽位未破坏、V1 完结塌缩 0）；3c 冷启重进原始 bug 会话残余复现（预期内，触发面=冷启×prompt 落盘晚于早期输出 35s 的多工具轮），修复方向=记忆持久化或上游 journal 补字段
-
-- [~] **#523 mock 路径完结振荡——TurnFin 对齐 tail 96↔158 六周期 churn（shard-unreg+pilot 复位循环）** `v1,streaming,completion`
-  - V1 mock-md 完结 reconcile 条目身份churn：完结消息换 id 走整树换装而非 #509/#510 原地换名；tail 冻结尾行闪 3-4 次；#g0 不受扰；LongCat 轮无此形态 → docs/journal/2026-10-06-515-eof-megafire-window.md §4
-  - 2026-10-06 #515 E2E 矩阵扩展定性（journal 2026-10-06-515 §10）：①完结塌缩间歇性、多语料（-20646/-2116/-3219/-4024 全轮拆 96）；②新增 fire 后变体：wide-table fire 后 tail 224↔96 振荡×2（21:39:25 原生证据）；③非 mock 独占疑点待查（矩阵全走 mock-md；真模型轮 r1-r3 未见——但需系统性真模型矩阵确认）。取证日志 /tmp/515-forensics-*.log
-  - 2026-10-06 晚补测升级定性：真模型实锤（LongCat -2503/deepseek -2732@TurnFin，间歇 2/4）+ V2 复现（-3001×2 循环）——mock/V1真模型/V2 全中；DSH 不走此路径（零负向）。B 前构建已存在=非 #515 批回归。优先级升 P0 候选
-  - 2026-10-07 调研勘误+根修前两击（journal 2026-10-07-523 §1-§3）：①勘误——V1 完结不换 id（raw SSE×2 + REST 三方对照：流式/完结/REST part id 同为 prt_ 全形态、消息 id 稳定），「完结换名走整树换装」定性推翻（msg_110db0b2 系 user id 误读；裸 xid 系探针 takeLast(14) 截断）；②真机制=完结三击（SSE 完结链毁尾块 MC 重建 6/6 必现 / REST upsert 二连击+bus 对已终态 part 重发布=公共放大器 / CHUNK 静态分片接管换血 #g→#c 键族）；③形态二（wide-table -128×3）=完结三击短尾形态非独立缺陷；④F1 计划侧互斥 + F2 bus 终态纪律已落地（fadcb0d6，+3 单测全量绿）；⑤DSH 免疫解释=完结事件链干净（单事件换名）。修复前基线 8 轮存 journal §3.1，修复后复测进行中
-  - 2026-10-07 击1 根修落地（journal §4）：F1+F2 复测 8 轮击2/击3 全消、击1 仍必现（7/7）→ 链条钉死=contentTerminal 依赖 liveText/会话投影组合时序（重建实例首帧误判 false→限速慢铺 196ms）→ G2 修判定数据源（part.time.end 优先，dfd7aa23）→ 复测 2/2 完结塌缩归零+MC 实例存活（retained=true 连续，销毁不再发生）。完整验证矩阵（longpara×8+wide-table×4+short×2）进行中
-  - 2026-10-07 终报（journal §5）：三修落地（F1 fadcb0d6 计划侧互斥 / F2 fadcb0d6 bus 终态纪律 / G2 dfd7aa23 终态判定接数据源）验证链闭合——mock 矩阵 14 轮完结塌缩 0/12（基线 6/6）+形态二归零；V1/V2 DeepSeek 真模型腿完结零负向（V2 retained=true 跨完结存活，曾复现的 -3001×2 零复现）；滚动竞态健康。残余负向=fire 换装帧（#515 验收接受面，4k+ 文档 hitch 40-64ms）。verify 态待用户终验收
+  - 观察窗（用户裁决 2026-10-07）：至 2026-10-14 无跳变反馈即完结；期间再遇立即 logcat 取证
 
 - [~] **#512 DSH 密码登录插件（dsh-password-login）——免捞 token 的会话铸造/密码生命周期/轮换全员下线** `dsh` `auth` `infra`
   - 独立仓库纯宿主插件（照 keepalive 骨架，GitHub 分发，零客户端 bundle）：未设密码态回环免密铸票 + 密码登录书签页 + 轮换即撤销全体会话（admit 包装 epoch）；oc-beacon 与浏览器均为消费者
@@ -101,6 +71,7 @@
   - 修订 2026-10-05：恢复「回收所有会话」按钮（POST /revoke，裁决 #21 推翻）——不改密只踢人+调用者自动换票+未设密码态生效且跨重启保持；动机=yml 热改不撤票缺口。spec §B 已修订。
   - 二次修订 2026-10-05：/revoke 改绝对语义——不自动换票，回收=全员下线含点击者本人（用户裁决；rotate 仍保留改密者存活）；面板文案/单测/E2E 同步（49 断言）。
   - 根路径弹跳（2026-10-05）：无 token 未认证 GET / → 303 /plugins/dsh-password-login/login（authorizeIndex 包装，stale 让位官方 401）——消除回收后缓存空壳与 401 白页两种困惑；F05 零配置全链断言。
+  - E2E 干跑定罪（2026-10-07 22:39）：DshTokenDialog submit 只走 extractDshToken+legacy exchangeToken(/?token= 303 交换)——插件服务器的密码无输入路径（rotate 后无法经 UI 登回；此前矩阵用 debug intent 存密码掩盖）。横幅可达性本身没问题（TokenNeeded 活跃时会话列表 y=188 稳定出现）。修法=submit 先试插件 /session Bearer（成功→存 ServerConfig.password+cookie 入注册表），回落 legacy token 交换；文案同步中性化（用户已质疑启动行令牌教程段）
 
 ## P2 — 优化与锦上添花
 
