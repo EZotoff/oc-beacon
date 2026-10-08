@@ -49,7 +49,7 @@ internal fun RowScope.ChatTextField(
     /** 焦点变化回调（L-8：占位符轮换需感知聚焦状态）。 */
     onFocusChange: (Boolean) -> Unit = {},
     /**
-     * #497 D4：外部焦点控制通道（可空=不接线）。DSH 子会话 composer 异步
+     * #497 D4：外部焦点控制通道（可空=不接线）。DSH 子智能体会话 composer 异步
      * 挂载时由骨架占位承接点击、挂载完成后 requestFocus 接力——键盘不中断。
      */
     focusRequester: FocusRequester? = null,

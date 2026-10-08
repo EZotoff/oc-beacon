@@ -138,7 +138,7 @@ internal fun ChatScreenBottomBar(
     val subagentComposerVisible = SubagentComposerGate.composerVisible(
         sessionMeta.sessionParentId, subagentsCapable, subagentMode,
     )
-    // #497 D4：DSH 子会话 mode 异步解析期焦点接力——解析期骨架占位承接点击
+    // #497 D4：DSH 子智能体会话 mode 异步解析期焦点接力——解析期骨架占位承接点击
     //（pending 置位），composer 挂载完成后 FocusRequester 接力聚焦（键盘不
     // 中断；parentId 变化=会话切换，remember 键自动复位 pending 防跨会话误聚焦）。
     val composerFocusRequester = remember { FocusRequester() }
@@ -678,7 +678,7 @@ internal fun ChatScreenBottomBar(
             }
         }
     }
-    // #497 D4：DSH 子会话 mode 解析期（mode=null）composer 骨架占位——同位
+    // #497 D4：DSH 子智能体会话 mode 解析期（mode=null）composer 骨架占位——同位
     // 同 footprint 防底部栏布局跳变；点击预约焦点（解析完成挂载后接力聚焦开
     // 键盘）。与提示行互斥（mode=null 时提示行不渲染），V1/V2 无解析期不占位。
     if (!subagentComposerVisible &&
@@ -706,7 +706,7 @@ internal fun ChatScreenBottomBar(
     }
     // #310① one-shot 子会话只读提示行（明确不可续聊；加载中/失败保持全隐藏——
     // 与 composer 同位替换渲染，占位底部栏避免布局跳变）。
-    // #497 D3：无 subagents 能力位服务器（V1/V2）子会话同位渲染只读镜像提示行
+    // #497 D3：无 subagents 能力位服务器（V1/V2）子智能体会话同位渲染只读镜像提示行
     //（此前整块空白）——文案按能力位区分。
     if (SubagentComposerGate.readOnlyHintVisible(sessionMeta.sessionParentId, subagentsCapable, subagentMode) &&
         !isTerminalMode
