@@ -61,17 +61,6 @@
 - [ ] **#534 #512 批次遗留 lint 门 5 error——SseConnectionManager 服务器类型引用越 ServerTypeWhitelist 白名单** `chore` `lint`
   - b8cda845(#512 回落链)引入 5 处 ServerTypeWhitelist error 挡 lintDevDebug/lintRelease CI 门；疑似回落链合法用例需白名单扩位或改写能力位——非本批(P2 assorted batch2)引入，顺带发现登记
 
-- [~] **#532 DSH 表单 tab 密码插件提示图标 + 插件 README 安装说明** `dsh` `uiux` `docs`
-  - 新建/编辑服务器 DSH tab 旁 ℹ️ 图标→弹窗简述插件+GitHub 链接；插件 README 八节重写（安装三式/首设三途/rotate·revoke/十项注意事项）
-  - ⚠️ GitHub 仓库尚未创建——链接暂用 LeoNardo-LB/dsh-password-login，需建仓推送后生效
-  - GitHub 仓库已建并推送（2026-10-08）：github.com/LeoNardo-LB/dsh-password-login（public，master）——app 链接与 README 安装命令即刻生效
-
-- [~] **#514 DSH legacy token 基建退役（#512 批次④）——捞日志/adb 注入/深链配对清退** `dsh` `auth` `infra`
-  - 前置：#512 dsh-password-login 插件用顺后另裁范围（用户已裁决方向，2026-10-05）。
-  - 清退候选：宿主侧 token 镜像脚本（~/.dsh/sync-dsh-web-token.sh）、scripts/dsh-pair.sh 配对/adb 注入链、DshPairingParser 深链解析。
-  - 预判保留：app 内 legacy 兜底（exchangeToken/token 持久化/输入 UI=回落链末级，服务无插件服务器）。开工时先列影响面清单请裁决再动手。
-  - spec：docs/specs/2026-10-05-512-dsh-password-login-design.md（§K 批次④）；实现证据：docs/journal/2026-10-05-512-dsh-password-login.md
-
 ## P3 — 观察与低价值改进
 
 - [~] **#531 文案清理二期——重复键合并/plurals 化/大小写全面统一** `i18n` `chore`
