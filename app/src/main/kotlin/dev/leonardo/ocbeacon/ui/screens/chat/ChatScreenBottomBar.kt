@@ -717,7 +717,7 @@ internal fun ChatScreenBottomBar(
         ) {
             Text(
                 text = stringResource(
-                    if (subagentsCapable) {
+                    if (subagentsCapable && subagentMode != SubagentComposerGate.MODE_UNRESOLVED) {
                         R.string.chat_subagent_one_shot_read_only
                     } else {
                         R.string.chat_subagent_read_only_mirror

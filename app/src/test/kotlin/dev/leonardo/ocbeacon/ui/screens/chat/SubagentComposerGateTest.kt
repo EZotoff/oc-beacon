@@ -123,4 +123,20 @@ class SubagentComposerGateTest {
             SubagentComposerGate.composerPlaceholderVisible("parent-1", false, null),
         )
     }
+
+    // ---- #497 D4 边界修正：unresolved 终态（0.2.x 目录 404/目录无本行） ----
+
+    @Test
+    fun `unresolved child shows read-only hint row not eternal placeholder`() {
+        // 终态哨兵：骨架退场（防「加载中」永久化）+ 提示行接管（续聊无法建立）
+        assertFalse(
+            SubagentComposerGate.composerPlaceholderVisible("parent-1", true, SubagentComposerGate.MODE_UNRESOLVED),
+        )
+        assertTrue(
+            SubagentComposerGate.readOnlyHintVisible("parent-1", true, SubagentComposerGate.MODE_UNRESOLVED),
+        )
+        assertFalse(
+            SubagentComposerGate.composerVisible("parent-1", true, SubagentComposerGate.MODE_UNRESOLVED),
+        )
+    }
 }
