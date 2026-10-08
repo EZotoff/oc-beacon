@@ -67,6 +67,7 @@ import dev.leonardo.ocbeacon.ui.components.ProviderIcon
 import dev.leonardo.ocbeacon.ui.components.amoledDialogParams
 import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
+import dev.leonardo.ocbeacon.ui.theme.AppMotion
 import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import dev.leonardo.ocbeacon.ui.theme.ItemTokens
 import dev.leonardo.ocbeacon.ui.screens.chat.components.SmallSheetDragHandle
@@ -145,8 +146,10 @@ internal fun ModelPickerDialog(
     LaunchedEffect(visibleState.currentState, visibleState.targetState) {
         if (!visibleState.currentState && !visibleState.targetState) onDismiss()
     }
-    // #493：返回键关闭（Popup focusable=false 收不到 key 事件，走组合级 BackHandler）
-    BackHandler(enabled = visibleState.targetState) { dismiss() }
+    // #493：返回键关闭（Popup focusable=false 收不到 key 事件，走组合级 BackHandler）。
+    // 组合期恒拦截：dismiss 动画窗内 targetState 已 false，若按其门控会让第二按
+    // BACK 穿透到页面级返回（退出会话）。
+    BackHandler(enabled = true) { dismiss() }
 
     // 2026-08-20（用户决策）：主对话抽屉高度统一——min = max = 75% 屏高
     val sheetHeight = LocalConfiguration.current.screenHeightDp.dp * SheetTokens.ChatSheetHeightFraction
@@ -162,14 +165,13 @@ internal fun ModelPickerDialog(
             // scrim（点外关闭）
             androidx.compose.animation.AnimatedVisibility(
                 visibleState = visibleState,
-                enter = fadeIn(animationSpec = tween(150)),
-                exit = fadeOut(animationSpec = tween(180)),
+                enter = fadeIn(animationSpec = tween(AppMotion.SHORT)),
+                exit = fadeOut(animationSpec = tween(AppMotion.SHEET_EXIT)),
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        // 与 M3 1.4.0 ModalBottomSheet 默认 scrim 同值（ScrimTokens.containerColor @ 0.32f）
-                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = SheetTokens.ScrimAlpha))
                         .pointerInput(Unit) {
                             detectTapGestures { dismiss() }
                         },
@@ -178,10 +180,10 @@ internal fun ModelPickerDialog(
             // sheet 面（底部对齐 + 拖拽跟手位移）
             androidx.compose.animation.AnimatedVisibility(
                 visibleState = visibleState,
-                enter = slideInVertically(animationSpec = tween(220)) { it } +
-                    fadeIn(animationSpec = tween(150)),
-                exit = slideOutVertically(animationSpec = tween(180)) { it } +
-                    fadeOut(animationSpec = tween(120)),
+                enter = slideInVertically(animationSpec = tween(AppMotion.SHEET_ENTER)) { it } +
+                    fadeIn(animationSpec = tween(AppMotion.SHORT)),
+                exit = slideOutVertically(animationSpec = tween(AppMotion.SHEET_EXIT)) { it } +
+                    fadeOut(animationSpec = tween(AppMotion.FAST)),
                 modifier = Modifier.align(Alignment.BottomCenter),
             ) {
                 Column(
@@ -205,7 +207,7 @@ internal fun ModelPickerDialog(
                                     }
                                 },
                                 onDragEnd = {
-                                    if (dragOffset.value > sheetHeightPx * 0.3f) dismiss()
+                                    if (dragOffset.value > sheetHeightPx * SheetTokens.DragDismissFraction) dismiss()
                                     else scope.launch { dragOffset.animateTo(0f) }
                                 },
                             )
