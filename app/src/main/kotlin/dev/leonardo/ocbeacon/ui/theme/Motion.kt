@@ -12,9 +12,6 @@ object AppMotion {
     const val BREATH_CYCLE = 800    // 呼吸指示器周期
     const val PULSE_CYCLE = 1200    // 脉冲点完整周期
     const val TERMINAL = 700        // 终端转场时长
-    // #493 布局内 sheet（模型抽屉）：滑入/滑出（对齐 M3 sheet 转场体感）
-    const val SHEET_ENTER = 220
-    const val SHEET_EXIT = 180
 
     val StandardEasing = EaseInOut
     val EmphasizedEasing = EaseOut

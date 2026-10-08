@@ -689,9 +689,6 @@ fun ChatScreen(
                 }
         }
     }
-    // #493：根 Box——布局内非模态 overlay 挂载层（模型抽屉键盘保持：主窗口
-    // 内叠加不夺焦点；FileViewer 等 Dialog 窗口组件在 Box 内不受影响）
-    Box(Modifier.fillMaxSize()) {
     Scaffold(
         snackbarHost = {
             SnackbarHost(snackbarHostState) { data ->
@@ -1339,7 +1336,6 @@ fun ChatScreen(
             )
         }
     }
-    } // #493 根 Box overlay 挂载层
 
 
     } // CompositionLocalProvider

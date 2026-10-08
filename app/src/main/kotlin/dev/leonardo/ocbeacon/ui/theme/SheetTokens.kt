@@ -16,13 +16,4 @@ package dev.leonardo.ocbeacon.ui.theme
 object SheetTokens {
     /** 主对话抽屉统一高度占屏比（min = max = 该比例 → 固定高度）。 */
     const val ChatSheetHeightFraction = 0.75f
-
-    /**
-     * 布局内 sheet（#493）scrim 透明度——与 M3 1.4.0 ModalBottomSheet
-     * 默认 scrim 同值（ScrimTokens.containerColor @ 0.32f，反编译实证）。
-     */
-    const val ScrimAlpha = 0.32f
-
-    /** 布局内 sheet（#493）手柄拖拽收起判定：位移超过面板高的该比例松手即收。 */
-    const val DragDismissFraction = 0.3f
 }
