@@ -60,8 +60,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.domain.model.ModelCatalog
 import dev.leonardo.ocbeacon.domain.model.ProviderCatalog
@@ -90,13 +88,18 @@ import kotlin.math.roundToInt
  * - #188：defaultModel 由调用方以响应式状态传入（DataStore 写入后即时回显）。
  *
  * #493（2026-09-30 用户裁决「基准=不收键盘」）：容器从 ModalBottomSheet
- * （独立 dialog 窗口，打开必夺主窗口焦点→IME 收起）换为 Popup(focusable=false)
- * 非模态呈现——主窗口焦点不动，键盘保持（#361 busy 气泡菜单同款先例）。
- * 保留语义：返回键关闭（BackHandler——非聚焦弹窗收不到 key 事件）、点外关闭
- * （自绘 scrim tap）、scrim、75% 固定高（SheetTokens.ChatSheetHeightFraction）、
- * 手柄拖拽收起（自实现 anchoredDrag 等价：跟手位移+越 30% 高松手收起）。
+ * （独立 dialog 窗口，打开必夺主窗口焦点→IME 收起）换为**布局内非模态
+ * overlay**——主窗口组合树内直接叠加（挂 ChatScreen 根 Box，z 序在 Scaffold
+ * 之上），无独立窗口 → 不夺焦点，键盘保持。
+ * 保留语义：返回键关闭（BackHandler）、点外关闭（自绘 scrim tap）、scrim、
+ * 75% 固定高（SheetTokens.ChatSheetHeightFraction）、手柄拖拽收起（自实现
+ * anchoredDrag 等价：跟手位移+越 30% 高松手收起）。
  * #379/#405 手势隔离语义自动满足：无 M3 sheet anchoredDrag 检测器后，内容/
  * 非滚动区拖拽天然不致收起（原两个 modifier 仅为拦截 sheet 拖拽而设）。
+ *
+ * 取证备注（2026-10-08 真机 houji/MIUI）：Popup(focusable=false) 子窗口候选
+ * 先试被否——窗口在场+组合三打点全出（composed/call site/content）但表面
+ * 零绘制（wrap 蓝面 0 像素、scrim 0 像素、a11y 树无节点），故换布局内方案。
  */
 @Composable
 internal fun ModelPickerDialog(
@@ -153,12 +156,9 @@ internal fun ModelPickerDialog(
     // #493：手柄拖拽收起——sheet 面跟手下移，松手越 30% 高收起、否则弹回
     val dragOffset = remember { Animatable(0f) }
 
-    // 2026-08-12 用户要求：模型选择改为抽屉式；#493 换 Popup 非模态容器（见文件头）
-    Popup(
-        // #493：不夺主窗口焦点——IME 保持（#361 同款）
-        properties = PopupProperties(focusable = false),
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
+    // 2026-08-12 用户要求：模型选择改为抽屉式；#493 换布局内非模态 overlay
+    //（见文件头取证备注——本组件根即全屏层，须挂在全屏容器内）
+    Box(modifier = Modifier.fillMaxSize()) {
             // scrim（点外关闭）
             androidx.compose.animation.AnimatedVisibility(
                 visibleState = visibleState,
@@ -398,5 +398,4 @@ internal fun ModelPickerDialog(
                 }
             }
         }
-    }
 }
