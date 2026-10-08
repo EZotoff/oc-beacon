@@ -1,12 +1,16 @@
 package dev.leonardo.ocbeacon.ui.screens.settings.sections
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Podcasts
+import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -82,6 +86,32 @@ fun AdvancedSection(
                 ) { Text(stringResource(R.string.save)) }
             },
             modifier = Modifier.fillMaxWidth(),
+        )
+    }
+
+    // 语音模型（gemini / moshi）：作为 voiceModel 参数追加到语音连接 URL。
+    val voiceModel by viewModel.voiceModel.collectAsStateWithLifecycle()
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.settings_voice_model)) },
+        supportingContent = { Text(stringResource(R.string.settings_voice_model_desc)) },
+        leadingContent = {
+            Icon(Icons.Default.RecordVoiceOver, contentDescription = stringResource(R.string.settings_voice_model))
+        },
+        modifier = Modifier.padding(ListItemTokens.ContentPaddingMedium),
+    )
+    Row(
+        Modifier.padding(horizontal = SpacingTokens.LG.dp),
+        horizontalArrangement = Arrangement.spacedBy(SpacingTokens.SM.dp),
+    ) {
+        FilterChip(
+            selected = voiceModel == "gemini",
+            onClick = { viewModel.setVoiceModel("gemini") },
+            label = { Text(stringResource(R.string.settings_voice_model_gemini)) },
+        )
+        FilterChip(
+            selected = voiceModel == "moshi",
+            onClick = { viewModel.setVoiceModel("moshi") },
+            label = { Text(stringResource(R.string.settings_voice_model_moshi)) },
         )
     }
 

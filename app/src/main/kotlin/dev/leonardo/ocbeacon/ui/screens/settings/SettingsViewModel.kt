@@ -76,6 +76,8 @@ class SettingsViewModel @Inject constructor(
     val terminalFontSize = settings.map { it.terminalFontSize }.stateIn(viewModelScope, SharingStarted.Eagerly, 13f)
     /** omo-pulse 基础 URL（语音 WS 连接目标）。 */
     val omoPulseUrl = settings.map { it.omoPulseUrl }.stateIn(viewModelScope, SharingStarted.Eagerly, dev.leonardo.ocbeacon.domain.voice.VoiceUrl.DEFAULT_OMO_PULSE_URL)
+    /** 语音模型（gemini/moshi），连接时追加到语音 WSS URL。 */
+    val voiceModel = settings.map { it.voiceModel }.stateIn(viewModelScope, SharingStarted.Eagerly, dev.leonardo.ocbeacon.domain.voice.VoiceUrl.DEFAULT_VOICE_MODEL)
 
     // --- 权限自动批准规则 ---
     private val _rulesRefreshTrigger = MutableStateFlow(0)
@@ -226,8 +228,12 @@ class SettingsViewModel @Inject constructor(
         updateSetting { it.copy(terminalFontSize = size) }
     }
 
-    fun setOmoPulseUrl(url: String) {
-        updateSetting { it.copy(omoPulseUrl = url) }
+fun setOmoPulseUrl(url: String) {
+updateSetting { it.copy(omoPulseUrl = url) }
+    }
+
+    fun setVoiceModel(model: String) {
+        updateSetting { it.copy(voiceModel = dev.leonardo.ocbeacon.domain.voice.VoiceUrl.normalizeVoiceModel(model)) }
     }
 
     /**

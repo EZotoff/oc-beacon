@@ -16,13 +16,40 @@ class VoiceWsClientTest {
         val fake = FakeVoiceSocket()
         val client = VoiceWsClient(backgroundScope, fake)
         client.connect("https://pulse.example/")
-        assertEquals("https://pulse.example/api/voice-ws?clientClass=beacon", fake.requests.single().url.toString())
+        assertEquals("https://pulse.example/api/voice-ws?clientClass=beacon&voiceModel=gemini", fake.requests.single().url.toString())
         assertEquals(VoiceConnectionState.Connecting, client.connectionState.value)
         fake.opened()
         assertEquals(VoiceConnectionState.Live, client.connectionState.value)
         client.disconnect()
         assertEquals(VoiceConnectionState.Disconnected, client.connectionState.value)
         verify { fake.socket.cancel() }
+    }
+
+    @Test fun `connect appends selected voice model to endpoint`() = runTest {
+        val fake = FakeVoiceSocket()
+        val client = VoiceWsClient(backgroundScope, fake)
+        client.connect("https://pulse.example", "moshi")
+        assertEquals("https://pulse.example/api/voice-ws?clientClass=beacon&voiceModel=moshi", fake.requests.single().url.toString())
+        client.disconnect()
+    }
+
+    @Test fun `invalid voice model falls back to gemini`() = runTest {
+        val fake = FakeVoiceSocket()
+        val client = VoiceWsClient(backgroundScope, fake)
+        client.connect("https://pulse.example", "banana")
+        assertEquals("https://pulse.example/api/voice-ws?clientClass=beacon&voiceModel=gemini", fake.requests.single().url.toString())
+        client.disconnect()
+    }
+
+    @Test fun `reconnect keeps the selected voice model`() = runTest {
+        val fake = FakeVoiceSocket()
+        val client = VoiceWsClient(backgroundScope, fake)
+        client.connect("https://pulse.example", "moshi")
+        fake.failed()
+        advanceTimeBy(1500); runCurrent()
+        assertEquals(2, fake.requests.size)
+        assertEquals(fake.requests.first().url, fake.requests.last().url)
+        client.disconnect()
     }
 
     @Test fun `control frames round trip through fake socket`() = runTest {

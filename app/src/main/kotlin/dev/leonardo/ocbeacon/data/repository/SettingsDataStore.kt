@@ -67,8 +67,10 @@ class SettingsDataStore @Inject constructor(
         private val IMAGE_ATTACHMENT_MAX_LONG_SIDE_KEY = intPreferencesKey("image_attachment_max_long_side")
         private val IMAGE_ATTACHMENT_WEBP_QUALITY_KEY = intPreferencesKey("image_attachment_webp_quality")
         private val TERMINAL_FONT_SIZE_KEY = floatPreferencesKey("terminal_font_size")
-        /** 2026-10-08 Wave 2：语音 WS 连接目标（omo-pulse 基础 URL）。 */
+/** 2026-10-08 Wave 2：语音 WS 连接目标（omo-pulse 基础 URL）。 */
         private val OMO_PULSE_URL_KEY = stringPreferencesKey("omo_pulse_base_url")
+        /** 语音模型（gemini/moshi），追加为 voiceModel 查询参数。 */
+        private val VOICE_MODEL_KEY = stringPreferencesKey("voice_model")
 
         /** 用于在 attachBaseContext 中同步读取 locale 的 SharedPreferences 名称。 */
         private const val LOCALE_PREFS = "locale_prefs"
@@ -227,6 +229,7 @@ class SettingsDataStore @Inject constructor(
             prefs[IMAGE_ATTACHMENT_WEBP_QUALITY_KEY] = settings.imageAttachmentWebpQuality
             prefs[TERMINAL_FONT_SIZE_KEY] = settings.terminalFontSize
             prefs[OMO_PULSE_URL_KEY] = settings.omoPulseUrl
+            prefs[VOICE_MODEL_KEY] = settings.voiceModel
         }
         // 语言镜像（#136 D2-L56 同源机制）：真相源已写，镜像同步
         context.getSharedPreferences(LOCALE_PREFS, Context.MODE_PRIVATE)
@@ -441,7 +444,8 @@ class SettingsDataStore @Inject constructor(
             imageAttachmentMaxLongSide = (prefs[IMAGE_ATTACHMENT_MAX_LONG_SIDE_KEY] ?: 1440).let { if (it <= 0) 0 else it.coerceIn(720, 4096) },
             imageAttachmentWebpQuality = (prefs[IMAGE_ATTACHMENT_WEBP_QUALITY_KEY] ?: 60).coerceIn(1, 100),
             terminalFontSize = (prefs[TERMINAL_FONT_SIZE_KEY] ?: 13f).coerceIn(6f, 20f),
-            omoPulseUrl = prefs[OMO_PULSE_URL_KEY] ?: dev.leonardo.ocbeacon.domain.voice.VoiceUrl.DEFAULT_OMO_PULSE_URL
+            omoPulseUrl = prefs[OMO_PULSE_URL_KEY] ?: dev.leonardo.ocbeacon.domain.voice.VoiceUrl.DEFAULT_OMO_PULSE_URL,
+            voiceModel = dev.leonardo.ocbeacon.domain.voice.VoiceUrl.normalizeVoiceModel(prefs[VOICE_MODEL_KEY])
         )
     }
 

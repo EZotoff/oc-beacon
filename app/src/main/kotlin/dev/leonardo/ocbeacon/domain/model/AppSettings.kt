@@ -49,5 +49,7 @@ data class AppSettings(
     // --- 语音（omo-pulse）---
     /** omo-pulse 基础 URL：语音 WS 连接目标（VoiceUrl.normalize 于连接时归一化）。 */
     val omoPulseUrl: String = dev.leonardo.ocbeacon.domain.voice.VoiceUrl.DEFAULT_OMO_PULSE_URL,
+    /** 语音模型（gemini/moshi）：连接时作为 voiceModel 查询参数追加到语音 WSS URL。 */
+    val voiceModel: String = dev.leonardo.ocbeacon.domain.voice.VoiceUrl.DEFAULT_VOICE_MODEL,
     val terminalFontSize: Float = 13f
 )

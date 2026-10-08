@@ -36,4 +36,17 @@ class VoiceUrlTest {
         assertNull(VoiceUrl.normalize("ftp://pulse.example"))
         assertNull(VoiceUrl.normalize("https://"))
     }
+
+    @Test fun `voice model accepts gemini and moshi case-insensitively`() {
+        assertEquals("gemini", VoiceUrl.normalizeVoiceModel("gemini"))
+        assertEquals("moshi", VoiceUrl.normalizeVoiceModel("moshi"))
+        assertEquals("moshi", VoiceUrl.normalizeVoiceModel("  MOSHI "))
+    }
+
+    @Test fun `voice model falls back to default on null blank or unknown`() {
+        assertEquals(VoiceUrl.DEFAULT_VOICE_MODEL, VoiceUrl.normalizeVoiceModel(null))
+        assertEquals(VoiceUrl.DEFAULT_VOICE_MODEL, VoiceUrl.normalizeVoiceModel(""))
+        assertEquals(VoiceUrl.DEFAULT_VOICE_MODEL, VoiceUrl.normalizeVoiceModel("   "))
+        assertEquals(VoiceUrl.DEFAULT_VOICE_MODEL, VoiceUrl.normalizeVoiceModel("gpt-4o"))
+    }
 }

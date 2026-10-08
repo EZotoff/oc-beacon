@@ -1101,6 +1101,8 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="voice_state_offline">offline</string>
     <string name="voice_state_moved">voice moved to another surface</string>
     <string name="voice_ptt">Hold to talk</string>
+    <string name="voice_ptt_listening">Listening —\nrelease to send</string>
+    <string name="voice_ptt_connecting">Connecting…</string>
     <string name="voice_audio_blocked">Audio suspended: %1$s</string>
     <string name="voice_audio_focus_lost">Audio suspended — another app took audio focus</string>
     <string name="voice_show_fallback">Unsupported view</string>
@@ -1110,5 +1112,9 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="settings_omo_pulse_url">omo-pulse base URL</string>
     <string name="settings_omo_pulse_url_desc">Voice (PTT) connection endpoint</string>
     <string name="settings_omo_pulse_url_invalid">Invalid URL — use an http(s) host</string>
+    <string name="settings_voice_model">Voice model</string>
+    <string name="settings_voice_model_desc">Voice engine used for PTT sessions</string>
+    <string name="settings_voice_model_gemini">Gemini</string>
+    <string name="settings_voice_model_moshi">Moshi</string>
     <string name="save">Save</string>
 </resources>

@@ -9,6 +9,19 @@ import java.net.URI
 object VoiceUrl {
     const val DEFAULT_OMO_PULSE_URL = "https://ez-raider.tailb8fd09.ts.net:4300"
 
+
+    /** Default voice model for the voice WSS endpoint. */
+    const val DEFAULT_VOICE_MODEL = "gemini"
+
+
+    /** Voice models accepted by the voice WSS endpoint (`voiceModel` query param). */
+    val VOICE_MODELS = setOf("gemini", "moshi")
+
+
+    /** Coerce a stored voice model to a supported value; anything else falls back to the default. */
+    fun normalizeVoiceModel(raw: String?): String =
+        raw?.trim()?.lowercase()?.takeIf { it in VOICE_MODELS } ?: DEFAULT_VOICE_MODEL
+
     /**
      * Normalize a user-entered omo-pulse base URL:
      * trims whitespace, defaults the scheme to https, strips a trailing

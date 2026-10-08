@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -58,6 +59,7 @@ fun VoiceWidget(
     val showFrame by viewModel.showFrame.collectAsStateWithLifecycle()
     val audioFailure by viewModel.audioFailure.collectAsStateWithLifecycle()
     val focusLost by viewModel.focusLost.collectAsStateWithLifecycle()
+    val pttHeld by viewModel.pttHeld.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     var pressAfterPermission by remember { mutableStateOf(false) }
@@ -105,7 +107,7 @@ fun VoiceWidget(
                 modifier = Modifier.widthIn(max = 360.dp),
             )
         }
-        PttButton(onPress = onPttPress, onRelease = onPttRelease)
+        PttButton(onPress = onPttPress, onRelease = onPttRelease, connection = connection, held = pttHeld)
     }
 }
 
@@ -144,14 +146,33 @@ private fun BlockedOverlay(message: String) {
 }
 
 @Composable
-private fun PttButton(onPress: () -> Unit, onRelease: () -> Unit) {
+private fun PttButton(
+    onPress: () -> Unit,
+    onRelease: () -> Unit,
+    connection: VoiceSessionConnection,
+    held: Boolean,
+) {
+    // Voice-input mode states, visually distinct at a glance:
+    //   recording (held + live): red, "Listening — release to send"
+    //   connecting: amber, "Connecting…"
+    //   live idle: green, "Hold to talk"
+    //   otherwise: primary, "Hold to talk"
+    val recording = held && connection == VoiceSessionConnection.Live
+    val (container, labelRes) = when {
+        recording -> Color(0xFFE53935) to R.string.voice_ptt_listening
+        connection == VoiceSessionConnection.Connecting -> Color(0xFFFFC107) to R.string.voice_ptt_connecting
+        connection == VoiceSessionConnection.Live -> Color(0xFF4CAF50) to R.string.voice_ptt
+        else -> MaterialTheme.colorScheme.primary to R.string.voice_ptt
+    }
+    val scale = if (recording) 1.08f else 1f
     Surface(
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.primary,
-        contentColor = MaterialTheme.colorScheme.onPrimary,
+        color = container,
+        contentColor = Color.White,
         shadowElevation = 6.dp,
         modifier = Modifier
             .size(72.dp)
+            .scale(scale)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
@@ -167,8 +188,9 @@ private fun PttButton(onPress: () -> Unit, onRelease: () -> Unit) {
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-                stringResource(R.string.voice_ptt),
+                stringResource(labelRes),
                 style = MaterialTheme.typography.labelMedium,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.padding(SpacingTokens.SM.dp),
             )
         }

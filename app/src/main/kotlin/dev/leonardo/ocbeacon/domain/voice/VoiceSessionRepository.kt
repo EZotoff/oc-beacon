@@ -40,6 +40,7 @@ class VoiceSessionRepository(
     private val mutableShowFrame = MutableStateFlow<dev.leonardo.ocbeacon.data.api.voice.ShowFrame?>(null)
     val showFrame = mutableShowFrame.asStateFlow()
     private var baseUrl: String? = null
+    private var voiceModel: String = VoiceUrl.DEFAULT_VOICE_MODEL
     private var held = false
     private var inputPending = false
     private var lastContext: ClientControlFrame.ViewContext? = null
@@ -91,13 +92,14 @@ class VoiceSessionRepository(
     }
 
     @Synchronized
-    fun connect(omoPulseBaseUrl: String) {
+    fun connect(omoPulseBaseUrl: String, voiceModel: String = VoiceUrl.DEFAULT_VOICE_MODEL) {
         held = false
         inputPending = false
         audio.stop()
         lastContext = null
         baseUrl = omoPulseBaseUrl
-        client.connect(omoPulseBaseUrl)
+        this.voiceModel = VoiceUrl.normalizeVoiceModel(voiceModel)
+        client.connect(omoPulseBaseUrl, this.voiceModel)
     }
 
     @Synchronized
@@ -120,7 +122,7 @@ class VoiceSessionRepository(
             }
             VoiceConnectionState.Handoff, VoiceConnectionState.Disconnected -> {
                 val url = baseUrl
-                if (url == null) held = false else client.connect(url)
+                if (url == null) held = false else client.connect(url, voiceModel)
             }
             VoiceConnectionState.Connecting -> Unit
         }

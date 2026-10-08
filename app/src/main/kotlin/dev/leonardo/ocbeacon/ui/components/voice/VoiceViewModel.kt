@@ -40,6 +40,9 @@ class VoiceViewModel @Inject constructor(
     /** True while audio is suspended after a transient audio-focus loss → overlay. */
     val focusLost: StateFlow<Boolean> = repository.focusLost
 
+    /** True while the user is holding PTT and capture is live → recording state. */
+    val pttHeld: StateFlow<Boolean> = repository.pttHeld
+
     /** Widget renders only while a supervisor snapshot exists. */
     val hasSnapshot: StateFlow<Boolean> = snapshotCache.snapshots
         .map { it.isNotEmpty() }
@@ -50,10 +53,9 @@ class VoiceViewModel @Inject constructor(
         viewModelScope.launch {
             when (connection.value) {
                 VoiceSessionConnection.Disconnected, VoiceSessionConnection.MovedToAnotherSurface -> {
-                    val url = VoiceUrl.normalize(
-                        settingsRepository.getSettingsFlow().first().omoPulseUrl,
-                    ) ?: return@launch
-                    repository.connect(url)
+                    val settings = settingsRepository.getSettingsFlow().first()
+                    val url = VoiceUrl.normalize(settings.omoPulseUrl) ?: return@launch
+                    repository.connect(url, settings.voiceModel)
                 }
                 VoiceSessionConnection.Connecting, VoiceSessionConnection.Live -> Unit
             }

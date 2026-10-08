@@ -1,5 +1,6 @@
 package dev.leonardo.ocbeacon.data.api.voice
 
+import dev.leonardo.ocbeacon.domain.voice.VoiceUrl
 import kotlin.math.min
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -52,12 +53,14 @@ class VoiceWsClient(
     /** Consecutive failed connections (reset on a successful open) — drives backoff. */
     private var failures = 0
     private var baseUrl: String? = null
+    private var voiceModel: String = VoiceUrl.DEFAULT_VOICE_MODEL
 
     @Synchronized
-    fun connect(omoPulseBaseUrl: String) {
+    fun connect(omoPulseBaseUrl: String, voiceModel: String = VoiceUrl.DEFAULT_VOICE_MODEL) {
         disconnect()
         failures = 0
         baseUrl = omoPulseBaseUrl
+        this.voiceModel = VoiceUrl.normalizeVoiceModel(voiceModel)
         open(generation)
     }
 
@@ -92,7 +95,7 @@ class VoiceWsClient(
             base.startsWith("https://") -> "wss://" + base.removePrefix("https://")
             base.startsWith("http://") -> "ws://" + base.removePrefix("http://")
             else -> base
-        } + "/api/voice-ws?clientClass=beacon"
+        } + "/api/voice-ws?clientClass=beacon&voiceModel=$voiceModel"
         setState(VoiceConnectionState.Connecting)
         val currentAttempt = ++attempt
         val listener = object : WebSocketListener() {
