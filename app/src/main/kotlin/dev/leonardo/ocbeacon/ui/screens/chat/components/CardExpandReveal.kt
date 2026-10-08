@@ -1510,11 +1510,14 @@ internal fun CardExpandReveal(
     // 冷组合抬底数据源:finalHCache(rememberSaveable)跨回收存活,-1=无缓存
     // (抬底条件 floor>measured 自然失效)。remember(finalHCache) 稳定引用,
     // lambda 闭包读 state=布局相订阅,缓存更新自动失效重测。
+    // #533:saveable 只覆盖 LazyList item 级回收;SliceHost 槽位出窗即弃时
+    // 随槽位销毁——进程级 CardExpandFinalHStore((cacheKey,width) 键控)补位,
+    // 节点测量相融合取 max 并回写真实内容高。
     val floorProvider = remember(finalHCache) { { finalHCache.value } }
         Box(
         modifier = modifier
             .clipToBounds()
-            .cardExpandGeometry(clock, floorProvider)
+            .cardExpandGeometry(clock, floorProvider, cacheKey?.toString())
             .onSizeChanged { revealBoxH.intValue = it.height }
             .onPlaced {
                 // #423 批次四:布局相写入。真机取证(09-22):onGloballyPositioned 实测
@@ -1939,6 +1942,10 @@ private suspend fun awaitAnchorQuiescence(listState: LazyListState) {
 private class CardExpandGeometryNode(
     var clock: CardExpandClock,
     var floorProvider: () -> Int = { 0 },
+    /** #533:槽位键（cacheKey 字符串化;null=不入进程店——工具卡等无键卡维持现状）。 */
+    var storeKey: String? = null,
+    /** #533:欠测桥接（measured<floor 落地期持有;注入时钟可单测）。 */
+    var floorBridge: CardExpandFloorBridge = CardExpandFloorBridge(),
 ) : Modifier.Node(), LayoutModifierNode {
 
     private var cachedPlaceable: Placeable? = null
@@ -2001,8 +2008,21 @@ private class CardExpandGeometryNode(
         // →内容落地 +H 回长(RESIZE 15982→11492→15982,147ms)=手势中可见闪跳。
         // 根修:内容未组合(measured==0)期间 floor 持续有效——零高绝不可能是
         // finalHCache>0 展开卡的合法终态,无陈旧抬底风险(内容变矮≠内容为零)。
-        val floorH = if (coldFloorEligible(clock.fraction, clock.animating, clock.measureCount, placeable.height)) {
-            floorProvider()
+        // #533 soak 定罪(2026-10-08 05:32:55 三帧):SliceHost 槽位出窗即弃
+        // (subcompose 无 SaveableStateHolder)→槽内 finalHCache 随槽位销毁→抬底
+        // 在切片域被缴械,展开卡重入窗盒瞬态欠测→与片高账本稳态落差=−H 塌缩
+        // 脉冲(86ms-83s 回长族,5h 13 次);部分高欠测(分段落地)为另一族级联。
+        // 根修①:floorProvider 融合进程级 CardExpandFinalHStore((cacheKey,width)
+        // 键控,槽位销毁/回收全存活);②floor 持有经 CardExpandFloorBridge 扩到
+        // 整个 measured<floor 落地期(1.5s 稳定释放=合法收缩,差异走引擎配对)。
+        val storeFloor = storeKey?.let { CardExpandFinalHStore.get(it, width) } ?: -1
+        val saveableFloor = floorProvider()
+        val floorCandidate = maxOf(storeFloor, saveableFloor)
+        val floorH = if (floorCandidate > 0 && floorBridge.holds(
+                clock.fraction, clock.animating, clock.measureCount, placeable.height, floorCandidate
+            )
+        ) {
+            floorCandidate
         } else {
             0
         }
@@ -2013,6 +2033,11 @@ private class CardExpandGeometryNode(
                 "[DEBUG-FLOOR] cold-floor effH=" + effH + " measured=" + placeable.height +
                     " count=" + clock.measureCount,
             )
+        }
+        // #533:真实内容高回写进程店(只升不降)——重入窗/回收重组合时 floor 由此存活。
+        val sk = storeKey
+        if (sk != null && placeable.height > 0) {
+            CardExpandFinalHStore.record(sk, width, placeable.height)
         }
         val report = clock.onMeasure(effH)
         // #430:稳态记账(measure 相;基线/rebase 协议见 CardExpandClock)——
@@ -2039,25 +2064,33 @@ private class CardExpandGeometryNode(
 /**
  * #422:Element 包装——clock 以身份相等 remember 期内稳定,节点与缓存
  * 跨重组存活(lambda 版每帧新建 element 正是缓存无法附着的原因)。
+ * #533:storeKey 入相等(键变化=换卡身份,节点须重建以重置桥接态)。
  */
 private class CardExpandGeometryElement(
     private val clock: CardExpandClock,
     private val floorProvider: () -> Int,
+    private val storeKey: String?,
 ) : ModifierNodeElement<CardExpandGeometryNode>() {
-    override fun create(): CardExpandGeometryNode = CardExpandGeometryNode(clock, floorProvider)
+    override fun create(): CardExpandGeometryNode =
+        CardExpandGeometryNode(clock, floorProvider, storeKey)
 
     override fun update(node: CardExpandGeometryNode) {
         node.clock = clock
         node.floorProvider = floorProvider
+        node.storeKey = storeKey
     }
 
     override fun equals(other: Any?): Boolean =
         other is CardExpandGeometryElement && other.clock === clock &&
-            other.floorProvider === floorProvider
+            other.floorProvider === floorProvider && other.storeKey == storeKey
 
     override fun hashCode(): Int =
-        System.identityHashCode(clock) * 31 + System.identityHashCode(floorProvider)
+        System.identityHashCode(clock) * 31 + System.identityHashCode(floorProvider) * 7 +
+            (storeKey?.hashCode() ?: 0)
 }
 
-private fun Modifier.cardExpandGeometry(clock: CardExpandClock, floorProvider: () -> Int): Modifier =
-    this.then(CardExpandGeometryElement(clock, floorProvider))
+private fun Modifier.cardExpandGeometry(
+    clock: CardExpandClock,
+    floorProvider: () -> Int,
+    storeKey: String?,
+): Modifier = this.then(CardExpandGeometryElement(clock, floorProvider, storeKey))
