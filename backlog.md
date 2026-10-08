@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#534**（2026-10-08 #533 SliceHost 巨轮 item 测量窗瞬态脉）。
+**编号**：全局递增，不回收。下一编号：**#535**（2026-10-08 #534 #512 批次遗留 lint 门 5 error）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
@@ -58,7 +58,10 @@
 
 ## P2 — 优化与锦上添花
 
-- [ ] **#532 DSH 表单 tab 密码插件提示图标 + 插件 README 安装说明** `dsh` `uiux` `docs`
+- [ ] **#534 #512 批次遗留 lint 门 5 error——SseConnectionManager 服务器类型引用越 ServerTypeWhitelist 白名单** `chore` `lint`
+  - b8cda845(#512 回落链)引入 5 处 ServerTypeWhitelist error 挡 lintDevDebug/lintRelease CI 门；疑似回落链合法用例需白名单扩位或改写能力位——非本批(P2 assorted batch2)引入，顺带发现登记
+
+- [~] **#532 DSH 表单 tab 密码插件提示图标 + 插件 README 安装说明** `dsh` `uiux` `docs`
   - 新建/编辑服务器 DSH tab 旁 ℹ️ 图标→弹窗简述插件+GitHub 链接；插件 README 八节重写（安装三式/首设三途/rotate·revoke/十项注意事项）
   - ⚠️ GitHub 仓库尚未创建——链接暂用 LeoNardo-LB/dsh-password-login，需建仓推送后生效
   - GitHub 仓库已建并推送（2026-10-08）：github.com/LeoNardo-LB/dsh-password-login（public，master）——app 链接与 README 安装命令即刻生效
@@ -71,6 +74,7 @@
 - [ ] **#519 DSH 完结换装后思考卡消失——权威消息 content 无 reasoning part，流中思考内容完结即蒸发** `dsh` `streaming` `completion`
   - 真机（2026-10-06 quicksort 轮）：流中 reasoning part（dsh-t1s1_reasoning_ord_0，443 字节 payload）正常渲染+计时；完结 seq 换装后权威消息（seq-...b7e40eebd）parts 仅 3 个 text（4564/390/4555 字符）零 reasoning——思考卡随换装消失，重进亦无。与 #501（正文换装砸出）同族的 reasoning 面：流中可见完结即失
   - 待查：DSH 服务器权威 content 是否本就不含 reasoning（服务器侧形状）vs app 端 DshEventMapper 换装丢弃；对照 DSH 0.2.0 wire 文档 block 序列
+  - 定罪完结（2026-10-08 journal §3）：根因=服务器 attempt 隔离语义（失败尝试 reasoning 落 assistant/attempt 不进权威；live 复现轮 journal seq18 attempt+seq19/20 retry+seq21 权威[text]零 reasoning 实证）；官方 web 同行为（closeOpen+终态跟随权威）；app mapper/fold 无罪（golden 锁定）。裁决点 A 维持现状/B app 保留流中 reasoning/C 上游反馈——待用户拍板
 
 - [~] **#514 DSH legacy token 基建退役（#512 批次④）——捞日志/adb 注入/深链配对清退** `dsh` `auth` `infra`
   - 前置：#512 dsh-password-login 插件用顺后另裁范围（用户已裁决方向，2026-10-05）。
@@ -78,10 +82,11 @@
   - 预判保留：app 内 legacy 兜底（exchangeToken/token 持久化/输入 UI=回落链末级，服务无插件服务器）。开工时先列影响面清单请裁决再动手。
   - spec：docs/specs/2026-10-05-512-dsh-password-login-design.md（§K 批次④）；实现证据：docs/journal/2026-10-05-512-dsh-password-login.md
 
-- [ ] **#493 模型抽屉键盘保持——切模型不收键盘（三端共享改造）** `keyboard`
+- [~] **#493 模型抽屉键盘保持——切模型不收键盘（三端共享改造）** `keyboard`
   - 真机实测三端一致为「收起→抽屉→回弹」（ModalBottomSheet 独立窗口必夺焦点）；2026-09-30 用户裁决基准=不收键盘。
   - 实现方向：换主窗口内非模态呈现（Popup(focusable=false) 容器或布局内 BottomSheet），保留返回键/点外关闭、scrim、75% 固定高、#379/#405 手势隔离语义；共享组件=三端同改（影响面已裁决）。
   - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §一
+  - 实现落地（布局内 overlay 方案，Popup 轮真机零绘制被否）：真机 E2E V1 腿全判据过（IME 保持×3/双态显示/选模型链/BACK 两段/点外），手柄拖拽体感留人工验收 → journal 2026-10-08-p2-assorted-batch2 §2
 
 ## P3 — 观察与低价值改进
 
