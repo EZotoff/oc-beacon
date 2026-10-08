@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 
 private const val TAG = "MessagePaginationUseCase"
+// Process-scoped: Hilt creates a new use case for each chat ViewModel.
+private val repairAttempted = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
 /** 翻页加载更早消息的来源。 */
 enum class LoadOlderSource { ARCHIVE, NETWORK }
@@ -91,10 +93,11 @@ class MessagePaginationUseCase @Inject constructor(
             // 全量拉取（before=null）→ REST 带回 model → Room REPLACE 落库
             // + SSE_PRIORITY 的 mergeMessageMeta(withMeta) 修复内存。
             // 修复后缓存干净，下次进入恢复增量路径（一次性代价）。
-            val hasDamagedMeta = local.any { m ->
+            val hasDamagedMeta = sessionId !in repairAttempted && local.any { m ->
                 m.info is dev.leonardo.ocbeacon.domain.model.Message.Assistant &&
                     m.info.modelId == null
             }
+            val repair = hasDamagedMeta && repairAttempted.add(sessionId)
             // 本地有缓存时，只拉取本地最旧游标之后的新消息
             // 2026-08-16 根治（cursor 400 → 增量静默失效）：原实现无条件用 V1
             // 格式 CursorCodec.encode(id,time)，经 V2 端口实现以
@@ -106,9 +109,9 @@ class MessagePaginationUseCase @Inject constructor(
             // 根治：V2 增量不传 cursor（拉最新 limit 窗口），mergeLocalAndRemote
             // 按 id 去重合并——语义等价（增量=刷新最新窗口）且不依赖锚点有效性。
             // #172：V1 本地锚点 / V2 null（拉最新窗口）——策略收编
-            val before = if (hasDamagedMeta) null else cursorPolicyFactory.forServer(serverId)
+            val before = if (repair) null else cursorPolicyFactory.forServer(serverId)
                 .localAnchorCursor(oldestId, oldestId?.let { messageStore.messageCreatedAt(it) })
-            if (hasDamagedMeta) {
+            if (repair) {
                 AppLogger.i(TAG, "Session $sessionId has assistant messages without modelId (legacy overwrite damage), doing full refresh to repair")
             }
             val page = sessionRepository.listMessages(serverId, sessionId, limit, before = before)
@@ -116,6 +119,9 @@ class MessagePaginationUseCase @Inject constructor(
             // 2026-08-16（缺 Q 根治·第 3 层一致化）：进会话增量同样落库
             //（与 loadOlderMessages 对齐；窗口过滤已保护归档分层）。
             messageStore.upsertMessages(sessionId, page.messages, persistOldBeyondWindow = true)
+            if (repair && page.messages.none { it.info is Message.Assistant && it.info.modelId == null }) {
+                repairAttempted.remove(sessionId)
+            }
             mergeLocalAndRemote(local, page.messages)
         }.recoverCatching { e ->
             // 网络失败回退：本地有缓存则返回缓存（缓存优先理念），无缓存保持失败
