@@ -66,11 +66,12 @@
   - ⚠️ GitHub 仓库尚未创建——链接暂用 LeoNardo-LB/dsh-password-login，需建仓推送后生效
   - GitHub 仓库已建并推送（2026-10-08）：github.com/LeoNardo-LB/dsh-password-login（public，master）——app 链接与 README 安装命令即刻生效
 
-- [ ] **#530 会话页导航弹回 Home + 渲染面黑屏挂起（演示尾段两现）** `uiux` `nav`
+- [~] **#530 会话页导航弹回 Home + 渲染面黑屏挂起（演示尾段两现）** `uiux` `nav`
   - #512 演示尾段：会话页在多次深链+IME 操作后两度弹回 Home，最终窗口在/进程活但渲染面全黑（force-stop 恢复）
   - 与今日改动无路径交集，复发再战；黑屏时 mCurrentFocus 正常
   - → journal: docs/journal/2026-10-07-dsh-standard-bugs.md §11
   - 2026-10-08 静态调研+矩阵实验双定罪（docs/research/2026-10-08-530-nav-reset-blackscreen-static.md）：线A 弹回=action 深链无 SINGLE_TOP flag 在 standard 启动模式下新建 MainActivity 实例叠栈（新实例起始 Home/深链转 SessionList 盖顶当前 Chat）——实测 3 形态矩阵：无action=START_DELIVERED_TO_TOP 静默丢（#500 同根因两分支）/ action=+1 实例弹离 / action+SINGLE_TOP=onNewIntent 正常；线B 黑屏未复现（低概率），3h soak（driver-530：深链×IME×不可达扰动+黑屏自动取证探针）运行中
+  - 线 A 根修落地+复验：singleTop 一行修（矩阵复验 action 深链实例不变+onNewIntent 正常+BACK 栈干净；30min 复验 soak 叠栈弹回 0/黑屏 0/异常 0 vs 修复前 290 次/3h）；#500 同修实证。线 B 黑屏未复现（3h+30min 重压+亮度探针 1882 样本 min=139）维持观察——转 [~] 待验收
 
 - [~] **#514 DSH legacy token 基建退役（#512 批次④）——捞日志/adb 注入/深链配对清退** `dsh` `auth` `infra`
   - 前置：#512 dsh-password-login 插件用顺后另裁范围（用户已裁决方向，2026-10-05）。
@@ -93,11 +94,13 @@
   - #511 收口裁决 A 的尾项（2026-10-06）：#484 签名集（零负向 d/零 RESETKEY）对爆发式正向形态失明——#513 冻结渲染（d=h 单步满高+流中零渐进）在 10-04 soak 全程在场未被抓
   - 判别不能是单条 grep：d=h 单步满高在冷重组场景是健康签名（#509 回收复验判据），须耦合『流式活跃窗口内 MDPilot append 静默』才判冻结；实现挂 run.sh/review.sh 既有管线（复用勿重建）
 
-- [ ] **#500 debug 通道热启动失效——app 前台时 am start 携 debug_url 不生效** `debug-channel` `dsh` `tooling`
+- [~] **#500 debug 通道热启动失效——app 前台时 am start 携 debug_url 不生效** `debug-channel` `dsh` `tooling`
   - 真机实证（2026-10-02，dev debug 包）：app 已前台时 am start --es debug_url http://127.0.0.1:3080 --es debug_server_type dsh，am 提示 intent delivered to top-most instance，但 handleDebugProfileIntent 未执行——无 Debug channel requested 日志、服务器不切换；force-stop 后冷启动同参数立即生效。
   - MainActivity launchMode=standard（manifest 实证）；疑点：standard 模式下复用顶层实例不回调 onNewIntent，而新实例路径亦未处理——需源码定位送达路径。
   - 影响面：自动化脚本未先 force-stop 时静默失效；debug-entry.sh 冷启动已规避。附：adbd 会把 ShellService 命令行（含 --es debug_token）回显进 logcat，注 token 后须 logcat -c 清洗。
   - 勘误（2026-09-30 盘点）：「新实例路径亦未处理」疑点过时——MainActivity:291 onNewIntent 已实现且 :298 调 handleDebugProfileIntent（onCreate 路径 :184 亦有）；真因待定罪=manifest 默认 standard 复用顶层实例不回调 onNewIntent 与实证吻合，为何未走新实例 onCreate 需真机送达路径取证；修法候选=singleTop（动 manifest 需评估返回栈语义）
+  - 2026-10-08 #530 调查交叉定罪：#500 与 #530 弹回为同一结构性根因两分支——standard 启动模式下外部 intent 投递三态不受控（无action→DELIVERED_TO_TOP 静默丢=本卡症状；action 无 flag→新建实例叠栈=#530 弹回）；修法 singleTop 可同时消灭两分支（矩阵实验实证实判据见 journal 2026-10-08-530-nav-reset-soak §1）；onNewIntent 已实现的勘误维持——带 SINGLE_TOP flag 时 onNewIntent 路径实测正常处理深链
+  - 2026-10-08 singleTop 根修实证：修复包热启动 am start --es debug_url → Debug channel requested 日志出现（onNewIntent 回调走通）——#500 症状随 #530 修复消除，转 [~]
 
 - [ ] **#498 render**
   - 摘要补全（2026-09-30 盘点，正文原落 journal）：CJK 粗体闭界——闭界星号后紧跟 CJK 字符（如 **……。**学）渲染为字面星号；服务端原文+markdown 库 flanking 行为，旧路径同渲染非回归（journal 2026-10-01-442 §7）
