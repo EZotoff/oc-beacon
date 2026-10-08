@@ -13,10 +13,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import driver as d  # noqa: E402  复用基建（import-safe：__main__ 守卫）
 
-# ---------- 覆写运行面 ----------
-WIRELESS = "192.168.1.2:34935"
+# ---------- 覆写运行面（三端 E2E 腿参数化：环境变量，默认=v1 语义不变） ----------
+WIRELESS = os.environ.get("OCBEACON_SERIAL", "192.168.1.2:34935")
 d.SERIAL = WIRELESS
-d.PORT = 4199  # 宿主 v1 真实环境（systemd 按需起，rich sessions）
+d.PORT = int(os.environ.get("OCBEACON_PORT", "4199"))
+d.DEBUG_SERVER_TYPE = os.environ.get("OCBEACON_TYPE", "opencode")
+OCBEACON_DSH_PASS = os.environ.get("OCBEACON_DSH_PASS", "")  # 非空=entry 后走 DSH 登录自动化
+
 BASE529 = os.path.join(d.BASE, "reports", "529")
 LOGS529 = os.path.join(d.BASE, "logs529")
 EVID529 = os.path.join(d.BASE, "evidence", "529")
@@ -27,7 +30,9 @@ d.EVID = EVID529
 d.ACTIONS = os.path.join(BASE529, "actions.jsonl")
 d.PROGRESS = os.path.join(BASE529, "progress.json")
 
-SESSIONS = [("App verification steps", 0.65), ("CARD-452B", 0.35)]
+SESSIONS = ([(seg.split("|")[0], float(seg.split("|")[1]) if "|" in seg else 1.0)
+             for seg in os.environ.get("OCBEACON_SESSIONS", "").split(",") if seg]
+            or [("App verification steps", 0.65), ("CARD-452B", 0.35)])
 st = {"cycles": 0, "taps_expand": 0, "taps_collapse": 0, "cards_found": 0,
       "navigations": 0, "recordings": 0, "screenshots": 0, "reconnects": 0}
 
@@ -264,6 +269,15 @@ def open_target_session(force=False):
             return d.screen_state(d.dump_xml()) == "chat"
         d.swipe(600, 1800, 600, 700, 260)  # 列表向下翻（标题在下方）
         time.sleep(d.rng.uniform(0.7, 1.3))
+    # 兜底: 标题未知名(如 DSH demo 容器)→随机点一个会话行
+    root = d.dump_xml()
+    rows = d.by_desc(root, "切换会话") if root is not None else []
+    if rows:
+        d.tap_node(d.rng.choice(rows))
+        time.sleep(d.rng.uniform(2.0, 3.0))
+        st = d.screen_state(d.dump_xml())
+        log(f"目标会话未找到({title})→兜底随机会话, state={st}")
+        return st == "chat"
     log(f"目标会话未找到: {title}")
     return False
 
@@ -294,6 +308,48 @@ def record_clip():
     threading.Thread(target=_rec, daemon=True).start()
 
 
+def dsh_login():
+    """DSH 凭据登录自动化：banner「输入凭据」→对话框→keyevent 输密码→「连接」。
+    幂等：已连(无 banner)直接返回。字符串取 zh/values 双语兜底。"""
+    for attempt in range(6):
+        root = d.dump_xml()
+        if root is None:
+            time.sleep(1.5); continue
+        btn = None
+        for label in ("输入凭据", "Enter credential"):
+            btn = d.by_text(root, label)
+            if btn: break
+        if not btn:
+            st = d.screen_state(root)
+            if st in ("chat", "list"):
+                log("DSH 登录：无 banner（已连或免登）")
+                return True
+            time.sleep(2); continue
+        d.tap_node(btn[0]); time.sleep(1.5)
+        root2 = d.dump_xml()
+        if root2 is None: continue
+        field = d.nodes(root2, lambda n: n.get("class") == "android.widget.EditText")
+        if not field:
+            log("DSH 登录：对话框无输入框"); time.sleep(2); continue
+        d.tap_node(field[0]); time.sleep(0.8)
+        d.type_ascii(OCBEACON_DSH_PASS); time.sleep(0.6)
+        root3 = d.dump_xml()
+        if root3 is None: continue
+        for label in ("连接", "Connect"):
+            ok_btn = d.by_text(root3, label)
+            if ok_btn:
+                d.tap_node(ok_btn[0]); break
+        else:
+            continue
+        time.sleep(3.5)
+        root4 = d.dump_xml()
+        if root4 is not None and d.screen_state(root4) in ("chat", "list"):
+            log("DSH 登录成功")
+            return True
+    log("DSH 登录未确认（可能已由别处建立）")
+    return False
+
+
 # ---------- 主循环 ----------
 def main():
     import argparse
@@ -309,6 +365,8 @@ def main():
         log("设备不可达——退出"); sys.exit(2)
     if not d.entry():
         log("入口失败——退出"); sys.exit(2)
+    if OCBEACON_DSH_PASS:
+        dsh_login()
     if not open_target_session(force=True):
         log("目标会话打开失败——退出"); sys.exit(2)
 
