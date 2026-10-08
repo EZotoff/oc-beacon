@@ -54,7 +54,9 @@ private const val REST_BACKFILL_MAX_RETRIES = 3
 /** 2026-08-16（F5）：重试退避基数——attempt 1→2s、2→4s、3→6s。 */
 private const val REST_BACKFILL_RETRY_BASE_MS = 2_000L
 /** 防御性清理阈值：会话状态超过该时长无事件且非 Busy 时从状态容器移除。 */
-private const val STATE_RETENTION_MS = 24 * 60 * 60 * 1000L
+private const val STATE_RETENTION_MS = 60 * 60 * 1000L
+// 2026-10-08 OOM: stop perpetual L2 polling of dead sessions.
+internal const val STALE_BUSY_GIVEUP_ROUNDS = 10
 /** 2026-08-14 僵尸判定阈值：服务器说 Busy 但 App 侧超过该时长无任何 SSE 事件
  *  （reasoning/text/tool/usage 均无）→ 视为服务器 runner 卡死（僵尸 running），
  *  强制转 Idle 恢复列表状态。真实执行中即使模型思考也会有 reasoning delta。 */
@@ -102,6 +104,7 @@ class SessionStateService @Inject constructor(
      * 事件（onSseEvent 映射非空）或非 Busy 复核结果即清标。internal 供单测 seed/断言。
      */
     internal val waitingConfirmedAt = ConcurrentHashMap<String, Long>()
+    internal val l2ValidationRounds = ConcurrentHashMap<String, Int>()
 
     /** 2026-08-16（状态对账）：正向自愈连续采样计数（active 含但 FSM 非 Busy）。 */
     private val activePositiveStreak = ConcurrentHashMap<String, Int>()
@@ -127,8 +130,7 @@ class SessionStateService @Inject constructor(
         }
     }
 
-    private fun checkStaleness() {
-        val now = System.currentTimeMillis()
+    internal fun checkStaleness(now: Long = System.currentTimeMillis()) {
         val expired = mutableListOf<String>()
         _fsmStates.value.forEach { (sessionId, state) ->
             if (state.core is SessionStatus.Busy && now - state.lastEventAt > STALENESS_THRESHOLD_MS) {
@@ -136,6 +138,15 @@ class SessionStateService @Inject constructor(
                 // L2 重触发——抑制 5s 级 WARN+REST 风暴；窗口过后照常复核（保持发现能力）。
                 val confirmedAt = waitingConfirmedAt[sessionId]
                 if (confirmedAt == null || now - confirmedAt >= WAITING_CONFIRM_WINDOW_MS) {
+                    val rounds = l2ValidationRounds.merge(sessionId, 1, Int::plus) ?: 1
+                    if (rounds > STALE_BUSY_GIVEUP_ROUNDS && canGiveUpStaleBusy(sessionId)) {
+                        activeValidations.remove(sessionId)?.cancel()
+                        if (_fsmStates.value[sessionId]?.lastEventAt == state.lastEventAt) {
+                            AppLogger.w(TAG, "[$sessionId] L2 stale give-up after $rounds rounds, forcing Idle (SSE event will re-seat)")
+                            onRestValidation(sessionId, SessionStatus.Idle)
+                        }
+                        return@forEach
+                    }
                     AppLogger.w(TAG, "[$sessionId] L2 stale for ${now - state.lastEventAt}ms" +
                         if (confirmedAt != null) " (waiting re-confirm)" else "")
                     triggerRestValidation(sessionId)
@@ -145,7 +156,7 @@ class SessionStateService @Inject constructor(
                 AppLogger.w(TAG, "[$sessionId] L5 inconsistency: Idle but has incomplete messages")
                 triggerRestValidation(sessionId)
             }
-            // 防御性清理：长时间（>24h）无事件且非 Busy 的孤儿状态
+            // 防御性清理：长时间（>1h）无事件且非 Busy 的孤儿状态
             // （孤儿 SSE 事件、服务器会话 id 复用、已关闭会话残留），
             // 防止 _fsmStates/_histories 无界增长。
             if (state.core !is SessionStatus.Busy && now - state.lastEventAt > STATE_RETENTION_MS) {
@@ -154,11 +165,29 @@ class SessionStateService @Inject constructor(
         }
         if (expired.isNotEmpty()) {
             AppLogger.i(TAG, "Sweeping ${expired.size} stale session state(s): $expired")
-            _fsmStates.update { it - expired.toSet() }
-            _histories.update { it - expired.toSet() }
-            expired.forEach(waitingConfirmedAt::remove) // #191：防打标 map 无界增长
+            _fsmStates.update { states ->
+                states.filterNot { (id, state) ->
+                    id in expired && state.core !is SessionStatus.Busy && now - state.lastEventAt > STATE_RETENTION_MS
+                }
+            }
+            val removed = expired.filterNot { it in _fsmStates.value }
+            _histories.update { it - removed.toSet() }
+            removed.forEach { id ->
+                waitingConfirmedAt.remove(id)
+                sessionServerOwnership.remove(id)
+                activeValidations.remove(id)?.cancel()
+                activePositiveStreak.remove(id)
+                restBackfillRetries.remove(id)
+                backfillJobs.remove(id)?.cancel()
+                l2ValidationRounds.remove(id)
+            }
         }
     }
+
+    private fun canGiveUpStaleBusy(sessionId: String): Boolean =
+        !collaborator.hasIncompleteAssistant(sessionId) &&
+            !collaborator.hasPendingUserInput(sessionId) &&
+            (serverIdFor(sessionId)?.let { !collaborator.hasActiveChildren(it, sessionId) } ?: true)
 
     private val _fsmStates = MutableStateFlow<Map<String, SessionFSMState>>(emptyMap())
     private val _histories = MutableStateFlow<Map<String, List<TransitionRecord>>>(emptyMap())
@@ -355,6 +384,7 @@ class SessionStateService @Inject constructor(
         val fsmEvent = mapSseEventToFsm(event) ?: return
         // #191：会话苏醒（delta/idle/status 等任何映射事件）→ 等待确认标作废
         waitingConfirmedAt.remove(sessionId)
+        l2ValidationRounds.remove(sessionId)
         applyTransition(sessionId, fsmEvent)
     }
 
@@ -478,6 +508,7 @@ class SessionStateService @Inject constructor(
 
     // ============ 生命周期 ============
     override fun clearSession(sessionId: String) {
+        l2ValidationRounds.remove(sessionId)
         _fsmStates.update { it - sessionId }
         _histories.update { it - sessionId }
         // 取消此会话进行中的 REST 校验（RS-012）
@@ -492,6 +523,7 @@ class SessionStateService @Inject constructor(
         _histories.update { it - sessionIds }
         // 取消已清除会话进行中的 REST 校验（RS-012）
         for (sessionId in sessionIds) {
+            l2ValidationRounds.remove(sessionId)
             activeValidations.remove(sessionId)?.cancel()
             sessionServerOwnership.remove(sessionId)
             // 2026-08-16（F5）：清理补漏重试计数
@@ -500,6 +532,7 @@ class SessionStateService @Inject constructor(
     }
 
     override fun clearAll() {
+        l2ValidationRounds.clear()
         // RS-011 修复：使用 .update{} 参与 CAS，防止并发的
         // applyTransition 通过其自身的 CAS 写入复活已清除的状态。
         _fsmStates.update { emptyMap() }
@@ -523,6 +556,7 @@ class SessionStateService @Inject constructor(
     // 状态 map 中缺失时，将其视为 Idle（服务器会从 map 中丢弃 idle 会话）。
     // 当 [directory] 为 null（未知实例）时，缺失是歧义的——跳过以避免误判 Idle。
     internal fun triggerRestValidation(sessionId: String) {
+        if ((l2ValidationRounds[sessionId] ?: 0) > STALE_BUSY_GIVEUP_ROUNDS && canGiveUpStaleBusy(sessionId)) return
         // #110（D2-12）：优先用会话归属服务器（SSE 投递记录）；
         // 无归属（手动刷新等）回退全局 currentServerId。
         val sid = sessionServerOwnership[sessionId] ?: currentServerId ?: return
@@ -789,4 +823,3 @@ class SessionStateService @Inject constructor(
         return SyncResult(aggregated.size, aggregated.count { it.value is SessionStatus.Busy })
     }
 }
-
