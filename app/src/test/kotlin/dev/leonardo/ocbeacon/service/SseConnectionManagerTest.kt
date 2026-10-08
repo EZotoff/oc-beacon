@@ -390,4 +390,113 @@ class SseConnectionManagerTest {
         url = "http://127.0.0.1:4199",
         name = "Test",
     )
+
+    private class PreloadFixture(projects: Boolean = false) {
+        val server = ServerConfig(id = "ttl", url = "http://localhost", name = "TTL")
+        val conn = dev.leonardo.ocbeacon.domain.model.ServerConnection.from(server)
+        val fileApi = mockk<FileApi>()
+        val sessionApi = mockk<SessionApi>()
+        val dispatcher = mockk<EventDispatcher>(relaxed = true)
+        val stateService = mockk<SessionStateService>(relaxed = true)
+        val serverSessions = kotlinx.coroutines.flow.MutableStateFlow<Map<String, Set<String>>>(emptyMap())
+        val statuses = kotlinx.coroutines.flow.MutableStateFlow<Map<String, dev.leonardo.ocbeacon.domain.model.SessionStatus>>(emptyMap())
+        val projectCalls = AtomicInteger()
+        val sessionCalls = AtomicInteger()
+        val seedCalls = AtomicInteger()
+        val manager: SseConnectionManager
+
+        init {
+            every { dispatcher.serverSessions } returns serverSessions
+            every { stateService.statusFlow } returns statuses
+            coEvery { stateService.syncFromRest(any()) } coAnswers {
+                seedCalls.incrementAndGet()
+                statuses.value = mapOf("s" to dev.leonardo.ocbeacon.domain.model.SessionStatus.Idle)
+                dev.leonardo.ocbeacon.domain.repository.SyncResult(1, 0)
+            }
+            every { dispatcher.setSessions("ttl", any()) } answers {
+                serverSessions.value = mapOf("ttl" to setOf("s"))
+            }
+            coEvery { fileApi.listProjects(any()) } coAnswers {
+                projectCalls.incrementAndGet()
+                if (projects) listOf(dev.leonardo.ocbeacon.domain.model.Project(id = "p", worktree = "/w")) else emptyList()
+            }
+            coEvery { sessionApi.listSessions(any(), any(), any(), any(), any()) } coAnswers {
+                sessionCalls.incrementAndGet()
+                listOf(dev.leonardo.ocbeacon.domain.model.Session(id = "s",
+                    time = dev.leonardo.ocbeacon.domain.model.Session.Time(1, 2)))
+            }
+            manager = SseConnectionManager(
+                adapters = dev.leonardo.ocbeacon.testing.testAdapterRegistry(session = sessionApi, file = fileApi),
+                sseClient = mockk(relaxed = true), sseClientV2 = mockk(relaxed = true),
+                eventDispatcher = dispatcher, settingsRepository = mockk(relaxed = true),
+                sessionStateRepository = stateService, dshConnectionOrchestrator = mockk(relaxed = true),
+                dshFrameSourceFactory = mockk(relaxed = true), dshRpcClient = mockk(relaxed = true),
+                dshConnectionRegistry = mockk(relaxed = true),
+                transportFailureTap = dev.leonardo.ocbeacon.data.api.TransportFailureTap(),
+            )
+            manager.connections[server.id] = ServerConnectionState(server, conn, kotlinx.coroutines.Job())
+        }
+
+        suspend fun preload(now: Long) = manager.preLoadSessions(server, conn, now)
+    }
+
+    @Test fun `successful preload reused within TTL on both project paths`() = runBlocking {
+        for (projects in listOf(false, true)) {
+            val f = PreloadFixture(projects)
+            try {
+                f.preload(1_000_000)
+                f.preload(1_000_001)
+                assertEquals(1, f.projectCalls.get())
+                assertEquals(1, f.sessionCalls.get())
+                assertEquals(1, f.seedCalls.get())
+            } finally { f.manager.stopAllConnections() }
+        }
+    }
+
+    @Test fun `expired TTL and empty server sessions force preload`() = runBlocking {
+        val f = PreloadFixture()
+        try {
+            f.preload(1_000_000)
+            f.preload(1_600_000)
+            f.serverSessions.value = emptyMap()
+            f.preload(1_600_001)
+            assertEquals(3, f.projectCalls.get())
+            assertEquals(3, f.sessionCalls.get())
+        } finally { f.manager.stopAllConnections() }
+    }
+
+    @Test fun `missing FSM entries bypass TTL and seed state again`() = runBlocking {
+        val f = PreloadFixture()
+        try {
+            f.preload(1_000_000)
+            f.statuses.value = emptyMap()
+            f.preload(1_000_001)
+            assertEquals(2, f.projectCalls.get())
+            assertEquals(2, f.seedCalls.get())
+        } finally { f.manager.stopAllConnections() }
+    }
+
+    @Test fun `failed project fetch does not mark preload reusable`() = runBlocking {
+        val f = PreloadFixture(projects = true)
+        try {
+            coEvery { f.sessionApi.listSessions(any(), any(), any(), any(), any()) } throws java.io.IOException("offline")
+            f.preload(1_000_000)
+            f.serverSessions.value = mapOf("ttl" to setOf("s"))
+            f.preload(1_000_001)
+            assertEquals(2, f.projectCalls.get())
+        } finally { f.manager.stopAllConnections() }
+    }
+
+    @Test fun `disconnect clears preload TTL for single and all connections`() = runBlocking {
+        for (all in listOf(false, true)) {
+            val f = PreloadFixture()
+            try {
+                f.preload(1_000_000)
+                if (all) f.manager.stopAllConnections() else f.manager.stopConnection(f.server.id)
+                f.manager.connections[f.server.id] = ServerConnectionState(f.server, f.conn, kotlinx.coroutines.Job())
+                f.preload(1_000_001)
+                assertEquals(2, f.projectCalls.get())
+            } finally { f.manager.stopAllConnections() }
+        }
+    }
 }

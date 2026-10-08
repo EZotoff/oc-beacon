@@ -49,6 +49,8 @@ private const val PRELOAD_PROJECT_CONCURRENCY = 4
 
 /** #278：播种（syncFromRest）NonCancellable 保护区的时间上限——服务器失联时防悬挂。 */
 private const val PRELOAD_SEED_TIMEOUT_MS = 30_000L
+// 2026-10-08 OOM: reuse successful preloads across reconnect flapping.
+private const val PRELOAD_REUSE_TTL_MS = 10 * 60_000L
 
 /** #307：传输失败 kick 冷却窗——reconnectServer 守卫在 finally 即释放，「连接启动→毫秒级
  *  失败→tap→kick」正反馈实测 8ms/轮 ≈375 请求/s → OkHttp 线程爆炸 OOM 崩溃
@@ -107,6 +109,7 @@ class SseConnectionManager @Inject constructor(
 
     /** 所有活跃/待处理的服务器连接，以 serverId 为键。 */
     val connections = ConcurrentHashMap<String, ServerConnectionState>()
+    private val lastPreloadOkMs = ConcurrentHashMap<String, Long>()
 
     /** 每服务器的超时跟踪器，用于 SSE 读取超时冷却逻辑。 */
     private val timeoutTrackers = ConcurrentHashMap<String, SseReadTimeoutTracker>()
@@ -294,6 +297,7 @@ class SseConnectionManager @Inject constructor(
      * 停止到指定服务器的 SSE 连接。
      */
     fun stopConnection(serverId: String) {
+        lastPreloadOkMs.remove(serverId)
         val state = connections.remove(serverId) ?: return
         state.sseJob.cancel()
         timeoutTrackers.remove(serverId)
@@ -318,6 +322,7 @@ class SseConnectionManager @Inject constructor(
             state.sseJob.cancel()
         }
         connections.clear()
+        lastPreloadOkMs.clear()
         timeoutTrackers.clear()
         dshSeqTrackers.clear()
         dshFrameSources.clear()
@@ -699,7 +704,15 @@ class SseConnectionManager @Inject constructor(
             }
     }
 
-    private suspend fun preLoadSessions(server: ServerConfig, conn: ServerConnection) {
+    internal suspend fun preLoadSessions(server: ServerConfig, conn: ServerConnection, nowMs: Long = System.currentTimeMillis()) {
+        val lastOk = lastPreloadOkMs[server.id]
+        if (lastOk != null && nowMs - lastOk < PRELOAD_REUSE_TTL_MS && connections.containsKey(server.id)) {
+            val cachedIds = eventDispatcher.serverSessions.value[server.id].orEmpty()
+            if (cachedIds.isNotEmpty() && cachedIds.any { it in sessionStateRepository.statusFlow.value }) {
+                AppLogger.d(TAG, "[${server.displayName}] Preload skipped (TTL)")
+                return
+            }
+        }
         try {
             val projects = adapters.ports(conn).requireFile(conn).listProjects(conn)
             // 状态先行（#278）：播种（syncFromRest）先于会话正文预载——僵尸 Busy
@@ -725,12 +738,14 @@ class SseConnectionManager @Inject constructor(
                     withTimeout(PRELOAD_SEED_TIMEOUT_MS) { adapters.ports(conn).session.listSessions(conn) }
                 }
                 eventDispatcher.setSessions(server.id, sessions)
+                if (connections.containsKey(server.id)) lastPreloadOkMs[server.id] = nowMs
                 AppLogger.i(TAG, "[${server.displayName}] Pre-loaded ${sessions.size} sessions (no projects)")
             } else {
                 // #150 方向③（2026-08-21）：项目间并发拉取（受控并发 [PRELOAD_PROJECT_CONCURRENCY]）
                 // ——多项目用户首连时 N 次串行 /session 往返改并发。setSessions 为 CAS 合并语义
                 // 并发调用安全；单项目失败不拖垮其余（保留原逐项目 catch）。
                 val totalSessions = java.util.concurrent.atomic.AtomicInteger(0)
+                val allProjectsOk = java.util.concurrent.atomic.AtomicBoolean(true)
                 // #304：正文并发拉取整体纳入 NonCancellable+超时（同上——风暴免疫，
                 // 30s 上限防失联悬挂；单项目失败不拖垮其余的既有语义不变）。
                 withContext(NonCancellable) {
@@ -749,6 +764,7 @@ class SseConnectionManager @Inject constructor(
                                     // 原实现吞掉 CancellationException 会让取消风暴
                                     // 静默变成"预加载完成"假象。
                                     if (e is CancellationException) throw e
+                                    allProjectsOk.set(false)
                                     AppLogger.w(TAG, "[${server.displayName}] Failed to pre-load sessions for project ${project.displayName}: ${e.message}")
                                 }
                             }
@@ -758,6 +774,7 @@ class SseConnectionManager @Inject constructor(
                 }
                 }
                 AppLogger.i(TAG, "[${server.displayName}] Pre-loaded ${totalSessions.get()} sessions across ${projects.size} projects")
+                if (allProjectsOk.get() && connections.containsKey(server.id)) lastPreloadOkMs[server.id] = nowMs
             }
         } catch (e: TimeoutCancellationException) {
             AppLogger.w(TAG, "[${server.displayName}] Session status seeding timed out after ${PRELOAD_SEED_TIMEOUT_MS}ms (server unreachable?)")
@@ -890,4 +907,3 @@ class SseConnectionManager @Inject constructor(
         return delay.coerceAtMost(maxDelay)
     }
 }
-
