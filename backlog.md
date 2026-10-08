@@ -69,22 +69,22 @@
   - 清扫面：JankHoldGate system-prop A/B、ChatScreen jkHold 冻结链（含 B3 埋点）、STREAM_DELTA_BUS 旗标与旁路分支；probe 按 keep-probes 裁决保留。#499 于 2026-10-06 完成范围内部迁移，余留拆本卡。
   - 2026-10-06 承接评估：前置未达维持——stable 双旗标（STREAM_SHARD_PILOT/STREAM_DELTA_BUS）仍 false（build.gradle.kts stable 块），JankHold 冻结链在 stable 仍是承重活体，现清扫=回归 stable 流式滚动组合风暴。beta 侧两旗标已升 true（2026-10-06 裁决），观察窗进行中；待 stable 随批提升后再开工本卡。
 
-- [ ] **#520 soak 判读签名扩充：流中 MDPilot append 静默 × MDResize d=h 爆发耦合判别（冻结渲染形态）** `soak` `streaming` `infra`
+- [~] **#520 soak 判读签名扩充：流中 MDPilot append 静默 × MDResize d=h 爆发耦合判别（冻结渲染形态）** `soak` `streaming` `infra`
   - #511 收口裁决 A 的尾项（2026-10-06）：#484 签名集（零负向 d/零 RESETKEY）对爆发式正向形态失明——#513 冻结渲染（d=h 单步满高+流中零渐进）在 10-04 soak 全程在场未被抓
   - 判别不能是单条 grep：d=h 单步满高在冷重组场景是健康签名（#509 回收复验判据），须耦合『流式活跃窗口内 MDPilot append 静默』才判冻结；实现挂 run.sh/review.sh 既有管线（复用勿重建）
+  - → 本批 journal: docs/journal/2026-10-09-p3-batch.md §#520（三条件耦合判别器+四组验证；frozenRender 进巡检/终盘基线）
 
-- [ ] **#498 render**
-  - 摘要补全（2026-09-30 盘点，正文原落 journal）：CJK 粗体闭界——闭界星号后紧跟 CJK 字符（如 **……。**学）渲染为字面星号；服务端原文+markdown 库 flanking 行为，旧路径同渲染非回归（journal 2026-10-01-442 §7）
-
-- [ ] **#497 子会话底栏三形态分裂 + DSH composer 异步挂载焦点扰动** `subagent`
+- [~] **#497 子会话底栏三形态分裂 + DSH composer 异步挂载焦点扰动** `subagent`
   - 子会话底栏：V1/V2 整块空白（无任何说明）vs DSH 只读提示行/可输入 composer——同意图三形态；readOnlyHintVisible 现要求 subagentsSupported，V1/V2 不给提示行。
   - DSH subagentMode 异步解析期 composer 先缺席后出现（ChatTextField 无 FocusRequester）→ 焦点/键盘重置——键盘行为按类型不同的真实结构源；对齐机会=V1/V2 也给只读提示行。
   - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D3/D4
+  - 本批落地（2026-10-09）：D3=V1/V2 只读提示行（chat_subagent_read_only_mirror×15）+D4=解析期骨架占位+FocusRequester 焦点接力 → docs/journal/2026-10-09-p3-batch.md §#497；真机验收清单见卡内
 
-- [ ] **#496 空闲长按发送键三端语义分裂——DSH 死手势无反馈** `interaction`
+- [~] **#496 空闲长按发送键三端语义分裂——DSH 死手势无反馈** `interaction`
   - 空闲长按发送键：V1/V2=切 shell 模式；DSH=静默 no-op（连提示都没有，比能力位隐藏更差）；2026-09-07 审计 A-4 挂 ASK 至今未裁决。
   - 需裁决统一语义：能力位分派维持（DSH 给 toast 说明/换 steer 入口）或全面重设计。
   - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §四D2
+  - 本批落地（2026-10-09）：拦截点 M3 snackbar 反馈（chat_shell_mode_unavailable×15）→ docs/journal/2026-10-09-p3-batch.md §#496；验收=DSH 长按弹提示/V1V2 不受影响
 
 - [ ] **#488 markdown 能力补齐批次：块内HTML隐形+代码语法高亮+真数学渲染+setext stage-2（远期清单正式立卡）** `markdown` `render`
   - 2026-09-30 #487 后续深调定罪三项能力缺口：①块内 HTML 渲染为空（mikepenz v0.45.0 基础+m3 AAR 零 HTML 组件，二进制 grep 实证；整消息 HTML 走 looksLikeHtmlPayload 预览通道但混排块隐形）②代码块无语法高亮（走库默认 code renderer，build.gradle.kts:249 注释明示）③\begin/\[/712321 数学均降级为文本或围栏（transformMathFallback 文本降级 + \begin 无变换字面流）
