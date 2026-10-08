@@ -348,6 +348,7 @@
     <string name="chat_shell_failed">Не удалось выполнить команду shell</string>
     <string name="chat_shell_empty">Сначала введите команду shell</string>
     <string name="chat_subagent_one_shot_read_only">Одноразовая сессия субагента: повторные сообщения не поддерживаются</string>
+    <string name="chat_subagent_read_only_mirror">Сессия субагента (только чтение): продолжайте в родительской сессии</string>
     <string name="chat_shell_attachments_unsupported">В режиме shell нельзя прикреплять файлы</string>
     <string name="chat_command_images_unsupported">Команды со слэшем не поддерживают вложения изображений</string>
     <string name="chat_terminal_connect_failed">Не удалось открыть терминал</string>

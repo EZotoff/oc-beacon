@@ -420,6 +420,7 @@
     <string name="chat_shell_failed">シェルコマンドの実行に失敗しました</string>
     <string name="chat_shell_empty">先にシェルコマンドを入力してください</string>
     <string name="chat_subagent_one_shot_read_only">単発サブエージェントセッション：追加メッセージには対応していません</string>
+    <string name="chat_subagent_read_only_mirror">サブエージェントセッション（読み取り専用）：親セッションで続行してください</string>
     <string name="chat_shell_attachments_unsupported">シェルモードでは添付ファイルは利用できません</string>
     <string name="chat_command_images_unsupported">スラッシュコマンドは画像添付に対応していません</string>
     <string name="chat_terminal_connect_failed">ターミナルの起動に失敗しました</string>

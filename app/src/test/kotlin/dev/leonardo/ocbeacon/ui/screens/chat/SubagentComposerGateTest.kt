@@ -72,8 +72,55 @@ class SubagentComposerGateTest {
         assertFalse(
             SubagentComposerGate.readOnlyHintVisible(null, true, "one-shot"),
         )
-        assertFalse(
+    }
+
+    // ---- #497 D3：无 subagents 能力位服务器（V1/V2）子会话只读提示行 ----
+
+    @Test
+    fun `opencode child shows read-only hint row when capability absent`() {
+        // V1/V2 子会话此前整块空白（无 composer 无提示）——对齐 DSH 提示行形态
+        assertTrue(
+            SubagentComposerGate.readOnlyHintVisible("parent-1", false, null),
+        )
+    }
+
+    @Test
+    fun `opencode child hint row independent of mode value`() {
+        // mode 仅在 subagentsSupported 时解析——此处为不可达态的防御性一致断言
+        assertTrue(
+            SubagentComposerGate.readOnlyHintVisible("parent-1", false, "continuable"),
+        )
+        assertTrue(
             SubagentComposerGate.readOnlyHintVisible("parent-1", false, "one-shot"),
+        )
+    }
+
+    // ---- #497 D4：DSH 子会话 mode 异步解析期 composer 骨架占位 ----
+
+    @Test
+    fun `placeholder shows only while dsh child mode unresolved`() {
+        // 解析中（mode=null）——占位防布局跳变 + 预热点击（焦点接力宿主）
+        assertTrue(
+            SubagentComposerGate.composerPlaceholderVisible("parent-1", true, null),
+        )
+        // 解析完成（无论形态）——占位退场
+        assertFalse(
+            SubagentComposerGate.composerPlaceholderVisible("parent-1", true, "continuable"),
+        )
+        assertFalse(
+            SubagentComposerGate.composerPlaceholderVisible("parent-1", true, "one-shot"),
+        )
+    }
+
+    @Test
+    fun `placeholder hidden for main session and capability-absent children`() {
+        // 主会话：composer 恒开，无解析期
+        assertFalse(
+            SubagentComposerGate.composerPlaceholderVisible(null, true, null),
+        )
+        // V1/V2 子会话：mode 恒 null 但能力位缺席——D3 提示行即时渲染，无占位
+        assertFalse(
+            SubagentComposerGate.composerPlaceholderVisible("parent-1", false, null),
         )
     }
 }

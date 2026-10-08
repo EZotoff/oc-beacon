@@ -420,6 +420,7 @@
     <string name="chat_shell_failed">Kabuk komutu çalıştırılamadı</string>
     <string name="chat_shell_empty">Önce bir kabuk komutu girin</string>
     <string name="chat_subagent_one_shot_read_only">Tek kullanımlık alt ajan oturumu: sonraki mesajlar desteklenmez</string>
+    <string name="chat_subagent_read_only_mirror">Alt ajan oturumu (salt okunur): üst oturumda devam edin</string>
     <string name="chat_shell_attachments_unsupported">Kabuk modu ekleri desteklemiyor</string>
     <string name="chat_command_images_unsupported">Eğik çizgi komutları resim eklerini desteklemez</string>
     <string name="chat_terminal_connect_failed">Terminal açılamadı</string>

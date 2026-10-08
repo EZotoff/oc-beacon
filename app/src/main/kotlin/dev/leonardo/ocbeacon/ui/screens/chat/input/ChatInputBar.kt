@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -97,6 +98,8 @@ internal fun ChatInputBar(
     onSlashCommand: (SlashCommand) -> Unit = {},
     inputMode: ChatInputMode = ChatInputMode.NORMAL,
     onInputModeChange: (ChatInputMode) -> Unit = {},
+    /** #497 D4：外部焦点控制通道（透传 ChatTextField；可空=不接线）。 */
+    focusRequester: FocusRequester? = null,
     onStop: () -> Unit = {},
     restoredDraft: RevertedDraftPayload? = null,
     onConsumeRestoredDraft: () -> Unit = {},
@@ -303,7 +306,8 @@ internal fun ChatInputBar(
                     isAmoled = isAmoled,
                     confirmedFilePaths = confirmedFilePaths,
                     enabled = inputEnabled,
-                    onFocusChange = { textFieldFocused = it }
+                    onFocusChange = { textFieldFocused = it },
+                    focusRequester = focusRequester
                 )
 
                 // 发送/停止按钮区——单键统一（#326，2026-09-04 用户裁决，对齐 web 主按钮）：

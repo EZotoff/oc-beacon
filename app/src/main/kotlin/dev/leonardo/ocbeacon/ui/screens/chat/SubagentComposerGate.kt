@@ -16,9 +16,28 @@ internal object SubagentComposerGate {
         parentSessionId == null ||
             (subagentsSupported && mode == SubagentCatalogEntry.MODE_CONTINUABLE)
 
-    /** one-shot 只读提示行（明确不可续聊；加载中/失败不显示——静默保守隐藏）。 */
+    /**
+     * 只读提示行：one-shot（明确不可续聊；加载中/失败不显示——静默保守隐藏）。
+     *
+     * #497 D3：无 subagents 能力位的服务器（V1/V2）子会话恒只读镜像——同样给
+     * 提示行（此前整块空白，连 DSH one-shot 的说明都没有）；mode 值仅在
+     * 能力位在场时解析，此分支与 mode 无关。
+     */
     fun readOnlyHintVisible(parentSessionId: String?, subagentsSupported: Boolean, mode: String?): Boolean =
         parentSessionId != null &&
+            (
+                !subagentsSupported ||
+                    mode == SubagentCatalogEntry.MODE_ONE_SHOT
+                )
+
+    /**
+     * #497 D4：DSH 子会话 mode 异步解析期（mode=null）composer 骨架占位——
+     * 防底部栏布局跳变 + 提前承接点击（挂载后 FocusRequester 接力聚焦，
+     * 键盘不中断）。主会话恒关（composer 即时挂载）；能力位缺席（V1/V2）
+     * 恒关（D3 提示行即时渲染，无解析期）。
+     */
+    fun composerPlaceholderVisible(parentSessionId: String?, subagentsSupported: Boolean, mode: String?): Boolean =
+        parentSessionId != null &&
             subagentsSupported &&
-            mode == SubagentCatalogEntry.MODE_ONE_SHOT
+            mode == null
 }
