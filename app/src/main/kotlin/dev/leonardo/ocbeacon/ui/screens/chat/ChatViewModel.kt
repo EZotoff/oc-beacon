@@ -262,6 +262,20 @@ class ChatViewModel @Inject constructor(
     )
     val sessionId: String get() = sessionLifecycle.sessionId
 
+    private var pinnedHotSessionId: String? = null
+
+    init {
+        viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            sessionLifecycle.sessionIdFlow.collect { sid ->
+                if (sid != pinnedHotSessionId) {
+                    pinnedHotSessionId?.let { eventDispatcher.unpinSessionHotView(it) }
+                    pinnedHotSessionId = sid.takeIf { it.isNotEmpty() }
+                    pinnedHotSessionId?.let { eventDispatcher.pinSessionHotView(it) }
+                }
+            }
+        }
+    }
+
     // ============ TODO（面板数据源 + 服务器能力探测，2026-08-20） ============
     /** 当前会话 TODO（SSE 实时 + REST hydrate 同源）。 */
     @kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -1323,6 +1337,8 @@ class ChatViewModel @Inject constructor(
         // 内存泄漏修复（#89）：退出会话时释放该会话在 Singleton handler 中的
         // 消息/part/权限/问题/通知去重数据——各 handler 按 sessionId 持有，
         // 正常切换会话不触发 SessionDeleted → 旧会话数据永驻内存
+        runCatching { pinnedHotSessionId?.let { eventDispatcher.unpinSessionHotView(it) } }
+            .onFailure { AppLogger.w("ChatVM", "unpinSessionHotView failed: ${it.message}") }
         runCatching { eventDispatcher.releaseSessionData(serverId, sessionId) }
             .onFailure { dev.leonardo.ocbeacon.logging.AppLogger.w("ChatVM", "releaseSessionData failed: ${it.message}") }
         runCatching { appNotificationManager.clearForSession(serverId, sessionId) }

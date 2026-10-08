@@ -213,6 +213,10 @@ class EventDispatcher @Inject constructor(
         messageHandler.patchFileUrl(sessionId, partId, url)
     }
     val messages: StateFlow<Map<String, List<Message>>> get() = messageHandler.messages
+    fun pinSessionHotView(sessionId: String) = messageHandler.pinSessionHotView(sessionId)
+    fun unpinSessionHotView(sessionId: String) = messageHandler.unpinSessionHotView(sessionId)
+    internal fun evictLeastRecentlyUsedSessions(keep: Set<String> = emptySet()) =
+        messageHandler.evictLeastRecentlyUsedSessions(keep)
     val parts: StateFlow<Map<String, List<Part>>> get() = messageHandler.parts
     /** #442 B案：UI 主列表消费的结构性 parts 视图（流式 delta 批零发射）。 */
     val structuralParts: StateFlow<Map<String, List<Part>>> get() = messageHandler.structuralParts

@@ -40,7 +40,7 @@ class MessageEventHandler @Inject constructor(
      * 5 类消息事件的识别契约（原三壳的转发逻辑收编，#175）：
      * MessageUpdated / MessageRemoved / MessagePartUpdated / Delta / PartRemoved。
      */
-    override fun handle(event: SseEvent, serverId: String): Boolean {
+    override fun handle(event: SseEvent, serverId: String): Boolean = synchronized(hotSessionLock) {
         val handled = when (event) {
             is SseEvent.MessageUpdated -> { handleMessageUpdated(event); true }
             is SseEvent.MessageRemoved -> { handleMessageRemoved(event); true }
@@ -65,7 +65,7 @@ class MessageEventHandler @Inject constructor(
         // 每 flush 后首个 delta 事件击穿结构性静默）——结构性发射只属于结构
         // 事件族。dispatch 外直调入口（upsert/clear/patch 族）各自就地发布。
         if (handled && event !is SseEvent.MessagePartDelta) publishStructural(event::class.simpleName ?: "SseEvent")
-        return handled
+        handled
     }
 
     internal companion object {
@@ -78,6 +78,8 @@ class MessageEventHandler @Inject constructor(
          * 冷存桶 + loadAround 按需分页加载，不依赖热视图）。
          */
         internal const val MEMORY_SESSION_MESSAGE_LIMIT = 1000
+        // 2026-10-08 OOM: bound never-opened sessions delivered by server-wide SSE.
+        internal const val HOT_SESSION_LRU_CAP = 8
 
         /**
          * #340：全量 upsert 合并刷洗参数——消息数阈值 / 最大时延 / 刷洗
@@ -128,9 +130,54 @@ class MessageEventHandler @Inject constructor(
     private val _structuralParts = MutableStateFlow<Map<String, List<Part>>>(emptyMap())
     val structuralParts: StateFlow<Map<String, List<Part>>> = _structuralParts.asStateFlow()
 
+    private val hotSessionLock = Any()
+    private val lastTouched = mutableMapOf<String, Long>()
+    private var touchOrdinal = 0L
+    private val pinnedSessions = mutableMapOf<String, Int>()
+
+    internal fun pinSessionHotView(sessionId: String) = synchronized(hotSessionLock) {
+        pinnedSessions[sessionId] = (pinnedSessions[sessionId] ?: 0) + 1
+    }
+
+    internal fun unpinSessionHotView(sessionId: String) = synchronized(hotSessionLock) {
+        val remaining = (pinnedSessions[sessionId] ?: 1) - 1
+        if (remaining == 0) pinnedSessions.remove(sessionId) else pinnedSessions[sessionId] = remaining
+        evictLeastRecentlyUsedSessions(emptySet())
+    }
+
+    private fun touchSession(sessionId: String) = synchronized(hotSessionLock) {
+        lastTouched[sessionId] = ++touchOrdinal
+    }
+
+    internal fun evictLeastRecentlyUsedSessions(keep: Set<String>) = synchronized(hotSessionLock) {
+        val protected = keep + pinnedSessions.keys
+        val excess = (_messages.value.size - HOT_SESSION_LRU_CAP).coerceAtLeast(0)
+        val evicted = _messages.value.keys.filterNot { it in protected }
+            .sortedBy { lastTouched[it] ?: 0L }.take(excess)
+        evicted.forEach { removeSessionHotView(it) }
+    }
+
+    private fun removeSessionHotView(sessionId: String) {
+        val messageIds = _messages.value[sessionId].orEmpty().mapTo(mutableSetOf()) { it.id }
+        // Parts are message-keyed; include orphan parts racing message publication.
+        _parts.value.forEach { (id, parts) ->
+            if (parts.any { it.sessionId == sessionId }) messageIds.add(id)
+        }
+        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
+            .clearParts(_parts.value.filterKeys { it in messageIds }.values.flatten().map { it.id })
+        _messages.update { it - sessionId }
+        _parts.update { it - messageIds }
+        _structuralParts.update { it - messageIds }
+        assistantMessageIds.removeAll(messageIds)
+        lastDomainEventTimeMs.remove(sessionId)
+        lastTouched.remove(sessionId)
+        synchronized(pendingLock) { pendingDeltas.removeAll { it.sessionId == sessionId } }
+    }
+
     /** 结构性发布：热视图当前值整体过桥（同实例=StateFlow 值相等去重，幂等零成本）。
      *  [cause] 仅用于 [B2-struct] 埋点动机标注（哪个结构事件触发了 combine 源滴答）。 */
     private fun publishStructural(cause: String) {
+        evictLeastRecentlyUsedSessions(emptySet())
         if (!dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) return
         _structuralParts.value = _parts.value
         if (BuildConfig.DEBUG) {
@@ -445,7 +492,7 @@ class MessageEventHandler @Inject constructor(
     }
     @Volatile private var cachedFlushIntervalMs: Long? = null
 
-    private fun flushPendingDeltas() {
+    private fun flushPendingDeltas(): Unit = synchronized(hotSessionLock) {
         val batch: List<PendingDelta>
         synchronized(pendingLock) {
             if (pendingDeltas.isEmpty()) return
@@ -520,6 +567,8 @@ class MessageEventHandler @Inject constructor(
             updated
         }
 
+        effective.map { it.sessionId }.toSet().forEach { touchSession(it) }
+
         // #442 B案 节奏收编：触及消息的累积全文发布引擎域快通道（键=落位
         // part.id；值与热视图同字符串实例零拷贝）——UI 消费端（PartContent 两
         // 分支）以 live 覆盖参数，重组收敛到 item 内部。本发布**替代**了
@@ -591,6 +640,7 @@ class MessageEventHandler @Inject constructor(
 
     internal fun handleMessageUpdated(event: SseEvent.MessageUpdated) {
         val sessionId = event.info.sessionId
+        touchSession(sessionId)
         // #490：迟到播种命中已拆台账——拆除已随持久回显先行到达（durable 行
         // 在场），本次播种是竞态败者的幽灵，直接丢弃（不进内存不落 Room）。
         if (event.info.id.startsWith("pending-") && consumePreDemolishedEcho(event.info.id)) {
@@ -719,6 +769,7 @@ class MessageEventHandler @Inject constructor(
      * 幂等：双检查（O(1) assistantMessageIds 快路径 + update 内二次确认）。
      */
     internal fun ensureAssistantSkeleton(sessionId: String, messageId: String) {
+        touchSession(sessionId)
         // O(1) 快路径：宿主已播种（step.started/REST/skeleton 曾写入）
         if (messageId in assistantMessageIds) return
         // 兜底线性检查：消息存在但不在集合（如 User 消息——part 宿主理论恒为
@@ -902,6 +953,7 @@ class MessageEventHandler @Inject constructor(
      */
     internal fun handleMessageIdSwapped(event: SseEvent.MessageIdSwapped) {
         val sessionId = event.sessionId
+        touchSession(sessionId)
         // #490：pending-* 换名=拆除（含行缺席 no-op 的竞态落序——无条件登记）
         if (event.fromId.startsWith("pending-")) {
             recordPreDemolishedEcho(event.fromId)
@@ -1083,6 +1135,7 @@ class MessageEventHandler @Inject constructor(
      * [sessionId] 参数保留（调用方语义与日志定位用）。
      */
     fun patchFileUrl(sessionId: String, partId: String, url: String) {
+        touchSession(sessionId)
         _parts.update { current ->
             var mutated = false
             val next = current.mapValues { (_, parts) ->
@@ -1100,6 +1153,7 @@ class MessageEventHandler @Inject constructor(
 
     internal fun patchToolChildSession(sessionId: String, callId: String, childSessionId: String) {
         if (childSessionId.isBlank()) return
+        touchSession(sessionId)
         _parts.update { current ->
             var mutated = false
             val next = current.mapValues { (_, parts) ->
@@ -1214,6 +1268,7 @@ class MessageEventHandler @Inject constructor(
      * maxOf——负跨度由显示层按未知处理，与 markSessionIdle 同口径）。
      */
     internal fun handleMessagePartTimePatch(event: SseEvent.MessagePartTimePatch) {
+        touchSession(event.sessionId)
         val suffix = "_ord_" + event.ordinal
         var changed = false
         _parts.update { current ->
@@ -1265,7 +1320,8 @@ class MessageEventHandler @Inject constructor(
         sessionId: String,
         incoming: List<MessageWithParts>,
         strategy: MergeStrategy,
-    ) {
+    ): Unit = synchronized(hotSessionLock) {
+        touchSession(sessionId)
         when (strategy) {
             MergeStrategy.SSE_PRIORITY -> upsertSsePriority(sessionId, incoming)
             MergeStrategy.REST_AUTHORITY -> upsertRestAuthority(sessionId, incoming)
@@ -1470,23 +1526,14 @@ class MessageEventHandler @Inject constructor(
 
     // ============ 批量操作 ============
     fun clearForSession(sessionId: String) {
-        val messageIds = _messages.value[sessionId]?.map { it.id }?.toSet() ?: emptySet()
-        // #442 B案：bus 清理先于热视图移除（part ids 仅此刻可得）
-        dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus
-            .clearParts(_parts.value.filterKeys { it in messageIds }.values.flatten().map { it.id })
-        _messages.update { it - sessionId }
-        _parts.update { it - messageIds }
-        assistantMessageIds.removeAll(messageIds)
-        lastDomainEventTimeMs.remove(sessionId)
-        publishStructural("clearForSession")
-        // 可观测性（#89 验证）：记录清理量
-        dev.leonardo.ocbeacon.logging.AppLogger.d(
-            "MsgEvent",
-            "clearForSession: session=$sessionId messages=${messageIds.size} partsRemoved=$messageIds.size"
-        )
+        synchronized(hotSessionLock) {
+            removeSessionHotView(sessionId)
+            publishStructural("clearForSession")
+        }
     }
 
     fun clearForServer(sessionIds: Set<String>) {
+        synchronized(hotSessionLock) { sessionIds.forEach { lastTouched.remove(it) } }
         val messageIds = _messages.value
             .filterKeys { it in sessionIds }.values.flatten()
             .map { it.id }.toSet()
@@ -1499,6 +1546,7 @@ class MessageEventHandler @Inject constructor(
     }
 
     fun clearAll() {
+        synchronized(hotSessionLock) { lastTouched.clear() }
         _messages.value = emptyMap()
         _parts.value = emptyMap()
         assistantMessageIds.clear()
@@ -1516,6 +1564,7 @@ class MessageEventHandler @Inject constructor(
      *   为空时标记整个会话（服务器空闲确认路径）。
      */
     fun markSessionIdle(sessionId: String, messageId: String = "") {
+        touchSession(sessionId)
         var changedIds: List<String>? = null
         // #338：completed 回填与 created 腿同钟域——优先取分发点采集的域内基准
         //（DSH=服务器信封时刻），无基准回退本地钟（V2 本地构造域，语义不变）。
@@ -1594,4 +1643,3 @@ class MessageEventHandler @Inject constructor(
         changedIds?.forEach { clearTerminalLiveParts(it) }
     }
 }
-
