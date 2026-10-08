@@ -349,12 +349,32 @@ class OpenCodeApp : Application(), Configuration.Provider {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
-            runCatching {
+            runTrimStepSafely("ToolSnapshotCache") {
                 EntryPointAccessors.fromApplication(this, CacheEntryPoint::class.java)
                     .toolSnapshotCache().clear()
                 AppLogger.i("App", "onTrimMemory level=$level - cleared ToolSnapshotCache")
-            }.onFailure { AppLogger.e("App", "onTrimMemory cleanup failed", it) }
+            }
         }
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
+            runTrimStepSafely("message hot views") {
+                EntryPointAccessors.fromApplication(this, CacheEntryPoint::class.java)
+                    .eventDispatcher().evictLeastRecentlyUsedSessions()
+            }
+            runTrimStepSafely("StreamingDeltaBus") {
+                dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.clearAll()
+            }
+        }
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
+            runTrimStepSafely("session histories") {
+                EntryPointAccessors.fromApplication(this, CacheEntryPoint::class.java)
+                    .sessionStateService().trimHistories()
+            }
+        }
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun runTrimStepSafely(tag: String, block: () -> Unit) {
+        runCatching(block).onFailure { AppLogger.w("App", "onTrimMemory $tag cleanup failed", it) }
     }
 }
 
@@ -403,4 +423,6 @@ interface MessageCacheEntryPoint {
 interface CacheEntryPoint {
     /** #115（D2-16）：可重建缓存的低内存清理入口。 */
     fun toolSnapshotCache(): dev.leonardo.ocbeacon.domain.repository.ToolSnapshotCache
+    fun eventDispatcher(): dev.leonardo.ocbeacon.data.repository.EventDispatcher
+    fun sessionStateService(): dev.leonardo.ocbeacon.data.repository.SessionStateService
 }

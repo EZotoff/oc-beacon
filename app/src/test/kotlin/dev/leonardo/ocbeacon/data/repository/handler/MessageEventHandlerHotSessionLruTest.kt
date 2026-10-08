@@ -86,4 +86,22 @@ class MessageEventHandlerHotSessionLruTest {
         assertTrue(handler.parts.value.keys.all { it in retained })
         StreamingDeltaBus.clearAll()
     }
+
+    @Test fun `explicit trim over twelve sessions preserves keep set and newest sessions`() {
+        val handler = MessageEventHandler()
+        repeat(12) { i ->
+            val sid = "trim$i"
+            handler.handleMessageUpdated(SseEvent.MessageUpdated(Message.Assistant(
+                id = "m-$sid", sessionId = sid, time = TimeInfo(created = i.toLong()), parentId = ""
+            )))
+            handler.handleMessagePartUpdated(SseEvent.MessagePartUpdated(Part.Text(
+                id = "p-$sid", sessionId = sid, messageId = "m-$sid", text = "body"
+            )))
+        }
+        assertEquals(12, handler.messages.value.size)
+        handler.evictLeastRecentlyUsedSessions(setOf("trim0"))
+        assertEquals(setOf("trim0") + (5..11).map { "trim$it" }, handler.messages.value.keys)
+        assertEquals(8, handler.parts.value.size)
+        (1..4).forEach { assertNull(handler.parts.value["m-trim$it"]) }
+    }
 }

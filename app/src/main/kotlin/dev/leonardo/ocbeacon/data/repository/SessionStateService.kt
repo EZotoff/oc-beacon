@@ -507,6 +507,10 @@ class SessionStateService @Inject constructor(
     }
 
     // ============ 生命周期 ============
+    internal fun trimHistories() {
+        _histories.update { emptyMap() }
+    }
+
     override fun clearSession(sessionId: String) {
         l2ValidationRounds.remove(sessionId)
         _fsmStates.update { it - sessionId }
