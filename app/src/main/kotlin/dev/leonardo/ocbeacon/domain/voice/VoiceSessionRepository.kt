@@ -14,6 +14,7 @@ import dev.leonardo.ocbeacon.data.voice.VoiceAudioEngine
 import dev.leonardo.ocbeacon.domain.model.SupervisorSnapshot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -32,7 +33,9 @@ class VoiceSessionRepository(
     val state = mutableState.asStateFlow()
     val pttHeld = audio.pttHeld
     val audioFailure = audio.failure
-    private val frames = MutableSharedFlow<ServerControlFrame>(extraBufferCapacity = 32)
+    /** 2026-10-08 Wave 2: passthrough for the focus-loss overlay (additive). */
+    val focusLost = audio.focusLost
+    private val frames = MutableSharedFlow<ServerControlFrame>(extraBufferCapacity = 32, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     val incoming = frames.asSharedFlow()
     private var baseUrl: String? = null
     private var held = false

@@ -45,5 +45,9 @@ data class AppSettings(
     val imageAttachmentWebpQuality: Int = 60,
 
     // --- 终端 ---
+
+    // --- 语音（omo-pulse）---
+    /** omo-pulse 基础 URL：语音 WS 连接目标（VoiceUrl.normalize 于连接时归一化）。 */
+    val omoPulseUrl: String = dev.leonardo.ocbeacon.domain.voice.VoiceUrl.DEFAULT_OMO_PULSE_URL,
     val terminalFontSize: Float = 13f
 )

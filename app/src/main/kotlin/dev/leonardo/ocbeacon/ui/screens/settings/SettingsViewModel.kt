@@ -74,6 +74,8 @@ class SettingsViewModel @Inject constructor(
     val turnSoundUri: StateFlow<String?> = turnChannelManager.soundUriFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val terminalFontSize = settings.map { it.terminalFontSize }.stateIn(viewModelScope, SharingStarted.Eagerly, 13f)
+    /** omo-pulse 基础 URL（语音 WS 连接目标）。 */
+    val omoPulseUrl = settings.map { it.omoPulseUrl }.stateIn(viewModelScope, SharingStarted.Eagerly, dev.leonardo.ocbeacon.domain.voice.VoiceUrl.DEFAULT_OMO_PULSE_URL)
 
     // --- 权限自动批准规则 ---
     private val _rulesRefreshTrigger = MutableStateFlow(0)
@@ -222,6 +224,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setTerminalFontSize(size: Float) {
         updateSetting { it.copy(terminalFontSize = size) }
+    }
+
+    fun setOmoPulseUrl(url: String) {
+        updateSetting { it.copy(omoPulseUrl = url) }
     }
 
     /**

@@ -1094,4 +1094,21 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="chat_injection_skill_catalog">Skill catalog</string>
     <string name="chat_injection_plugin">Plugin configuration</string>
     <string name="chat_injection_context">Context injection</string>
+
+    <!-- Voice walking-test (2026-10-08 Wave 2) -->
+    <string name="voice_state_live">live</string>
+    <string name="voice_state_connecting">connecting…</string>
+    <string name="voice_state_offline">offline</string>
+    <string name="voice_state_moved">voice moved to another surface</string>
+    <string name="voice_ptt">Hold to talk</string>
+    <string name="voice_audio_blocked">Audio suspended: %1$s</string>
+    <string name="voice_audio_focus_lost">Audio suspended — another app took audio focus</string>
+    <string name="voice_show_fallback">Unsupported view</string>
+    <string name="voice_notification_permission_rationale">Microphone access is required for voice</string>
+
+    <!-- Advanced settings: omo-pulse voice endpoint -->
+    <string name="settings_omo_pulse_url">omo-pulse base URL</string>
+    <string name="settings_omo_pulse_url_desc">Voice (PTT) connection endpoint</string>
+    <string name="settings_omo_pulse_url_invalid">Invalid URL — use an http(s) host</string>
+    <string name="save">Save</string>
 </resources>

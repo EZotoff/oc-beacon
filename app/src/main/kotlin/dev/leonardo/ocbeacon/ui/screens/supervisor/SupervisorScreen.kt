@@ -41,6 +41,7 @@ import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.domain.model.SupervisorAttentionItem
 import dev.leonardo.ocbeacon.domain.model.SupervisorDecision
 import dev.leonardo.ocbeacon.domain.model.SupervisorSnapshot
+import dev.leonardo.ocbeacon.ui.components.voice.VoiceWidget
 import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 import java.time.Duration
 import java.time.Instant
@@ -59,14 +60,22 @@ fun SupervisorRoute(
     viewModel: SupervisorViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    SupervisorScreen(
-        state = state,
-        destination = destination,
-        onNavigateBack = onNavigateBack,
-        onNavigateToOtherDestination = onNavigateToOtherDestination,
-        onRefresh = viewModel::refresh,
-        onOpenDetail = onOpenDetail,
-    )
+    Box(Modifier.fillMaxSize()) {
+        SupervisorScreen(
+            state = state,
+            destination = destination,
+            onNavigateBack = onNavigateBack,
+            onNavigateToOtherDestination = onNavigateToOtherDestination,
+            onRefresh = viewModel::refresh,
+            onOpenDetail = onOpenDetail,
+        )
+        // 2026-10-08 Wave 2：语音走测 widget——拇指区 PTT + show 卡，非侵入式覆盖层。
+        VoiceWidget(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(SpacingTokens.LG.dp),
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

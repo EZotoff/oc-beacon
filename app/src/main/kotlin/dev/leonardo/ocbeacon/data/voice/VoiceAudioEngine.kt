@@ -35,6 +35,9 @@ class VoiceAudioEngine(
     val pttHeld = mutablePtt.asStateFlow()
     private val mutableFailure = MutableStateFlow<String?>(null)
     val failure = mutableFailure.asStateFlow()
+    /** 2026-10-08 Wave 2: true while audio is suspended after a transient focus loss (additive). */
+    private val mutableFocusLost = MutableStateFlow(false)
+    val focusLost = mutableFocusLost.asStateFlow()
     private var started = false
     private var recordingGeneration = 0
     private var playback: Job? = null
@@ -43,7 +46,11 @@ class VoiceAudioEngine(
     @Synchronized
     fun start(): Boolean {
         if (started) return true
-        if (!focus.request { stop() }) return false
+        if (!focus.request {
+            mutableFocusLost.value = true
+            stop()
+        }) return false
+        mutableFocusLost.value = false
         try {
             player.start()
             started = true

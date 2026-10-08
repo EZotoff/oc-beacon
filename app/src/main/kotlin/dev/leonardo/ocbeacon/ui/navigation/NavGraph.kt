@@ -95,6 +95,18 @@ fun NavGraph(
     // #339：通知深链的重连腿——Activity 级 HomeViewModel（binder + connectToServer）
     val homeViewModel: dev.leonardo.ocbeacon.ui.screens.home.HomeViewModel = hiltViewModel()
 
+    // 2026-10-08 Wave 2：导航 → 语音 view-context 发射器。
+    // 映射（home|sessions|workspace|chat|supervisor）在 VoiceViewContextMapper；
+    // 去重/变更判定与 Live 门控是 VoiceSessionRepository 的职责，这里只转发。
+    val voiceViewModel: dev.leonardo.ocbeacon.ui.components.voice.VoiceViewModel = hiltViewModel()
+    LaunchedEffect(voiceViewModel) {
+        navController.currentBackStackEntryFlow.collect { entry ->
+            voiceViewModel.emitViewContext(
+                dev.leonardo.ocbeacon.domain.voice.VoiceViewContextMapper.viewForRoute(entry.destination.route)
+            )
+        }
+    }
+
     // 默认使用原生 UI（WebView 为旧版实现）
     val useNativeUi = true
 

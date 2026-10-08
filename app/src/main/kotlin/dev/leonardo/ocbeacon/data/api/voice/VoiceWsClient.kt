@@ -1,5 +1,6 @@
 package dev.leonardo.ocbeacon.data.api.voice
 
+import kotlin.math.min
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
@@ -48,11 +49,14 @@ class VoiceWsClient(
     private var retry: Job? = null
     private var generation = 0
     private var attempt = 0
+    /** Consecutive failed connections (reset on a successful open) — drives backoff. */
+    private var failures = 0
     private var baseUrl: String? = null
 
     @Synchronized
     fun connect(omoPulseBaseUrl: String) {
         disconnect()
+        failures = 0
         baseUrl = omoPulseBaseUrl
         open(generation)
     }
@@ -97,7 +101,7 @@ class VoiceWsClient(
 
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 synchronized(this@VoiceWsClient) {
-                    if (active()) setState(VoiceConnectionState.Live)
+                    if (active()) { failures = 0; setState(VoiceConnectionState.Live) }
                 }
             }
 
@@ -137,7 +141,10 @@ class VoiceWsClient(
                     socket = null
                     setState(VoiceConnectionState.Disconnected)
                     retry = scope.launch {
-                        delay(1_500)
+                    // Exponential backoff, capped: 1.5s, 3s, 6s, … max 30s, by consecutive failures.
+                    failures++
+                    val backoffMs = min(1_500L shl minOf(failures - 1, 5), 30_000L)
+                        delay(backoffMs)
                         synchronized(this@VoiceWsClient) {
                             if (generation == id) open(id)
                         }
