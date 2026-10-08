@@ -419,6 +419,7 @@
     <string name="chat_shell_placeholder">Digite o comando do shell…</string>
     <string name="chat_shell_failed">Falha ao executar comando shell</string>
     <string name="chat_shell_empty">Digite primeiro um comando shell</string>
+    <string name="chat_shell_mode_unavailable">O modo shell não está disponível neste servidor</string>
     <string name="chat_subagent_one_shot_read_only">Sessão de subagente de uso único: mensagens de acompanhamento não são suportadas</string>
     <string name="chat_subagent_read_only_mirror">Sessão de subagente (somente leitura): continue na sessão principal</string>
     <string name="chat_shell_attachments_unsupported">O modo shell não suporta anexos</string>

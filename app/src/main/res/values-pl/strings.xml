@@ -427,6 +427,7 @@
     <string name="chat_shell_placeholder">Wpisz polecenie powłoki…</string>
     <string name="chat_shell_failed">Nie udało się uruchomić polecenia powłoki</string>
     <string name="chat_shell_empty">Najpierw wpisz polecenie powłoki</string>
+    <string name="chat_shell_mode_unavailable">Tryb powłoki nie jest dostępny na tym serwerze</string>
     <string name="chat_subagent_one_shot_read_only">Jednorazowa sesja podagenta: wiadomości następcze nie są obsługiwane</string>
     <string name="chat_subagent_read_only_mirror">Sesja podagenta (tylko do odczytu): kontynuuj w sesji nadrzędnej</string>
     <string name="chat_shell_attachments_unsupported">Tryb powłoki nie obsługuje załączników</string>

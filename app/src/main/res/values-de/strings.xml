@@ -419,6 +419,7 @@
     <string name="chat_shell_placeholder">Shell-Befehl eingeben…</string>
     <string name="chat_shell_failed">Shell-Befehl konnte nicht ausgeführt werden</string>
     <string name="chat_shell_empty">Bitte zuerst einen Shell-Befehl eingeben</string>
+    <string name="chat_shell_mode_unavailable">Shell-Modus ist auf diesem Server nicht verfügbar</string>
     <string name="chat_subagent_one_shot_read_only">Einmalige Subagent-Sitzung: Folgenachrichten werden nicht unterstützt</string>
     <string name="chat_subagent_read_only_mirror">Subagent-Sitzung (schreibgeschützt): in der übergeordneten Sitzung fortfahren</string>
     <string name="chat_shell_attachments_unsupported">Shell-Modus unterstützt keine Anhänge</string>

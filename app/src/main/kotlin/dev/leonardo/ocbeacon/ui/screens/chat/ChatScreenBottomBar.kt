@@ -161,6 +161,8 @@ internal fun ChatScreenBottomBar(
     // 组合层 stringResource（lambda 内不可调用 @Composable）；带参格式串 hoist
     // 模板、调用点 .format()（保留 locale 占位符次序）
     val shellEmptyMsg = stringResource(R.string.chat_shell_empty)
+    // #496：DSH 长按发送键（切 shell 死手势）的 M3 snackbar 反馈文案
+    val shellModeUnavailableMsg = stringResource(R.string.chat_shell_mode_unavailable)
     val shellAttachmentsUnsupportedMsg = stringResource(R.string.chat_shell_attachments_unsupported)
     val shellFailedMsg = stringResource(R.string.chat_shell_failed)
     // #312④：命令带图拦截提示（服务器 commands/execute 图片按命令声明门控，
@@ -530,7 +532,12 @@ internal fun ChatScreenBottomBar(
                 onInputModeChange = {
                     // #276：SHELL 模式入口能力位门控——发送钮长按切换在 DSH 下
                     // 无效（shell 域缺失），保持 NORMAL。
-                    if (it == ChatInputMode.SHELL && !shellCommandSupported) return@ChatInputBar
+                    // #496（2026-10-09 用户裁决）：静默 no-op → M3 snackbar 反馈
+                    //（消除死手势；覆盖长按/斜杠面板 shell 项等同拦截入口）。
+                    if (it == ChatInputMode.SHELL && !shellCommandSupported) {
+                        coroutineScope.launch { snackbarHostState.showSnackbar(shellModeUnavailableMsg) }
+                        return@ChatInputBar
+                    }
                     onInputModeChange(it.name)
                     if (it == ChatInputMode.SHELL) {
                         viewModel.composer.clearFileSearch()

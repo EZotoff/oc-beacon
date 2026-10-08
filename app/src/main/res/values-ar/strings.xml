@@ -435,6 +435,7 @@
     <string name="chat_shell_placeholder">أدخل أمر شل...</string>
     <string name="chat_shell_failed">فشل تشغيل أمر الشل</string>
     <string name="chat_shell_empty">يرجى إدخال أمر شل أولاً</string>
+    <string name="chat_shell_mode_unavailable">وضع الصدفة غير متوفر على هذا الخادم</string>
     <string name="chat_subagent_one_shot_read_only">جلسة وكيل فرعي للاستخدام مرة واحدة: لا يتم دعم الرسائل التابعة</string>
     <string name="chat_subagent_read_only_mirror">جلسة وكيل فرعي (قراءة فقط): تابع في الجلسة الأصل</string>
     <string name="chat_shell_attachments_unsupported">وضع الشل لا يدعم المرفقات</string>

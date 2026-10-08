@@ -347,6 +347,7 @@
     <string name="chat_shell_placeholder">Введите команду shell…</string>
     <string name="chat_shell_failed">Не удалось выполнить команду shell</string>
     <string name="chat_shell_empty">Сначала введите команду shell</string>
+    <string name="chat_shell_mode_unavailable">Режим оболочки недоступен на этом сервере</string>
     <string name="chat_subagent_one_shot_read_only">Одноразовая сессия субагента: повторные сообщения не поддерживаются</string>
     <string name="chat_subagent_read_only_mirror">Сессия субагента (только чтение): продолжайте в родительской сессии</string>
     <string name="chat_shell_attachments_unsupported">В режиме shell нельзя прикреплять файлы</string>

@@ -425,6 +425,7 @@
     <string name="chat_shell_placeholder">Masukkan perintah shell…</string>
     <string name="chat_shell_failed">Gagal menjalankan perintah shell</string>
     <string name="chat_shell_empty">Masukkan perintah shell terlebih dahulu</string>
+    <string name="chat_shell_mode_unavailable">Mode shell tidak tersedia di server ini</string>
     <string name="chat_subagent_one_shot_read_only">Sesi subagen sekali pakai: pesan lanjutan tidak didukung</string>
     <string name="chat_subagent_read_only_mirror">Sesi subagen (baca-saja): lanjutkan di sesi induk</string>
     <string name="chat_shell_attachments_unsupported">Mode shell tidak mendukung lampiran</string>
