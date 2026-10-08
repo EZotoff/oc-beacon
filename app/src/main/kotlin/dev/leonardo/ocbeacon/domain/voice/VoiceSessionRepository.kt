@@ -1,0 +1,151 @@
+package dev.leonardo.ocbeacon.domain.voice
+
+import dev.leonardo.ocbeacon.data.api.voice.ClientControlFrame
+import dev.leonardo.ocbeacon.data.api.voice.ServerControlFrame
+import dev.leonardo.ocbeacon.data.api.voice.ViewContextView
+import dev.leonardo.ocbeacon.data.api.voice.VoiceConnectionState
+import dev.leonardo.ocbeacon.data.api.voice.VoiceIncoming
+import dev.leonardo.ocbeacon.data.api.voice.VoiceProject
+import dev.leonardo.ocbeacon.data.api.voice.VoiceSelection
+import dev.leonardo.ocbeacon.data.api.voice.VoiceSession
+import dev.leonardo.ocbeacon.data.api.voice.VoiceSessionState
+import dev.leonardo.ocbeacon.data.api.voice.VoiceWsClient
+import dev.leonardo.ocbeacon.data.voice.VoiceAudioEngine
+import dev.leonardo.ocbeacon.domain.model.SupervisorSnapshot
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+enum class VoiceSessionConnection { Disconnected, Connecting, Live, MovedToAnotherSurface }
+
+class VoiceSessionRepository(
+    private val client: VoiceWsClient,
+    private val audio: VoiceAudioEngine,
+    scope: CoroutineScope,
+    private val snapshot: () -> SupervisorSnapshot? = { null },
+) {
+    private val mutableState = MutableStateFlow(VoiceSessionConnection.Disconnected)
+    val state = mutableState.asStateFlow()
+    val pttHeld = audio.pttHeld
+    val audioFailure = audio.failure
+    private val frames = MutableSharedFlow<ServerControlFrame>(extraBufferCapacity = 32)
+    val incoming = frames.asSharedFlow()
+    private var baseUrl: String? = null
+    private var held = false
+    private var inputPending = false
+    private var lastContext: ClientControlFrame.ViewContext? = null
+
+    init {
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            client.connectionState.collect { connection ->
+                synchronized(this@VoiceSessionRepository) {
+                    mutableState.value = when (connection) {
+                        VoiceConnectionState.Disconnected -> VoiceSessionConnection.Disconnected
+                        VoiceConnectionState.Connecting -> VoiceSessionConnection.Connecting
+                        VoiceConnectionState.Live -> VoiceSessionConnection.Live
+                        VoiceConnectionState.Handoff -> VoiceSessionConnection.MovedToAnotherSurface
+                    }
+                    if (connection == VoiceConnectionState.Live) {
+                        audio.start()
+                        if (held) {
+                            audio.pressPtt()
+                            inputPending = audio.pttHeld.value
+                        }
+                    } else {
+                        lastContext = null
+                        audio.stop()
+                        inputPending = false
+                        if (connection == VoiceConnectionState.Handoff) held = false
+                    }
+                }
+            }
+        }
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            client.incoming.collect { event ->
+                when (event) {
+                    is VoiceIncoming.Audio -> if (state.value == VoiceSessionConnection.Live) {
+                        audio.playAudio(event.bytes)
+                    }
+                    is VoiceIncoming.Control -> {
+                        if (event.frame is ServerControlFrame.Interrupt) audio.interrupt()
+                        frames.emit(event.frame)
+                    }
+                    is VoiceIncoming.Connection -> Unit
+                }
+            }
+        }
+    }
+
+    @Synchronized
+    fun connect(omoPulseBaseUrl: String) {
+        held = false
+        inputPending = false
+        audio.stop()
+        lastContext = null
+        baseUrl = omoPulseBaseUrl
+        client.connect(omoPulseBaseUrl)
+    }
+
+    @Synchronized
+    fun disconnect() {
+        held = false
+        inputPending = false
+        audio.stop()
+        lastContext = null
+        client.disconnect()
+    }
+
+    @Synchronized
+    fun pressPtt() {
+        if (held) return
+        held = true
+        when (client.connectionState.value) {
+            VoiceConnectionState.Live -> {
+                audio.pressPtt()
+                inputPending = audio.pttHeld.value
+            }
+            VoiceConnectionState.Handoff, VoiceConnectionState.Disconnected -> {
+                val url = baseUrl
+                if (url == null) held = false else client.connect(url)
+            }
+            VoiceConnectionState.Connecting -> Unit
+        }
+    }
+
+    @Synchronized
+    fun releasePtt() {
+        held = false
+        audio.releasePtt()
+        if (inputPending) client.sendControl(ClientControlFrame.InputComplete)
+        inputPending = false
+    }
+
+    fun sendSelection(contextTag: String, index: Int): Boolean =
+        client.sendControl(ClientControlFrame.Selection(contextTag, index))
+
+    @Synchronized
+    fun emitViewContext(
+        view: ViewContextView,
+        project: VoiceProject? = null,
+        session: VoiceSession? = null,
+        selection: VoiceSelection? = null,
+    ): Boolean {
+        if (client.connectionState.value != VoiceConnectionState.Live) return false
+        val item = snapshot()?.takeUnless { it.stale }?.attentionItems?.firstOrNull()
+        val context = ClientControlFrame.ViewContext(
+            view = view,
+            project = project ?: VoiceProject(item?.root.orEmpty(), item?.project.orEmpty()),
+            session = session ?: VoiceSession("", item?.sessionLabel.orEmpty(), VoiceSessionState.WAITING),
+            selection = selection,
+            recent = emptyList(),
+        )
+        if (context == lastContext) return false
+        if (!client.sendControl(context)) return false
+        lastContext = context
+        return true
+    }
+}
