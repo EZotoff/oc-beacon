@@ -47,3 +47,26 @@
 - 复验（收口 commit 后真机）：装包→开抽屉→250ms 间隔双 BACK 快速连按——抽屉关闭且仍在会话页（穿透修复实证）；全量单测 3932 绿；i18n 874×14 PASSED。
 - 接受项（留人工验收清单）：手柄拖拽收起的真手指体感（跟手/回弹，快速轻拂小位移弹回 vs M3 fling 不完全等价）；dismiss 动画期 scrim ~200ms 渐隐残留（动画语义本身）；75% 固定高在 IME 态顶溢出被裁（真机已验 scrim/sheet 可见性正常）。
 - 顺带登记：#512 批次遗留 lint 门 5 error（SseConnectionManager ServerTypeWhitelist 越白名单，b8cda845 引入，非本批）——新卡待裁。
+
+## 已完结卡片迁入（2026-10-08）
+
+### **#519 DSH 完结换装后思考卡消失——权威消息 content 无 reasoning part，流中思考内容完结即蒸发** `dsh` `streaming` `completion`
+  - 真机（2026-10-06 quicksort 轮）：流中 reasoning part（dsh-t1s1_reasoning_ord_0，443 字节 payload）正常渲染+计时；完结 seq 换装后权威消息（seq-...b7e40eebd）parts 仅 3 个 text（4564/390/4555 字符）零 reasoning——思考卡随换装消失，重进亦无。与 #501（正文换装砸出）同族的 reasoning 面：流中可见完结即失
+  - 待查：DSH 服务器权威 content 是否本就不含 reasoning（服务器侧形状）vs app 端 DshEventMapper 换装丢弃；对照 DSH 0.2.0 wire 文档 block 序列
+  - 定罪完结（2026-10-08 journal §3）：根因=服务器 attempt 隔离语义（失败尝试 reasoning 落 assistant/attempt 不进权威；live 复现轮 journal seq18 attempt+seq19/20 retry+seq21 权威[text]零 reasoning 实证）；官方 web 同行为（closeOpen+终态跟随权威）；app mapper/fold 无罪（golden 锁定）。裁决点 A 维持现状/B app 保留流中 reasoning/C 上游反馈——待用户拍板
+  - 2026-10-08 用户裁决 A：维持现状（对齐官方权威语义——attempt 隔离为服务器设计，app 忠实权威正确）；据此完结
+  - 迁入依据：定罪+裁决 A 完结（journal §3：服务器 attempt 隔离语义，官方 web 同行为，app 无罪；用户 2026-10-08 拍板维持现状）（backlog.sh migrate 2026-10-08）
+
+### **#493 模型抽屉键盘保持——切模型不收键盘（三端共享改造）** `keyboard`
+  - 真机实测三端一致为「收起→抽屉→回弹」（ModalBottomSheet 独立窗口必夺焦点）；2026-09-30 用户裁决基准=不收键盘。
+  - 实现方向：换主窗口内非模态呈现（Popup(focusable=false) 容器或布局内 BottomSheet），保留返回键/点外关闭、scrim、75% 固定高、#379/#405 手势隔离语义；共享组件=三端同改（影响面已裁决）。
+  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §一
+  - 实现落地（布局内 overlay 方案，Popup 轮真机零绘制被否）：真机 E2E V1 腿全判据过（IME 保持×3/双态显示/选模型链/BACK 两段/点外），手柄拖拽体感留人工验收 → journal 2026-10-08-p2-assorted-batch2 §2
+  - 2026-10-08 用户裁决：不需要键盘保持功能——选择模型时键盘收起、跟之前一样；代码已回滚（四文件还原 f8161e81），真机复验原行为；据此完结。两轮方案取证（Popup 子窗口真机零绘制/布局内 overlay 全判据）留 journal 供未来重启参考
+  - 迁入依据：用户裁决撤销需求（回滚完结）：键盘保持不需要，恢复 ModalBottomSheet 原行为；实现+验证+回滚全程 journal §2/§4（backlog.sh migrate 2026-10-08）
+
+## ## §5 #519 裁决 A + #493 撤销回滚（2026-10-08 用户拍板）
+
+- #519：用户裁决 A 维持现状——attempt 隔离为服务器设计/官方 web 同行为，app 忠实权威正确；完结迁移。
+- #493：用户裁决**不需要键盘保持**——选择模型时键盘收起、跟之前一样；回滚 9f004132/c884355f/68f0b79d 净效果（四文件还原 f8161e81：ModelPickerDialog 回 ModalBottomSheet、ChatScreen 根 Box 摘除、Motion/SheetTokens 新增 token 常量清退）。编译绿+全量单测绿+真机复验：ModalBottomSheet 抽屉正常打开、mInputShown=false 键盘收起=原行为恢复。完结迁移。
+- 资产留档：Popup(focusable=false) 子窗口在本机矩阵零绘制（组合在场表面无输出）的取证、布局内 overlay 的完整实现形态（git 历史可考古）——未来若重启键盘保持方向先读 §2。

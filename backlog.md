@@ -71,22 +71,11 @@
   - 与今日改动无路径交集，复发再战；黑屏时 mCurrentFocus 正常
   - → journal: docs/journal/2026-10-07-dsh-standard-bugs.md §11
 
-- [ ] **#519 DSH 完结换装后思考卡消失——权威消息 content 无 reasoning part，流中思考内容完结即蒸发** `dsh` `streaming` `completion`
-  - 真机（2026-10-06 quicksort 轮）：流中 reasoning part（dsh-t1s1_reasoning_ord_0，443 字节 payload）正常渲染+计时；完结 seq 换装后权威消息（seq-...b7e40eebd）parts 仅 3 个 text（4564/390/4555 字符）零 reasoning——思考卡随换装消失，重进亦无。与 #501（正文换装砸出）同族的 reasoning 面：流中可见完结即失
-  - 待查：DSH 服务器权威 content 是否本就不含 reasoning（服务器侧形状）vs app 端 DshEventMapper 换装丢弃；对照 DSH 0.2.0 wire 文档 block 序列
-  - 定罪完结（2026-10-08 journal §3）：根因=服务器 attempt 隔离语义（失败尝试 reasoning 落 assistant/attempt 不进权威；live 复现轮 journal seq18 attempt+seq19/20 retry+seq21 权威[text]零 reasoning 实证）；官方 web 同行为（closeOpen+终态跟随权威）；app mapper/fold 无罪（golden 锁定）。裁决点 A 维持现状/B app 保留流中 reasoning/C 上游反馈——待用户拍板
-
 - [~] **#514 DSH legacy token 基建退役（#512 批次④）——捞日志/adb 注入/深链配对清退** `dsh` `auth` `infra`
   - 前置：#512 dsh-password-login 插件用顺后另裁范围（用户已裁决方向，2026-10-05）。
   - 清退候选：宿主侧 token 镜像脚本（~/.dsh/sync-dsh-web-token.sh）、scripts/dsh-pair.sh 配对/adb 注入链、DshPairingParser 深链解析。
   - 预判保留：app 内 legacy 兜底（exchangeToken/token 持久化/输入 UI=回落链末级，服务无插件服务器）。开工时先列影响面清单请裁决再动手。
   - spec：docs/specs/2026-10-05-512-dsh-password-login-design.md（§K 批次④）；实现证据：docs/journal/2026-10-05-512-dsh-password-login.md
-
-- [~] **#493 模型抽屉键盘保持——切模型不收键盘（三端共享改造）** `keyboard`
-  - 真机实测三端一致为「收起→抽屉→回弹」（ModalBottomSheet 独立窗口必夺焦点）；2026-09-30 用户裁决基准=不收键盘。
-  - 实现方向：换主窗口内非模态呈现（Popup(focusable=false) 容器或布局内 BottomSheet），保留返回键/点外关闭、scrim、75% 固定高、#379/#405 手势隔离语义；共享组件=三端同改（影响面已裁决）。
-  - → docs/research/2026-09-30-server-type-uiux-consistency-audit.md §一
-  - 实现落地（布局内 overlay 方案，Popup 轮真机零绘制被否）：真机 E2E V1 腿全判据过（IME 保持×3/双态显示/选模型链/BACK 两段/点外），手柄拖拽体感留人工验收 → journal 2026-10-08-p2-assorted-batch2 §2
 
 ## P3 — 观察与低价值改进
 
