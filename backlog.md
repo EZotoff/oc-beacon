@@ -58,9 +58,6 @@
 
 ## P2 — 优化与锦上添花
 
-- [ ] **#534 #512 批次遗留 lint 门 5 error——SseConnectionManager 服务器类型引用越 ServerTypeWhitelist 白名单** `chore` `lint`
-  - b8cda845(#512 回落链)引入 5 处 ServerTypeWhitelist error 挡 lintDevDebug/lintRelease CI 门；疑似回落链合法用例需白名单扩位或改写能力位——非本批(P2 assorted batch2)引入，顺带发现登记
-
 ## P3 — 观察与低价值改进
 
 - [~] **#531 文案清理二期——重复键合并/plurals 化/大小写全面统一** `i18n` `chore`

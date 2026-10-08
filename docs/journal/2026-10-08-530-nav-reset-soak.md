@@ -64,3 +64,16 @@
   - 2026-10-08 #530 调查交叉定罪：#500 与 #530 弹回为同一结构性根因两分支——standard 启动模式下外部 intent 投递三态不受控（无action→DELIVERED_TO_TOP 静默丢=本卡症状；action 无 flag→新建实例叠栈=#530 弹回）；修法 singleTop 可同时消灭两分支（矩阵实验实证实判据见 journal 2026-10-08-530-nav-reset-soak §1）；onNewIntent 已实现的勘误维持——带 SINGLE_TOP flag 时 onNewIntent 路径实测正常处理深链
   - 2026-10-08 singleTop 根修实证：修复包热启动 am start --es debug_url → Debug channel requested 日志出现（onNewIntent 回调走通）——#500 症状随 #530 修复消除，转 [~]
   - 迁入依据：随 #530 singleTop 同根修：修复包热启动 Debug channel requested onNewIntent 实证；用户验收同 #530（2026-10-09）（backlog.sh migrate 2026-10-09）
+
+## ## §6 #534 lint 门根修（grilling 裁决 C 方案）
+
+- **grilling 定案（2026-10-09 用户拍板「按推荐的来，只要根因修复」）**：C 方案收进 adapter 多态——非 A 白名单扩位（破承重规则示范面）/非 B 能力位（密码提示是凭据内务非可复用能力）。
+- **实施**：ConnectionStrategy 加 onConnectPrepare(conn, password) 默认 no-op 钩子（#534 承重规则注释在 KDoc）；DshProtocolSource 加 setPasswordHint 默认 no-op（替身零负担先例同款）+ 生产适配器转发 registry；DshConnectionStrategy 覆写钩子（每轮刷新密码提示 #512 回落链源）；SseConnectionManager:513 类型分支删除改一行钩子调用——通用连接壳不再见 ServerType。
+- **顺带新失败清零（同门拦截，非 baseline 域）**：#531 plurals 化漏 Slavic 语族形态——pl/uk/ru 的 task_toolbar_subagents 补 few/many（2-4 主格复数/5+ 属格），lint 逐轮点名三语言全补齐。
+- **验证**：compileDevDebugKotlin 绿；全量单测 3932 绿；**lintDevDebug BUILD SUCCESSFUL（error 5→0）**；i18n-check 874×14 PASSED。#534 关卡（用户预授权根修即关）。
+
+## 已完结卡片迁入（2026-10-09）
+
+### **#534 #512 批次遗留 lint 门 5 error——SseConnectionManager 服务器类型引用越 ServerTypeWhitelist 白名单** `chore` `lint`
+  - b8cda845(#512 回落链)引入 5 处 ServerTypeWhitelist error 挡 lintDevDebug/lintRelease CI 门；疑似回落链合法用例需白名单扩位或改写能力位——非本批(P2 assorted batch2)引入，顺带发现登记
+  - 迁入依据：grilling 裁决 C 方案根修落地（2026-10-09 用户拍板）：类型分支沉入 ConnectionStrategy.onConnectPrepare 多态钩子（通用壳不见 ServerType）；顺带 #531 漏的 pl/uk/ru few/many 补形；lint error 5→0 BUILD SUCCESSFUL+单测 3932 绿+i18n 874×14 过——用户预授权根修即关（backlog.sh migrate 2026-10-09）
