@@ -751,6 +751,8 @@
     <string name="task_toolbar_action">Перемістити завдання у фон</string>
     <plurals name="task_toolbar_subagents">
         <item quantity="one">%1$d субагент працює на передньому плані</item>
+        <item quantity="few">%1$d субагенти працюють на передньому плані</item>
+        <item quantity="many">%1$d субагентів працює на передньому плані</item>
         <item quantity="other">%1$d субагентів працює на передньому плані</item>
     </plurals>
     <string name="task_sheet_empty_subagents">Немає запущених субагентів</string>

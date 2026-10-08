@@ -752,6 +752,8 @@
     <string name="task_toolbar_action">Переместить задачу в фоновый режим</string>
     <plurals name="task_toolbar_subagents">
         <item quantity="one">%1$d субагент работает на переднем плане</item>
+        <item quantity="few">%1$d субагента работают на переднем плане</item>
+        <item quantity="many">%1$d субагентов работает на переднем плане</item>
         <item quantity="other">%1$d субагентов работает на переднем плане</item>
     </plurals>
     <string name="task_sheet_empty_subagents">Нет запущенных субагентов</string>

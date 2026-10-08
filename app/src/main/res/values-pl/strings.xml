@@ -751,6 +751,8 @@ Tokeny: ~%4$d -&gt; ~%5$d</string>
     <string name="task_toolbar_action">Przenieś zadanie do tła</string>
     <plurals name="task_toolbar_subagents">
         <item quantity="one">%1$d podagent działa na pierwszym planie</item>
+        <item quantity="few">%1$d podagenty działają na pierwszym planie</item>
+        <item quantity="many">%1$d podagentów działa na pierwszym planie</item>
         <item quantity="other">%1$d podagentów działa na pierwszym planie</item>
     </plurals>
     <string name="task_sheet_empty_subagents">Brak uruchomionych subagentów</string>

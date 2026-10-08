@@ -508,11 +508,9 @@ class SseConnectionManager @Inject constructor(
                 // recoverMessages（REST 全量重拉）而走 DSH reconciler（subscribed
                 // 基线 → seq 缺口 → session.history 精确回填，§1.6-5）。
                 val strategy = adapters.connectionStrategy(conn)
-                // #512：DSH 服务器密码提示每轮刷新（回落链 FreeMint→PasswordMint→
-                // LegacyToken 的凭据源；ServerConfig.password 双语义：插件配对密码/launch token）
-                if (conn.serverType == dev.leonardo.ocbeacon.domain.model.ServerType.Dsh) {
-                    dshConnectionRegistry.setPasswordHint(conn.baseUrl, server.password)
-                }
+                // #512+#534：凭据源每轮刷新沉入 strategy 连接前钩子（默认 no-op，
+                // DSH 实现刷新密码提示）——通用连接壳不再见服务器类型
+                strategy.onConnectPrepare(conn, server.password)
                 // #391 切片6：两种线面统一先做一次握手——OpenCode 为投影型（ApiVersionDetector
                 // 双探结果已在健康检查持久化，此处恒 ONLINE，仅 degraded 态可观测），
                 // DSH 为 0.1.2 双形态探测（版本×鉴权），其 AUTH_REQUIRED/UNREACHABLE 在下方分派。

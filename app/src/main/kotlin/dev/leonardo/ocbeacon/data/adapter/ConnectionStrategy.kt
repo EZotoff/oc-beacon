@@ -57,4 +57,13 @@ interface ConnectionStrategy {
      * DSH：双形态探测（版本 × 鉴权），未探测保守 V011 且标记 degraded。
      */
     suspend fun probe(conn: ServerConnection): Handshake
+
+    /**
+     * #534：连接前凭据预备钩子（默认 no-op）——类型特定凭据内务沉入各线面
+     * 实现，监督层（连接循环）不再见服务器类型（ServerTypeWhitelist 承重规则：
+     * 通用壳走能力位/端口/多态，新增服务器类型不改共享代码）。
+     * DSH 实现：每轮刷新密码提示（#512 回落链 FreeMint→PasswordMint→LegacyToken
+     * 的凭据源；ServerConfig.password 双语义=插件配对密码/launch token）。
+     */
+    fun onConnectPrepare(conn: ServerConnection, password: String?) {}
 }

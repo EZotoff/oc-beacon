@@ -78,6 +78,12 @@ interface DshProtocolSource {
      */
     suspend fun ensureProbed(authority: String): DshProbeOutcome =
         DshProbeOutcome.Unreachable("probe not supported by this source")
+
+    /**
+     * #534：连接前凭据预备——#512 密码提示每轮刷新（回落链凭据源）。
+     * 默认 no-op（同上：替身无需该能力）。
+     */
+    fun setPasswordHint(authority: String, password: String?) {}
 }
 
 /** 生产适配器：转发 [DshConnectionRegistry]（注册表是 @Singleton 已注入管线）。 */
@@ -89,6 +95,9 @@ class DshProtocolSourceAdapter @Inject constructor(
 
     override suspend fun ensureProbed(authority: String): DshProbeOutcome =
         registry.ensureProbed(authority)
+
+    override fun setPasswordHint(authority: String, password: String?) =
+        registry.setPasswordHint(authority, password)
 }
 
 /** 接口注入面绑定（实现类 @Inject 构造；模块随接口同文件——#318 收口）。 */
