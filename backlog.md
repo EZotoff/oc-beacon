@@ -61,6 +61,8 @@
 - [ ] **#533 SliceHost 巨轮 item 测量窗瞬态脉冲（回收/滚动期 −H 跌后回长）** `scroll` `race`
   - 5h soak 定罪：21 切片巨轮 item（t_msg_0e36bd4aa001）SliceHost 视口相对测量窗随滚动/邻集搅动重推导——展开卡盒 −6144 跌后 86ms-83s 回长（86-140ms 快脉冲在屏可见闪跳风险+集尾巧合 topY 跳 623）；卡态/内容零丢失（RB 态恒 expanded、回长在案、Room 78/78 完整）
   - 既有缺陷（run1 修前同族 −4490 在案）；#517 切片漂移域；仅 pathological 巨轮 item 触发；证据 human-sim-10h/reports/529/review.md 脉冲节 + journal 2026-10-08-529 §5
+  - 根修已落地（e977d37d 2026-10-08）：进程级 finalH 店+落地期桥接；10 轮定向 E2E 零脉冲零 resize；→ journal: docs/journal/2026-10-08-533-slice-reentry-floor.md
+  - 确认 soak 终盘 PASS（有效 1.24h/153 集 0 脏/大卡脉冲族零发生 vs 期望3.2/门 298/298/零 FATAL）；残差 3 条全定罪良性（-66×2 内容沉降+-938 桥接设计释放）；adb 无线掉线冻结末段 37min 已记录
 
 - [ ] **#532 DSH 表单 tab 密码插件提示图标 + 插件 README 安装说明** `dsh` `uiux` `docs`
   - 新建/编辑服务器 DSH tab 旁 ℹ️ 图标→弹窗简述插件+GitHub 链接；插件 README 八节重写（安装三式/首设三途/rotate·revoke/十项注意事项）
