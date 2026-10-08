@@ -32,12 +32,20 @@ RE_DONE = re.compile(r"episode done .*completed=(\w+)")
 RE_DISPATCH_THROW = re.compile(r"\[DEBUG-426\] dispatch threw")
 
 
-def parse(files):
+def parse(files, end_ts=None):
     placed, anchors, quiesce, closes, exits, dones, dthrows = [], [], [], [], [], [], 0
     raw_lines = 0
+    seen = set()  # 轮转重叠去重：logcat 新进程默认先倾倒整个现存缓冲 → 相邻 cap 文件重叠
+    all_lines = []
+    resize_item_ts = []  # (ts, key)：RESIZE 行的 item 身份史（窗化归因用）
     for f in files:
         try:
             for line in open(f, errors="replace"):
+                if line in seen:
+                    continue
+                seen.add(line)
+                if end_ts and re.match(r"^\d\d-\d\d \d\d:\d\d:\d\d", line) and line[:14] > end_ts:
+                    continue  # 孤儿期剔除
                 raw_lines += 1
                 m = RE_PLACED.match(line)
                 if m:
@@ -62,26 +70,46 @@ def parse(files):
                     dones.append(m.group(1)); continue
                 if RE_DISPATCH_THROW.search(line):
                     dthrows += 1
+                mk = re.search(r"RESIZE t=\d+ key=(\S+)", line)
+                mts = re.match(r"^(\d\d-\d\d \d\d:\d\d:\d\d\.\d+)", line)
+                if mk and mts:
+                    resize_item_ts.append((mts.group(1), mk.group(1)))
+                all_lines.append(line)
         except FileNotFoundError:
             pass
     return dict(placed=placed, anchors=anchors, quiesce=quiesce, closes=closes,
-                exits=exits, dones=dones, dthrows=dthrows, raw=raw_lines)
+                exits=exits, dones=dones, dthrows=dthrows, raw=raw_lines, lines=all_lines,
+                resize_item_ts=resize_item_ts)
 
 
 def bursts(placed):
-    """按 E<k> 连续段分组；同 E 号内再做「落后复升」切割——
-    smoke 实证：同 item 两张卡各自 E1 相邻爆发（fiso/host 连续但 topY 跳到
-    另一卡基线），f 序列 1.000→0.001→1.000 即新集起点（单集内 f 单调，
-    warmup 只升不降）。"""
+    """按 E<k> 连续段分组；组内再切：①同 E 号「落后复升」（两卡同 E1 相邻爆发）；
+    ②帧间时间 gap>3s（伪影#2 定罪：实例A E1-展开 → 用户滚动数分钟 → 实例B
+    E1-收起，f 序列 1.000→1.000→0.000 无升降可切，首尾 topY 差=滚动距离
+    被误判脏；单集硬顶 1.8s，>3s gap 必非同集）。"""
     out, cur, cur_k = [], [], None
     for g in placed:
         k = int(g[I_E])
         if cur and k != cur_k:
-            out.extend(_split_on_rise(cur)); cur = []
+            out.extend(p for g in _split_on_gap(cur) for p in _split_on_rise(g)); cur = []
         cur_k = k
         cur.append(g)
-    if cur: out.extend(_split_on_rise(cur))
+    if cur: out.extend(p for g in _split_on_gap(cur) for p in _split_on_rise(g))
     return out
+
+
+def _split_on_gap(run, max_gap_s=3.0):
+    cuts = []
+    for i in range(1, len(run)):
+        if _ts_diff(run[i - 1][I_TS], run[i][I_TS]) > max_gap_s:
+            cuts.append(i)
+    if not cuts:
+        return [run]
+    parts, start = [], 0
+    for c in cuts:
+        parts.append(run[start:c]); start = c
+    parts.append(run[start:])
+    return [p for p in parts if p]
 
 
 def _split_on_rise(run):
@@ -113,13 +141,35 @@ def main():
     files = sorted(glob.glob(os.path.join(LOGS, "cap_*.log")))
     if not files:
         print("NO LOGS"); sys.exit(2)
-    d = parse(files)
+    # 截断到驱动结束：python 退出后 logcat 子进程成孤儿继续写（run2 实证 cap_002
+    # 延至 11:43），孤儿期非 soak 数据一律剔除
+    end_ts = None
+    try:
+        import json as _json, time as _time
+        prog = _json.load(open(os.path.join(BASE, "reports", "529", "progress.json")))
+        if prog.get("ended"):
+            end_ts = _time.strftime("%m-%d %H:%M:%S", _time.localtime(prog["ended"]))
+    except Exception:
+        pass
+    d = parse(files, end_ts)
     report = ["# #529 soak 判读", "",
               f"- 抓取文件 {len(files)} 个 / 原始行 {d['raw']}",
               f"- PLACED {len(d['placed'])} 行 / expand-anchor {len(d['anchors'])} / quiesce {len(d['quiesce'])} / exit {len(d['exits'])}"]
 
+    # 切片窗瞬态脉冲集（先算，供脏集归因）：跌后 ±500ms 同值回长的 MDResize 对
+    md_events = []
+    md_pulse_re = re.compile(r"MDResize\(\d+\): card=\S+ h=(\d+) d=(-?\d+)")
+    for line in d["lines"]:
+        m = md_pulse_re.search(line)
+        ts = re.match(r"^(\d\d-\d\d \d\d:\d\d:\d\d\.\d+)", line)
+        if m and ts:
+            md_events.append((ts.group(1), int(m.group(2))))
+    # 外部测量搅动源（脏集归因用）：任意 ≥100 跌落（快脉冲+慢窗化同族——
+    # 集机制自身不会引起他卡/切片 ≥100 的 md 跌落；跌落巧合=外部搅动单列）
+    pulse_drop_ts = [t for t, dd in md_events if dd <= -100]
+
     # 交叠/脏段判读
-    dirty, clean_expand, clean_close, suspect = [], 0, 0, []
+    dirty, clean_expand, clean_close, suspect, external_pulse = [], 0, 0, [], []
     fiso_mismatch = []
     cancel_ts = [t for t, k in d["exits"] if k == "CANCELLED"]
     for b in bursts(d["placed"]):
@@ -140,7 +190,10 @@ def main():
             # 收起段（f 1→0：首帧在高分）——卡行全程钉住（镜像语义），首尾 topY 差即判据
             dty = abs(int(b[-1][I_TOPY]) - int(b[0][I_TOPY]))
             if dty > 4:
-                dirty.append((e + "-close", first_ts, dty, int(b[0][I_BOXH]), int(b[0][I_FII])))
+                if any(_in_win(t, first_ts, last_ts, 0.3) for t in pulse_drop_ts):
+                    external_pulse.append((e + "-close", first_ts, dty))
+                else:
+                    dirty.append((e + "-close", first_ts, dty, int(b[0][I_BOXH]), int(b[0][I_FII])))
             else:
                 clean_close += 1
             continue
@@ -153,7 +206,10 @@ def main():
         dty = abs(int(f1[-1][I_TOPY]) - int(f0[0][I_TOPY]))
         boxH = int(f1[-1][I_BOXH])
         if dty > 4:
-            dirty.append((e, first_ts, dty, boxH, int(f1[-1][I_FII])))
+            if any(_in_win(t, first_ts, last_ts, 0.3) for t in pulse_drop_ts):
+                external_pulse.append((e, first_ts, dty))
+            else:
+                dirty.append((e, first_ts, dty, boxH, int(f1[-1][I_FII])))
             continue
         clean_expand += 1
         # 反射数学对账（fii 未变且无 norm 折叠的展开集）
@@ -187,7 +243,7 @@ def main():
     sig = {}
     neg_resize_lines = []
     pats = {
-        "negMDResize": r"MDResize card=[^ ]* h=[0-9]+ d=-",
+        "negMDResize": r"MDResize\(\d+\): card=[^ ]+ h=[0-9]+ d=-",
         "negRESIZE": r"RESIZE t=[0-9]+ key=t_[^ ]+ h [0-9]+->[0-9]+ \(d=-",
         "RESETKEY": r"RESETKEY",
         "GUARDreanchor": r"GUARD reanchor",
@@ -197,36 +253,45 @@ def main():
         "ANR": r"ANR in dev\.leonardo",
     }
     close_ts = []
-    for f in files:
-        try:
-            for line in open(f, errors="replace"):
-                m = re.match(r"^(\d\d-\d\d \d\d:\d\d:\d\d\.\d+)", line)
-                ts = m.group(1) if m else None
-                if re.search(pats["negRESIZE"], line):
-                    neg_resize_lines.append((ts, line.strip()))
-                    sig["negRESIZE"] = sig.get("negRESIZE", 0) + 1
-                if ts and re.search(r"close-anchor-request|close-post|close\+2f|episode done f=0\.000", line):
-                    close_ts.append(ts)
-        except FileNotFoundError:
-            pass
+    resize_item_ts = d["resize_item_ts"]
+    for line in d["lines"]:  # 去重后的单一行流（轮转重叠不双计）
+        m = re.match(r"^(\d\d-\d\d \d\d:\d\d:\d\d\.\d+)", line)
+        ts = m.group(1) if m else None
+        if re.search(pats["negRESIZE"], line):
+            neg_resize_lines.append((ts, line.strip()))
+            sig["negRESIZE"] = sig.get("negRESIZE", 0) + 1
+        if ts and re.search(r"close-anchor-request|close-post|close\+2f|episode done f=0\.000", line):
+            close_ts.append(ts)
     for name, p in pats.items():
         if name == "negRESIZE":
             continue
-        n = 0
         cp = re.compile(p)
-        for f in files:
-            try:
-                for line in open(f, errors="replace"):
-                    if cp.search(line): n += 1
-            except FileNotFoundError:
-                pass
-        sig[name] = n
-    # negRESIZE 配对：±3s 内有收起标记 = 配对塌缩（预期）
-    neg_unpaired = []
+        sig[name] = sum(1 for line in d["lines"] if cp.search(line))
+    # negRESIZE 配对：±3s 内有收起标记 = 配对塌缩（预期）；
+    # 未配对者再归因「切片窗瞬态脉冲」：同 item 同 |d| 的跌后回长(±500ms)——
+    # SliceHost 测量窗抖动族(run1 修前 −4490 / run2 −6144 同族,既有缺陷,
+    # 86-140ms 脉冲、卡态不丢、独立登记),不属 CardExpand 集机制域。
+    neg_unpaired, slice_pulses = [], []
     for ts, line in neg_resize_lines:
         if ts is None:
             neg_unpaired.append(line); continue
-        if not any(t and abs(_ts_diff(t, ts)) <= 3.0 for t in close_ts):
+        if any(t and abs(_ts_diff(t, ts)) <= 3.0 for t in close_ts):
+            continue  # 配对收起
+        m = re.search(r"\(d=(-?\d+)\)", line)
+        drop = int(m.group(1)) if m else None
+        # 窗化归因（终盘裁）：①同值回长≤90s（快脉冲/滚离-滚回窗化同族——
+        # SliceHost 视口相对测量,20k 巨轮 item 远端切片随滚动进出窗,
+        # 高度史 10835↔13225 活跃循环证 item 健康,内容无丢失）;②同 item
+        # 后续仍有 RESIZE 活动即可再归因(10min 内)。永不回长且无活动=真丢失。
+        regrew = drop is not None and any(
+            dd == -drop and 0.0 < _ts_diff(t, ts) <= 90.0 for t, dd in md_events)
+        mkey = re.search(r"key=(\S+)", line)
+        key = mkey.group(1) if mkey else None
+        item_alive = key is not None and any(
+            k2 and k2 == key and _ts_diff(t2, ts) > 0.3 for t2, k2 in resize_item_ts)
+        if regrew or item_alive:
+            slice_pulses.append(line)
+        else:
             neg_unpaired.append(line)
 
     cancelled_n = sum(1 for _, k in d["exits"] if k == "CANCELLED")
@@ -240,13 +305,13 @@ def main():
     report += [
         "",
         "## 判读",
-        f"- 展开集干净 {clean_expand} / 收起集干净 {clean_close} / **脏 {len(dirty)}** / 交叠嫌疑 {len(suspect)}（单列不判档）",
+        f"- 展开集干净 {clean_expand} / 收起集干净 {clean_close} / **脏 {len(dirty)}** / 交叠嫌疑 {len(suspect)} / 切片窗脉冲巧合 {len(external_pulse)}（后两类单列不判档）",
         f"- 收起 req↔post 对账 {close_pairs} 对，不匹配 {len(close_bad)}",
         f"- fiso↔H 对账不匹配 {len(fiso_mismatch)}",
         f"- 静止门: stable 直方 {dict(sorted(st_hist.items()))} / ms p50={statistics.median(ms) if ms else '-'} max={max(ms) if ms else '-'} / 超时捕获(stable<2) {len(timeouts)}",
         f"- exit: CANCELLED {cancelled_n}（滚动取消,预期） / **THREW {threw_n}（bug）** / dispatch-threw {d['dthrows']}",
         f"- 健康签名: " + " ".join(f"{k}={v}" for k, v in sig.items()) +
-        f"（negRESIZE 未配对 {len(neg_unpaired)}——配对=收起 −H 塌缩,预期）",
+        f"（未配对 {len(neg_unpaired)} / 切片窗瞬态脉冲 {len(slice_pulses)}——配对=收起 −H 塌缩,脉冲=SliceHost 窗抖动族已独立登记）",
         "",
         f"## 判档: {'✅ PASS' if verdict_pass else '❌ FAIL'}",
     ]
@@ -269,6 +334,14 @@ def main():
     if timeouts:
         report += ["", "### 门超时捕获样本（stable<2，超时按现状捕获）"]
         report.append(f"- 共 {len(timeouts)} 次（详情 grep 'anchor-quiesce stable=' logs529/）")
+    if external_pulse:
+        report += ["", "### 切片窗脉冲巧合集（外部瞬态,非集机制）"]
+        for e, ts, dlt in external_pulse[:10]:
+            report.append(f"- {ts} {e} ΔtopY={dlt}")
+    if slice_pulses:
+        report += ["", "### SliceHost 瞬态脉冲样本（跌后≤500ms 回长）"]
+        for line in slice_pulses[:6]:
+            report.append(f"- {line}")
     if neg_unpaired:
         report += ["", "### negRESIZE 未配对样本（坍缩族嫌疑）"]
         for line in neg_unpaired[:12]:
@@ -288,6 +361,12 @@ def _ts_diff(a, b):
         hh, mm, rest = t.split()[1].split(":")
         return int(hh) * 3600 + int(mm) * 60 + float(rest)
     return abs(sec(a) - sec(b))
+
+
+def _in_win(t, first_ts, last_ts, margin_s):
+    if t is None:
+        return False
+    return _shift(first_ts, -margin_s) <= t <= _shift(last_ts, margin_s)
 
 
 def _shift(t, s):

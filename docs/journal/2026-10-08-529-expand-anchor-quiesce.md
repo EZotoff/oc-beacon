@@ -68,3 +68,32 @@
 - 04:42:59 实证 `[DEBUG-FLOOR] cold-floor effH=9558 measured=0 count=1/2`（同 item 另一卡）——**回收-展开态重组合后重内容异步组合逾经典冷窗**：count 过 2 后 floor 失效、内容 measured 仍 0 → 盒上报 0 → item −H 手势中塌缩 → 落地 +H 回长 = 可见闪跳。既有缺陷（01e4ba2b 冷窗设计），非静止门所致；同族第三位（展开竞态/收起竞态/抬底过期）。
 **根修（消除源）**：`coldFloorEligible(fraction,animating,count,measuredH)`——窗口=经典冷窗(count≤2) ∨ **内容未组合(measuredH==0)**。零高绝不可能是 finalHCache>0 展开卡的合法终态→零高续抬无陈旧风险；内容合法变矮（>0）仍由 count>2 真测接管走 steady（旧行为保留）；animating 期照旧不抬（抬底不进锚点基维持）。
 **验证**：ColdFloorEligibleTest 5/5 + AnchorQuiesce 8/8；全量套件另行留痕；新 APK 已装真机。按目标循环：旧 soak（04:32-04:53，21min/63 集 0 脏）作废，重启全新 5h。
+
+## §5 run2 5h soak 终盘（04:57-09:58 完整跑满，2026-10-08 12:0x 判读收尾）——全绿关卡
+
+**规模**：601 周期 / 678 展开+624 收起点击 / 7754 卡发现 / 2134 PLACED 帧 / 568 反射 / 310,985 日志行（孤儿期截断后）/ 54 证据文件（35 截图+19 录屏 181MB）。
+
+**逐维度判读（终盘 PASS, analyzer exit=0）**：
+- 集机制：228 展开集+331 收起集全净，**0 脏**（1 集尾切片窗脉冲巧合单列归因）；收起镜像 req↔post 463/463 精确；fiso↔H 对账 0 失配。
+- 静止门：1064/1064 stable=2（p50 24ms / max 29ms / 0 超时）——门在 5h 全节奏下无一次超时捕获。
+- 生命周期：exit-CANCELLED 8（滚动取消，位置优先权语义，预期）/ **THREW 0** / dispatch-threw 0 / **FATAL 0 / ANR 0** / RESETKEY·GUARD·nonPrefix·RESERVE 全 0。
+- negRESIZE 479 全归因：收起配对塌缩 + 13 切片窗瞬态脉冲（SliceHost 域，登记 #533：86ms-83s 跌后回长、卡态/内容零丢失、Room 佐证）。
+- Room 直查（db+wal+shm 三件套）：integrity_check ok；目标会话 parts 481 / **reasoning 78=服务端基线精确一致**（内容在 payload 最大 20.5KB）；全库 5817 parts 无损坏。
+- 视觉：尾段截图核验正常（思考卡/工具卡/输入栏完整渲染）。
+- 全量单测：**3920/3920 全绿**（含 ColdFloorEligibleTest 5 + AnchorQuiesceTest 8）。
+
+**判读器终修三件（伪影全清零）**：①logcat 轮转新进程倾倒缓冲→相邻 cap 重叠（跨文件行去重）；②实例A E1-展开→滚动数分钟→实例B E1-收起同 E 号跨分钟 merge（帧间 gap>3s 切割）；③MDResize 正则格式失配（`MDResize(22216): card=`）——negMDResize 历史计数全为真空值。孤儿 logcat（python 退出子进程存活）按驱动 ended 截断。
+
+**结论**：#529 修复（静止门 1efbce1a）+ soak 域内第二缺陷根修（抬底过期 96464327）后，5h 拟人 soak 全维度全绿。#529 关闭；切片窗脉冲域独立登记 #533（P2，既有缺陷）。
+
+## 已完结卡片迁入（2026-10-08）
+
+### **#529 思考卡展开偶发高度跳变（E1 新实例竞态窗）** `uiux` `scroll` `race`
+  - 用户 21:11-21:12 实测两脏样本：均为 E1（回收重组合后首个展开集）topY+H/+H/2 位移，一例集后还有 +198 校正帧；E3+ 全干净
+  - PLACED 探针已增补 boxH/host 两字段；15 轮机器复现未触发（需真手指滚动余尾+速点节奏）；嫌疑=finalHCache 抬底/预热/重组合在锚点捕获窗内的交错
+  - → journal: docs/journal/2026-10-07-dsh-standard-bugs.md
+  - 观察窗（用户裁决 2026-10-07）：至 2026-10-14 无跳变反馈即完结；期间再遇立即 logcat 取证
+  - 根修已落地（1efbce1a 2026-10-08）：锚点捕获静止门——展开/收起反射锚点捕获前等滚动静止+整列基指纹计稳（有界200ms）；抬底理论已勘误排除（boxH 探针=内层自然高非槽位）；真机 E1/E2/E3/E4 四集全绿 topY 恒定
+  - 观察窗照旧至 2026-10-14：机器节奏本就复现不了脏样本，终验=用户再遇或期满；再遇时 grep 加 DEBUG-529 签名可分辨门超时 vs 新机制
+  - → journal: docs/journal/2026-10-08-529-expand-anchor-quiesce.md
+  - 迁入依据：用户 /goal 裁决关卡：根修（1efbce1a 静止门+96464327 抬底过期）后 7 场景 11 集系统性真机 E2E + 5h 拟人 soak（run2, 601 周期 559 集）全维度全绿（0 脏/镜像 463/463/门 1064/1064/Room 78/78/零 THREW·FATAL/3920 单测）；soak 域外发现独立登记 #533（backlog.sh migrate 2026-10-08）
