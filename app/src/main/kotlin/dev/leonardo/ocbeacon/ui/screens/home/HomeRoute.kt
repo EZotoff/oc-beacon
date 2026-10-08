@@ -1,9 +1,17 @@
 package dev.leonardo.ocbeacon.ui.screens.home
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import dev.leonardo.ocbeacon.data.api.dsh.DshPairPayload
+import dev.leonardo.ocbeacon.ui.components.voice.VoiceWidget
+import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 /**
  * HomeScreen 的路由包装。
@@ -24,7 +32,8 @@ fun HomeRoute(
     onPairRequestConsumed: () -> Unit = {},
 ) {
     val viewModel: HomeViewModel = hiltViewModel()
-    HomeScreen(
+    Box(Modifier.fillMaxSize()) {
+        HomeScreen(
         windowSizeClass = windowSizeClass,
         viewModel = viewModel,
         onNavigateToSessions = onNavigateToSessions,
@@ -34,6 +43,13 @@ fun HomeRoute(
         onNavigateToDiagnostics = onNavigateToDiagnostics,
         onNavigateToSupervisor = onNavigateToSupervisor,
         pendingPairRequest = pendingPairRequest,
-        onPairRequestConsumed = onPairRequestConsumed,
-    )
+            onPairRequestConsumed = onPairRequestConsumed,
+        )
+        // 2026-10-08 走测：PTT 也挂在首页 —— 无需先进入 supervisor 屏即可呼叫 Vox。
+        VoiceWidget(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(SpacingTokens.LG.dp),
+        )
+    }
 }

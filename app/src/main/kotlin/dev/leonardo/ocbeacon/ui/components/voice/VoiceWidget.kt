@@ -43,16 +43,14 @@ import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
 /**
  * Voice walking-test surface: connection chip + show cards above a
- * press-and-hold PTT button in the thumb zone. Render only where a
- * supervisor snapshot exists; the widget itself gates on [VoiceViewModel.hasSnapshot].
+ * press-and-hold PTT button in the thumb zone. Always visible — voice does
+ * NOT depend on supervisor data (view-context degrades gracefully without it).
  */
 @Composable
 fun VoiceWidget(
     modifier: Modifier = Modifier,
     viewModel: VoiceViewModel = hiltViewModel(),
 ) {
-    val hasSnapshot by viewModel.hasSnapshot.collectAsStateWithLifecycle()
-    if (!hasSnapshot) return
 
     val connection by viewModel.connection.collectAsStateWithLifecycle()
     val showFrame by viewModel.showFrame.collectAsStateWithLifecycle()
