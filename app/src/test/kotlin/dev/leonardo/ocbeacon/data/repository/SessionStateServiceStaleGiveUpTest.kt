@@ -80,7 +80,8 @@ class SessionStateServiceStaleGiveUpTest {
     }
 
     @Test fun `one hour sweep clears states histories and all auxiliary maps`() {
-        val now = seed(System.currentTimeMillis() - 3_600_001)
+        seed(System.currentTimeMillis() - 3_600_001)
+        val now = System.currentTimeMillis()
         service.onRestValidation("s", SessionStatus.Idle)
         service.l2ValidationRounds["s"] = 11
         service.waitingConfirmedAt["s"] = 1
