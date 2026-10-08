@@ -70,6 +70,7 @@
   - #512 演示尾段：会话页在多次深链+IME 操作后两度弹回 Home，最终窗口在/进程活但渲染面全黑（force-stop 恢复）
   - 与今日改动无路径交集，复发再战；黑屏时 mCurrentFocus 正常
   - → journal: docs/journal/2026-10-07-dsh-standard-bugs.md §11
+  - 2026-10-08 静态调研+矩阵实验双定罪（docs/research/2026-10-08-530-nav-reset-blackscreen-static.md）：线A 弹回=action 深链无 SINGLE_TOP flag 在 standard 启动模式下新建 MainActivity 实例叠栈（新实例起始 Home/深链转 SessionList 盖顶当前 Chat）——实测 3 形态矩阵：无action=START_DELIVERED_TO_TOP 静默丢（#500 同根因两分支）/ action=+1 实例弹离 / action+SINGLE_TOP=onNewIntent 正常；线B 黑屏未复现（低概率），3h soak（driver-530：深链×IME×不可达扰动+黑屏自动取证探针）运行中
 
 - [~] **#514 DSH legacy token 基建退役（#512 批次④）——捞日志/adb 注入/深链配对清退** `dsh` `auth` `infra`
   - 前置：#512 dsh-password-login 插件用顺后另裁范围（用户已裁决方向，2026-10-05）。
