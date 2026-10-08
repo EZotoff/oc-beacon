@@ -40,6 +40,11 @@ import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 /** 切片窗口规格：账本查询/落账由调用方接线，宿主不感知账本本体。 */
 internal class StepGroupWindowSpec(
     val sliceCount: Int,
+    /** 内容身份键（调用方传 msgId）：同计数异内容换装（深链会话切换/毕业换名）
+     *  时令槽位/窗口状态整体重建，杜绝旧 idx 复读新切片表的越界（0.4.0-beta
+     *  2026-10-07 真机 IndexOutOfBounds 15/3 根修）。流式同 msgId 计数不变时
+     *  键不变——不引入逐 delta 槽位重建（#427 异步解析存活约束）。 */
+    val contentKey: Any,
     /** 片 i 的账本占位高（px）；冷=null。 */
     val heightOf: (Int) -> Int?,
     /** 账本全暖判定（决定窗口化 or 冷降级整体组合）。 */
@@ -91,16 +96,16 @@ internal fun StepGroupWindowedBody(
         LocalConfiguration.current.screenHeightDp.dp.toPx()
     }
     // 窗口成员（快照态——唯一失效信号：滚动跨片界/初放置时写，常态静止零开销）
-    var windowRange by remember(spec.sliceCount) { mutableStateOf<IntRange?>(null) }
+    var windowRange by remember(spec.contentKey, spec.sliceCount) { mutableStateOf<IntRange?>(null) }
     // 片顶累计（纯量：账本/实测混合，测量遍后更新；供放置回调重算窗口）
-    val sliceTops = remember(spec.sliceCount) { IntArray(spec.sliceCount + 1) }
+    val sliceTops = remember(spec.contentKey, spec.sliceCount) { IntArray(spec.sliceCount + 1) }
     // 稳定槽位内容实例：subcompose(slot, content) 以内容实例判等——若直接
     // 捕获调用方 lambda，其每次重组的新实例会令宿主每个测量遍都 dispose+
     // 重建槽位（LaunchedEffect 活不过帧末：异步 markdown 解析永不启动，
     // 长文本恒 Loading 0px——真机 #427 取证定案）。rememberUpdatedState 固定
     // 槽位 lambda 身份，内容经 State 读取按需重组。
     val currentContent by androidx.compose.runtime.rememberUpdatedState(sliceContent)
-    val slotContents = remember(spec.sliceCount) {
+    val slotContents = remember(spec.contentKey, spec.sliceCount) {
         // 单 measurable 包装：ChunkAssistantItems 是裸 for(每 render item 一个
         // 兄弟节点)——不包 Column 时 subcompose 返回 N 个 measurable，宿主
         // .first() 只测放首个 = 首组之后的内容(大文本/表格)整体消失(真机

@@ -1384,6 +1384,7 @@ private fun StepGroupCard(
                 // 上方已备,此处仅建窗口规格(捕获卡体级实例,收起后存活)。
                 val spec = androidx.compose.runtime.remember(stepFingerprints, stepLedger) {
                     StepGroupWindowSpec(
+                        contentKey = step.msgId,
                         sliceCount = stepSlices.size,
                         heightOf = { i -> stepLedger.heightOf(stepFingerprints[i]) },
                         isWarm = { stepLedger.isWarm(stepFingerprints) },
@@ -1395,7 +1396,7 @@ private fun StepGroupCard(
                 }
                 StepGroupWindowedBody(spec = spec) { i ->
                     // #463:片内逐组渲染——step 首组(按 part id 匹配)前插分割线
-                    stepSlices[i].forEach { g ->
+                    stepSlices.getOrNull(i)?.forEach { g ->
                         (g as? PartGroup.Single)?.part?.id
                             ?.let { stepFirstGroupIds[it] }
                             ?.let { ord -> StepDivider(ord) }
