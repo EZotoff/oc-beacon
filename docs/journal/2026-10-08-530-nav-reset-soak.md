@@ -45,3 +45,22 @@
 - **终盘**：163 周期（deep_action 31/action_session 23/singletop 20/noaction 20/bg_deep 11/ime 26/unreachable 10/back_mix 14）——**叠栈弹回 0 次**（唯一 nav_reset 为 0→1 进程不在时合法冷启路径；修复前同参数基线 ~1.4 次/分钟≈应 14+ 次）；stack_reset 0（护栏零触发=栈不再叠的旁证）；黑屏 0；异常 0；probe_err 0。
 - **对照总表**：修复前 3h soak 弹回 290 次 vs 修复后 30min 0 次——线 A 根修关闭；#500 热启动失效同修（Debug channel requested onNewIntent 实证）。
 - **流转**：#530 转 [~]（线 A 根修+双 soak 验证；线 B 黑屏 6.5h 重压未复现维持低概率观察，driver-530 自动取证布防在库复发即抓）；#500 同修实证补记转 [~]。
+
+## 已完结卡片迁入（2026-10-09）
+
+### **#530 会话页导航弹回 Home + 渲染面黑屏挂起（演示尾段两现）** `uiux` `nav`
+  - #512 演示尾段：会话页在多次深链+IME 操作后两度弹回 Home，最终窗口在/进程活但渲染面全黑（force-stop 恢复）
+  - 与今日改动无路径交集，复发再战；黑屏时 mCurrentFocus 正常
+  - → journal: docs/journal/2026-10-07-dsh-standard-bugs.md §11
+  - 2026-10-08 静态调研+矩阵实验双定罪（docs/research/2026-10-08-530-nav-reset-blackscreen-static.md）：线A 弹回=action 深链无 SINGLE_TOP flag 在 standard 启动模式下新建 MainActivity 实例叠栈（新实例起始 Home/深链转 SessionList 盖顶当前 Chat）——实测 3 形态矩阵：无action=START_DELIVERED_TO_TOP 静默丢（#500 同根因两分支）/ action=+1 实例弹离 / action+SINGLE_TOP=onNewIntent 正常；线B 黑屏未复现（低概率），3h soak（driver-530：深链×IME×不可达扰动+黑屏自动取证探针）运行中
+  - 线 A 根修落地+复验：singleTop 一行修（矩阵复验 action 深链实例不变+onNewIntent 正常+BACK 栈干净；30min 复验 soak 叠栈弹回 0/黑屏 0/异常 0 vs 修复前 290 次/3h）；#500 同修实证。线 B 黑屏未复现（3h+30min 重压+亮度探针 1882 样本 min=139）维持观察——转 [~] 待验收
+  - 迁入依据：用户验收（2026-10-09「你测过没问题就行，不是UI方面的，我也很难复现」——验收委派裁决适用）：singleTop 根修+矩阵复验+3h soak 定罪(弹回290)/30min 复验归零；黑屏线未复现留观，driver-530 取证布防在库（backlog.sh migrate 2026-10-09）
+
+### **#500 debug 通道热启动失效——app 前台时 am start 携 debug_url 不生效** `debug-channel` `dsh` `tooling`
+  - 真机实证（2026-10-02，dev debug 包）：app 已前台时 am start --es debug_url http://127.0.0.1:3080 --es debug_server_type dsh，am 提示 intent delivered to top-most instance，但 handleDebugProfileIntent 未执行——无 Debug channel requested 日志、服务器不切换；force-stop 后冷启动同参数立即生效。
+  - MainActivity launchMode=standard（manifest 实证）；疑点：standard 模式下复用顶层实例不回调 onNewIntent，而新实例路径亦未处理——需源码定位送达路径。
+  - 影响面：自动化脚本未先 force-stop 时静默失效；debug-entry.sh 冷启动已规避。附：adbd 会把 ShellService 命令行（含 --es debug_token）回显进 logcat，注 token 后须 logcat -c 清洗。
+  - 勘误（2026-09-30 盘点）：「新实例路径亦未处理」疑点过时——MainActivity:291 onNewIntent 已实现且 :298 调 handleDebugProfileIntent（onCreate 路径 :184 亦有）；真因待定罪=manifest 默认 standard 复用顶层实例不回调 onNewIntent 与实证吻合，为何未走新实例 onCreate 需真机送达路径取证；修法候选=singleTop（动 manifest 需评估返回栈语义）
+  - 2026-10-08 #530 调查交叉定罪：#500 与 #530 弹回为同一结构性根因两分支——standard 启动模式下外部 intent 投递三态不受控（无action→DELIVERED_TO_TOP 静默丢=本卡症状；action 无 flag→新建实例叠栈=#530 弹回）；修法 singleTop 可同时消灭两分支（矩阵实验实证实判据见 journal 2026-10-08-530-nav-reset-soak §1）；onNewIntent 已实现的勘误维持——带 SINGLE_TOP flag 时 onNewIntent 路径实测正常处理深链
+  - 2026-10-08 singleTop 根修实证：修复包热启动 am start --es debug_url → Debug channel requested 日志出现（onNewIntent 回调走通）——#500 症状随 #530 修复消除，转 [~]
+  - 迁入依据：随 #530 singleTop 同根修：修复包热启动 Debug channel requested onNewIntent 实证；用户验收同 #530（2026-10-09）（backlog.sh migrate 2026-10-09）
