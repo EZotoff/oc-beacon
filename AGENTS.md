@@ -33,6 +33,15 @@ Unofficial OpenCode Android client. Jetpack Compose + Kotlin + Hilt + Ktor.
 | 🟡 SHOULD | [`docs/specs/2026-08-21-in-session-audio-feedback-design.md`](docs/specs/2026-08-21-in-session-audio-feedback-design.md) | 会话内提示音设计 spec | 实现提示音、通知抑制、backlog #155 前 |
 | 🟢 MAY | [`docs/architecture-debt.md`](docs/architecture-debt.md) | 已登记技术债务 | 接触相关模块时了解限制 |
 
+## 跨项目上下文 — Portable Supervisor（🔴 任何 supervisor/voice/attention 功能开发前必读）
+
+本应用是四仓产品（OC Beacon Portable Supervisor 原型）的 Android 端。权威文档在 ez-omo-config：
+
+- **产品愿景 + UX 规格**：`~/ez-omo-config/docs/portable-supervisor-proposal.md`（Portable Supervisor Mode——约束密度、滑动手势导航、Supervisor 视觉输出等——以本文为准，勿自行重构设计）
+- **绑定契约**（Seam 义务 + 待办台账）：`~/ez-omo-config/docs/portable-supervisor-contract.md`（契约变更先落 ez-omo-config，再进本仓实现）
+- 其他三仓：omo-pulse (`~/AI_projects/ez-omo-dash`，视觉监视面)、voice-bridge (`~/AI_projects/voice-bridge`，Vox 语音脑)、ez-omo-config（契约/提案之家）
+- **规则（2026-10-08 教训）**：做设计/构建决策前——尤其是宣称某 spec「不存在」之前——先 grep 四个仓的 docs/plans；产品 spec 通常已存在于某处。
+
 ## Build & Run
 
 **默认只打一个包**：运行对应 flavor 的单个 assemble 任务（输出 `app/build/outputs/apk/<flavor>/<buildType>/`）；多任务命令仅用于确需多包场景。
