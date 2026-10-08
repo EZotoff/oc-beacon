@@ -10,12 +10,10 @@ import dev.leonardo.ocbeacon.domain.repository.SettingsRepository
 import dev.leonardo.ocbeacon.domain.voice.VoiceSessionConnection
 import dev.leonardo.ocbeacon.domain.voice.VoiceSessionRepository
 import dev.leonardo.ocbeacon.domain.voice.VoiceUrl
-import dev.leonardo.ocbeacon.ui.WhileSubscribed5s
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -34,10 +32,7 @@ class VoiceViewModel @Inject constructor(
 
     val connection: StateFlow<VoiceSessionConnection> = repository.state
 
-    /** Latest show frame while the widget is subscribed (live WS traffic). */
-    val showFrame: StateFlow<ShowFrame?> = repository.incoming
-        .mapNotNull { it as? ShowFrame }
-        .stateIn(viewModelScope, WhileSubscribed5s, null)
+    val showFrame: StateFlow<ShowFrame?> = repository.showFrame
 
     /** Non-null message = audio engine failure (recorder/playback). */
     val audioFailure: StateFlow<String?> = repository.audioFailure

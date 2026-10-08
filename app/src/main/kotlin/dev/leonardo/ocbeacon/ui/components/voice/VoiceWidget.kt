@@ -50,6 +50,8 @@ import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 fun VoiceWidget(
     modifier: Modifier = Modifier,
     viewModel: VoiceViewModel = hiltViewModel(),
+    showPresentation: Boolean = true,
+    beforePtt: () -> Unit = {},
 ) {
 
     val connection by viewModel.connection.collectAsStateWithLifecycle()
@@ -62,7 +64,10 @@ fun VoiceWidget(
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (granted && pressAfterPermission) viewModel.pressPtt()
+        if (granted && pressAfterPermission) {
+            beforePtt()
+            viewModel.pressPtt()
+        }
         pressAfterPermission = false
     }
 
@@ -70,7 +75,10 @@ fun VoiceWidget(
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
         when (VoicePttGate.resolve(granted)) {
-            VoicePttAction.PRESS -> viewModel.pressPtt()
+            VoicePttAction.PRESS -> {
+                beforePtt()
+                viewModel.pressPtt()
+            }
             VoicePttAction.REQUEST_PERMISSION -> {
                 pressAfterPermission = true
                 permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -90,7 +98,7 @@ fun VoiceWidget(
         } else if (focusLost) {
             BlockedOverlay(stringResource(R.string.voice_audio_focus_lost))
         }
-        showFrame?.let { frame ->
+        showFrame?.takeIf { showPresentation }?.let { frame ->
             ShowViewCard(
                 frame = frame,
                 onSelect = viewModel::sendSelection,

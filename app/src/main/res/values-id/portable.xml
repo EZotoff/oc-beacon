@@ -1,0 +1,25 @@
+<resources>
+    <string name="portable_mode">Mode portabel</string>
+    <string name="portable_title">SUPERVISOR PORTABEL</string>
+    <string name="portable_back">Kembali</string>
+    <string name="portable_current">SAAT INI</string>
+    <string name="portable_needs_you">MEMBUTUHKAN ANDA · %1$d</string>
+    <string name="portable_selected">Dipilih: %1$s</string>
+    <string name="portable_previous">Sebelumnya</string>
+    <string name="portable_next">Berikutnya</string>
+    <string name="portable_show">Tampilan terakhir</string>
+    <string name="portable_enter">Buka sesi</string>
+    <string name="portable_no_attention">Tidak ada yang membutuhkan perhatian</string>
+    <string name="portable_unavailable">Status supervisor tidak tersedia</string>
+    <string name="portable_stale">Status supervisor kedaluwarsa</string>
+    <string name="portable_more_attention">Item lainnya · %1$d/%2$d</string>
+    <string name="portable_no_projects">Hubungkan server dari Beranda</string>
+    <string name="portable_no_sessions">Tidak ada sesi terbaru</string>
+    <string name="portable_unassigned">Proyek belum ditetapkan</string>
+    <string name="portable_running">BERJALAN</string>
+    <string name="portable_waiting">MENUNGGU MASUKAN</string>
+    <string name="portable_idle">MENGANGGUR</string>
+    <string name="portable_retrying">MENCOBA LAGI</string>
+    <string name="portable_unknown">STATUS TIDAK DIKETAHUI</string>
+    <string name="portable_updated">Diperbarui %1$d menit lalu</string>
+</resources>

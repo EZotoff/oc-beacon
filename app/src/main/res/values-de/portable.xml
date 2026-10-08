@@ -1,0 +1,25 @@
+<resources>
+    <string name="portable_mode">Mobiler Modus</string>
+    <string name="portable_title">MOBILER SUPERVISOR</string>
+    <string name="portable_back">Zurück</string>
+    <string name="portable_current">AKTUELL</string>
+    <string name="portable_needs_you">BRAUCHT DICH · %1$d</string>
+    <string name="portable_selected">Ausgewählt: %1$s</string>
+    <string name="portable_previous">Zurück</string>
+    <string name="portable_next">Weiter</string>
+    <string name="portable_show">Letzte Anzeige</string>
+    <string name="portable_enter">Sitzung öffnen</string>
+    <string name="portable_no_attention">Keine Aufgabe braucht deine Aufmerksamkeit</string>
+    <string name="portable_unavailable">Supervisor-Status nicht verfügbar</string>
+    <string name="portable_stale">Supervisor-Status veraltet</string>
+    <string name="portable_more_attention">Weitere Aufgaben · %1$d/%2$d</string>
+    <string name="portable_no_projects">Server auf der Startseite verbinden</string>
+    <string name="portable_no_sessions">Keine aktuellen Sitzungen verfügbar</string>
+    <string name="portable_unassigned">Nicht zugeordnetes Projekt</string>
+    <string name="portable_running">LÄUFT</string>
+    <string name="portable_waiting">WARTET AUF EINGABE</string>
+    <string name="portable_idle">INAKTIV</string>
+    <string name="portable_retrying">NEUER VERSUCH</string>
+    <string name="portable_unknown">STATUS UNBEKANNT</string>
+    <string name="portable_updated">Vor %1$d Min. aktualisiert</string>
+</resources>

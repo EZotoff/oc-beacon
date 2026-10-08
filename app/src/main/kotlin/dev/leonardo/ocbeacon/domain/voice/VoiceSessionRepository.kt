@@ -37,10 +37,13 @@ class VoiceSessionRepository(
     val focusLost = audio.focusLost
     private val frames = MutableSharedFlow<ServerControlFrame>(extraBufferCapacity = 32, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     val incoming = frames.asSharedFlow()
+    private val mutableShowFrame = MutableStateFlow<dev.leonardo.ocbeacon.data.api.voice.ShowFrame?>(null)
+    val showFrame = mutableShowFrame.asStateFlow()
     private var baseUrl: String? = null
     private var held = false
     private var inputPending = false
     private var lastContext: ClientControlFrame.ViewContext? = null
+    private var pendingContext: ClientControlFrame.ViewContext? = null
 
     init {
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -53,6 +56,9 @@ class VoiceSessionRepository(
                         VoiceConnectionState.Handoff -> VoiceSessionConnection.MovedToAnotherSurface
                     }
                     if (connection == VoiceConnectionState.Live) {
+                        pendingContext?.let { context ->
+                            if (client.sendControl(context)) lastContext = context
+                        }
                         audio.start()
                         if (held) {
                             audio.pressPtt()
@@ -74,6 +80,7 @@ class VoiceSessionRepository(
                         audio.playAudio(event.bytes)
                     }
                     is VoiceIncoming.Control -> {
+                        if (event.frame is dev.leonardo.ocbeacon.data.api.voice.ShowFrame) mutableShowFrame.value = event.frame
                         if (event.frame is ServerControlFrame.Interrupt) audio.interrupt()
                         frames.emit(event.frame)
                     }
@@ -137,7 +144,6 @@ class VoiceSessionRepository(
         session: VoiceSession? = null,
         selection: VoiceSelection? = null,
     ): Boolean {
-        if (client.connectionState.value != VoiceConnectionState.Live) return false
         val item = snapshot()?.takeUnless { it.stale }?.attentionItems?.firstOrNull()
         val context = ClientControlFrame.ViewContext(
             view = view,
@@ -146,6 +152,8 @@ class VoiceSessionRepository(
             selection = selection,
             recent = emptyList(),
         )
+        pendingContext = context
+        if (client.connectionState.value != VoiceConnectionState.Live) return false
         if (context == lastContext) return false
         if (!client.sendControl(context)) return false
         lastContext = context

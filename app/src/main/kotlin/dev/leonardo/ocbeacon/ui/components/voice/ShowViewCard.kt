@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
@@ -111,7 +112,7 @@ private fun CardView(frame: ShowFrame) {
 }
 
 @Composable
-private fun ListView(frame: ShowFrame, onSelect: ((String, Int) -> Unit)?) {
+private fun ListView(frame: ShowFrame, onSelect: ((String, Int) -> Unit)?, largeTargets: Boolean) {
     val items = remember(frame) { elements(frame.payload, "items") }
     Column {
         items.forEachIndexed { index, entry ->
@@ -125,6 +126,7 @@ private fun ListView(frame: ShowFrame, onSelect: ((String, Int) -> Unit)?) {
                             Modifier
                         }
                     )
+                    .then(if (largeTargets) Modifier.heightIn(min = 48.dp) else Modifier)
                     .padding(vertical = SpacingTokens.SM.dp),
                 horizontalArrangement = Arrangement.spacedBy(SpacingTokens.SM.dp),
             ) {
@@ -137,7 +139,7 @@ private fun ListView(frame: ShowFrame, onSelect: ((String, Int) -> Unit)?) {
 }
 
 @Composable
-private fun TableView(frame: ShowFrame, onSelect: ((String, Int) -> Unit)?) {
+private fun TableView(frame: ShowFrame, onSelect: ((String, Int) -> Unit)?, largeTargets: Boolean) {
     val rows = remember(frame) { elements(frame.payload, "rows") }
     val columns = remember(frame) { tableColumns(rows) }
     Column {
@@ -162,6 +164,7 @@ private fun TableView(frame: ShowFrame, onSelect: ((String, Int) -> Unit)?) {
                             Modifier
                         }
                     )
+                    .then(if (largeTargets) Modifier.heightIn(min = 48.dp) else Modifier)
                     .padding(vertical = SpacingTokens.XS.dp),
             ) {
                 columns.forEachIndexed { columnIndex, column ->
@@ -178,7 +181,7 @@ private fun TableView(frame: ShowFrame, onSelect: ((String, Int) -> Unit)?) {
 }
 
 @Composable
-private fun ChoiceView(frame: ShowFrame, onSelect: ((String, Int) -> Unit)?) {
+private fun ChoiceView(frame: ShowFrame, onSelect: ((String, Int) -> Unit)?, largeTargets: Boolean) {
     val options = remember(frame) { elements(frame.payload, "options") }
     Column(verticalArrangement = Arrangement.spacedBy(SpacingTokens.SM.dp)) {
         options.forEachIndexed { index, option ->
@@ -191,7 +194,8 @@ private fun ChoiceView(frame: ShowFrame, onSelect: ((String, Int) -> Unit)?) {
                         } else {
                             Modifier
                         }
-                    ),
+                    )
+                    .then(if (largeTargets) Modifier.heightIn(min = 48.dp) else Modifier),
             ) {
                 Row(
                     Modifier.padding(SpacingTokens.MD.dp),
@@ -294,6 +298,7 @@ fun ShowViewCard(
     frame: ShowFrame,
     onSelect: ((contextTag: String, index: Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
+    largeTargets: Boolean = false,
 ) {
     Card(modifier = modifier.fillMaxWidth()) {
         Column(
@@ -303,9 +308,9 @@ fun ShowViewCard(
             Text(frame.title, style = MaterialTheme.typography.titleMedium)
             when (val view = frame.view) {
                 ShowView.Known.CARD -> CardView(frame)
-                ShowView.Known.LIST -> ListView(frame, onSelect)
-                ShowView.Known.TABLE -> TableView(frame, onSelect)
-                ShowView.Known.CHOICE -> ChoiceView(frame, onSelect)
+                ShowView.Known.LIST -> ListView(frame, onSelect, largeTargets)
+                ShowView.Known.TABLE -> TableView(frame, onSelect, largeTargets)
+                ShowView.Known.CHOICE -> ChoiceView(frame, onSelect, largeTargets)
                 ShowView.Known.PROGRESS -> ProgressView(frame)
                 ShowView.Known.COMPARISON -> ComparisonView(frame)
                 ShowView.Known.DIFF -> DiffView(frame)

@@ -53,6 +53,7 @@ fun HomeScreen(
     onNavigateToAbout: () -> Unit = {},
     onNavigateToDiagnostics: () -> Unit = {},
     onNavigateToSupervisor: (serverId: String) -> Unit = {},
+    onNavigateToPortable: () -> Unit = {},
     // #325②：DSH 配对深链预填载荷（NavGraph 传入；消费后回调置空防重放）
     pendingPairRequest: dev.leonardo.ocbeacon.data.api.dsh.DshPairPayload? = null,
     onPairRequestConsumed: () -> Unit = {},
@@ -117,6 +118,9 @@ fun HomeScreen(
                     containerColor = MaterialTheme.colorScheme.surface
                 ),
                 actions = {
+                    TextButton(onClick = onNavigateToPortable) {
+                        Text(stringResource(R.string.portable_mode))
+                    }
                     IconButton(onClick = { viewModel.showAddServerDialog() }) {
                         Icon(Icons.Default.Add, contentDescription = stringResource(R.string.home_add_server))
                     }

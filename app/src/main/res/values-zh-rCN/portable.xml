@@ -1,0 +1,25 @@
+<resources>
+    <string name="portable_mode">便携模式</string>
+    <string name="portable_title">便携监督员</string>
+    <string name="portable_back">返回</string>
+    <string name="portable_current">当前</string>
+    <string name="portable_needs_you">需要你 · %1$d</string>
+    <string name="portable_selected">已选择：%1$s</string>
+    <string name="portable_previous">上一个</string>
+    <string name="portable_next">下一个</string>
+    <string name="portable_show">最近展示</string>
+    <string name="portable_enter">打开会话</string>
+    <string name="portable_no_attention">暂无需要你处理的事项</string>
+    <string name="portable_unavailable">监督员状态不可用</string>
+    <string name="portable_stale">监督员状态已过期</string>
+    <string name="portable_more_attention">更多事项 · %1$d/%2$d</string>
+    <string name="portable_no_projects">请在首页连接服务器</string>
+    <string name="portable_no_sessions">没有可用的最近会话</string>
+    <string name="portable_unassigned">未分配项目</string>
+    <string name="portable_running">运行中</string>
+    <string name="portable_waiting">等待输入</string>
+    <string name="portable_idle">空闲</string>
+    <string name="portable_retrying">重试中</string>
+    <string name="portable_unknown">状态未知</string>
+    <string name="portable_updated">%1$d 分钟前更新</string>
+</resources>

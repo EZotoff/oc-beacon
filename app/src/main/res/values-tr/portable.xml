@@ -1,0 +1,25 @@
+<resources>
+    <string name="portable_mode">Taşınabilir mod</string>
+    <string name="portable_title">TAŞINABİLİR GÖZETMEN</string>
+    <string name="portable_back">Geri</string>
+    <string name="portable_current">GEÇERLİ</string>
+    <string name="portable_needs_you">SANA İHTİYAÇ VAR · %1$d</string>
+    <string name="portable_selected">Seçilen: %1$s</string>
+    <string name="portable_previous">Önceki</string>
+    <string name="portable_next">Sonraki</string>
+    <string name="portable_show">Son gösterim</string>
+    <string name="portable_enter">Oturumu aç</string>
+    <string name="portable_no_attention">İlgi gerektiren bir şey yok</string>
+    <string name="portable_unavailable">Gözetmen durumu kullanılamıyor</string>
+    <string name="portable_stale">Gözetmen durumu güncel değil</string>
+    <string name="portable_more_attention">Diğer öğeler · %1$d/%2$d</string>
+    <string name="portable_no_projects">Ana ekrandan sunucuya bağlanın</string>
+    <string name="portable_no_sessions">Son oturumlar bulunamadı</string>
+    <string name="portable_unassigned">Atanmamış proje</string>
+    <string name="portable_running">ÇALIŞIYOR</string>
+    <string name="portable_waiting">GİRDİ BEKLİYOR</string>
+    <string name="portable_idle">BOŞTA</string>
+    <string name="portable_retrying">YENİDEN DENENİYOR</string>
+    <string name="portable_unknown">DURUM BİLİNMİYOR</string>
+    <string name="portable_updated">%1$d dk önce güncellendi</string>
+</resources>

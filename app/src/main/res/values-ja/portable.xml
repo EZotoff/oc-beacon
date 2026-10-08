@@ -1,0 +1,25 @@
+<resources>
+    <string name="portable_mode">ポータブルモード</string>
+    <string name="portable_title">ポータブル監督</string>
+    <string name="portable_back">戻る</string>
+    <string name="portable_current">現在</string>
+    <string name="portable_needs_you">対応が必要 · %1$d</string>
+    <string name="portable_selected">選択：%1$s</string>
+    <string name="portable_previous">前へ</string>
+    <string name="portable_next">次へ</string>
+    <string name="portable_show">最後の表示</string>
+    <string name="portable_enter">セッションを開く</string>
+    <string name="portable_no_attention">対応が必要な項目はありません</string>
+    <string name="portable_unavailable">監督の状態を取得できません</string>
+    <string name="portable_stale">監督の状態が古くなっています</string>
+    <string name="portable_more_attention">その他の項目 · %1$d/%2$d</string>
+    <string name="portable_no_projects">ホームでサーバーに接続してください</string>
+    <string name="portable_no_sessions">最近のセッションはありません</string>
+    <string name="portable_unassigned">未割り当てのプロジェクト</string>
+    <string name="portable_running">実行中</string>
+    <string name="portable_waiting">入力待ち</string>
+    <string name="portable_idle">待機中</string>
+    <string name="portable_retrying">再試行中</string>
+    <string name="portable_unknown">状態不明</string>
+    <string name="portable_updated">%1$d 分前に更新</string>
+</resources>

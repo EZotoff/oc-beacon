@@ -1,0 +1,25 @@
+<resources>
+    <string name="portable_mode">الوضع المحمول</string>
+    <string name="portable_title">المشرف المحمول</string>
+    <string name="portable_back">رجوع</string>
+    <string name="portable_current">الحالي</string>
+    <string name="portable_needs_you">يحتاجك · %1$d</string>
+    <string name="portable_selected">المحدد: %1$s</string>
+    <string name="portable_previous">السابق</string>
+    <string name="portable_next">التالي</string>
+    <string name="portable_show">آخر عرض</string>
+    <string name="portable_enter">فتح الجلسة</string>
+    <string name="portable_no_attention">لا شيء يحتاج إلى انتباهك</string>
+    <string name="portable_unavailable">حالة المشرف غير متاحة</string>
+    <string name="portable_stale">حالة المشرف قديمة</string>
+    <string name="portable_more_attention">عناصر أخرى · %1$d/%2$d</string>
+    <string name="portable_no_projects">اتصل بخادم من الصفحة الرئيسية</string>
+    <string name="portable_no_sessions">لا توجد جلسات حديثة متاحة</string>
+    <string name="portable_unassigned">مشروع غير معين</string>
+    <string name="portable_running">قيد التشغيل</string>
+    <string name="portable_waiting">بانتظار الإدخال</string>
+    <string name="portable_idle">خامل</string>
+    <string name="portable_retrying">إعادة المحاولة</string>
+    <string name="portable_unknown">الحالة غير معروفة</string>
+    <string name="portable_updated">تم التحديث قبل %1$d دقيقة</string>
+</resources>

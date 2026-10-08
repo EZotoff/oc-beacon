@@ -1,5 +1,7 @@
 package dev.leonardo.ocbeacon.ui.navigation
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import dev.leonardo.ocbeacon.logging.AppLogger
 
 import android.net.Uri
@@ -332,12 +334,24 @@ fun NavGraph(
                 onNavigateToSupervisor = { serverId ->
                     navController.navigate(SupervisorNav.createOpenItemsRoute(serverId))
                 },
+                onNavigateToPortable = { navController.navigate("portable") },
                 onNavigateToAbout = {
                     navController.navigate(AboutNav.route)
                 },
                 // #325②：配对深链预填载荷（Home 消费后置 null 防重放）
                 pendingPairRequest = pendingPairRequest,
                 onPairRequestConsumed = { pendingPairRequest = null },
+            )
+        }
+
+        composable("portable") {
+            val homeState by homeViewModel.uiState.collectAsStateWithLifecycle()
+            dev.leonardo.ocbeacon.ui.screens.portable.PortableModeScreen(
+                connectedServerIds = homeState.connectedServerIds,
+                onBack = { navController.popBackStack() },
+                onOpenSession = { serverId, sessionId -> navController.navigate(ChatNav.createRoute(serverId, sessionId)) },
+                onOpenAttention = { serverId, itemId -> navController.navigate(SupervisorNav.createDetailRoute(serverId, itemId)) },
+                voice = voiceViewModel,
             )
         }
 

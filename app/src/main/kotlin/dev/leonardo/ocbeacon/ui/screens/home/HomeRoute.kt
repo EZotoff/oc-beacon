@@ -27,6 +27,7 @@ fun HomeRoute(
     onNavigateToAbout: () -> Unit,
     onNavigateToDiagnostics: () -> Unit = {},
     onNavigateToSupervisor: (serverId: String) -> Unit,
+    onNavigateToPortable: () -> Unit = {},
     // #325②：DSH 配对深链预填载荷（null = 无待处理；消费后由 NavGraph 置空）
     pendingPairRequest: DshPairPayload? = null,
     onPairRequestConsumed: () -> Unit = {},
@@ -42,6 +43,7 @@ fun HomeRoute(
         onNavigateToAbout = onNavigateToAbout,
         onNavigateToDiagnostics = onNavigateToDiagnostics,
         onNavigateToSupervisor = onNavigateToSupervisor,
+        onNavigateToPortable = onNavigateToPortable,
         pendingPairRequest = pendingPairRequest,
             onPairRequestConsumed = onPairRequestConsumed,
         )

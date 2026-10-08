@@ -1,0 +1,25 @@
+<resources>
+    <string name="portable_mode">Портативный режим</string>
+    <string name="portable_title">ПОРТАТИВНЫЙ СУПЕРВИЗОР</string>
+    <string name="portable_back">Назад</string>
+    <string name="portable_current">ТЕКУЩИЙ</string>
+    <string name="portable_needs_you">НУЖНО ВНИМАНИЕ · %1$d</string>
+    <string name="portable_selected">Выбрано: %1$s</string>
+    <string name="portable_previous">Предыдущий</string>
+    <string name="portable_next">Следующий</string>
+    <string name="portable_show">Последний показ</string>
+    <string name="portable_enter">Открыть сессию</string>
+    <string name="portable_no_attention">Нет задач, требующих внимания</string>
+    <string name="portable_unavailable">Состояние супервизора недоступно</string>
+    <string name="portable_stale">Состояние супервизора устарело</string>
+    <string name="portable_more_attention">Другие задачи · %1$d/%2$d</string>
+    <string name="portable_no_projects">Подключите сервер на главной</string>
+    <string name="portable_no_sessions">Нет недавних сессий</string>
+    <string name="portable_unassigned">Проект не назначен</string>
+    <string name="portable_running">РАБОТАЕТ</string>
+    <string name="portable_waiting">ОЖИДАЕТ ВВОДА</string>
+    <string name="portable_idle">ПРОСТОЙ</string>
+    <string name="portable_retrying">ПОВТОР</string>
+    <string name="portable_unknown">СТАТУС НЕИЗВЕСТЕН</string>
+    <string name="portable_updated">Обновлено %1$d мин назад</string>
+</resources>

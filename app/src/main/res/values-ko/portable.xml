@@ -1,0 +1,25 @@
+<resources>
+    <string name="portable_mode">휴대 모드</string>
+    <string name="portable_title">휴대 감독</string>
+    <string name="portable_back">뒤로</string>
+    <string name="portable_current">현재</string>
+    <string name="portable_needs_you">확인 필요 · %1$d</string>
+    <string name="portable_selected">선택: %1$s</string>
+    <string name="portable_previous">이전</string>
+    <string name="portable_next">다음</string>
+    <string name="portable_show">최근 표시</string>
+    <string name="portable_enter">세션 열기</string>
+    <string name="portable_no_attention">확인이 필요한 항목이 없습니다</string>
+    <string name="portable_unavailable">감독 상태를 사용할 수 없습니다</string>
+    <string name="portable_stale">감독 상태가 오래되었습니다</string>
+    <string name="portable_more_attention">더 보기 · %1$d/%2$d</string>
+    <string name="portable_no_projects">홈에서 서버에 연결하세요</string>
+    <string name="portable_no_sessions">최근 세션이 없습니다</string>
+    <string name="portable_unassigned">미지정 프로젝트</string>
+    <string name="portable_running">실행 중</string>
+    <string name="portable_waiting">입력 대기</string>
+    <string name="portable_idle">유휴</string>
+    <string name="portable_retrying">재시도 중</string>
+    <string name="portable_unknown">상태 알 수 없음</string>
+    <string name="portable_updated">%1$d분 전에 업데이트</string>
+</resources>

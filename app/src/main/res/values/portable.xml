@@ -1,0 +1,25 @@
+<resources>
+    <string name="portable_mode">Portable Mode</string>
+    <string name="portable_title">PORTABLE SUPERVISOR</string>
+    <string name="portable_back">Back</string>
+    <string name="portable_current">CURRENT</string>
+    <string name="portable_needs_you">NEEDS YOU · %1$d</string>
+    <string name="portable_selected">Selected: %1$s</string>
+    <string name="portable_previous">Previous</string>
+    <string name="portable_next">Next</string>
+    <string name="portable_show">Last show</string>
+    <string name="portable_enter">Open session</string>
+    <string name="portable_no_attention">Nothing needs your attention</string>
+    <string name="portable_unavailable">Supervisor state unavailable</string>
+    <string name="portable_stale">Supervisor state stale</string>
+    <string name="portable_more_attention">More attention · %1$d/%2$d</string>
+    <string name="portable_no_projects">Connect a server on Home</string>
+    <string name="portable_no_sessions">No recent sessions available</string>
+    <string name="portable_unassigned">Unassigned project</string>
+    <string name="portable_running">RUNNING</string>
+    <string name="portable_waiting">WAITING FOR INPUT</string>
+    <string name="portable_idle">IDLE</string>
+    <string name="portable_retrying">RETRYING</string>
+    <string name="portable_unknown">STATUS UNKNOWN</string>
+    <string name="portable_updated">Updated %1$d min ago</string>
+</resources>

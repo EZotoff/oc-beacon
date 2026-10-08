@@ -77,12 +77,13 @@ class VoiceSessionRepositoryTest {
         f.repository.connect("https://pulse.example")
         assertFalse(f.repository.emitViewContext(ViewContextView.HOME))
         f.socket.opened(); runCurrent()
-        assertTrue(f.repository.emitViewContext(ViewContextView.HOME))
+        assertFalse(f.repository.emitViewContext(ViewContextView.HOME))
+        assertEquals(ViewContextView.HOME, (VoiceFrames.decodeClientFrame(f.socket.texts.last()) as ClientControlFrame.ViewContext).view)
         f.socket.text(ServerControlFrame.Handoff); runCurrent()
         assertFalse(f.repository.emitViewContext(ViewContextView.HOME))
         f.repository.connect("https://pulse.example")
         f.socket.opened(); runCurrent()
-        assertTrue(f.repository.emitViewContext(ViewContextView.HOME))
+        assertFalse(f.repository.emitViewContext(ViewContextView.HOME))
         assertEquals(2, f.socket.texts.size)
     }
 
@@ -93,6 +94,31 @@ class VoiceSessionRepositoryTest {
         f.socket.opened(); runCurrent()
         assertTrue(f.repository.sendSelection("ctx-42", 3))
         assertEquals(ClientControlFrame.Selection("ctx-42", 3), VoiceFrames.decodeClientFrame(f.socket.texts.single()))
+    }
+
+    @Test fun `offline selected context reaches handshake before held PTT starts`() = runTest {
+        val f = Fixture(this)
+        val project = VoiceProject("/work/selected", "Selected")
+        val session = VoiceSession("real-session", "Real", VoiceSessionState.RUNNING)
+        assertFalse(f.repository.emitViewContext(ViewContextView.SUPERVISOR, project, session))
+        assertTrue(f.socket.texts.isEmpty())
+        f.repository.connect("https://pulse.example")
+        f.repository.pressPtt()
+        f.socket.opened(); runCurrent()
+        val context = VoiceFrames.decodeClientFrame(f.socket.texts.single()) as ClientControlFrame.ViewContext
+        assertEquals(project, context.project)
+        assertEquals(session, context.session)
+        assertEquals(1, f.recorder.starts)
+    }
+
+    @Test fun `last show survives disconnect without presentation subscribers`() = runTest {
+        val f = Fixture(this)
+        f.repository.connect("https://pulse.example")
+        f.socket.opened(); runCurrent()
+        val frame = ShowFrame(ShowView.Known.CARD, "Last", "ctx-1", kotlinx.serialization.json.JsonObject(emptyMap()))
+        f.socket.text(frame); runCurrent()
+        f.repository.disconnect(); runCurrent()
+        assertEquals(frame, f.repository.showFrame.value)
     }
 
     @Test fun `snapshot supplies real project and session label and explicit context wins`() = runTest {

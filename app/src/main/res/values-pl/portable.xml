@@ -1,0 +1,25 @@
+<resources>
+    <string name="portable_mode">Tryb przenośny</string>
+    <string name="portable_title">PRZENOŚNY NADZORCA</string>
+    <string name="portable_back">Wstecz</string>
+    <string name="portable_current">BIEŻĄCE</string>
+    <string name="portable_needs_you">WYMAGA UWAGI · %1$d</string>
+    <string name="portable_selected">Wybrano: %1$s</string>
+    <string name="portable_previous">Poprzednie</string>
+    <string name="portable_next">Następne</string>
+    <string name="portable_show">Ostatni widok</string>
+    <string name="portable_enter">Otwórz sesję</string>
+    <string name="portable_no_attention">Nic nie wymaga Twojej uwagi</string>
+    <string name="portable_unavailable">Stan nadzorcy niedostępny</string>
+    <string name="portable_stale">Stan nadzorcy nieaktualny</string>
+    <string name="portable_more_attention">Więcej elementów · %1$d/%2$d</string>
+    <string name="portable_no_projects">Połącz serwer na ekranie głównym</string>
+    <string name="portable_no_sessions">Brak ostatnich sesji</string>
+    <string name="portable_unassigned">Nieprzypisany projekt</string>
+    <string name="portable_running">DZIAŁA</string>
+    <string name="portable_waiting">OCZEKUJE NA DANE</string>
+    <string name="portable_idle">BEZCZYNNY</string>
+    <string name="portable_retrying">PONAWIANIE</string>
+    <string name="portable_unknown">STAN NIEZNANY</string>
+    <string name="portable_updated">Zaktualizowano %1$d min temu</string>
+</resources>
