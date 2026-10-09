@@ -78,14 +78,6 @@
   - 2026-10-09 前提满足解封（P4→P2）：现网 0.2.0-rc.2 运行安装内发射代码齐备（dsh-tool-workflow lib/index.js:98/109/117/124 四事件 append，顶层调用默认记录无开关）+ session/follow 流原始事件帧（SessionEventEntry）透传在。149 journal（138M/7 工作区）+演示容器 10 journal 全解码 0 真实样本=顶层 workflow 从未跑过（宽松命中 5 处全为开发会话 grep DshEventMapper.kt 假阳性）——非版本缺口。2026-09-01「四面皆无」系当时 live 版本旧于 0.1.2-alpha.2（npm bisect：发射代码 08-30 起）。开工第一步=现网真跑一次顶层 workflow 冒烟取样本（follow/journal grep tool-workflow/）；聚合器消费 journal 原始事件帧非消息投影。证据：docs/research/2026-10-09-p4-upstream-preconditions-check.md
   - 2026-10-09 排程裁决：B1 第 2 项（B1.2）；第一步现网顶层 workflow 冒烟为关卡——不过则退回 P4 登记新证据（止损门）
 
-- [ ] **#352 长按菜单「取消归档」——wire 层无恢复动词（2026-09-07 用户裁决要求，服务器阻塞）** `dsh` `archive` `ui`
-  - 裁决原文:「归档单向契约同删除一样在长按弹出框中增加即可」——用户要求已归档行长按菜单加「取消归档」
-  - **前提**：上游 dsh 服务器提供恢复动词——实测证据（2026-09-07 深夜，当前部署源码 dsh-api-workspace-controller typert）：WorkspaceArchiveSessionRequest={sessionId} **add-only**，全 API 面仅 archiveSession 一个归档动词，官方 web 客户端同无恢复入口（SessionRowMenu 2026-09-05 四重取证注释仍有效）；动词就位后：菜单项+RPC+已归档折叠区行刷新一步到位（#351 能力位先例同款）
-  - 2026-09-29 前提重验:dsh 部署版=0.1.7-rc.2(=npm 最新) dist 全仓仍无 unarchive/恢复动词——前提不变,维持 P4
-  - 2026-10-09 前提满足解封（P4→P2）：现网=本机 systemd dsh.service@3080 跑 npm 全局 0.2.0-rc.2，运行安装树四路实证动词在（dsh-workspace index.js:551 / api-workspace-controller :317 Remote("unarchiveSession") / api-remotes client :12447 / .d.ts:224）；follow 增量 {type:'archived'} 在；workspace.json archivedSessionIds 非空=归档在用。上游 UI/E2E 佐证（官方 web 'Unarchive session' 菜单项+跨 reload 持久）。证据：docs/research/2026-10-09-p4-upstream-preconditions-check.md
-  - 勘误：2026-09-29「0.1.7-rc.2 全仓无 unarchive」复验系只查顶层薄包的误报——真代码在 ~150 个平行发版的 dsh-* 子包（顶层仅 20 文件 CLI 启动器）；后续 dsh 上游核查一律查子包+GitHub 源码
-  - 2026-10-09 排程裁决：B1 DSH 功能批第 1 项（B1.1）——前提最干净先赢一张；验收走 AI 真机 E2E（归档→取消归档往返+跨重启持久+follow 增量刷新）
-
 ## P3 — 观察与低价值改进
 
 - [ ] **#522 B案升 stable 后余留装备清扫——JankHoldGate A/B 开关 + STREAM_DELTA_BUS 旗标退役（#499 余留范围）** `chore` `refactor`
