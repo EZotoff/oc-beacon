@@ -34,7 +34,7 @@ class AndroidVoiceRecorder(
         val minimum = AudioRecord.getMinBufferSize(16_000, AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT)
         check(minimum > 0) { "PCM16 recording is unavailable" }
-        val current = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 16_000,
+        val current = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, 16_000,
             AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minimum, 1_280))
         try {
             check(current.state == AudioRecord.STATE_INITIALIZED)
@@ -55,8 +55,9 @@ class AndroidVoiceRecorder(
                     check(count >= 0) { "AudioRecord read failed: $count" }
                     if (count > 0) {
                         // 2026-10-09: measured phone capture arrived ~40 dB low (RMS 2-46
-                        // vs expected thousands) — apply a conservative fixed gain with
-                        // saturation guard on top of the VOICE_COMMUNICATION AGC source.
+                        // vs expected thousands) — conservative fixed gain with saturation
+                        // guard (source stays VOICE_RECOGNITION: VOICE_COMMUNICATION held
+                        // the mic device-wide on Xiaomi and broke keyboard voice input).
                         val gained = buffer.copyOf(count)
                         var ii = 0
                         while (ii + 1 < gained.size) {
@@ -162,7 +163,10 @@ class AndroidVoiceAudioFocus(context: Context) : VoiceAudioFocus {
         val current = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
             .setAudioAttributes(voiceAudioAttributes())
             .setOnAudioFocusChangeListener { change ->
-                if (change < 0) onLoss()
+                // 2026-10-10: notifications must NEVER interrupt voice playback —
+                // transient losses (notification sounds, LOSS_TRANSIENT[_CAN_DUCK])
+                // are ignored; only a permanent AUDIOFOCUS_LOSS tears the engine down.
+                if (change == AudioManager.AUDIOFOCUS_LOSS) onLoss()
             }.build()
         request = current
         val granted = manager.requestAudioFocus(current) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
