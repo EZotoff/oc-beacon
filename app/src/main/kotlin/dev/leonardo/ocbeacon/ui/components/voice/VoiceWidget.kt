@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +37,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.domain.voice.VoicePttAction
@@ -61,6 +64,13 @@ fun VoiceWidget(
     val audioFailure by viewModel.audioFailure.collectAsStateWithLifecycle()
     val focusLost by viewModel.focusLost.collectAsStateWithLifecycle()
     val pttHeld by viewModel.pttHeld.collectAsStateWithLifecycle()
+
+    // 2026-10-09: tap-to-toggle has no finger-release guarantee — release capture
+    // (and the mic) when the widget leaves composition or the app backgrounds,
+    // otherwise the recorder holds RECORD_AUDIO system-wide and breaks keyboard
+    // voice input on other screens/apps.
+    DisposableEffect(Unit) { onDispose { viewModel.releasePtt() } }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.releasePtt() }
 
     val context = LocalContext.current
     var pressAfterPermission by remember { mutableStateOf(false) }
