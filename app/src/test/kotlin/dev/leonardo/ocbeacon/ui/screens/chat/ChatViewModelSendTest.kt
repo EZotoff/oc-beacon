@@ -325,6 +325,32 @@ class ChatViewModelSendTest {
 
     // ========== 保留：草稿恢复与消费（悲观语义下） ==========
 
+    /**
+     * #454（2026-09-27 #453 验证时观察一次）：真机 IME keyevent 66 发送路径，
+     * 消息含注入换行（Run\n\n）时 prompt POST 未发出、乐观气泡悬挂——纯逻辑面
+     * 红用例：文本带尾随换行必须照常走 sendPrompt 且 PromptPart 保真原文
+     * （无 blank 误判/无 trim 吞吐）。本用例若绿 = 缺陷面排除纯逻辑，收敛到
+     * IME/keyevent 时序层（B2 狩猎批 soak 注入循环承接）。
+     */
+    @Test
+    fun `sendMessage with injected trailing newlines still posts raw text part`() = runTest {
+        coEvery { sendMessageUseCase.sendPrompt(any(), any(), any(), any(), any(), any(), any(), any()) } returns Unit
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.sendMessage("Run\n\n")
+        advanceUntilIdle()
+
+        val partsSlot = io.mockk.slot<List<dev.leonardo.ocbeacon.domain.model.PromptPart>>()
+        io.mockk.coVerify(exactly = 1) {
+            sendMessageUseCase.sendPrompt(any(), any(), capture(partsSlot), any(), any(), any(), any(), any())
+        }
+        assertEquals(1, partsSlot.captured.size)
+        val part = partsSlot.captured[0]
+        assertEquals("text", part.type)
+        assertEquals("Run\n\n", part.text)
+    }
+
     @Test
     fun `send failure emits sendFailure in V1`() = runTest {
         // V1 sendParts() 捕获异常后：输入框内容保留（发送期间不清空），

@@ -260,12 +260,19 @@ class FakeChatRepository @Inject constructor() : ChatRepository {
 
     val archiveSessionCalls = mutableListOf<Pair<String, String>>()
     var archiveSessionResult: Result<List<String>> = Result.success(emptyList())
+    val unarchiveSessionCalls = mutableListOf<Pair<String, String>>()
 
     override fun getWorkspaceSnapshotFlow(serverId: String): Flow<WorkspaceSnapshot> =
         workspaceSnapshotState
 
     override suspend fun archiveSession(serverId: String, sessionId: String): Result<List<String>> {
         archiveSessionCalls.add(serverId to sessionId)
+        return archiveSessionResult
+    }
+
+    /** #352：取消归档（fake 记录调用，回执复用归档结果口）。 */
+    override suspend fun unarchiveSession(serverId: String, sessionId: String): Result<List<String>> {
+        unarchiveSessionCalls.add(serverId to sessionId)
         return archiveSessionResult
     }
 

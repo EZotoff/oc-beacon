@@ -370,7 +370,7 @@ class ChatInteractionTest : BaseChatTest() {
         // 等待 interactionState flow 将问题传播到 pendingQuestions
         // 并渲染 QuestionCard。
         // 2026-08-18 更新（#149）：卡片标题 2026-08-17 改版——
-        #531：chat_question_label 已随死键清退（2026-10-08）
+        // #531：chat_question_label 已随死键清退（2026-10-08）
         //（"Awaiting your reply"，M3 原生化标题栏）
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithText("Awaiting your reply")
