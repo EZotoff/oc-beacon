@@ -58,11 +58,6 @@
 
 ## P2 — 优化与锦上添花
 
-- [ ] **#536 spill 提示行降级实现——上游固定拼写文案匹配（#332 裁决降级）** `dsh` `sse` `ui`
-  - 参照上游 dsh-spill-policy 固定拼写（hasSpillNotice/formatSpillNotice，notice.d.ts/notice.js 浏览器安全零依赖）做溢出提示行文案匹配渲染，不自造正则
-  - 用户裁决 2026-10-09：实现处须详细注释——约定来源+上游自认不可认证性（Known Limitations 首条）——防后人误当结构化契约
-  - 排程 B1.3（与 #352/#288 同 DSH 域批）；上游结构化信号落地后切换，长期观察锚=#332；证据 docs/research/2026-10-09-p4-upstream-preconditions-check.md §②
-
 - [ ] **#535 P3 观察卡狩猎批——soak 长时测试主动定罪（#486/#464/#454/#477）** `test` `soak`
   - 2026-10-09 用户裁决改裁：四观察卡从「等复现」转 soak 长时主动狩猎。仪器腿=#486 确定性用例判死活（Fake 层构造断连+滚出视口+重连三联；构造出塌缩→顺势 LRU 账本根修，scroll 域编辑协议）+#454 单元红用例
   - soak 腿（夜跑）=#464 tap 效果断言+失配现场抓取（dumpsys input/logcat/meminfo；dump+截图双通道防 #477 干扰）+#477 盲 dump 检测器（ground truth=mock 语料/Room 直查）+#454 换行注入循环

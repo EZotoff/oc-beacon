@@ -1,6 +1,6 @@
 # b1-dsh-unarchive-workflow-spill（2026-10-09）
 
-> 状态：进行中
+> 状态：B1 三卡完结——#352/#288/#536 均验收委派路线迁移（2026-10-09）；后续 B2=#535 狩猎批
 > 关联：（spec 路径，若有）·（issue 编号，若有）
 > 来源：用户反馈 / grilling / E2E / 顺带发现
 
@@ -99,3 +99,35 @@ pull-app-db.sh 0 字节假阳：脚本用 PATH 裸 adb，run-as cat 静默失败
   - 2026-10-09 排程裁决：B1 第 2 项（B1.2）；第一步现网顶层 workflow 冒烟为关卡——不过则退回 P4 登记新证据（止损门）
   - 2026-10-09 冒烟关卡 PASS（B1.2 前置达成）：现网 headless 真跑 workflow 取到完整四事件样本（journal 解码实证，载荷事实与样本路径见 journal 2026-10-09-b1 批）——聚合器开工，agent-start/end 关联键=(runId,seq)，end 序与 start 序无关须容忍乱序回填
   - 迁入依据：冒烟关卡 PASS（现网四事件样本实证）+ 聚合器实现全量绿 + 真机 E2E 五判据全 PASS（验收委派裁决路线：无大 UI 改动，全部仪器可断言面）（backlog.sh migrate 2026-10-09）
+
+## #536 spill 提示行降级——实现+真机 E2E+定罪双修（2026-10-09，commit 3f672681+修复）
+
+
+## 实现（3f672681）
+
+识别器 DshSpillNotice.kt：上游 dsh-spill-policy@0.2.0-rc.2 notice.js 逐常量移植（OPEN/CLOSE/LOCATION/GUIDANCE/SEGMENT/isOmission 三档+图像子句），文件头详注约定来源+上游不可认证性免责（"not authenticated tool-output origin"）+为何渲染层识别不改数据（存储保真）；previewOf 展示剥离。四输出卡接线（bash/web_fetch/grep/glob——glob 路径解析源换 preview 防通知行误入路径表）；i18n chat_output_spilled(+_unknown) ×15（880 keys 全绿）；单测 8 例（上游语义移植+现网样本形态）+全量绿。
+
+## 真机 E2E（真实溢出样本：headless seq 1 20000 → journal 实证 Omitted 14377 bytes + locator /tmp/dsh-spill-eWxa4d/…）
+
+首轮（证据 /tmp/536-e2e/）：横幅三要素 PASS（14377 bytes+路径）/ 剥离 PASS（正文 49,756 字符零通知原文）/ 预览保留 PASS（保头尾 8,412 行）/ #288 回归 PASS。**定罪两真 bug**：
+- A：ToolCardScaffold expandedContent 容器是 Box（竖线 drawBehind 宿主）→ BashToolCard 横幅×2+Surface top-start 叠放，横幅压正文首行（08-banner-tight.png；老 OpenCode 横幅同病，历史潜伏）。
+- B：DSH 预览正文内层带子进程级 "output truncated; full output: <path>" 标记→误触发 OpenCode 截断横幅（路径正则不匹配该拼写→空 %1$s）→双横幅叠加。
+
+修复：BashToolCard 展开区包 Column + spill 在席抑制旧横幅（内层标记留正文原样）。复验（/tmp/536-fix/）：单横幅 PASS（dump 恰 1 条+路径完整）/ 不重叠 PASS（横幅 y1887-2026，正文起点 y2047，间隔 21px；像素 2x 复核排除滚动视口裁切误判）。
+
+## 通道性发现（→#537 观察卡）
+
+Room 保真判据转为通道性结论：DSH 同步通道把工具输出截到 ~1KB（尾标服务器原话 [truncated, full output on server]），spill 通知与全文只存在于实时拉取——cached_parts 恒短版，离线重开渲染 1KB 版无横幅。存储侧未改写（截断标记原封不动）+展示层剥离无回写=设计保真成立；上游语义，登记 #537 挂 dsh 升级复查。
+
+## E2E 方法论沉淀
+
+- a11y dump 对 49K 字符大节点存在序列化截断（横幅 Text 不入树）——横幅类断言需像素/OCR 双通道。
+- headless 是制造服务器侧真实状态（溢出/workflow）的确定性工具：/tmp 工作区隔离不进用户真实 workspace。
+
+## 已完结卡片迁入（2026-10-09）
+
+### **#536 spill 提示行降级实现——上游固定拼写文案匹配（#332 裁决降级）** `dsh` `sse` `ui`
+  - 参照上游 dsh-spill-policy 固定拼写（hasSpillNotice/formatSpillNotice，notice.d.ts/notice.js 浏览器安全零依赖）做溢出提示行文案匹配渲染，不自造正则
+  - 用户裁决 2026-10-09：实现处须详细注释——约定来源+上游自认不可认证性（Known Limitations 首条）——防后人误当结构化契约
+  - 排程 B1.3（与 #352/#288 同 DSH 域批）；上游结构化信号落地后切换，长期观察锚=#332；证据 docs/research/2026-10-09-p4-upstream-preconditions-check.md §②
+  - 迁入依据：实现+8 单测+全量绿+i18n 880×14 绿+真实溢出样本真机 E2E（首轮三 PASS 定罪双 bug→修复→复验双 PASS 像素级）；验收委派裁决路线（无大 UI 改动）；#537 观察卡承接通道性发现（backlog.sh migrate 2026-10-09）
