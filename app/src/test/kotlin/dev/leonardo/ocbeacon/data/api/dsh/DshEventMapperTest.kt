@@ -1634,17 +1634,80 @@ class DshEventMapperTest {
         assertTrue(snapshots.none { it is SseEvent.JobsSnapshot })
     }
 
+    // ============ #288：run 级聚合（agent-start/end 收编；载荷事实=现网样本） ============
+
+    private fun wfEvent(type: String, data: String): JsonObject =
+        json.parseToJsonElement("""{"type":"$type","seq":70,"time":1,"data":$data}""").jsonObject
+
+    private fun wfCardText(mapped: List<DshMappedEvent>): String {
+        val events = eventsOf(mapped)
+        return ((events[1] as SseEvent.MessagePartUpdated).part as Part.Text).text
+    }
+
     @Test
-    fun `workflow agent start and end stay ignored - phase details deferred`() {
-        listOf("tool-workflow/agent-start", "tool-workflow/agent-end").forEach { type ->
-            val mapped = DshEventMapper.mapSessionEvent(
-                "s1",
-                json.parseToJsonElement(
-                    """{"type":"$type","seq":70,"time":1,"data":{"runId":"wf_audit_1","seq":1,"label":"audit","outcome":"completed"}}"""
-                ).jsonObject,
-            )
-            assertEquals("$type", listOf(DshMappedEvent.Ignored(DshIgnoreReason.WORKFLOW_AGENT)), mapped)
+    fun `workflow agent events fold into run card with rolling progress`() {
+        // run-start 建档 → agent-start×2 → agent-end 乱序（现网实证 end 序与 start 序无关）
+        DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/run-start", """{"runId":"wf_agg_1","name":"audit"}"""))
+        val t1 = wfCardText(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-start", """{"runId":"wf_agg_1","seq":1,"label":"alpha","phase":"scan","childId":"c-1"}""")))
+        assertTrue(t1.contains("1 agents"))
+        assertTrue(t1.contains("[scan]"))
+        assertTrue(t1.contains("▸ alpha"))
+        val t2 = wfCardText(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-start", """{"runId":"wf_agg_1","seq":2,"label":"beta","phase":"scan","childId":"c-2"}""")))
+        assertTrue(t2.contains("2 agents"))
+        assertTrue(t2.contains("▸ beta"))
+        // end seq=2 先到（乱序回填）
+        val t3 = wfCardText(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-end", """{"runId":"wf_agg_1","seq":2,"outcome":"completed"}""")))
+        assertTrue(t3.contains("2 agents · 1 done"))
+        assertTrue(t3.contains("✓ beta"))
+        assertTrue(t3.contains("▸ alpha"))
+        // 非 completed outcome 标注
+        val t4 = wfCardText(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-end", """{"runId":"wf_agg_1","seq":1,"outcome":"error"}""")))
+        assertTrue(t4.contains("✗ alpha (error)"))
+        assertTrue(t4.contains("2 agents"))
+    }
+
+    @Test
+    fun `workflow run end prefers ledger name and appends member outcomes`() {
+        DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/run-start", """{"runId":"wf_agg_2","name":"audit"}"""))
+        DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-start", """{"runId":"wf_agg_2","seq":1,"label":"alpha","phase":"scan"}"""))
+        DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-end", """{"runId":"wf_agg_2","seq":1,"outcome":"completed"}"""))
+        val text = wfCardText(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/run-end", """{"runId":"wf_agg_2","stopReason":"completed"}""")))
+        assertTrue(text.contains("state=\"completed\""))
+        // 账本名优先于 runId（Task 3b 时代恒用 runId 的升级位）
+        assertTrue(text.contains("workflow: audit"))
+        assertTrue(text.contains("✓ alpha"))
+        val updated = eventsOf(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/run-end", """{"runId":"wf_agg_2","stopReason":"completed"}""")))[0] as SseEvent.MessageUpdated
+        assertEquals("dsh-workflow-wf_agg_2", updated.info.id)
+    }
+
+    @Test
+    fun `workflow agent end without run start creates skeleton member`() {
+        val text = wfCardText(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-end", """{"runId":"wf_orphan_9","seq":3,"outcome":"cancelled"}""")))
+        // start 未见：骨架成员按 seq 命名，乱序/分页边界不炸
+        assertTrue(text.contains("✗ agent #3 (cancelled)"))
+    }
+
+    @Test
+    fun `workflow replay is idempotent - same final card on duplicate sequence`() {
+        fun fullRun(): String {
+            DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/run-start", """{"runId":"wf_replay_1","name":"audit"}"""))
+            DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-start", """{"runId":"wf_replay_1","seq":1,"label":"alpha","phase":"scan"}"""))
+            DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-end", """{"runId":"wf_replay_1","seq":1,"outcome":"completed"}"""))
+            return wfCardText(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/run-end", """{"runId":"wf_replay_1","stopReason":"completed"}""")))
         }
+        assertEquals(fullRun(), fullRun())
+    }
+
+    @Test
+    fun `workflow agent events malformed without runId or seq stay ignored`() {
+        assertEquals(
+            listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED)),
+            DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-start", """{"label":"x"}""")),
+        )
+        assertEquals(
+            listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED)),
+            DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-end", """{"runId":"wf_agg_1"}""")),
+        )
     }
 
     // ============ #312⑤ seq 锚点反解（messageId 契约双向）============

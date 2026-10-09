@@ -77,6 +77,7 @@
   - 2026-09-29 前提重验:0.1.7-rc.2 dist 仍无 tool-workflow 运行事件——前提不变,维持 P4
   - 2026-10-09 前提满足解封（P4→P2）：现网 0.2.0-rc.2 运行安装内发射代码齐备（dsh-tool-workflow lib/index.js:98/109/117/124 四事件 append，顶层调用默认记录无开关）+ session/follow 流原始事件帧（SessionEventEntry）透传在。149 journal（138M/7 工作区）+演示容器 10 journal 全解码 0 真实样本=顶层 workflow 从未跑过（宽松命中 5 处全为开发会话 grep DshEventMapper.kt 假阳性）——非版本缺口。2026-09-01「四面皆无」系当时 live 版本旧于 0.1.2-alpha.2（npm bisect：发射代码 08-30 起）。开工第一步=现网真跑一次顶层 workflow 冒烟取样本（follow/journal grep tool-workflow/）；聚合器消费 journal 原始事件帧非消息投影。证据：docs/research/2026-10-09-p4-upstream-preconditions-check.md
   - 2026-10-09 排程裁决：B1 第 2 项（B1.2）；第一步现网顶层 workflow 冒烟为关卡——不过则退回 P4 登记新证据（止损门）
+  - 2026-10-09 冒烟关卡 PASS（B1.2 前置达成）：现网 headless 真跑 workflow 取到完整四事件样本（journal 解码实证，载荷事实与样本路径见 journal 2026-10-09-b1 批）——聚合器开工，agent-start/end 关联键=(runId,seq)，end 序与 start 序无关须容忍乱序回填
 
 ## P3 — 观察与低价值改进
 

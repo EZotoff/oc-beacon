@@ -40,3 +40,27 @@
   - 勘误：2026-09-29「0.1.7-rc.2 全仓无 unarchive」复验系只查顶层薄包的误报——真代码在 ~150 个平行发版的 dsh-* 子包（顶层仅 20 文件 CLI 启动器）；后续 dsh 上游核查一律查子包+GitHub 源码
   - 2026-10-09 排程裁决：B1 DSH 功能批第 1 项（B1.1）——前提最干净先赢一张；验收走 AI 真机 E2E（归档→取消归档往返+跨重启持久+follow 增量刷新）
   - 迁入依据：实现+全量单测绿+i18n 绿+真机 E2E 五判据全 PASS（验收委派裁决 2026-10-06：无大 UI 改动卡 AI 系统性 E2E 过即关卡）；净状态零变化（服务端集合恒等）（backlog.sh migrate 2026-10-09）
+
+## #288 冒烟关卡——现网 workflow 真实样本（2026-10-09）
+
+
+## 冒烟执行
+
+headless 触发（/tmp 工作区，不进用户真实 workspace）：`dsh --profile headless --json "Please use the workflow tool … two agents alpha/beta"`——final 确认 workflow "smoke-288" completed (2 agents)。样本 journal：`~/.dsh/sessions/--tmp--/session-b318811c-406b-40ce-923a-005e200eff40/session.v4.jsonl.zstd`；headless 事件流 `/tmp/288-smoke-events.jsonl`。
+
+## 关卡判据：PASS
+
+journal 解码出完整四事件序列（runId=91690cb6…）：
+- run-start {runId, name:"smoke-288"}
+- agent-start seq=1 {label:"alpha", phase:"smoke", childId:10affb95…}
+- agent-start seq=2 {label:"beta", phase:"smoke", childId:40fafcf3…}
+- agent-end seq=2 {outcome:"completed"}（**先于 seq=1**——并行执行，end 序与 start 序无关）
+- agent-end seq=1 {outcome:"completed"}
+- run-end {runId, stopReason:"completed"}
+
+## 聚合器设计输入（真实载荷事实）
+
+1. agent-start 全量：label/phase/childId/seq；agent-end **只有 (runId,seq)+outcome**——成员身份必须从 start 建档，end 靠 seq 回填（end 先到 start 未见的分页边界→按 seq 建骨架成员）。
+2. childId=子会话 id——未来可做导航（注意 #242 信封箭头守卫：synthetic 卡不可给会话箭头）。
+3. 重放幂等：journal 冷回放按序全量重放，账本按 (runId,seq) upsert 天然幂等。
+4. headless --json 事件流与 journal 事件是两个面（前者 step 级 status，后者 session 事件）——app 消费面=后者（session/follow SessionEventEntry / journal 首页兜底）。

@@ -1016,11 +1016,14 @@ object DshEventMapper {
             // V3 新增忽略词汇（assistant/attempt、feedback/message-*、subagent/catalog）、
             // durable 审批面、插件域、llm/failover 等统一见 DshEventVocabulary（V3 表；
             // subagent/catalog 双源裁定与 feedback 取证状态见该文件注释）。
-            // 2026-09-01（Task 3b 卡片缺口）：workflow-run 降级卡——run-start/run-end
-            // 映射为 synthetic 任务信封（同 runId 同宿主消息 id → 原位更新：running →
-            // completed/error 单卡）；agent-start/end 是阶段明细（防逐成员刷卡），
-            // 已在 DshEventVocabulary 按代声明为已知忽略。
+            // 2026-09-01（Task 3b）：run-start/run-end 映射为 synthetic 任务信封（同
+            // runId 同宿主消息 id → 原位更新：running → completed/error 单卡）。
+            // 2026-10-09（#288 冒烟解封）：agent-start/end 收编为 run 级聚合——账本
+            // 折叠进同一张卡（防逐成员刷卡的设计不变），进度期滚动 N agents · M done
+            // 摘要 + 阶段分组正文；样本载荷事实见 journal 2026-10-09 b1 批。
             "tool-workflow/run-start" -> mapWorkflowRunStart(sessionId, time, data)
+            "tool-workflow/agent-start" -> mapWorkflowAgentStart(sessionId, time, data)
+            "tool-workflow/agent-end" -> mapWorkflowAgentEnd(sessionId, time, data)
             "tool-workflow/run-end" -> mapWorkflowRunEnd(sessionId, time, data)
 
             // ---- 已知忽略词汇（按代声明）+ 未知降级 ----
@@ -1714,6 +1717,96 @@ object DshEventMapper {
     /** workflow 卡宿主消息 id（runId 键控——start/end 原位更新同一卡）。 */
     private fun workflowMessageId(runId: String): String = "dsh-workflow-" + runId
 
+    // ============ #288 run 级聚合账本 ============
+
+    /**
+     * #288：workflow run 账本（runId → name + 成员表）。agent-start 建档
+     * （label/phase/childId），agent-end 按 seq 回填 outcome——现网样本实证
+     * （journal 2026-10-09 b1 批）：end 只带 (runId,seq)+outcome 且 **end 序与
+     * start 序无关**（并行执行），成员身份只能从 start 建档、end 乱序回填；
+     * journal 冷回放按序全量重放，(runId,seq) upsert 天然幂等。软上限 64 run
+     * 防长跑进程无界增长（run 稀疏；逐出后该 run 降级回 runId 摘要）。
+     */
+    private class WorkflowMemberState(
+        val seq: Int,
+        var label: String? = null,
+        var phase: String? = null,
+        var childId: String? = null,
+        var outcome: String? = null,
+    )
+
+    private class WorkflowRunState(val runId: String, var name: String? = null) {
+        val members = LinkedHashMap<Int, WorkflowMemberState>()
+    }
+
+    private val workflowRuns = object : LinkedHashMap<String, WorkflowRunState>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, WorkflowRunState>?): Boolean = size > 64
+    }
+
+    private fun workflowRunOf(runId: String): WorkflowRunState =
+        workflowRuns[runId] ?: WorkflowRunState(runId).also { workflowRuns[runId] = it }
+
+    /** 成员正文：按 phase 分组（保持 start 序），状态符 ✓/✗/▸ + 非 completed outcome 标注。 */
+    private fun renderWorkflowMembers(run: WorkflowRunState): String {
+        val lines = ArrayList<String>()
+        run.members.values.groupBy { it.phase }.forEach { (phase, list) ->
+            if (!phase.isNullOrBlank()) lines.add("[" + phase + "]")
+            list.forEach { m ->
+                val mark = when {
+                    m.outcome == null -> "▸"
+                    m.outcome == "completed" -> "✓"
+                    else -> "✗"
+                }
+                val label = m.label ?: ("agent #" + m.seq)
+                val suffix = if (!m.outcome.isNullOrEmpty() && m.outcome != "completed") " (" + m.outcome + ")" else ""
+                lines.add(mark + " " + label + suffix)
+            }
+        }
+        return lines.joinToString("\n")
+    }
+
+    /** 进度卡（agent 事件驱动）：滚动摘要 N agents · M done + 阶段分组正文，原位刷新。 */
+    private fun workflowProgressCard(sessionId: String, time: Long, run: WorkflowRunState): List<DshMappedEvent> {
+        val members = run.members.values.toList()
+        val done = members.count { !it.outcome.isNullOrEmpty() }
+        val summary = "workflow: " + (run.name ?: run.runId) +
+            " · " + members.size + " agents" +
+            if (done < members.size) " · " + done + " done" else ""
+        val text = "<task state=\"running\"><summary>" + xmlEscape(summary) + "</summary>" +
+            "<task_result>" + xmlEscape(renderWorkflowMembers(run)) + "</task_result></task>"
+        return syntheticNotificationEvents(sessionId, workflowMessageId(run.runId), time, text)
+    }
+
+    /**
+     * tool-workflow/agent-start {runId, seq, label, phase?, childId} → 账本建档 +
+     * 进度卡原位刷新（#288）。childId=子会话 id，留档不渲染——synthetic 卡不给
+     * 会话箭头（#242 守卫），导航是后续增强。
+     */
+    private fun mapWorkflowAgentStart(sessionId: String, time: Long, data: JsonObject): List<DshMappedEvent> {
+        val runId = data.str("runId")
+            ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+        val seq = data.long("seq")?.toInt()
+            ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+        val run = workflowRunOf(runId)
+        val member = run.members.getOrPut(seq) { WorkflowMemberState(seq) }
+        member.label = data.str("label") ?: member.label
+        member.phase = data.str("phase") ?: member.phase
+        member.childId = data.str("childId") ?: member.childId
+        return workflowProgressCard(sessionId, time, run)
+    }
+
+    /** agent-end {runId, seq, outcome} → 账本回填（乱序容忍；start 未见则骨架建档）+ 进度卡。 */
+    private fun mapWorkflowAgentEnd(sessionId: String, time: Long, data: JsonObject): List<DshMappedEvent> {
+        val runId = data.str("runId")
+            ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+        val seq = data.long("seq")?.toInt()
+            ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+        val run = workflowRunOf(runId)
+        val member = run.members.getOrPut(seq) { WorkflowMemberState(seq) }
+        member.outcome = data.str("outcome") ?: member.outcome
+        return workflowProgressCard(sessionId, time, run)
+    }
+
     /**
      * #323：command/run {commandId, name, args?, source} → [SseEvent.CommandRunStarted]。
      *
@@ -1772,6 +1865,8 @@ object DshEventMapper {
         val runId = data.str("runId")
             ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
         val name = data.str("name") ?: ""
+        // #288：登记/重置账本（重放幂等——重复 run-start 清成员重计）
+        workflowRuns[runId] = WorkflowRunState(runId, name.ifBlank { null })
         val summary = if (name.isBlank()) "workflow: " + runId else "workflow: " + name
         val text = "<task state=\"running\"><summary>" + xmlEscape(summary) + "</summary></task>"
         return syntheticNotificationEvents(sessionId, workflowMessageId(runId), time, text)
@@ -1786,8 +1881,12 @@ object DshEventMapper {
             ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
         val stopReason = data.str("stopReason") ?: "completed"
         val state = if (stopReason == "completed") "completed" else "error"
-        val text = "<task state=\"" + state + "\"><summary>workflow: " + xmlEscape(runId) + "</summary>" +
-            "<task_result>" + xmlEscape(stopReason) + "</task_result></task>"
+        // #288：优先账本名（run-start 已见时）；终态正文附成员终局
+        val run = workflowRuns[runId]
+        val summary = "workflow: " + (run?.name ?: runId)
+        val body = stopReason + (run?.takeIf { it.members.isNotEmpty() }?.let { "\n" + renderWorkflowMembers(it) } ?: "")
+        val text = "<task state=\"" + state + "\"><summary>" + xmlEscape(summary) + "</summary>" +
+            "<task_result>" + xmlEscape(body) + "</task_result></task>"
         return syntheticNotificationEvents(sessionId, workflowMessageId(runId), time, text)
     }
 
@@ -2313,9 +2412,6 @@ object DshIgnoreReason {
 
     /** 插件域事件（hook/team——known-49 收尾）。 */
     const val PLUGIN_DOMAIN = "plugin-domain"
-
-    /** tool-workflow agent-start/end 阶段明细（阶段卡后续增强，防逐成员刷卡）。 */
-    const val WORKFLOW_AGENT = "workflow-agent"
 
     /** 未知类型但信封带 ignorable:true（旗标权威，E2E 后兑现）。 */
     const val IGNORABLE_FLAG = "ignorable-flag"
