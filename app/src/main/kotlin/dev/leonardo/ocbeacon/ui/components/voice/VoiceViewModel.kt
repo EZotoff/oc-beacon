@@ -40,8 +40,8 @@ class VoiceViewModel @Inject constructor(
     /** True while audio is suspended after a transient audio-focus loss → overlay. */
     val focusLost: StateFlow<Boolean> = repository.focusLost
 
-    /** True while the user is holding PTT and capture is live → recording state. */
-    val pttHeld: StateFlow<Boolean> = repository.pttHeld
+    /** Authoritative PTT state (repository-held) — drives toggle + button display. */
+    val pttHeld: StateFlow<Boolean> = repository.held
 
     /** Widget renders only while a supervisor snapshot exists. */
     val hasSnapshot: StateFlow<Boolean> = snapshotCache.snapshots

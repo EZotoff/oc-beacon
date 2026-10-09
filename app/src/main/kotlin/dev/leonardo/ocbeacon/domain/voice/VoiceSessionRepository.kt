@@ -41,15 +41,30 @@ class VoiceSessionRepository(
     val showFrame = mutableShowFrame.asStateFlow()
     private var baseUrl: String? = null
     private var voiceModel: String = VoiceUrl.DEFAULT_VOICE_MODEL
-    private var held = false
+    private val mutableHeld = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /** Authoritative PTT state — the ONLY thing UI toggles and buttons may read. */
+    val held = mutableHeld.asStateFlow()
+    private var isHeld: Boolean
+        get() = mutableHeld.value
+        set(value) { mutableHeld.value = value }
     private var inputPending = false
     private var lastContext: ClientControlFrame.ViewContext? = null
     private var pendingContext: ClientControlFrame.ViewContext? = null
 
     init {
+        // Engine self-stops (audio-focus loss, recorder failure) release the mic
+        // without passing through releasePtt() — the utterance is dead; reflect it.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            audio.pttHeld.collect { capturing ->
+                if (!capturing) synchronized(this@VoiceSessionRepository) {
+                    if (audio.failure.value != null || audio.focusLost.value) isHeld = false
+                }
+            }
+        }
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             client.connectionState.collect { connection ->
                 synchronized(this@VoiceSessionRepository) {
+                    val wasLive = mutableState.value == VoiceSessionConnection.Live
                     mutableState.value = when (connection) {
                         VoiceConnectionState.Disconnected -> VoiceSessionConnection.Disconnected
                         VoiceConnectionState.Connecting -> VoiceSessionConnection.Connecting
@@ -61,7 +76,7 @@ class VoiceSessionRepository(
                             if (client.sendControl(context)) lastContext = context
                         }
                         audio.start()
-                        if (held) {
+                        if (isHeld) {
                             audio.pressPtt()
                             inputPending = audio.pttHeld.value
                         }
@@ -69,7 +84,11 @@ class VoiceSessionRepository(
                         lastContext = null
                         audio.stop()
                         inputPending = false
-                        if (connection == VoiceConnectionState.Handoff) held = false
+                        // 2026-10-09 (oracle-reviewed): an utterance ends when we LEAVE
+                        // Live (flap/handoff/disconnect) — but NOT on Connecting, which
+                        // is the transit of an explicit pressPtt reconnect; clearing
+                        // there broke capture-on-Live after handoff.
+                        if (wasLive) isHeld = false
                     }
                 }
             }
@@ -93,7 +112,7 @@ class VoiceSessionRepository(
 
     @Synchronized
     fun connect(omoPulseBaseUrl: String, voiceModel: String = VoiceUrl.DEFAULT_VOICE_MODEL) {
-        held = false
+        isHeld = false
         inputPending = false
         audio.stop()
         lastContext = null
@@ -104,7 +123,7 @@ class VoiceSessionRepository(
 
     @Synchronized
     fun disconnect() {
-        held = false
+        isHeld = false
         inputPending = false
         audio.stop()
         lastContext = null
@@ -113,8 +132,8 @@ class VoiceSessionRepository(
 
     @Synchronized
     fun pressPtt() {
-        if (held) return
-        held = true
+        if (isHeld) return
+        isHeld = true
         when (client.connectionState.value) {
             VoiceConnectionState.Live -> {
                 audio.pressPtt()
@@ -122,7 +141,7 @@ class VoiceSessionRepository(
             }
             VoiceConnectionState.Handoff, VoiceConnectionState.Disconnected -> {
                 val url = baseUrl
-                if (url == null) held = false else client.connect(url, voiceModel)
+                if (url == null) isHeld = false else client.connect(url, voiceModel)
             }
             VoiceConnectionState.Connecting -> Unit
         }
@@ -130,7 +149,7 @@ class VoiceSessionRepository(
 
     @Synchronized
     fun releasePtt() {
-        held = false
+        isHeld = false
         audio.releasePtt()
         if (inputPending) client.sendControl(ClientControlFrame.InputComplete)
         inputPending = false

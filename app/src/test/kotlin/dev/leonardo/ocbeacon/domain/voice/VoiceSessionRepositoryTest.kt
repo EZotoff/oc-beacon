@@ -57,6 +57,18 @@ class VoiceSessionRepositoryTest {
         assertEquals(2, f.recorder.starts)
     }
 
+    @Test fun `handoff during active hold ends the utterance`() = runTest {
+        val f = Fixture(this)
+        f.repository.connect("https://pulse.example")
+        f.repository.pressPtt(); runCurrent()
+        f.socket.opened(); runCurrent()
+        assertEquals(1, f.recorder.starts)
+        assertEquals(true, f.repository.held.value)
+        f.socket.text(ServerControlFrame.Handoff); runCurrent()
+        assertEquals(false, f.repository.held.value)
+        assertEquals(1, f.recorder.stops)
+    }
+
     @Test fun `view context deduplicates and emits only changed live context`() = runTest {
         val f = Fixture(this)
         f.repository.connect("https://pulse.example")
