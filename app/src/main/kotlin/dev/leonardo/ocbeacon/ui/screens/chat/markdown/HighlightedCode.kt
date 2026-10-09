@@ -88,7 +88,7 @@ internal fun SafeHighlightedCodeFence(
         if (language.equals(MATH_FENCE_LANGUAGE, ignoreCase = true)) {
             SafeHighlightedMathBlock(code = code, style = codeStyle, trimBottomGap = trimBottomGap)
         } else {
-            SafeHighlightedCode(code = code, language = language, style = codeStyle, theme = theme, trimBottomGap = trimBottomGap)
+            SafeHighlightedCode(code = code, language = language, style = codeStyle, theme = theme, trimBottomGap = trimBottomGap, showHeader = true)
         }
     }
 }
@@ -115,6 +115,9 @@ internal fun SafeHighlightedCode(
     theme: SyntaxTheme,
     /** #517 同 [SafeHighlightedCodeFence]。 */
     trimBottomGap: Boolean = false,
+    /** #488 批3①：语言标签+复制顶栏（库 MarkdownCodeBackground showHeader 透传）。
+     *  仅围栏路径开（有语言）；缩进代码块（语言恒空）与数学块（自带徽标）不开。 */
+    showHeader: Boolean = false,
 ) {
     // #517 GapDiag：叶子旗标取证（DEBUG-only 探针）
     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
@@ -158,6 +161,7 @@ internal fun SafeHighlightedCode(
             ),
         language = language,
         code = code,
+        showHeader = showHeader,
     ) {
         MarkdownBasicText(
             text = codeHighlights,

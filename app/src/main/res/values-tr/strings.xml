@@ -466,6 +466,13 @@
     <string name="chat_error_view_page">Sayfa</string>
     <string name="chat_error_view_code">Kod</string>
     <string name="math_block_badge">Formül</string>
+    <string name="markdown_a11y_blockquote">Alıntı</string>
+    <string name="markdown_a11y_code_block">Kod bloğu</string>
+    <string name="markdown_a11y_code_block_with_language">Kod bloğu, %1$s</string>
+    <string name="markdown_a11y_code_language">Dil: %1$s</string>
+    <string name="markdown_a11y_code_fallback_language">KOD</string>
+    <string name="markdown_a11y_copy_code">Kodu kopyala</string>
+    <string name="markdown_a11y_alert">%1$s uyarısı</string>
     <string name="chat_save_image">Görseli kaydet</string>
     <string name="chat_image_saved">Görsel kaydedildi</string>
     <string name="chat_image_save_failed">Görsel kaydedilemedi</string>

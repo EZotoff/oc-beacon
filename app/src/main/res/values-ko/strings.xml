@@ -466,6 +466,13 @@
     <string name="chat_error_view_page">페이지</string>
     <string name="chat_error_view_code">코드</string>
     <string name="math_block_badge">수식</string>
+    <string name="markdown_a11y_blockquote">인용문</string>
+    <string name="markdown_a11y_code_block">코드 블록</string>
+    <string name="markdown_a11y_code_block_with_language">코드 블록, %1$s</string>
+    <string name="markdown_a11y_code_language">언어: %1$s</string>
+    <string name="markdown_a11y_code_fallback_language">코드</string>
+    <string name="markdown_a11y_copy_code">코드 복사</string>
+    <string name="markdown_a11y_alert">%1$s 경고</string>
     <string name="chat_save_image">이미지 저장</string>
     <string name="chat_image_saved">이미지가 저장되었습니다</string>
     <string name="chat_image_save_failed">이미지 저장에 실패했습니다</string>

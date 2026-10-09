@@ -482,6 +482,13 @@
     <string name="chat_error_view_page">页面</string>
     <string name="chat_error_view_code">代码</string>
     <string name="math_block_badge">公式</string>
+    <string name="markdown_a11y_blockquote">引用</string>
+    <string name="markdown_a11y_code_block">代码块</string>
+    <string name="markdown_a11y_code_block_with_language">代码块，%1$s</string>
+    <string name="markdown_a11y_code_language">语言：%1$s</string>
+    <string name="markdown_a11y_code_fallback_language">代码</string>
+    <string name="markdown_a11y_copy_code">复制代码</string>
+    <string name="markdown_a11y_alert">%1$s 警告</string>
     <string name="chat_save_image">保存图片</string>
     <string name="chat_image_saved">图片已保存</string>
     <string name="chat_image_save_failed">保存图片失败</string>

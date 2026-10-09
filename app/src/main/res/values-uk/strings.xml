@@ -474,6 +474,13 @@
     <string name="chat_error_view_page">Сторінка</string>
     <string name="chat_error_view_code">Код</string>
     <string name="math_block_badge">Формула</string>
+    <string name="markdown_a11y_blockquote">Цитата</string>
+    <string name="markdown_a11y_code_block">Блок коду</string>
+    <string name="markdown_a11y_code_block_with_language">Блок коду, %1$s</string>
+    <string name="markdown_a11y_code_language">Мова: %1$s</string>
+    <string name="markdown_a11y_code_fallback_language">КОД</string>
+    <string name="markdown_a11y_copy_code">Копіювати код</string>
+    <string name="markdown_a11y_alert">Попередження %1$s</string>
     <string name="chat_save_image">Зберегти зображення</string>
     <string name="chat_image_saved">Зображення збережено</string>
     <string name="chat_image_save_failed">Не вдалося зберегти зображення</string>

@@ -466,6 +466,13 @@
     <string name="chat_error_view_page">ページ</string>
     <string name="chat_error_view_code">コード</string>
     <string name="math_block_badge">数式</string>
+    <string name="markdown_a11y_blockquote">引用</string>
+    <string name="markdown_a11y_code_block">コードブロック</string>
+    <string name="markdown_a11y_code_block_with_language">コードブロック、%1$s</string>
+    <string name="markdown_a11y_code_language">言語: %1$s</string>
+    <string name="markdown_a11y_code_fallback_language">コード</string>
+    <string name="markdown_a11y_copy_code">コードをコピー</string>
+    <string name="markdown_a11y_alert">%1$s アラート</string>
     <string name="chat_save_image">画像を保存</string>
     <string name="chat_image_saved">画像を保存しました</string>
     <string name="chat_image_save_failed">画像の保存に失敗しました</string>

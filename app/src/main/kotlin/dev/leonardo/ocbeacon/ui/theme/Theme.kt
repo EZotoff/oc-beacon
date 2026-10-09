@@ -12,6 +12,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.res.stringResource
+import com.mikepenz.markdown.compose.LocalMarkdownA11yLabels
+import com.mikepenz.markdown.model.MarkdownA11yLabels
+import dev.leonardo.ocbeacon.R
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -165,8 +169,26 @@ fun OpenCodeTheme(
             typography = Typography,
             shapes = if (amoledDark) AmoledShapes else AppShapes
         ) {
-            Box(Modifier.semantics { testTagsAsResourceId = true }) {
-                content()
+            // #488 批3①：mikepenz 渲染库 a11y 标签本地化——库不捆绑资源（消费方
+            // 责任，未覆写=全库英文默认）；主题层单点提供，覆盖全部 8 个调用面与
+            // 预览宿主。三个 lambda 字段（组合期外调用）经 %1$s 模板 replace 拼装。
+            val mdCodeBlockLangTpl = stringResource(R.string.markdown_a11y_code_block_with_language)
+            val mdCodeLangTpl = stringResource(R.string.markdown_a11y_code_language)
+            val mdAlertTpl = stringResource(R.string.markdown_a11y_alert)
+            CompositionLocalProvider(
+                LocalMarkdownA11yLabels provides MarkdownA11yLabels(
+                    blockquote = stringResource(R.string.markdown_a11y_blockquote),
+                    codeBlock = stringResource(R.string.markdown_a11y_code_block),
+                    codeBlockWithLanguage = { l -> mdCodeBlockLangTpl.replace("%1\$s", l) },
+                    codeLanguage = { l -> mdCodeLangTpl.replace("%1\$s", l) },
+                    codeFallbackLanguage = stringResource(R.string.markdown_a11y_code_fallback_language),
+                    copyCode = stringResource(R.string.markdown_a11y_copy_code),
+                    alert = { t -> mdAlertTpl.replace("%1\$s", t) },
+                ),
+            ) {
+                Box(Modifier.semantics { testTagsAsResourceId = true }) {
+                    content()
+                }
             }
         }
     }

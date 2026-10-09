@@ -474,6 +474,13 @@
     <string name="chat_error_view_page">Strona</string>
     <string name="chat_error_view_code">Kod</string>
     <string name="math_block_badge">Wzór</string>
+    <string name="markdown_a11y_blockquote">Cytat</string>
+    <string name="markdown_a11y_code_block">Blok kodu</string>
+    <string name="markdown_a11y_code_block_with_language">Blok kodu, %1$s</string>
+    <string name="markdown_a11y_code_language">Język: %1$s</string>
+    <string name="markdown_a11y_code_fallback_language">KOD</string>
+    <string name="markdown_a11y_copy_code">Skopiuj kod</string>
+    <string name="markdown_a11y_alert">Alert %1$s</string>
     <string name="chat_save_image">Zapisz obraz</string>
     <string name="chat_image_saved">Obraz zapisany</string>
     <string name="chat_image_save_failed">Nie udało się zapisać obrazu</string>

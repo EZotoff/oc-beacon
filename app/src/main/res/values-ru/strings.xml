@@ -313,6 +313,13 @@
     <string name="chat_error_view_page">Страница</string>
     <string name="chat_error_view_code">Код</string>
     <string name="math_block_badge">Формула</string>
+    <string name="markdown_a11y_blockquote">Цитата</string>
+    <string name="markdown_a11y_code_block">Блок кода</string>
+    <string name="markdown_a11y_code_block_with_language">Блок кода, %1$s</string>
+    <string name="markdown_a11y_code_language">Язык: %1$s</string>
+    <string name="markdown_a11y_code_fallback_language">КОД</string>
+    <string name="markdown_a11y_copy_code">Копировать код</string>
+    <string name="markdown_a11y_alert">Предупреждение %1$s</string>
     <string name="chat_save_image">Сохранить изображение</string>
     <string name="chat_image_saved">Изображение сохранено</string>
     <string name="chat_image_save_failed">Не удалось сохранить изображение</string>
