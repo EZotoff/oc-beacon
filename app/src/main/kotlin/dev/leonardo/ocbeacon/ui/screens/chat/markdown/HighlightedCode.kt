@@ -9,8 +9,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -71,6 +73,16 @@ import org.intellij.markdown.ast.ASTNode
 /** #488③：数学降级块的围栏 info 识别位（transformMathFallback 产物专属，AI 手写 math 围栏同享受徽标——语义本就是数学）。 */
 internal const val MATH_FENCE_LANGUAGE = "math"
 
+/**
+ * #488 批2：同步初值着色的长度阈值。JVM 实测 buildSafeHighlightedAnnotatedString
+ * ~1.3µs/char 线性（HighlightedCodeSyncCapProbeTest：459c=0.67ms / 1883c=2.5ms），
+ * Android ×3 折算 400c≈2ms——主线程组合内可付；更大的块走
+ * [CodeHighlightCache] 命中路径（重看零成本）或保持异步初值（首看 1-2 帧纯色）。
+ * 流式围栏逐批重组也经此分支：≤400 字符的批次同步着色成本被 48ms 批节奏天然
+ * 节流（≤20/s × 2ms ≈ 4% 主线程）。
+ */
+internal const val SYNC_HIGHLIGHT_CAP = 400
+
 @Composable
 internal fun SafeHighlightedCodeFence(
     content: String,
@@ -126,22 +138,40 @@ internal fun SafeHighlightedCode(
     val backgroundCodeColor = LocalMarkdownColors.current.codeBackground
     val codeBackgroundCornerSize = LocalMarkdownDimens.current.codeBackgroundCornerSize
     val codeBlockPadding = LocalMarkdownPadding.current.codeBlock
-    // 初值 = 纯文本（无空窗）；key 含 theme——主题切换重启作业换新色（上游
-    // 潜在 stale 修复）。language 变化仅在流式围栏改写 info 行时可观测，一并入键。
+    // 初值 = 缓存命中（重看零成本）> 同步着色（≤CAP 小块首帧即着色）> 纯文本
+    // （无空窗兜底，大块首看异步 1-2 帧纯色后着色并落缓存）。
+    // 同步分支只在初值会被消费时执行（produceState 状态首次创建）——流式逐批
+    // re-key 时 remember 重算的同步结果是纯浪费（状态不重置、初值不再读取），
+    // consumed 旗标挡之；组合位销毁重建（滚动离开再回看）旗标随之复位。
+    var initialConsumed by remember { mutableStateOf(false) }
+    val initialHighlighted: AnnotatedString = remember(code, language, theme) {
+        initialHighlightedFor(code, language, theme, allowSync = !initialConsumed)
+    }
+    initialConsumed = true
     val codeHighlights: AnnotatedString by produceState(
-        initialValue = AnnotatedString(text = code),
+        initialValue = initialHighlighted,
         key1 = code,
         key2 = language,
         key3 = theme,
     ) {
+        // 初值已着色且与当前 code 同源（缓存命中/同步路径）→ 跳过重复作业；
+        // re-key 后 value 残留上一批着色（produceState 跨键不重置），需文本
+        // 相等守卫防冻结旧帧。
+        if (value.spanStyles.isNotEmpty() && value.text.toString() == code) {
+            return@produceState
+        }
         val job = launch(Dispatchers.Default) {
             val t0 = if (BuildConfig.DEBUG) System.currentTimeMillis() else 0L
-            value = buildSafeHighlightedAnnotatedString(code, language, theme)
+            val v = buildSafeHighlightedAnnotatedString(code, language, theme)
+            if (v.spanStyles.isNotEmpty()) {
+                CodeHighlightCache.put("$language|${System.identityHashCode(theme)}|$code", v)
+            }
+            value = v
             if (BuildConfig.DEBUG) {
                 AppLogger.d(
                     "CodeHL",
                     "len=" + code.length + " lang=" + (language ?: "-") +
-                        " spans=" + value.spanStyles.size + " ms=" + (System.currentTimeMillis() - t0),
+                        " spans=" + v.spanStyles.size + " ms=" + (System.currentTimeMillis() - t0),
                 )
             }
         }
@@ -267,6 +297,30 @@ internal fun buildSafeHighlightedAnnotatedString(
             .getHighlights()
     }.getOrNull().orEmpty()
     return applyHighlightSpans(code, highlights)
+}
+
+/**
+ * #488 批2：produceState 初值策略（纯函数供 JVM 直测）。
+ *
+ * 优先级：缓存命中（重看零成本）> 同步着色（[allowSync]=首组合且 ≤CAP）> 纯文本
+ * 兜底（无空窗）。同步产物回写缓存（下轮重看同享零成本）；空结果（未知语言）
+ * 不入缓存（命中与 miss 不可区分且无重取价值）。键含 theme 身份防跨主题串色。
+ */
+internal fun initialHighlightedFor(
+    code: String,
+    language: String?,
+    theme: SyntaxTheme,
+    allowSync: Boolean,
+): AnnotatedString {
+    val cacheKey = "$language|${System.identityHashCode(theme)}|$code"
+    CodeHighlightCache.get(cacheKey)?.let { return it }
+    if (allowSync && code.length <= SYNC_HIGHLIGHT_CAP) {
+        buildSafeHighlightedAnnotatedString(code, language, theme)
+            .takeIf { it.spanStyles.isNotEmpty() }
+            ?.also { CodeHighlightCache.put(cacheKey, it) }
+            ?.let { return it }
+    }
+    return AnnotatedString(text = code)
 }
 
 /**
