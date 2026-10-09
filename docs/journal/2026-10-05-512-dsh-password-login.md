@@ -89,3 +89,11 @@
 **实现**：链式包装 `connection.authorizeIndex`——无 token 且未认证的 index 请求 → `303 → /plugins/dsh-password-login/login`（cache-control: no-store）。token 交换流与已认证请求原样走官方路径；**stale（金丝雀漂移）时不劫持**（铸票不可信时重定向必成死循环，退回官方 401）；fail-open + dispose 还原同款三保险。新增 `src/rootredirect.ts` 纯函数 + 4 例单测；E2E A03 改弹跳断言、F05 零配置全链（/ → 303 login → 免密铸票 → 303 / → 200）——**七相位 50 断言全绿**，单测 67/67。
 
 **容器 401 假象排查记（备查）**：slim 镜像无 ps/pgrep/pkill/ss——"强杀+端口清空确认"全部静默失败（`|| echo port clear` 是命令不存在的假阴性），旧进程一直活着答 401；按 /proc 精确 PID kill 后立刻 303。宿主与容器代码行为一致，无真实差异。演示容器 dsh-pw-demo 已加载最终版（弹跳+绝对回收）。
+
+## 热改密码均匀不变量轮（2026-10-09 用户裁决，验收后增量）
+
+生命周期审计发现 #4 补齐：密码经**任何通道**变化（面板 rotate/yml 直改热重载/env+重启）=**即时全员下线**——消除"yml 改密旧会话活到重启"的非常规窗口。
+
+**实现**（插件仓 3a8545c）：`loader/volatile-update` watch——活密码指纹 ≠ `fingerprint.value`（epoch 已反映的指纹）时即时推进 epoch 并持久化；判据用 fingerprint.value 天然防 /rotate 双重推进；**竞态根修**：rotate 自动换票改用 onRotated 后 fresh now() 铸（watch 可能在 persist 窗口把 epoch 推得更晚）。`hotPasswordTransition` 纯函数 + 4 例单测。
+
+**验证**：单测 68/68；E2E 九相位 56 断言全绿（新增 H/I：轮换者换票在 watch 下存活；yml 热改后旧票未重启即死；新密即铸）。E2E 时序坑：watcher 去抖窗口，I01 轮询 16×500ms。README 三处精修（均匀不变量取代旧边界描述）。**3080 生产已更新生效**（session=401 密码态、弹跳=303）。卡片 #512 已于验收时迁移，本轮为验收后用户裁决增量，仅 journal 记录。
