@@ -40,6 +40,9 @@ object SupervisorDiff {
         currentFailing: Set<String>,
     ): List<String> = currentFailing.filter { it !in previousFailing }.sorted()
 
-    /** errorsLastHourPeak 是否较上次快照上升。 */
-    fun errorsPeakIncreased(previousPeak: Int, currentPeak: Int): Boolean = currentPeak > previousPeak
+    /** errorsLastHourPeak 是否较上次快照“显著”上升（去抖：+max(10, 50%)）。
+     *  峰值在 supervisor 进程生命周期内单调不降——朴素 current>previous 会在风暴爬升期
+     *  每次轮询都推送（2026-10-09 实报刷屏）。显著上升才推送：+10 或 +50% 取大者。 */
+    fun errorsPeakIncreased(previousPeak: Int, currentPeak: Int): Boolean =
+        currentPeak >= previousPeak + maxOf(10, previousPeak / 2)
 }

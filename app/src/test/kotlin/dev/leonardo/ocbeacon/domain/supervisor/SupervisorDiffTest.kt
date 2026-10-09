@@ -72,9 +72,18 @@ class SupervisorDiffTest {
     }
 
     @Test
-    fun `errorsPeakIncreased only on rise`() {
-        assertTrue(SupervisorDiff.errorsPeakIncreased(3, 4))
+    fun `errorsPeakIncreased only on significant rise (hysteresis plus 10 or 50 percent)`() {
+        // 风暴爬升期的小步递增不再逐档推送
+        assertFalse(SupervisorDiff.errorsPeakIncreased(3, 4))
         assertFalse(SupervisorDiff.errorsPeakIncreased(4, 4))
         assertFalse(SupervisorDiff.errorsPeakIncreased(5, 4))
+        // +10 绝对阈值：从 0 起 10 即显著（与 supervisor 阈值 10 对齐）
+        assertFalse(SupervisorDiff.errorsPeakIncreased(0, 9))
+        assertTrue(SupervisorDiff.errorsPeakIncreased(0, 10))
+        // 50% 相对阈值：20+10=30 边界；100+50=150
+        assertTrue(SupervisorDiff.errorsPeakIncreased(20, 30))
+        assertFalse(SupervisorDiff.errorsPeakIncreased(20, 29))
+        assertTrue(SupervisorDiff.errorsPeakIncreased(100, 150))
+        assertFalse(SupervisorDiff.errorsPeakIncreased(100, 140))
     }
 }
