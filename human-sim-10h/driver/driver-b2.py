@@ -101,16 +101,28 @@ def hunt_logcat_tail(tag, lines=400):
     except Exception:
         pass
 
+def user_bubble_count(text_eq):
+    """屏上 text 恰等于 text_eq 的节点数（v1 悲观消息：POST 成功+SSE 回显后上屏）。"""
+    root = dump_xml()
+    if root is None: return -1
+    return len(nodes(root, lambda n: (n.get("text") or "").strip() == text_eq))
+
 def flow_nl_inject():
-    """#454：Run+两次 keyevent 66 注入换行 → 发送 → 断言 POST 发出。
-    66 在该输入域实测为换行注入（send 走 dump 定位发送键）；若机型行为不同
-    （66=发送）同样被断言覆盖。"""
+    """#454：Run+两次 keyevent 66 注入换行 → 发送 → 断言「上屏回显 or POST 计数」
+    双通道任一（2026-10-09 判别链教训：POST grep 通道在 LogcatCapture 缺席的
+    one-shot 场景假阴性；上屏回显=悲观消息模式的最强用户可见信号）。
+    态守卫：仅 desc=发送（idle）时执行——停止态=忙/错误重试轮（wire-probe 会话
+    模型残留选择实证：1m25s 错误窗会吞掉注入窗口造成 miss 假象）。"""
     if not open_chat():
         return
     root = dump_xml()
     if screen_state(root) != "chat":
         return
+    btn0 = by_desc(root, "\u53d1\u9001")
+    if not btn0:
+        action("h454_skip_state"); return
     pre = count_sent_prompt()
+    pre_bubble = user_bubble_count("run")
     inp = nodes(root, lambda n: n.get("class") == "android.widget.EditText")
     if not inp:
         return
@@ -119,20 +131,31 @@ def flow_nl_inject():
     time.sleep(0.3)
     sh("shell", "input", "keyevent", "66"); time.sleep(0.3)
     sh("shell", "input", "keyevent", "66"); time.sleep(rng.uniform(0.6, 1.2))
-    # 输入域仍含内容（换行已注入）→ dump 定位发送键（IME 位移纪律）
-    root2 = dump_xml()
-    field = nodes(root2 or ET.Element("x"), lambda n: n.get("class") == "android.widget.EditText")
-    if field and (field[0].get("text") or "").strip():
-        btn = by_desc(root2, "\u53d1\u9001")  # 发送
-        if btn:
-            tap_node(btn[0]); time.sleep(0.5)
+    # 输入域仍含内容（换行已注入）→ 发送；IME 关闭动画防伪影：每次点击前
+    # 重 dump 取稳态坐标 + 最多 3 次稳态重试（首次短验证 2/2 MISS 的竞争解释
+    # 之一=动画中段坐标陈旧 tap 落空——三次稳态全失败才定罪，2026-10-09）
     HUNT["nl_inject"] += 1
     ok = False
-    t0 = time.time()
-    while time.time() - t0 < 12:
-        if count_sent_prompt() > pre:
-            ok = True; break
-        time.sleep(1.5)
+    for attempt in range(3):
+        root2 = dump_xml()
+        if by_desc(root2 or ET.Element("x"), "\u505c\u6b62"):  # 停止=忙窗竞态（上一轮错误重试/流式中）→ 跳过本轮
+            action("h454_skip_busy")
+            return
+        field = nodes(root2 or ET.Element("x"), lambda n: n.get("class") == "android.widget.EditText")
+        if not field or not (field[0].get("text") or "").strip():
+            time.sleep(1.5)  # 已清空=可能已发出，落入下方计数判定
+        else:
+            btn = by_desc(root2, "\u53d1\u9001")  # 发送
+            if btn:
+                tap_node(btn[0])
+        t0 = time.time()
+        while time.time() - t0 < 8:
+            if count_sent_prompt() > pre or user_bubble_count("run") > pre_bubble:
+                ok = True; break
+            time.sleep(1.5)
+        if ok:
+            break
+        action("h454_attempt", n=attempt + 1)
     if ok:
         action("h454_pass"); during_stream()
     else:
