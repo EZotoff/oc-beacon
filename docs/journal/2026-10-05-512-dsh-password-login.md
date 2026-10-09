@@ -97,3 +97,13 @@
 **实现**（插件仓 3a8545c）：`loader/volatile-update` watch——活密码指纹 ≠ `fingerprint.value`（epoch 已反映的指纹）时即时推进 epoch 并持久化；判据用 fingerprint.value 天然防 /rotate 双重推进；**竞态根修**：rotate 自动换票改用 onRotated 后 fresh now() 铸（watch 可能在 persist 窗口把 epoch 推得更晚）。`hotPasswordTransition` 纯函数 + 4 例单测。
 
 **验证**：单测 68/68；E2E 九相位 56 断言全绿（新增 H/I：轮换者换票在 watch 下存活；yml 热改后旧票未重启即死；新密即铸）。E2E 时序坑：watcher 去抖窗口，I01 轮询 16×500ms。README 三处精修（均匀不变量取代旧边界描述）。**3080 生产已更新生效**（session=401 密码态、弹跳=303）。卡片 #512 已于验收时迁移，本轮为验收后用户裁决增量，仅 journal 记录。
+
+## docker 全链补测轮（2026-10-09 用户追问"docker 中完整模拟器/web 端到端测了吗"）
+
+诚实盘点后补齐三块（此前 docker 侧只有旧版本 curl 矩阵 + 早期模拟器腿；web 全链在宿主本地）：
+
+1. **docker curl 矩阵 × 最终构建**（含方法守卫/revoke/弹跳/热改 watch）：12/12 PASS（非回环 fail-closed/回环免密首设/密码态 Bearer/Basic//api 准入/金丝雀跨对端）。脚本宿主端口参数化 `E2E_DOCKER_PORT`（避免与常驻演示容器撞 8181）。
+2. **web × docker**（dsh-pw-demo@8181 最终构建）：curl 面回收端点 + 旧票 401 + 无票弹跳 303；浏览器导航 `/` → 弹跳落 `/login`（DOM 取证 "authentication required" 挑战态；原生 Basic 框致截图黑屏属预期）。
+3. **模拟器 × docker × 最终构建**：app 对 10.0.2.2:8181 → `Online(V012, authenticated=true)` + 会话列表渲染真实数据行。
+
+环境坑（colima）：跨天后 docker daemon 死 → `colima start` 复活，容器 Exited(255) 需 docker start + 容器内 dsh 进程按 /proc PID 重启；**`--trusted-host 10.0.2.2:8181` 漏带会被官方 /api 栅栏 403 误判为 Unreachable**（app 探测 slash=403 dot=403）——LAN 形态部署清单项。
