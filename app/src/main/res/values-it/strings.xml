@@ -128,6 +128,8 @@
     <string name="session_menu_archive">Archivia</string>
     <string name="session_archived_section_title">Archiviate (%1$d)</string>
     <string name="session_archive_failed">Archiviazione della sessione non riuscita</string>
+    <string name="session_menu_unarchive">Annulla archiviazione</string>
+    <string name="session_unarchive_failed">Impossibile annullare l\'archiviazione della sessione</string>
     <string name="chat_stop">Ferma</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->

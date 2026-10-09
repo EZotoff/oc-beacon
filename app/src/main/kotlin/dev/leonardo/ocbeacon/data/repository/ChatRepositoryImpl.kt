@@ -496,6 +496,15 @@ class ChatRepositoryImpl @Inject constructor(
         adapters.ports(conn).requireWorkspace(conn).archiveSession(conn, sessionId)
     }
 
+    /** workspace/unarchiveSession（#352）：同归档链——端口缺席/V011 显式 unsupported。 */
+    override suspend fun unarchiveSession(
+        serverId: String,
+        sessionId: String,
+    ): Result<List<String>> = runCatchingCancellable {
+        val conn = resolveConnection(serverId)
+        adapters.ports(conn).requireWorkspace(conn).unarchiveSession(conn, sessionId)
+    }
+
     /**
      * workspace 快照流：DshWorkspaceStore 直读（非 DSH 服务器无 workspace 帧 →
      * 恒空快照——端点缺席降级形态，listAgentPresets 空表先例同款）。

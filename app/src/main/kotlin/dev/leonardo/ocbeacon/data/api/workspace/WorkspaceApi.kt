@@ -14,6 +14,12 @@ interface WorkspaceApi {
     /** 归档会话；回执即新的完整归档集合（幂等 add-only，见 SessionTreeList）。 */
     suspend fun archiveSession(conn: ServerConnection, sessionId: String): List<String>
 
+    /**
+     * 取消归档（#352）；回执同为新完整归档集合（幂等——未归档 id 不报错）。
+     * 动词上游 0.1.6-alpha.1（2026-09-15）引入；行去留仍走 follow 增量，与归档同链。
+     */
+    suspend fun unarchiveSession(conn: ServerConnection, sessionId: String): List<String>
+
     /** session.list 全量（含 blank 空壳）——列表流另行滤除 blank。 */
     suspend fun listSessionsIncludingBlank(conn: ServerConnection): List<Session>
 }

@@ -130,6 +130,8 @@ class SessionListViewModel @Inject constructor(
         const val ERROR_SERVER_DISCONNECTED = "__server_disconnected__"
         /** #311：归档失败哨兵（error 通道复用；UI 映射本地化文案）。 */
         const val ERROR_ARCHIVE_FAILED = "__archive_failed__"
+        /** #352：取消归档失败哨兵（error 通道复用；UI 映射本地化文案）。 */
+        const val ERROR_UNARCHIVE_FAILED = "__unarchive_failed__"
     }
 
     val serverId: String = safeDecodeParam(savedStateHandle.get<String>("serverId") ?: "")
@@ -1158,6 +1160,25 @@ class SessionListViewModel @Inject constructor(
                     if (e is CancellationException) throw e
                     AppLogger.e(TAG_SESSION_LIST_VM, "Failed to archive session " + sessionId, e)
                     _error.value = ERROR_ARCHIVE_FAILED
+                }
+        }
+    }
+
+    /**
+     * #352 取消归档：workspace/unarchiveSession RPC——语义/链路与 [archiveSession]
+     * 完全同构（幂等回执、不乐观更新、follow 增量驱动行回主列表、失败仅 snackbar）。
+     */
+    fun unarchiveSession(sessionId: String) {
+        if (fastFailIfLinkBlocked()) return  // #267
+        viewModelScope.launch {
+            chatRepository.unarchiveSession(serverId, sessionId)
+                .onSuccess { receipt ->
+                    AppLogger.i(TAG_SESSION_LIST_VM, "Unarchived session " + sessionId + " (server receipt: " + receipt.size + " archived)")
+                }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    AppLogger.e(TAG_SESSION_LIST_VM, "Failed to unarchive session " + sessionId, e)
+                    _error.value = ERROR_UNARCHIVE_FAILED
                 }
         }
     }

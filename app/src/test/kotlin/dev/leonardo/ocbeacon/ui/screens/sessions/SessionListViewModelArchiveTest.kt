@@ -132,6 +132,63 @@ class SessionListViewModelArchiveTest {
         }
     }
 
+    // ============ #352 取消归档（镜像 #311 三态） ============
+
+    @Test
+    fun `unarchiveSession delegates to repository and keeps error clear on success`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        try {
+            coEvery { chatRepository.unarchiveSession("srv1", "s1") } returns
+                Result.success(listOf("s9"))
+            val vm = createViewModel()
+
+            vm.unarchiveSession("s1")
+            testScheduler.advanceUntilIdle()
+
+            coVerify(exactly = 1) { chatRepository.unarchiveSession("srv1", "s1") }
+            assertNull(vm.error.value)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `unarchiveSession failure surfaces sentinel error for localized snackbar`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        try {
+            coEvery { chatRepository.unarchiveSession("srv1", "s1") } returns
+                Result.failure(RuntimeException("unarchive rpc failed"))
+            val vm = createViewModel()
+
+            vm.unarchiveSession("s1")
+            testScheduler.advanceUntilIdle()
+
+            coVerify(exactly = 1) { chatRepository.unarchiveSession("srv1", "s1") }
+            assertEquals(SessionListViewModel.ERROR_UNARCHIVE_FAILED, vm.error.value)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `unarchiveSession fast-fails offline without repository call`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        try {
+            // 断连态：#267 快速失败哨兵，不发 RPC
+            every { sseConnectionManager.linkState(any()) } returns
+                dev.leonardo.ocbeacon.service.ServerLinkState.Disconnected
+            val vm = createViewModel()
+
+            vm.unarchiveSession("s1")
+            testScheduler.advanceUntilIdle()
+
+            assertEquals(SessionListViewModel.ERROR_SERVER_DISCONNECTED, vm.error.value)
+            coVerify(exactly = 0) { chatRepository.unarchiveSession(any(), any()) }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test
     fun `archiveSession fast-fails offline without repository call`() = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))

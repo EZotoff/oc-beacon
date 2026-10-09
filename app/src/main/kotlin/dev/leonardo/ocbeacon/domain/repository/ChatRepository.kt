@@ -362,6 +362,15 @@ interface ChatRepository {
     ): Result<List<String>>
 
     /**
+     * DSH workspace/unarchiveSession（#352 取消归档）→ 回执同为新完整归档集合。
+     * 降级语义与 [archiveSession] 一致：非 DSH 后端 / DSH V011 → unsupported。
+     */
+    suspend fun unarchiveSession(
+        serverId: String,
+        sessionId: String,
+    ): Result<List<String>>
+
+    /**
      * workspace 快照流（workspaces + archivedSessionIds；workspace/follow baseline
      * 维护，DshWorkspaceStore 单一真相源）。非 DSH 服务器无 workspace 帧 → 恒空快照。
      */

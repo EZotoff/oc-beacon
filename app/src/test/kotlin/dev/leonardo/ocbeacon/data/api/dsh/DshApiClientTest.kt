@@ -2301,6 +2301,35 @@ class DshApiClientTest {
         )
     }
 
+    /**
+     * V012 workspace/unarchiveSession（#352；wire 形状与 archiveSession 同款）：
+     * 信封方法名/载荷 {args:{request:{sessionId}}}；回执同为新完整归档集合
+     * （幂等——回执集合已不含被恢复 id）。
+     */
+    @Test
+    fun `v012 unarchiveSession posts workspace unarchiveSession and parses receipt`() = runTest {
+        val engine = MockEngine { respond(ok("""{"archivedSessionIds":["s-2"]}"""), HttpStatusCode.OK, jsonHeaders()) }
+        val archived = client(engine, DshWireProtocol.V012).unarchiveSession(conn, "s-9")
+        assertEquals(listOf("s-2"), archived)
+        val req = captureRequests(engine).single()
+        assertEquals("/api/workspace/unarchiveSession", req.url.encodedPath)
+        val body = json.parseToJsonElement(bodyTextOf(req)).jsonObject
+        assertEquals("workspace/unarchiveSession", body["method"]!!.jsonPrimitive.content)
+        assertEquals(
+            """{"args":{"request":{"sessionId":"s-9"}}}""",
+            body["payload"].toString(),
+        )
+    }
+
+    /** V011 线面无 workspace/unarchiveSession（动词 0.1.6-alpha.1 才引入）→ UnsupportedServerCapability。 */
+    @Test
+    fun `unarchiveSession throws unsupported on v011`() = runTest {
+        val engine = MockEngine { respond(ok("{}"), HttpStatusCode.OK, jsonHeaders()) }
+        val outcome = runCatching { client(engine).unarchiveSession(conn, "s-1") }
+        assertTrue(outcome.isFailure)
+        assertTrue(outcome.exceptionOrNull() is dev.leonardo.ocbeacon.data.api.UnsupportedServerCapability)
+    }
+
     /** V011 线面无 workspace/archiveSession（0.1.1 方法面无此动词）→ UnsupportedServerCapability。 */
     @Test
     fun `archiveSession throws unsupported on v011`() = runTest {

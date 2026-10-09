@@ -128,6 +128,8 @@
     <string name="session_menu_archive">Archivar</string>
     <string name="session_archived_section_title">Archivadas (%1$d)</string>
     <string name="session_archive_failed">No se pudo archivar la sesión</string>
+    <string name="session_menu_unarchive">Desarchivar</string>
+    <string name="session_unarchive_failed">No se pudo desarchivar la sesión</string>
     <string name="chat_stop">Detener</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->

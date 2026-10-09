@@ -128,6 +128,8 @@
     <string name="session_menu_archive">أرشفة</string>
     <string name="session_archived_section_title">المؤرشفة (%1$d)</string>
     <string name="session_archive_failed">تعذّر أرشفة الجلسة</string>
+    <string name="session_menu_unarchive">إلغاء الأرشفة</string>
+    <string name="session_unarchive_failed">تعذّر إلغاء أرشفة الجلسة</string>
     <string name="chat_stop">إيقاف</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->

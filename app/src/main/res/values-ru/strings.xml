@@ -55,6 +55,8 @@
     <string name="session_menu_archive">В архив</string>
     <string name="session_archived_section_title">В архиве (%1$d)</string>
     <string name="session_archive_failed">Не удалось отправить сессию в архив</string>
+    <string name="session_menu_unarchive">Убрать из архива</string>
+    <string name="session_unarchive_failed">Не удалось убрать сессию из архива</string>
     <!-- Chat Screen -->
     <string name="chat_mention_session_a11y">Сессия %1$s</string>
     <string name="chat_mention_same_workspace">Тот же воркспейс</string>

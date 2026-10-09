@@ -82,6 +82,8 @@
     <string name="session_menu_archive">Archive</string>
     <string name="session_archived_section_title">Archived (%1$d)</string>
     <string name="session_archive_failed">Failed to archive session</string>
+    <string name="session_menu_unarchive">Unarchive</string>
+    <string name="session_unarchive_failed">Failed to unarchive session</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
     <string name="session_directory_details">Directory details</string>

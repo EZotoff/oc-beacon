@@ -66,6 +66,8 @@
     <string name="session_menu_archive">Arsipkan</string>
     <string name="session_archived_section_title">Diarsipkan (%1$d)</string>
     <string name="session_archive_failed">Gagal mengarsipkan sesi</string>
+    <string name="session_menu_unarchive">Batalkan pengarsipan</string>
+    <string name="session_unarchive_failed">Gagal membatalkan pengarsipan sesi</string>
     <string name="session_pending_question">Menunggu jawaban</string>
     <string name="session_pending_approval">Menunggu persetujuan</string>
     <string name="session_changes_additions">+%1$d</string>

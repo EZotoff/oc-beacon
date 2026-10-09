@@ -307,6 +307,16 @@ class ChatRepositoryImplTest {
     }
 
     @Test
+    fun `unarchiveSession proxies to workspace port and returns new archived set for dsh server`() = runTest {
+        coEvery { serverRepo.getServer("srv-dsh") } returns ServerConfig(
+            id = "srv-dsh", url = "http://dsh.local", serverType = ServerType.Dsh,
+        )
+        coEvery { workspaceApi.unarchiveSession(any(), "s-9") } returns listOf("s-2")
+        val result = repo.unarchiveSession("srv-dsh", "s-9")
+        assertEquals(listOf("s-2"), result.getOrThrow())
+    }
+
+    @Test
     fun `mentionCandidates delegates to references port`() = runTest {
         coEvery { serverRepo.getServer("srv-dsh") } returns ServerConfig(
             id = "srv-dsh", url = "http://dsh.local", serverType = ServerType.Dsh,

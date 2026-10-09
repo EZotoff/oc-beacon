@@ -1460,6 +1460,23 @@ class DshApiClient @Inject constructor(
             .mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
     }
 
+    /**
+     * workspace/unarchiveSession（#352）：payload {sessionId}，回执形状与 archiveSession
+     * 完全一致（WorkspaceArchiveValue——完整新归档集合，集合替换式）。动词上游
+     * 0.1.6-alpha.1（2026-09-15）引入、回执幂等（未归档 id 不报错）——2026-10-09
+     * 现网 0.2.0-rc.2 安装树四路实证（dsh-api-workspace-controller index.js:317 等）。
+     * 行去留仍由 workspace/follow {type:'archived'} 增量驱动（集合替换式同链），
+     * 回执仅日志。V011 线面无此动词 → [UnsupportedServerCapability]。
+     */
+    suspend fun unarchiveSession(conn: ServerConnection, sessionId: String): List<String> {
+        if (protocolOf(conn) != DshWireProtocol.V012) unsupported("workspace.unarchiveSession")
+        val value = rpc.call(conn, "workspace/unarchiveSession", buildJsonObject {
+            put("sessionId", sessionId)
+        }) { it }.getOrElse { e -> throw e }
+        return (value.dshArr("archivedSessionIds") ?: emptyList())
+            .mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+    }
+
     override suspend fun deleteMessage(conn: ServerConnection, sessionId: String, messageId: String): Boolean = false
 
     override suspend fun deleteMessagePart(
