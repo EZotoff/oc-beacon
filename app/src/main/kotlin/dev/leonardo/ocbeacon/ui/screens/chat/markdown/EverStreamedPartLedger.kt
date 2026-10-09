@@ -17,9 +17,21 @@ package dev.leonardo.ocbeacon.ui.screens.chat.markdown
  */
 internal object EverStreamedPartLedger {
     private const val MAX_ENTRIES = 512
+    private const val MAX_STATES = 32
 
     private val entries = object : LinkedHashMap<String, Boolean>(64, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>?): Boolean = size > MAX_ENTRIES
+    }
+
+    /**
+     * #486 根修二期：pilot 终态 state 对象缓存（槽位销毁时经 onDispose 捕获）。
+     * 已解析的 [com.mikepenz.markdown.model.StreamingMarkdownState] 其
+     * snapshot 流持有最终解析结果——冷重建直接复用渲染（首帧即有内容，零解析
+     * 零空窗）。消费侧必须做内容等值守卫（流式中途销毁缓存的是部分内容）；
+     * 守卫失败降级 pilot coldReveal。上限 32（AST 级驻留，容量远小于标记账本）。
+     */
+    private val terminalStates = object : LinkedHashMap<String, com.mikepenz.markdown.model.StreamingMarkdownState>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, com.mikepenz.markdown.model.StreamingMarkdownState>?): Boolean = size > MAX_STATES
     }
 
     @Synchronized
@@ -31,5 +43,16 @@ internal object EverStreamedPartLedger {
     fun wasStreamed(msgId: String): Boolean = entries[msgId] == true
 
     @Synchronized
-    fun clear() = entries.clear()
+    fun cacheTerminal(msgId: String, state: com.mikepenz.markdown.model.StreamingMarkdownState) {
+        terminalStates[msgId] = state
+    }
+
+    @Synchronized
+    fun cachedTerminal(msgId: String): com.mikepenz.markdown.model.StreamingMarkdownState? = terminalStates[msgId]
+
+    @Synchronized
+    fun clear() {
+        entries.clear()
+        terminalStates.clear()
+    }
 }

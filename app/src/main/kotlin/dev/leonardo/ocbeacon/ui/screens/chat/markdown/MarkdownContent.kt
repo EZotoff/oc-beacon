@@ -13,7 +13,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
@@ -391,6 +393,11 @@ internal fun MarkdownContent(
     //（完结后无后续增量，扣留=永扣）。由 PartContent 从 bus 覆盖生命周期与
     // 会话流式态推导，仅 pilot 分支消费。
     contentTerminal: Boolean = false,
+    // #486 根修（2026-10-09）：msgId 级「曾流式」账本键（PartContent 传
+    // part.messageId）。null（未穿线的调用面）= 行为不变。曾以 pilot 渲染的
+    // 消息在组合位销毁后冷重入时直接再入 pilot 分支（coldReveal 单帧揭示），
+    // 消除 asyncTerminal 首帧 Loading 空窗。
+    everKey: String? = null,
 ) {
     // #517 GapDiag：入口旗标取证（DEBUG-only 探针）
     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
@@ -800,7 +807,25 @@ internal fun MarkdownContent(
     // 终帧=流式帧，完结内容前缀一致（#509 方案B 真机两轮表格 hold 帧零 delta
     // 实证）。）
     var pilotEverRendered by remember { androidx.compose.runtime.mutableStateOf(false) }
-    val pilotRetained = pilotEverRendered
+    // #486 根修二期：账本终态缓存命中——冷重建直接复用已解析的 pilot state
+    //（首帧即有内容，零解析零空窗）。内容等值守卫：流式中途销毁缓存的是部分
+    // 内容、重连回填可能改写——不等则视为 miss。pilot 显示文本为归一化坐标
+    //（#471③），双比对。优先级：活动流式/幸存槽位（下方 eligible/remember 条件）
+    // 先于缓存——活流不被部分缓存劫持；缓存先于 ledgerArmed 冷 pilot。
+    val cachedTerminalState = everKey?.takeIf { !isUser && overrideState == null }?.let { key ->
+        EverStreamedPartLedger.cachedTerminal(key)?.takeIf { cached ->
+            val content = cached.content
+            content.contentEquals(markdown) || content.contentEquals(normalizeForStreaming(markdown))
+        }
+    }
+    // #486 根修：进程级账本武装——曾流式（msgId 级）消息的冷重入直接再入 pilot。
+    // 约束对齐 pilot 语义：isUser 恒不入、override 态不经此（外部 state 自管）；
+    // 仅当 remember 槽位确已销毁（本组合未见过 pilot）时才需要 coldReveal 单帧。
+    // 缓存命中时让位（更优路径）。
+    val ledgerArmed = everKey != null && !isUser && overrideState == null &&
+        cachedTerminalState == null && EverStreamedPartLedger.wasStreamed(everKey)
+    val slotRemembered = pilotEverRendered
+    val pilotRetained = pilotEverRendered || ledgerArmed
     if (streamingPilotEligible(overrideState != null, asyncParse, isUser) ||
         pilotRetained ||
         shardHold
@@ -808,6 +833,7 @@ internal fun MarkdownContent(
         // #437：pilotState.state 只收 SafePrefixGate 放行的定案内容；扣留尾部
         // 经毕业/EOF flush 释放（降亮区已退役）。
         pilotEverRendered = true
+        if (everKey != null) EverStreamedPartLedger.mark(everKey)
         // freeze 恒 false：#472 async 桥接窗已退役（无切换帧可桥），shard 冷续
         // 的 EOF flush 亦须放行——冻结语义全消。
         val pilotState = rememberPilotStreamingMarkdownState(
@@ -815,7 +841,19 @@ internal fun MarkdownContent(
             shard = shardCtl,
             // #518①：终态全量揭示旗标（来源见参数声明处注释）
             terminal = contentTerminal,
+            // #486 根修：账本武装的真冷组合（remember 槽销毁后的重建）单帧揭示；
+            // 存活槽位（slotRemembered）与 Fire 重建（fastRefeed 路径）不受影响。
+            coldReveal = ledgerArmed && !slotRemembered,
         )
+        // #486 根修二期：槽位销毁时捕获 pilot 当前 state（终态或流式中途快照）
+        // 入进程级缓存——冷重建复用已解析对象，首帧即有内容。rememberUpdatedState
+        // 跟随 resetKey 重建后的最新实例。
+        val latestPilotState by rememberUpdatedState(pilotState.state)
+        if (everKey != null) {
+            DisposableEffect(everKey) {
+                onDispose { EverStreamedPartLedger.cacheTerminal(everKey, latestPilotState) }
+            }
+        }
         androidx.compose.foundation.layout.Column {
             // #437 崩溃修复：非前缀重建（resetKey++）换 state 实例的同一帧，
             // 库 Markdown 内部 collectAsState 对流实例的记忆可能残留旧 snapshot
@@ -839,6 +877,24 @@ internal fun MarkdownContent(
             android.util.Log.w("A11yDiag", "path=pilot retained=" + pilotRetained +
                 " len=" + markdown.length)
         }
+        return
+    }
+
+    // #486 根修二期：缓存命中渲染（计算已上移至 pilot 分支判定之前）
+    if (cachedTerminalState != null) {
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+            android.util.Log.w("A11yDiag", "path=cachedTerminal len=" + markdown.length)
+        }
+        Markdown(
+            streamingMarkdownState = cachedTerminalState,
+            colors = colors,
+            typography = typography,
+            components = components,
+            padding = padding,
+            animations = animations,
+            imageTransformer = Coil3ImageTransformerImpl,
+            modifier = Modifier.fillMaxWidth(),
+        )
         return
     }
 

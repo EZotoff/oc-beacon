@@ -43,6 +43,20 @@ class ChatRebuildCollapseTest : BaseChatTest() {
     private fun dev.leonardo.ocbeacon.domain.model.MessageWithParts.toPair():
         Pair<dev.leonardo.ocbeacon.domain.model.Message, List<Part>> = info to parts
 
+    /** 模拟流式增长：替换 messageId 的文本 part（partId 稳定）。 */
+    private fun growText(messageId: String, newText: String) {
+        val currentMap = fakeChat.allPartsMapState.value.toMutableMap()
+        currentMap[messageId] = listOf(
+            Part.Text(
+                id = "part-$messageId",
+                sessionId = TEST_SESSION,
+                messageId = messageId,
+                text = newText,
+            )
+        )
+        fakeChat.allPartsMapState.value = currentMap
+    }
+
     /**
      * >2048 字符终态正文（超 ASYNC_PARSE_MIN_CHARS → async 解析路径）。
      * **pilot 前缀一致**（生产 backfill 语义：重连回填=前缀增量，非内容跳变）——
@@ -119,11 +133,75 @@ class ChatRebuildCollapseTest : BaseChatTest() {
         replaceTerminal("a-ctl", newPartId = null)
         val blank = blankFramesUntilTerminal()
         composeRule.mainClock.autoAdvance = true
-        // 钉当前已知行为（2026-10-09 模拟器判死活实证）：合成全量替换（整 Message
-        // +Part 实例从零替换）即使 partId 稳定也冷重建（生产槽位存活靠 part-updated
-        // 增量路径，09-30 实验 A/B 实证）→ 冷路径首帧 Loading 1 帧空窗。护栏语义：
-        // 恶化（≥2 帧=Loading 拖长/解析回归）即红。
-        assertEquals("稳定 partId 合成重建当前已知 1 帧空窗 trace=$frameTrace", 1, blank)
+        // #486 根修后语义（2026-10-09 A 案）：内容**变化**的冷重建（本用例形态）
+        // 缓存守卫按设计放行（缓存=旧内容），落 ledgerArmed pilot coldReveal——
+        // 新内容解析天然需要 ≥1 帧（同步解析=主线程停顿违 #428 红线），1 帧=底线。
+        // 同内容冷重入（生产主形态：滚动回收/导航回看）走缓存零帧——见
+        // coldReentry_sameContent_servesFromCache_zeroBlank。
+        assertEquals("内容变化冷重建 1 帧底线 trace=$frameTrace", 1, blank)
+    }
+
+    /**
+     * #486 根修验收主判据：**同内容**冷重入（生产主形态——滚动回收/导航回看已
+     * 完结内容）。流式铺开到位后，全量替换（同 partId 新实例+completed 翻转，
+     * 内容不变）→ 槽位销毁冷重建 → 账本终态缓存命中（内容等值守卫过）→
+     * 首帧即有内容，**零空窗**（修复前此形态走 asyncTerminal Loading 1 帧）。
+     * 检测器：替换后正文在场的连续性（缺席帧计数）。
+     */
+    @Test
+    fun coldReentry_sameContent_servesFromCache_zeroBlank() {
+        val sameBody = buildString {
+            append("seed ")
+            repeat(90) { i -> append("Paragraph $i of terminal content crossing the async parse threshold. ") }
+        }
+        val asst = anAssistantMessage(streaming = true, id = "a-cache", sessionId = TEST_SESSION) {
+            text("seed")
+        }
+        setMessages(userWithText("question", "u-cache"), asst.toPair())
+        renderChatScreen()
+        composeRule.onNodeWithText("seed", substring = true).assertIsDisplayed()
+
+        // 流式铺开（autoAdvance 真实节奏——pilot 帽限速分帧入树）
+        composeRule.mainClock.autoAdvance = true
+        growText("a-cache", sameBody)
+        composeRule.waitUntil(timeoutMillis = 30_000) {
+            composeRule.onAllNodesWithText("Paragraph 3", substring = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.mainClock.autoAdvance = false
+
+        // 全量替换：同 partId/同内容/completed 翻转 → 合成槽位销毁（本 harness
+        // 实证：整 Message+Part 实例替换即冷）
+        val completed = anAssistantMessage(streaming = false, id = "a-cache", sessionId = TEST_SESSION) {
+            text(sameBody)
+        }
+        val rebuilt = listOf(
+            Part.Text(id = "part-a-cache", sessionId = TEST_SESSION, messageId = "a-cache", text = sameBody)
+        )
+        val msgs = fakeChat.messagesState.value.toMutableList()
+        msgs[msgs.indexOfFirst { it.id == "a-cache" }] = completed.info
+        fakeChat.messagesState.value = msgs
+        val map = fakeChat.allPartsMapState.value.toMutableMap()
+        map["a-cache"] = rebuilt
+        fakeChat.allPartsMapState.value = map
+
+        // 空窗检测：替换落定后正文缺席帧计数（连续 2 帧在场=稳定）
+        var absent = 0
+        var settled = 0
+        repeat(120) {
+            composeRule.mainClock.advanceTimeByFrame()
+            val present = composeRule.onAllNodesWithText("Paragraph 3", substring = true)
+                .fetchSemanticsNodes().isNotEmpty()
+            if (present) {
+                settled++
+                if (settled >= 2) return@repeat
+            } else {
+                absent++
+            }
+        }
+        composeRule.mainClock.autoAdvance = true
+        // 根修验收：缓存命中=零缺席帧（修复前 asyncTerminal Loading 实证 1 帧）
+        assertEquals("同内容冷重入必须零空窗（终态缓存命中）", 0, absent)
     }
 
     /** 判死活主实验：partId 变化（v1 语义）→ 组合位销毁 → ever=false 重建帧。 */
@@ -140,11 +218,8 @@ class ChatRebuildCollapseTest : BaseChatTest() {
         replaceTerminal("a-rb", newPartId = "part-a-rb-v2")
         val blank = blankFramesUntilTerminal()
         composeRule.mainClock.autoAdvance = true
-        // 判死活结论（2026-10-09 模拟器实证）：ever=false 冷重建的 Loading 空窗帧
-        // **确定性存在**（trace=BT——首帧双无、次帧终态）。形态=1 帧空窗（非
-        // -8575 双跳——#471③/#509 后冷重建不再有归一化跳变，仅 Loading→Success
-        // 一次换装）；生产触发前提（视口内组合位销毁）在 09-30 两次真实 backfill
-        // 实验中未发生。护栏钉 1：≥2 即 Loading 拖长/解析回归预警。
-        assertEquals("partId 变化冷重建当前已知 1 帧空窗 trace=$frameTrace", 1, blank)
+        // #486 根修后语义（2026-10-09 A 案）：partId 变化+内容变化=守卫放行 →
+        // pilot coldReveal 1 帧底线（新内容异步解析下限；同步解析违 #428）。
+        assertEquals("partId+内容双变化冷重建 1 帧底线 trace=$frameTrace", 1, blank)
     }
 }

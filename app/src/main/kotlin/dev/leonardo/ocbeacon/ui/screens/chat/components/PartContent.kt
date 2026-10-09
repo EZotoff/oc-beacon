@@ -225,6 +225,9 @@ private fun PartContentInner(
                             trimTrailingBlockGap = liveText == null && gapCarrier,
                             // #518①：终态全量揭示旗标（pilot gate 拒绝即放行）
                             contentTerminal = contentTerminal,
+                            // #486 根修：msgId 级曾流式账本键——组合位销毁后
+                            // 冷重入再入 pilot（coldReveal 单帧），消除 Loading 空窗
+                            everKey = part.messageId,
                         )
                     }
                 }
