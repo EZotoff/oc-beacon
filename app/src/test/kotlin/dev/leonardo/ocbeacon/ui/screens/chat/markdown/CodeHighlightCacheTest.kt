@@ -95,7 +95,7 @@ class InitialHighlightedForTest {
         val out = initialHighlightedFor(code, "kotlin", theme, allowSync = true)
         assertTrue("超 CAP 不做同步", out.spanStyles.isEmpty())
         assertEquals(code, out.text.toString())
-        assertNull("纯文本初值不应占缓存槽", CodeHighlightCache.get("kotlin|${System.identityHashCode(theme)}|$code"))
+        assertNull("纯文本初值不应占缓存槽", CodeHighlightCache.get(codeCacheKey("kotlin", theme, code)))
     }
 
     @Test
@@ -110,14 +110,14 @@ class InitialHighlightedForTest {
         val code = "plain text without known language"
         val out = initialHighlightedFor(code, "notalang", theme, allowSync = true)
         assertTrue(out.spanStyles.isEmpty())
-        assertNull(CodeHighlightCache.get("notalang|${System.identityHashCode(theme)}|$code"))
+        assertNull(CodeHighlightCache.get(codeCacheKey("notalang", theme, code)))
     }
 
     @Test
     fun `缓存命中优先于同步`() {
         val code = kotlinCode(300)
         val cached = AnnotatedString(code, listOf())
-        CodeHighlightCache.put("kotlin|${System.identityHashCode(theme)}|$code", cached)
+        CodeHighlightCache.put(codeCacheKey("kotlin", theme, code), cached)
         val out = initialHighlightedFor(code, "kotlin", theme, allowSync = true)
         assertSame(cached, out)
     }

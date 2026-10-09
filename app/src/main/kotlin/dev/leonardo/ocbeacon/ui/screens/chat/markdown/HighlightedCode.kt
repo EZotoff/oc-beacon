@@ -143,28 +143,32 @@ internal fun SafeHighlightedCode(
     // 同步分支只在初值会被消费时执行（produceState 状态首次创建）——流式逐批
     // re-key 时 remember 重算的同步结果是纯浪费（状态不重置、初值不再读取），
     // consumed 旗标挡之；组合位销毁重建（滚动离开再回看）旗标随之复位。
+    // SideEffect 提交后置位：组合中写状态会白付一次额外重组。
     var initialConsumed by remember { mutableStateOf(false) }
     val initialHighlighted: AnnotatedString = remember(code, language, theme) {
         initialHighlightedFor(code, language, theme, allowSync = !initialConsumed)
     }
-    initialConsumed = true
+    androidx.compose.runtime.SideEffect { initialConsumed = true }
     val codeHighlights: AnnotatedString by produceState(
         initialValue = initialHighlighted,
         key1 = code,
         key2 = language,
         key3 = theme,
     ) {
-        // 初值已着色且与当前 code 同源（缓存命中/同步路径）→ 跳过重复作业；
-        // re-key 后 value 残留上一批着色（produceState 跨键不重置），需文本
-        // 相等守卫防冻结旧帧。
-        if (value.spanStyles.isNotEmpty() && value.text.toString() == code) {
+        // 跳过条件 = 同一性：value 就是本次键的初值实例且已着色（缓存命中/
+        // 同步路径产物）→ 无重复作业。re-key（新批文本/主题切换/语言改写）时
+        // value 残留上一键产物（produceState 跨键不重置）≠ 新初值实例 → 必然
+        // 走作业——主题换色语义由此保全（旧实现「key 含 theme 重启换新色」
+        // 的行为不得回归）。文本相等性守卫在此不可用：主题变了文本没变会
+        // 误跳过、冻结旧色。
+        if (value === initialHighlighted && value.spanStyles.isNotEmpty()) {
             return@produceState
         }
         val job = launch(Dispatchers.Default) {
             val t0 = if (BuildConfig.DEBUG) System.currentTimeMillis() else 0L
             val v = buildSafeHighlightedAnnotatedString(code, language, theme)
             if (v.spanStyles.isNotEmpty()) {
-                CodeHighlightCache.put("$language|${System.identityHashCode(theme)}|$code", v)
+                CodeHighlightCache.put(codeCacheKey(language, theme, code), v)
             }
             value = v
             if (BuildConfig.DEBUG) {
@@ -312,7 +316,7 @@ internal fun initialHighlightedFor(
     theme: SyntaxTheme,
     allowSync: Boolean,
 ): AnnotatedString {
-    val cacheKey = "$language|${System.identityHashCode(theme)}|$code"
+    val cacheKey = codeCacheKey(language, theme, code)
     CodeHighlightCache.get(cacheKey)?.let { return it }
     if (allowSync && code.length <= SYNC_HIGHLIGHT_CAP) {
         buildSafeHighlightedAnnotatedString(code, language, theme)
@@ -322,6 +326,14 @@ internal fun initialHighlightedFor(
     }
     return AnnotatedString(text = code)
 }
+
+/**
+ * 缓存键（初值查询与异步作业落缓存两处共用——手拼两份一旦漂移即静默 miss）。
+ * theme 用实例身份：[CodeSyntaxTheme] 按 colorScheme 键控 remember，主题/AMOLED
+ * 切换必然换实例（identityHashCode 碰撞率可忽略，LRU 兜底）。
+ */
+internal fun codeCacheKey(language: String?, theme: SyntaxTheme, code: String): String =
+    "$language|${System.identityHashCode(theme)}|$code"
 
 /**
  * span 应用（独立纯函数供 JVM 单测直测区间守卫）。
