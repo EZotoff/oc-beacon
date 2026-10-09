@@ -183,6 +183,11 @@ internal fun rememberPilotStreamingMarkdownState(
      *  屏幕止于尾句冒号）。terminal=true 时 gate 拒绝即放行剩余全部——终态
      *  内容为最终值，无节流/分批必要，单帧一次追平。 */
     terminal: Boolean = false,
+    /** #486 根修（2026-10-09）：账本武装的冷重入（曾流式消息组合位销毁后重建）
+     *  ——首跑单帧全量揭示（RefeedPacing 上限档，同 #442 冷续语义），绕过
+     *  流式首跑帽限速（≤800px 首亮+步进）。冷重建场景内容已是终值且曾可见，
+     *  分批重铺反而是可感知的「坍缩再生长」。 */
+    coldReveal: Boolean = false,
 ): PilotStreamingState {
     // #471③ 归一化前移（终帧=流式帧，spec §3.4）：快照先归一化再前缀差分——
     // prev/released/heldTail 坐标皆归一化坐标，heldTail 随之显示归一化文本
@@ -251,8 +256,13 @@ internal fun rememberPilotStreamingMarkdownState(
                     // #442 A2 冷续单帧：item 回收重组合（sliceOrigin 继承、
                     // fastRefeed=false）的尾块内容一次性入树——静态内容不得
                     // 限速重铺；Fire 重建仍走 #H4 快灌。
-                    val pacing = if (fastRefeed || sliceOrigin <= 0) refeedPacing(fastRefeed)
-                    else RefeedPacing(Int.MAX_VALUE, 0L)
+                    // #486 根修：coldReveal（账本武装冷重入）同享上限档单帧——
+                    // 冷重建内容为终值且曾可见，帽限速重铺=可感知坍缩再生长。
+                    val pacing = when {
+                        coldReveal -> RefeedPacing(Int.MAX_VALUE, 0L)
+                        fastRefeed || sliceOrigin <= 0 -> refeedPacing(fastRefeed)
+                        else -> RefeedPacing(Int.MAX_VALUE, 0L)
+                    }
                     var rel = 0
                     while (rel < eff.length) {
                         val d = SafePrefixGate.releaseDelta(eff, rel, pacing.chunkCh)
