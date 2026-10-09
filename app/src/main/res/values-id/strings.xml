@@ -221,6 +221,8 @@
     <string name="chat_default_model">Model bawaan</string>
     <string name="chat_manage_models">Kelola model</string>
     <string name="chat_output_truncated">Output dipotong oleh server. Output lengkap disimpan di: %1$s</string>
+    <string name="chat_output_spilled">Sebagian keluaran dihilangkan oleh server (%1$s). Hasil lengkap disimpan di: %2$s</string>
+    <string name="chat_output_spilled_unknown">Sebagian keluaran dihilangkan oleh server. Hasil lengkap disimpan di: %1$s</string>
     <string name="chat_permission_label">Izin: %1$s</string>
     <string name="chat_interrupted">Dihentikan: %1$s</string>
     <string name="chat_retry">Ulang #%1$d: %2$s</string>

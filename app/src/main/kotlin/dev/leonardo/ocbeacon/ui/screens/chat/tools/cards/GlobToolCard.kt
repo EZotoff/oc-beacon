@@ -29,6 +29,9 @@ import dev.leonardo.ocbeacon.domain.model.Part
 import dev.leonardo.ocbeacon.domain.model.ToolState
 import dev.leonardo.ocbeacon.ui.components.AmoledDefaultBorder
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.extractToolInput
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.DshSpillNotice
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.DshSpillNoticeMatcher
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.DshSpillNoticeBanner
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.extractToolOutput
 import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
 import dev.leonardo.ocbeacon.ui.screens.chat.util.toolOutputContainerColor
@@ -56,10 +59,15 @@ internal fun GlobToolCard(
     val output = extractToolOutput(tool)
     val isRunning = tool.state is ToolState.Running
 
+    // #536：DSH spill 通知剥离——路径解析源换 preview（通知行不再被误当成路径），
+    // 横幅在展开区提示溢出事实。
+    val spillNotice = remember(output) { DshSpillNoticeMatcher.match(output) }
+
     // Parse output lines as file paths
     val files = remember(output) {
-        if (output.isBlank()) emptyList()
-        else output.lines().filter { it.isNotBlank() }
+        val source = DshSpillNoticeMatcher.previewOf(output)
+        if (source.isBlank()) emptyList()
+        else source.lines().filter { it.isNotBlank() }
     }
 
     val title = if (pattern.isNotBlank()) {
@@ -83,6 +91,12 @@ internal fun GlobToolCard(
         onToggleExpand = onToggleExpand
     ) {
         Column {
+            if (spillNotice != null) {
+                DshSpillNoticeBanner(
+                    notice = spillNotice,
+                    modifier = Modifier.padding(bottom = SpacingTokens.XS.dp),
+                )
+            }
             // Match count
             if (files.isNotEmpty()) {
                 Text(

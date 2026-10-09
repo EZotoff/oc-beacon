@@ -305,6 +305,8 @@
     <string name="chat_default_model">Модель по умолчанию</string>
     <string name="chat_manage_models">Управление моделями</string>
     <string name="chat_output_truncated">Вывод усечён сервером. Полный вывод сохранён в: %1$s</string>
+    <string name="chat_output_spilled">Часть вывода была опущена сервером (%1$s). Полный результат сохранён в: %2$s</string>
+    <string name="chat_output_spilled_unknown">Часть вывода была опущена сервером. Полный результат сохранён в: %1$s</string>
     <string name="chat_permission_label">Разрешение: %1$s</string>
     <string name="chat_interrupted">Прервано: %1$s</string>
     <string name="chat_retry">Повтор #%1$d: %2$s</string>

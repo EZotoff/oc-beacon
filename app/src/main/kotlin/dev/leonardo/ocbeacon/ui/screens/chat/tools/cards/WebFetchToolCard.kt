@@ -15,6 +15,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -24,6 +25,9 @@ import dev.leonardo.ocbeacon.domain.model.Part
 import dev.leonardo.ocbeacon.domain.model.ToolState
 import dev.leonardo.ocbeacon.ui.components.AmoledDefaultBorder
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.extractToolInput
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.DshSpillNotice
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.DshSpillNoticeMatcher
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.DshSpillNoticeBanner
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.extractToolOutput
 import dev.leonardo.ocbeacon.ui.screens.chat.util.halfScreenHeight
 import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
@@ -112,6 +116,15 @@ internal fun WebFetchToolCard(
             if (output.isNotBlank()) {
                 val halfScreenHeight = halfScreenHeight()
                 val scrollState = rememberScrollState()
+                // #536：DSH spill 通知剥离+横幅（研究样本即 web_fetch 大页面溢出）
+                val spillNotice = remember(output) { DshSpillNoticeMatcher.match(output) }
+                val displayOutput = remember(output) { DshSpillNoticeMatcher.previewOf(output) }
+                if (spillNotice != null) {
+                    DshSpillNoticeBanner(
+                        notice = spillNotice,
+                        modifier = Modifier.padding(top = SpacingTokens.XS.dp),
+                    )
+                }
                 Surface(
                     shape = ShapeTokens.extraSmall,
                     color = toolOutputContainerColor(),
@@ -123,7 +136,7 @@ internal fun WebFetchToolCard(
                 ) {
                     SelectionContainer {
                         Text(
-                            text = output.take(5000),
+                            text = displayOutput.take(5000),
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = if (isAmoled) {
                                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AlphaTokens.AMOLED)

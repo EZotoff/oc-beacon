@@ -277,6 +277,8 @@
     <string name="chat_default_model">Modelo padrão</string>
     <string name="chat_manage_models">Gerenciar modelos</string>
     <string name="chat_output_truncated">Saída truncada pelo servidor. Saída completa salva em: %1$s</string>
+    <string name="chat_output_spilled">Parte da saída foi omitida pelo servidor (%1$s). Resultado completo salvo em: %2$s</string>
+    <string name="chat_output_spilled_unknown">Parte da saída foi omitida pelo servidor. Resultado completo salvo em: %1$s</string>
     <string name="chat_permission_label">Permissão: %1$s</string>
     <string name="chat_interrupted">Interrompido: %1$s</string>
     <string name="chat_retry">Tentar novamente #%1$d: %2$s</string>

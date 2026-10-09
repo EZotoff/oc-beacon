@@ -277,6 +277,8 @@
     <string name="chat_default_model">デフォルトモデル</string>
     <string name="chat_manage_models">モデルを管理</string>
     <string name="chat_output_truncated">出力がサーバーによって切り捨てられました。完全な出力は %1$s に保存されました</string>
+    <string name="chat_output_spilled">サーバーにより出力の一部が省略されました（%1$s）。完全な結果は次に保存されています: %2$s</string>
+    <string name="chat_output_spilled_unknown">サーバーにより出力の一部が省略されました。完全な結果は次に保存されています: %1$s</string>
     <string name="chat_permission_label">権限: %1$s</string>
     <string name="chat_interrupted">中止: %1$s</string>
     <string name="chat_retry">再試行 #%1$d: %2$s</string>
