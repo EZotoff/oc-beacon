@@ -44,7 +44,7 @@ import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
  * BashToolCard 既有 OpenCode 截断约定（"...output truncated... Full output saved to:"）
  * 的处理同构——两约定并存（OpenCode/DSH 服务器拼写不同），互不干扰。
  */
-internal data class DshSpillNotice(
+internal data class SpillNotice(
     /** exact 档省略字节数；null=unknown/none 档（横幅走无数量文案）。 */
     val omittedBytes: Long?,
     /** 省略图像数（≥1 才出现于通知；null=无图像子句）。 */
@@ -57,7 +57,7 @@ internal data class DshSpillNotice(
     val previewEndExclusive: Int,
 )
 
-internal object DshSpillNoticeMatcher {
+internal object SpillNoticeMatcher {
 
     private const val OPEN = "("
     private const val CLOSE = ")"
@@ -78,7 +78,7 @@ internal object DshSpillNoticeMatcher {
      * 与上游逐段扫描一致）；上游在 isOmission 通过而指引缺失时直接判否，本实现放宽为
      * 继续扫描（更宽容，不影响标准格式）。
      */
-    fun match(text: String): DshSpillNotice? {
+    fun match(text: String): SpillNotice? {
         if (!text.endsWith(CLOSE)) return null
         var start = 0
         while (true) {
@@ -92,7 +92,7 @@ internal object DshSpillNoticeMatcher {
                     val after = candidate.substring(location + LOCATION.length)
                     val guidance = after.indexOf(GUIDANCE)
                     if (guidance >= 0) {
-                        return DshSpillNotice(
+                        return SpillNotice(
                             omittedBytes = omission.bytes,
                             omittedImages = omission.images,
                             locator = after.substring(0, guidance),
@@ -134,7 +134,7 @@ internal object DshSpillNoticeMatcher {
 
 /** spill 横幅（BashToolCard 的 OpenCode 截断横幅同款视觉：labelSmall + tertiary）。 */
 @Composable
-internal fun DshSpillNoticeBanner(notice: DshSpillNotice, modifier: Modifier = Modifier) {
+internal fun SpillNoticeBanner(notice: SpillNotice, modifier: Modifier = Modifier) {
     val bytes = notice.omittedBytes
     val omitted = when {
         bytes != null && notice.omittedImages != null -> "$bytes bytes + ${notice.omittedImages} images"

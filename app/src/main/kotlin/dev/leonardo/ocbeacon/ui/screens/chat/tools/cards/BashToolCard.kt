@@ -30,9 +30,9 @@ import dev.leonardo.ocbeacon.domain.model.Part
 import dev.leonardo.ocbeacon.domain.model.ToolState
 import dev.leonardo.ocbeacon.ui.components.AmoledDefaultBorder
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.extractToolInput
-import dev.leonardo.ocbeacon.ui.screens.chat.tools.DshSpillNotice
-import dev.leonardo.ocbeacon.ui.screens.chat.tools.DshSpillNoticeMatcher
-import dev.leonardo.ocbeacon.ui.screens.chat.tools.DshSpillNoticeBanner
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpillNotice
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpillNoticeMatcher
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpillNoticeBanner
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.extractToolOutput
 import dev.leonardo.ocbeacon.ui.screens.chat.util.codeHorizontalScroll
 import dev.leonardo.ocbeacon.ui.screens.chat.util.halfScreenHeight
@@ -75,8 +75,8 @@ internal fun BashToolCard(
     val output = extractToolOutput(tool)
     // #536：DSH spill 通知——展示层剥离尾部通知块（数据保真不动），横幅另行提示；
     // 与下方 OpenCode 截断约定（output truncated…saved to）并存，两服务器拼写不同。
-    val spillNotice = remember(output) { DshSpillNoticeMatcher.match(output) }
-    val cleanedOutput = DshSpillNoticeMatcher.previewOf(output).replace(ANSI_ESCAPE_REGEX, "")
+    val spillNotice = remember(output) { SpillNoticeMatcher.match(output) }
+    val cleanedOutput = SpillNoticeMatcher.previewOf(output).replace(ANSI_ESCAPE_REGEX, "")
     val displayText = buildString {
         if (command.isNotBlank()) {
             append("$ $command")
@@ -208,7 +208,7 @@ internal fun BashToolCard(
             )
         }
         if (spillNotice != null) {
-            DshSpillNoticeBanner(
+            SpillNoticeBanner(
                 notice = spillNotice,
                 modifier = Modifier.padding(top = SpacingTokens.XS.dp),
             )

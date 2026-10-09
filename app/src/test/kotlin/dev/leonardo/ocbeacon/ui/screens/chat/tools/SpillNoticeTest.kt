@@ -9,19 +9,19 @@ import org.junit.Test
  * `lib/types/notice.js`（hasSpillNotice/isOmission/formatSpillNotice），另含
  * 2026-10-09 调研报告中的现网样本形态。
  */
-class DshSpillNoticeTest {
+class SpillNoticeTest {
 
     private val notice = "(Omitted 51234 bytes. Full formatted result stored at: /root/.dsh/spill/x-web_fetch.txt. Use read with offset/limit, or grep this path to search within it.)"
 
     @Test
     fun `matches preview plus exact notice and parses all fields`() {
         val text = "head of output\nsecond line\n\n$notice"
-        val m = DshSpillNoticeMatcher.match(text)!!
+        val m = SpillNoticeMatcher.match(text)!!
         assertEquals(51234L, m.omittedBytes)
         assertNull(m.omittedImages)
         assertEquals("/root/.dsh/spill/x-web_fetch.txt", m.locator)
         assertEquals("Use read with offset/limit, or grep this path to search within it.", m.retrievalHint)
-        assertEquals("head of output\nsecond line", DshSpillNoticeMatcher.previewOf(text))
+        assertEquals("head of output\nsecond line", SpillNoticeMatcher.previewOf(text))
     }
 
     @Test
@@ -29,12 +29,12 @@ class DshSpillNoticeTest {
         // formatSpillNotice({exact,100},{locator,hint}) 重建
         val text = "PREVIEW BODY" + "\n\n" +
             "(Omitted 100 bytes. Full formatted result stored at: /tmp/f.txt. read it back.)"
-        assertEquals("PREVIEW BODY", DshSpillNoticeMatcher.previewOf(text))
+        assertEquals("PREVIEW BODY", SpillNoticeMatcher.previewOf(text))
     }
 
     @Test
     fun `images clause parses alongside exact bytes`() {
-        val m = DshSpillNoticeMatcher.match(
+        val m = SpillNoticeMatcher.match(
             "x\n\n(Omitted 100 bytes. Omitted 2 images. Full formatted result stored at: /p. hint here.)"
         )!!
         assertEquals(100L, m.omittedBytes)
@@ -43,7 +43,7 @@ class DshSpillNoticeTest {
 
     @Test
     fun `unknown omission clause matches without byte count`() {
-        val m = DshSpillNoticeMatcher.match("x\n\n(More bytes were omitted. Full formatted result stored at: /p. hint.)")!!
+        val m = SpillNoticeMatcher.match("x\n\n(More bytes were omitted. Full formatted result stored at: /p. hint.)")!!
         assertNull(m.omittedBytes)
         assertEquals("/p", m.locator)
     }
@@ -51,29 +51,29 @@ class DshSpillNoticeTest {
     @Test
     fun `none clause notice-only output matches with empty preview`() {
         // omission 为 none 档（空子句）+ 整条输出即通知（无预览）
-        val m = DshSpillNoticeMatcher.match("( Full formatted result stored at: /p. hint.)")!!
+        val m = SpillNoticeMatcher.match("( Full formatted result stored at: /p. hint.)")!!
         assertNull(m.omittedBytes)
-        assertEquals("", DshSpillNoticeMatcher.previewOf("( Full formatted result stored at: /p. hint.)"))
+        assertEquals("", SpillNoticeMatcher.previewOf("( Full formatted result stored at: /p. hint.)"))
     }
 
     @Test
     fun `skips non-notice segments containing separator`() {
         val text = "para one\n\n(just a parenthetical) para two\n\n$notice"
-        assertEquals("para one\n\n(just a parenthetical) para two", DshSpillNoticeMatcher.previewOf(text))
+        assertEquals("para one\n\n(just a parenthetical) para two", SpillNoticeMatcher.previewOf(text))
     }
 
     @Test
     fun `rejects malformed variants`() {
-        assertNull(DshSpillNoticeMatcher.match("no closing paren $notice".dropLast(1)))
-        assertNull(DshSpillNoticeMatcher.match("x\n\n(Omitted ABC bytes. Full formatted result stored at: /p. hint.)"))
-        assertNull(DshSpillNoticeMatcher.match("x\n\n(Omitted 5 bytes. Full formatted result stored at: no guidance here"))
-        assertNull(DshSpillNoticeMatcher.match("x\n\n(Omitted 5 bytes. Stored somewhere else. hint.)"))
-        assertNull(DshSpillNoticeMatcher.match("ordinary output without any notice"))
+        assertNull(SpillNoticeMatcher.match("no closing paren $notice".dropLast(1)))
+        assertNull(SpillNoticeMatcher.match("x\n\n(Omitted ABC bytes. Full formatted result stored at: /p. hint.)"))
+        assertNull(SpillNoticeMatcher.match("x\n\n(Omitted 5 bytes. Full formatted result stored at: no guidance here"))
+        assertNull(SpillNoticeMatcher.match("x\n\n(Omitted 5 bytes. Stored somewhere else. hint.)"))
+        assertNull(SpillNoticeMatcher.match("ordinary output without any notice"))
     }
 
     @Test
     fun `previewOf is idempotent on already stripped text`() {
-        val once = DshSpillNoticeMatcher.previewOf("p\n\n$notice")
-        assertEquals(once, DshSpillNoticeMatcher.previewOf(once))
+        val once = SpillNoticeMatcher.previewOf("p\n\n$notice")
+        assertEquals(once, SpillNoticeMatcher.previewOf(once))
     }
 }

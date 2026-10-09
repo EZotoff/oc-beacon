@@ -25,9 +25,9 @@ import dev.leonardo.ocbeacon.domain.model.Part
 import dev.leonardo.ocbeacon.domain.model.ToolState
 import dev.leonardo.ocbeacon.ui.components.AmoledDefaultBorder
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.extractToolInput
-import dev.leonardo.ocbeacon.ui.screens.chat.tools.DshSpillNotice
-import dev.leonardo.ocbeacon.ui.screens.chat.tools.DshSpillNoticeMatcher
-import dev.leonardo.ocbeacon.ui.screens.chat.tools.DshSpillNoticeBanner
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpillNotice
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpillNoticeMatcher
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpillNoticeBanner
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.extractToolOutput
 import dev.leonardo.ocbeacon.ui.screens.chat.util.halfScreenHeight
 import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
@@ -117,10 +117,10 @@ internal fun WebFetchToolCard(
                 val halfScreenHeight = halfScreenHeight()
                 val scrollState = rememberScrollState()
                 // #536：DSH spill 通知剥离+横幅（研究样本即 web_fetch 大页面溢出）
-                val spillNotice = remember(output) { DshSpillNoticeMatcher.match(output) }
-                val displayOutput = remember(output) { DshSpillNoticeMatcher.previewOf(output) }
+                val spillNotice = remember(output) { SpillNoticeMatcher.match(output) }
+                val displayOutput = remember(output) { SpillNoticeMatcher.previewOf(output) }
                 if (spillNotice != null) {
-                    DshSpillNoticeBanner(
+                    SpillNoticeBanner(
                         notice = spillNotice,
                         modifier = Modifier.padding(top = SpacingTokens.XS.dp),
                     )

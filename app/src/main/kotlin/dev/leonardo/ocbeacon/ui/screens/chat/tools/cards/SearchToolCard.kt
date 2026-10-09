@@ -27,9 +27,9 @@ import dev.leonardo.ocbeacon.domain.model.ToolState
 import dev.leonardo.ocbeacon.ui.components.AmoledDefaultBorder
 import dev.leonardo.ocbeacon.ui.screens.chat.markdown.MarkdownContent
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.extractToolInput
-import dev.leonardo.ocbeacon.ui.screens.chat.tools.DshSpillNotice
-import dev.leonardo.ocbeacon.ui.screens.chat.tools.DshSpillNoticeMatcher
-import dev.leonardo.ocbeacon.ui.screens.chat.tools.DshSpillNoticeBanner
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpillNotice
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpillNoticeMatcher
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpillNoticeBanner
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.extractToolOutput
 import dev.leonardo.ocbeacon.ui.theme.CodeTypography
 import dev.leonardo.ocbeacon.ui.screens.chat.util.halfScreenHeight
@@ -124,10 +124,10 @@ internal fun SearchToolCard(
         val halfScreenHeight = halfScreenHeight()
         val scrollState = rememberScrollState()
         // #536：DSH spill 通知剥离+横幅——grep 大结果溢出时通知行不再混入 markdown 正文
-        val spillNotice = remember(output) { DshSpillNoticeMatcher.match(output) }
-        val displayOutput = remember(output) { DshSpillNoticeMatcher.previewOf(output) }
+        val spillNotice = remember(output) { SpillNoticeMatcher.match(output) }
+        val displayOutput = remember(output) { SpillNoticeMatcher.previewOf(output) }
         if (spillNotice != null) {
-            DshSpillNoticeBanner(
+            SpillNoticeBanner(
                 notice = spillNotice,
                 modifier = Modifier.padding(top = SpacingTokens.XS.dp),
             )
