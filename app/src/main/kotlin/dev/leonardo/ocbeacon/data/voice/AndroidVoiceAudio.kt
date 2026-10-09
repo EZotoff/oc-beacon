@@ -34,7 +34,7 @@ class AndroidVoiceRecorder(
         val minimum = AudioRecord.getMinBufferSize(16_000, AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT)
         check(minimum > 0) { "PCM16 recording is unavailable" }
-        val current = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, 16_000,
+        val current = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 16_000,
             AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minimum, 1_280))
         try {
             check(current.state == AudioRecord.STATE_INITIALIZED)
@@ -53,7 +53,22 @@ class AndroidVoiceRecorder(
                         current.read(buffer, 0, buffer.size, AudioRecord.READ_NON_BLOCKING)
                     }
                     check(count >= 0) { "AudioRecord read failed: $count" }
-                    if (count > 0) onAudio(buffer.copyOf(count)) else delay(10)
+                    if (count > 0) {
+                        // 2026-10-09: measured phone capture arrived ~40 dB low (RMS 2-46
+                        // vs expected thousands) — apply a conservative fixed gain with
+                        // saturation guard on top of the VOICE_COMMUNICATION AGC source.
+                        val gained = buffer.copyOf(count)
+                        var ii = 0
+                        while (ii + 1 < gained.size) {
+                            var v = (gained[ii].toInt() and 0xFF or (gained[ii + 1].toInt() shl 8)) * 3
+                            if (v > 32767) v = 32767
+                            if (v < -32768) v = -32768
+                            gained[ii] = (v and 0xFF).toByte()
+                            gained[ii + 1] = ((v shr 8) and 0xFF).toByte()
+                            ii += 2
+                        }
+                        onAudio(gained)
+                    } else delay(10)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
