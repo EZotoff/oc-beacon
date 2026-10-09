@@ -1100,8 +1100,8 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="voice_state_connecting">connecting…</string>
     <string name="voice_state_offline">offline</string>
     <string name="voice_state_moved">voice moved to another surface</string>
-    <string name="voice_ptt">Hold to talk</string>
-    <string name="voice_ptt_listening">Listening —\nrelease to send</string>
+    <string name="voice_ptt">Tap to speak</string>
+    <string name="voice_ptt_listening">Listening —\ntap to stop</string>
     <string name="voice_ptt_connecting">Connecting…</string>
     <string name="voice_audio_blocked">Audio suspended: %1$s</string>
     <string name="voice_audio_focus_lost">Audio suspended — another app took audio focus</string>

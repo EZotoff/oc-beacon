@@ -5,7 +5,8 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -73,13 +74,13 @@ fun VoiceWidget(
         pressAfterPermission = false
     }
 
-    val onPttPress: () -> Unit = {
+    val onPttToggle: () -> Unit = {
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
         when (VoicePttGate.resolve(granted)) {
             VoicePttAction.PRESS -> {
                 beforePtt()
-                viewModel.pressPtt()
+                if (pttHeld) viewModel.releasePtt() else viewModel.pressPtt()
             }
             VoicePttAction.REQUEST_PERMISSION -> {
                 pressAfterPermission = true
@@ -87,7 +88,6 @@ fun VoiceWidget(
             }
         }
     }
-    val onPttRelease: () -> Unit = viewModel::releasePtt
 
     Column(
         modifier = modifier,
@@ -107,7 +107,7 @@ fun VoiceWidget(
                 modifier = Modifier.widthIn(max = 360.dp),
             )
         }
-        PttButton(onPress = onPttPress, onRelease = onPttRelease, connection = connection, held = pttHeld)
+        PttButton(onToggle = onPttToggle, connection = connection, held = pttHeld)
     }
 }
 
@@ -147,16 +147,14 @@ private fun BlockedOverlay(message: String) {
 
 @Composable
 private fun PttButton(
-    onPress: () -> Unit,
-    onRelease: () -> Unit,
+    onToggle: () -> Unit,
     connection: VoiceSessionConnection,
     held: Boolean,
 ) {
-    // Voice-input mode states, visually distinct at a glance:
-    //   recording (held + live): red, "Listening — release to send"
+    // Tap-to-speak toggle states, visually distinct at a glance:
+    //   listening (held + live): red, "Listening — tap to stop"
     //   connecting: amber, "Connecting…"
-    //   live idle: green, "Hold to talk"
-    //   otherwise: primary, "Hold to talk"
+    //   live idle / offline: primary, "Tap to speak"
     val recording = held && connection == VoiceSessionConnection.Live
     val (container, labelRes) = when {
         recording -> Color(0xFFE53935) to R.string.voice_ptt_listening
@@ -173,18 +171,7 @@ private fun PttButton(
         modifier = Modifier
             .size(72.dp)
             .scale(scale)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        onPress()
-                        try {
-                            awaitRelease()
-                        } finally {
-                            onRelease()
-                        }
-                    },
-                )
-            },
+            .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false); onToggle() } },
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
