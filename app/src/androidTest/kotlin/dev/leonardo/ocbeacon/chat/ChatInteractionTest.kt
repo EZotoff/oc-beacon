@@ -339,13 +339,15 @@ class ChatInteractionTest : BaseChatTest() {
 
         // 等待 interactionState flow（7 路 combine）将权限传播到
         // pendingPermissions 并渲染 PermissionCard。
-        // PermissionCard 渲染 R.string.permission_title = "Permission Required"
+        // PermissionCard 渲染 R.string.permission_title——文案清理战役（2026-10-08）
+        // 改过大小写（Required→required），硬编码曾致本测试超时；改资源取串免复发。
+        val permTitle = composeRule.activity.getString(dev.leonardo.ocbeacon.R.string.permission_title)
         composeRule.waitUntil(timeoutMillis = 10_000) {
-            composeRule.onAllNodesWithText("Permission Required")
+            composeRule.onAllNodesWithText(permTitle)
                 .fetchSemanticsNodes().isNotEmpty()
         }
 
-        composeRule.onNodeWithText("Permission Required").assertIsDisplayed()
+        composeRule.onNodeWithText(permTitle).assertIsDisplayed()
 
         // 权限描述也应当可见
         composeRule.onNodeWithText("bash echo hello", substring = true).assertIsDisplayed()
