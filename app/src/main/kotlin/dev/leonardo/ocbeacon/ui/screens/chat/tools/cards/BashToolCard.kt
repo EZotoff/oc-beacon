@@ -176,6 +176,11 @@ internal fun BashToolCard(
             }
         }
     ) {
+        // #536 E2E 定罪修正：scaffold 的 expandedContent 容器是 Box（竖线 drawBehind
+        // 宿主）——横幅×2 + Surface 作为 Box 子元素会 top-start 叠放（横幅画在正文
+        // 首行之上，2026-10-09 /tmp/536-e2e/08 实证）。本卡多子元素须自带 Column
+        // 纵向排布（其余三卡 WebFetch/Search/Glob 展开内容已有 Column，无此问题）。
+        Column {
         val halfScreenHeight = halfScreenHeight()
         val scrollState = rememberScrollState()
         // 2026-08-16（#8 根治呈现）：服务器对 shell/bash 输出有意保尾截头
@@ -186,8 +191,13 @@ internal fun BashToolCard(
             val m = OUTPUT_TRUNCATION_PATH_REGEX.find(displayText)
             m?.groupValues?.get(1)
         }
-        val isTruncated = remember(displayText) {
-            displayText.contains("output truncated") || displayText.startsWith("...")
+        // #536：spill 通知在席时抑制本横幅——DSH 预览正文内层还带子进程级
+        // "output truncated; full output: <path>" 标记，会误触发本约定（其路径
+        // 正则不匹配该拼写→空 %1$s），双横幅叠加且一条空路径；spill 横幅语义
+        // 已覆盖「输出被服务器截断」事实，内层标记留在正文原样呈现。
+        val isTruncated = remember(displayText, spillNotice) {
+            spillNotice == null &&
+                (displayText.contains("output truncated") || displayText.startsWith("..."))
         }
         if (isTruncated) {
             Text(
@@ -221,6 +231,7 @@ internal fun BashToolCard(
                         .codeHorizontalScroll()
                 )
             }
+        }
         }
     }
 }
