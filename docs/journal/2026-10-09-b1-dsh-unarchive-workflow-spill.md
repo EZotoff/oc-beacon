@@ -64,3 +64,38 @@ journal 解码出完整四事件序列（runId=91690cb6…）：
 2. childId=子会话 id——未来可做导航（注意 #242 信封箭头守卫：synthetic 卡不可给会话箭头）。
 3. 重放幂等：journal 冷回放按序全量重放，账本按 (runId,seq) upsert 天然幂等。
 4. headless --json 事件流与 journal 事件是两个面（前者 step 级 status，后者 session 事件）——app 消费面=后者（session/follow SessionEventEntry / journal 首页兜底）。
+
+## #288 run 级聚合器——实现+真机 E2E（2026-10-09，commit 7cfab01a）
+
+
+## 实现
+
+DshEventMapper：runId 键控账本（WorkflowRunState：name + members[seq]，软上限 64 run 防长跑无界）；agent-start 建档（label/phase/childId 留档不渲染——#242 守卫不给会话箭头）、agent-end 按 seq 乱序回填 outcome（实测 end 序与 start 序无关）、(runId,seq) upsert 幂等；进度卡滚动摘要 "workflow: name · N agents · M done" + 阶段分组正文（[phase] ✓/✗/▸ 成员行）；run-end 优先账本名+终态成员清单。词表收编：DshEventVocabulary 两条 agent 忽略项与 WORKFLOW_AGENT 常量退役。测试 5 新增（滚动进度/账本名+成员终局/孤儿骨架/重放幂等/MALFORMED）；全量绿。
+
+## 真机 E2E（houji，冒烟会话 session-b318811c journal 回放）
+
+全判据 PASS（证据 /tmp/288-e2e/）：
+- name 摘要：UI 与 Room 均 "workflow: smoke-288"（无 runId 前缀串——账本名生效）
+- 成员折叠三样：展开正文 "completed [smoke] ✓ alpha ✓ beta"（非 Task 3b 降级形态）
+- 单卡原位更新：dump 恰 1 次 + Room 恰 1 条 dsh-workflow 消息 + logcat 10+ 次 MessageUpdated 同 id
+- Room 二通道：cached_parts text = `<task state="completed"><summary>workflow: smoke-288</summary><task_result>completed [smoke] ✓ alpha ✓ beta</task_result></task>`
+- 会话完整性：9 条消息完整（首问+助手终答含 alpha/beta JSON 可见）
+- 冷启免再认证（#352 cookie 持久化生效）
+
+## 顺带发现（脚本直接修域）
+
+pull-app-db.sh 0 字节假阳：脚本用 PATH 裸 adb，run-as cat 静默失败拉出 0 字节文件而 sqlite integrity_check 对空库返回 ok——须加最小体积门槛+固定 adb 路径（当批直接修）。
+
+## 已完结卡片迁入（2026-10-09）
+
+### **#288 workflow 阶段卡（tool-workflow agent-start/end 聚合渲染）** `dsh` `ui`
+  - **前提**：dsh 服务器在任何客户端面暴露 tool-workflow 运行事件——events.mux 实况 / session.history journal / session.projection / session/jobs 四面实测皆无（Web 端 workflow 树为 client-ui 本地组件，同一事件源）；服务器升级暴露后重验再启聚合器
+  - Task 3b 落地 workflow run-start/run-end 降级单卡（同 runId 原位更新 running→终态）；agent-start/end 维持 Ignored（防逐成员刷卡）
+  - 方向：run 级聚合器（成员 label/outcome/phase 折叠进阶段卡，参照官方 tool-workflow 装配）；验证=真机 workflow 运行会话卡片分阶段展示
+  - **2026-09-01 活体四面包夹（走查 #9 定性）**：events.mux 实况帧（两次 WS tap + 现跑 workflow 对照，仅 tool/code-dispatch* 渲染伴生）、session.history journal（39 页全翻 0 行，fresh run 亦不入）、session/projection（仅 permissions）、session/jobs（仅 bash 后台任务）四面皆无 → app 侧映射链（DshEventMapper:469 + DshMessageAssembler）为休眠代码路径，非缺陷；走查期「18 事件在 a6c4」不复现（疑当时另有来源/版本窗口）。重开丢卡=结构性（无服务器数据源），DSH synthetic 消息零持久化同因
+  - **2026-09-02 复验（差距调研独立交叉确认）**：`docs/research/dsh-gap-2026-09-01/` 四路证据（fe 源码/Android 清点/Web 实测/服务端 api-gap）再次确认服务器事件面无 tool-workflow 运行事件——门维持关闭；聚合器设计参照 fe-inventory §2.17 client-ui-workflow-run
+  - 2026-09-29 前提重验:0.1.7-rc.2 dist 仍无 tool-workflow 运行事件——前提不变,维持 P4
+  - 2026-10-09 前提满足解封（P4→P2）：现网 0.2.0-rc.2 运行安装内发射代码齐备（dsh-tool-workflow lib/index.js:98/109/117/124 四事件 append，顶层调用默认记录无开关）+ session/follow 流原始事件帧（SessionEventEntry）透传在。149 journal（138M/7 工作区）+演示容器 10 journal 全解码 0 真实样本=顶层 workflow 从未跑过（宽松命中 5 处全为开发会话 grep DshEventMapper.kt 假阳性）——非版本缺口。2026-09-01「四面皆无」系当时 live 版本旧于 0.1.2-alpha.2（npm bisect：发射代码 08-30 起）。开工第一步=现网真跑一次顶层 workflow 冒烟取样本（follow/journal grep tool-workflow/）；聚合器消费 journal 原始事件帧非消息投影。证据：docs/research/2026-10-09-p4-upstream-preconditions-check.md
+  - 2026-10-09 排程裁决：B1 第 2 项（B1.2）；第一步现网顶层 workflow 冒烟为关卡——不过则退回 P4 登记新证据（止损门）
+  - 2026-10-09 冒烟关卡 PASS（B1.2 前置达成）：现网 headless 真跑 workflow 取到完整四事件样本（journal 解码实证，载荷事实与样本路径见 journal 2026-10-09-b1 批）——聚合器开工，agent-start/end 关联键=(runId,seq)，end 序与 start 序无关须容忍乱序回填
+  - 迁入依据：冒烟关卡 PASS（现网四事件样本实证）+ 聚合器实现全量绿 + 真机 E2E 五判据全 PASS（验收委派裁决路线：无大 UI 改动，全部仪器可断言面）（backlog.sh migrate 2026-10-09）
