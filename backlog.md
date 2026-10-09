@@ -62,6 +62,7 @@
   - 2026-10-09 用户裁决改裁：四观察卡从「等复现」转 soak 长时主动狩猎。仪器腿=#486 确定性用例判死活（Fake 层构造断连+滚出视口+重连三联；构造出塌缩→顺势 LRU 账本根修，scroll 域编辑协议）+#454 单元红用例
   - soak 腿（夜跑）=#464 tap 效果断言+失配现场抓取（dumpsys input/logcat/meminfo；dump+截图双通道防 #477 干扰）+#477 盲 dump 检测器（ground truth=mock 语料/Room 直查）+#454 换行注入循环
   - 设计与成本：docs/research/2026-10-09-p3-watchcards-testability.md（全复用 driver/mockllm/androidTest fakes；soak 基线 201 轮 PASS 红线不得破坏；批2 顺带白捡 #488 CodeHL 量化数据）
+  - 2026-10-09 深夜：#486 仪器腿+根修完结（用户裁决 A 案）——同内容冷重入（滚动回收/导航回看主形态）零空窗（终态缓存命中），内容变化冷重建 1 帧解析底线；顺带发现 ChatInteractionTest#permissionDialog 插桩预存失败（stash 对照排除非 #486 回归，待查）
 
 ## P3 — 观察与低价值改进
 
