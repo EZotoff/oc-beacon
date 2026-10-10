@@ -94,6 +94,7 @@
   - 2026-10-01 ③数学降级+标注升级落地：transform 产物围栏 tex→math（专属识别位，不误伤手写 tex 围栏）+ SafeHighlightedMathBlock（「公式」徽标 math_block_badge×15 语言 + \命令tertiary/花括号onSurfaceVariant/上下标secondary 手写轻着色，静态完结内容 remember 同步构建）+ 单测 12 例新增/transform 断言改标，全量绿+i18n 917 keys PASSED；真机 E2E（big-pickle 会话）：Code block, math 徽标块+dual族像素+vision 三色判读+亮色重建无残留+单美元守卫——journal 2026-10-01-488-syntax-highlight-shell ③节；环境坑：v1 无 zhipuai 凭据（新会话默认模型 401，改用既有 big-pickle 会话）；③ 就此收口待用户验收
   - 2026-10-01 ③用户验收通过（「可以 我觉得可以暂时用这样的效果」）——降级+标注形态就此定局；批 2（观察精修）/批 3（可选语言标签+复制）维持挂卡随观察窗推进，不阻塞
   - 2026-10-09 排程裁决：B3 收尾批（B2 狩猎批之后）；批 2 的 CodeHL 量化数据可从 B2 soak 日志白捡（mockllm code-long 语料 200 行 Kotlin 正好触发）；批 3① showHeader+a11y 本地化独立可做
+  - 2026-10-10 批 2 主体落地（色 pop 根修）：完结/冷看初值纯色→异步着色 pop 消除——同步初值（CAP 400，JVM 基准 1.3µs/char 实测定参）+ 进程级 CodeHighlightCache（LRU32，重看零成本）+ >400c 首看异步落缓存；code-review 抓回主题换色冻结真回归（skip 守卫同一性判定修复）。批 3① showHeader 仪器化三连测+live 定罪收口（含视口裁剪假阴性勘误）。验证链：JVM 3969/0 + lint 绿（顺带修 B1 遗留 #536 SpillNotice 正名 5 errors）+ 仪器化冻帧回归 + 模拟器 live（CodeHL=0 同步路径/重看 0 增量）。余项挂真机：§2.j 大块流式 CPU 量化、metadata/mark 视觉试验、AMOLED 真机面板、Bold advance 宽度、400-2000c 冷看首帧残余 pop 观感——journal 2026-10-01-488 §批2
 
 - [ ] **#486 SSE retry 重建帧 watch（原#471④）：断连续传+滚出视口弃树+ever=false 理论盲区，复发再战勿主动开工** `scroll` `chat`
   - 原 #471④ 用户裁决 c 降级观察（v1+v2 四场景不可复现，331k 行取证 Loading=0，#472 hold/registry/preParsed 防御栈有效）；#471 整卡迁移后观察线独立成卡（spec §8：watch 不关）
