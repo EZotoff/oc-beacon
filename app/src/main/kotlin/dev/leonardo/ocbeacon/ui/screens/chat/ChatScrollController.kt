@@ -13,7 +13,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.withFrameNanos
 import dev.leonardo.ocbeacon.logging.AppLogger
 import dev.leonardo.ocbeacon.ui.screens.chat.scroll.PreRenderCoordinator
 import dev.leonardo.ocbeacon.ui.screens.chat.util.snapToBottom
@@ -363,13 +362,14 @@ internal class LazyListStateGate(private val state: LazyListState) : ScrollListG
  *    永久挂起、5s 兜底也永不执行的死代码根因）。最多 [GROWTH_TIMEOUT_MS]。
  * 2. 若用户 fling 惯性中，等待其停止（最多 [FLING_TIMEOUT_MS]）—— 替代
  *    一次性条件检查的静默跳过。
- * 3. `requestScrollToItem(0)` 锚定底部，等一帧布局后校验位置；未到位则再等
- *    [VERIFY_TIMEOUT_MS]（布局补偿收敛），仍不到位则重滚一次。
+ * 3. `requestScrollToItem(0)` 锚定底部——单次锚定即终态。原「一帧后校验 +
+ *    1s 未回底重滚一次」（#542 同域）已于 2026-10-10 取证退役：E2E 3/3
+ *    一帧即贴底、verify 窗从未开启（零承重），且重滚无视 autoScroll 会把
+ *    verify 窗内上滑翻历史的用户强拉回底（阅读位置铁律违例面）；真实离底
+ *    由 MSGEFFECT/GUARD 跟随族按用户语义重锚。
  *
  * @param gate 滚动门面（生产=LazyListStateGate；测试=State 驱动 Fake）
  * @param onGrowthTimeout 消息增长等待超时的日志回调（测试中兼作断言探针）
- * @param waitOneFrame 等一帧布局的挂起块（生产 `withFrameNanos`；测试注入空实现，
- *        因 JVM 单测无 MonotonicFrameClock，`withFrameNanos` 会永久挂起）
  * @param leaseActive #423 I3 视口租约探针（活动渲染前事务>0）。强滚锚底与在途
  *        episode 的 end-restore 配对位移互搏——等待租约释放再锚定;超时仍强制
  *        （发送后跟随之义,用户显式意图优先）。
@@ -377,13 +377,8 @@ internal class LazyListStateGate(private val state: LazyListState) : ScrollListG
 internal class ForceScrollExecutor(
     private val gate: ScrollListGate,
     private val onGrowthTimeout: (String) -> Unit = { AppLogger.d(TAG, it) },
-    private val waitOneFrame: suspend () -> Unit = { withFrameNanos { } },
     private val leaseActive: () -> Boolean = { false },
 ) {
-    /** 底部判定：首项 index==0 且偏移 < 100（reverseLayout 下 0 即最底）。 */
-    private fun atBottom(): Boolean =
-        gate.firstVisibleItemIndex == 0 && gate.firstVisibleItemScrollOffset < AT_BOTTOM_OFFSET_MAX
-
     suspend fun execute() {
         val startCount = gate.totalItemsCount
         dev.leonardo.ocbeacon.logging.AppLogger.d(TAG, "[probe] executor start count=$startCount scrollInProgress=${gate.isScrollInProgress}")
@@ -409,24 +404,6 @@ internal class ForceScrollExecutor(
 
         dev.leonardo.ocbeacon.ui.screens.chat.components.ViewportDispatchGateway.explicitPinAction("ForceScroll", "primary") { gate.requestScrollToItem(0) }
 
-        // 滚后校验：超时兜底路径（grew==null，消息未到/发送失败）与补偿后未到位时重滚一次
-        // #542 取证埋点（[DEBUG-542]）：verify 窗开启（一帧后即离底）与 1s 超时重滚
-        // 分别打点——重滚频率=发送后异步布局位移的事后修正承重度。
-        waitOneFrame()
-        if (!atBottom()) {
-            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-                AppLogger.d(TAG, "[DEBUG-542] verify open fii=" + gate.firstVisibleItemIndex + " fiso=" + gate.firstVisibleItemScrollOffset)
-            }
-            withTimeoutOrNull(VERIFY_TIMEOUT_MS) {
-                snapshotFlow { atBottom() }.first { it }
-            } ?: run {
-                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-                    AppLogger.d(TAG, "[DEBUG-542] verify-retry FIRE fii=" + gate.firstVisibleItemIndex + " fiso=" + gate.firstVisibleItemScrollOffset)
-                }
-                dev.leonardo.ocbeacon.ui.screens.chat.components.ViewportDispatchGateway.explicitPinAction("ForceScroll", "verify-retry") { gate.requestScrollToItem(0) }
-            }
-        }
-
         if (grew == null) {
             onGrowthTimeout("[scroll] force tick timed out waiting for message growth, scrolled anyway")
         }
@@ -435,8 +412,6 @@ internal class ForceScrollExecutor(
     private companion object {
         const val GROWTH_TIMEOUT_MS = 5_000L
         const val FLING_TIMEOUT_MS = 2_000L
-        const val VERIFY_TIMEOUT_MS = 1_000L
-        const val AT_BOTTOM_OFFSET_MAX = 100
 
         /** #423 I3:episode 最坏链(settle 600+stab 700+phaseB 240+收尾)≈2s,3s 富余。 */
         const val LEASE_WAIT_MS = 3_000L

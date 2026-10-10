@@ -21,7 +21,8 @@ import org.junit.Test
  * ① tick 后 totalItemsCount 增长 → 执行 requestScrollToItem(0)
  * ② fling 惯性中（isScrollInProgress true→false）→ 等待停止后仍滚
  * ③ 5s 超时（count 永不增长）→ 超时后仍滚 + 超时日志
- * 以及滚后校验路径：短暂未到位收敛（不重滚）与持续未到位（重滚一次）。
+ * ④ 滚后位置不收敛 → 也不二次重滚（#542 退役：单次锚定即终态，
+ *    事后校验重滚零承重且有强拉翻历史用户的阅读位置违例面）。
  *
  * 说明：LazyListState 依赖快照/布局体系难以干净 mock，故逻辑已抽为
  * [ForceScrollExecutor] + [ScrollListGate]（抽函数优于 hack mock），
@@ -68,7 +69,6 @@ class ChatScrollControllerTest {
     ) = ForceScrollExecutor(
         gate = gate,
         onGrowthTimeout = { logs.add(it) },
-        waitOneFrame = { }, // JVM 单测无 MonotonicFrameClock，注入空帧等待
         leaseActive = leaseActive, // #423 I3:视口租约探针
     )
 
@@ -128,27 +128,25 @@ class ChatScrollControllerTest {
         assertEquals("超时路径应记一条日志", 1, logs.size)
     }
 
-    // ============ ④ 滚后短暂未到位（补偿收敛）→ 不重滚 ============
+    // ============ ④ #542：滚后位置不收敛 → 也不二次重滚（事后校验已退役） ============
 
     @Test
-    fun `execute skips retry when position converges after compensation`() = runTest {
+    fun `execute does not re-scroll when position never converges`() = runTest {
         val gate = FakeGate(initialCount = 10, initialIndex = 2)
-        // 滚后位置暂未收敛（模拟流式 turn 高度补偿），随后收敛
-        gate.applyScroll = {
+        gate.applyScroll = { // 位置永不收敛（旧 verify-retry 的触发场景）
             gate.index = 0
             gate.offset = 250
         }
         launch { delay(100); gate.count = 11; applySnapshot() }
-        launch { delay(150); gate.offset = 0; applySnapshot() }
 
         val logs = mutableListOf<String>()
         executor(gate, logs).execute()
 
-        assertEquals("补偿收敛期内不应重滚（避免视口抖动）", 1, gate.progressFlagAtScrollCalls.size)
+        assertEquals("单次锚定即终态，不得事后重滚（#542 取证退役）", 1, gate.progressFlagAtScrollCalls.size)
         assertEquals(0, logs.size)
     }
 
-    // ============ ⑥ #423 I3:视口租约等待 ============
+    // ============ ⑤ #423 I3:视口租约等待 ============
 
     @Test
     fun `execute waits for viewport lease release before anchoring`() = runTest {
@@ -181,23 +179,5 @@ class ChatScrollControllerTest {
         executor(gate, mutableListOf(), leaseActive = { lease }).execute()
 
         assertEquals("租约等待超时后仍强制锚定(发送后跟随之义)", 1, gate.progressFlagAtScrollCalls.size)
-    }
-
-    // ============ ⑤ 滚后持续未到位 → 重滚一次 ============
-
-    @Test
-    fun `execute retries scroll once when never reaches bottom`() = runTest {
-        val gate = FakeGate(initialCount = 10, initialIndex = 2)
-        gate.applyScroll = { // 位置永不收敛（模拟补偿后仍偏离底部）
-            gate.index = 0
-            gate.offset = 250
-        }
-        launch { delay(100); gate.count = 11; applySnapshot() }
-
-        val logs = mutableListOf<String>()
-        executor(gate, logs).execute()
-
-        assertEquals("校验超时后应重滚一次（共两次）", 2, gate.progressFlagAtScrollCalls.size)
-        assertEquals("增长已发生，不应记超时日志", 0, logs.size)
     }
 }
