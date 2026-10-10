@@ -58,9 +58,10 @@
 
 ## P2 — 优化与锦上添花
 
-- [ ] **#541 snapToBottom 3×120ms 强推钉底——位移源（滚底后新入视口 item 延迟测量长高）未消除，靠事后周期性强拉补偿（#540 清剿扫描 C2）** `scroll`
+- [~] **#541 snapToBottom 3×120ms 强推钉底——位移源（滚底后新入视口 item 延迟测量长高）未消除，靠事后周期性强拉补偿（#540 清剿扫描 C2）** `scroll`
   - FAB 点击/错误 snackbar 后 snapToBottom（ChatScrollUtils.kt）到底部后 3×120ms 周期性 scrollBy(-10000) 强推钉底——#256 实证位移源=滚底后新入视口 item 的延迟测量长高（+55/+194/+466，30-70ms RESIZE 爆发窗）
   - 属贴底钉底域非展开补偿；消除源方向=延迟测量增长经引擎域接管（帽只覆盖流式 item，此域是滚底后旧 item 重组）——需先取证引擎覆盖缺口再动；盲删会回归「FAB 拉不到最低」用户可见缺陷（#256 验收史）
+  - 取证退役（bbf90b44a→513fae567，journal §18）：模拟器 S1×5 锤 15/15 击零消费——#256 延迟测量爆发真实复现但零位移（reverseLayout 贴底锚增长向上扩展不动锚，#432/#435/#437/#476 已灭推动者）；删 3×120ms 强推锤保留单次 explicitPin；修复后 S1×3 全绿（pin→LEAP +3ms、atBot=false 零翻转、FAB 消失）+两段全流期加证零翻转；verify 态待验收
 
 - [~] **#540 DSH 流式/输出后折叠卡展开「上推→跳回」瞬态——降级裸AV零配对 + 工具宿主 completed 恒 null 延长降级窗** `dsh` `scroll`
   - 症状：DSH 会话 SSE 输出中/刚输出完展开折叠卡（思考卡/工具卡），展开过程把上方内容上推、展开完毕后卡位一次性跳回原位；重进会话后恢复「正常展开」（渲染前算高+反射原子落位）
@@ -76,9 +77,10 @@
 
 ## P3 — 观察项
 
-- [ ] **#542 ForceScroll verify-retry 发送后补滚——显式意图域内的下一帧校验修正（#540 清剿扫描 C3）** `scroll`
+- [~] **#542 ForceScroll verify-retry 发送后补滚——显式意图域内的下一帧校验修正（#540 清剿扫描 C3）** `scroll`
   - ChatScrollController.kt:410-417：强滚锚底后 waitOneFrame + ≤1s snapshotFlow 等待未到位重滚——位移源=发送后新消息异步布局长高，域=用户显式意图（发送后跟随），量级=锚底差值
   - 与 #526 同形不同域；处置随 C2 卡（snapToBottom）一裁：若延迟测量源被引擎接管则本卡随之消解
+  - 随 #541 一裁收口（513fae567，journal §18）：S2×3 verify 窗 0/3 开启、重滚 0/3 零承重，且 retry 无视 autoScroll 有强拉翻历史用户违例面；删一帧校验+1s 重滚块（waitOneFrame/atBottom/AT_BOTTOM_OFFSET_MAX 死件随删），单测重设计为「永不收敛也不重滚」不变量；修复后 S2×2+全流 209s/216s 零 atBot=false；verify 态待验收
 
 - [ ] **#537 DSH 同步通道 1KB 截断——工具卡全文与 spill 通知不落 Room，离线重开降级** `dsh` `data`
   - 2026-10-09 #536 E2E 通道性发现：DSH 服务器同步/投影通道把工具输出截到 ~1KB（尾标 [truncated, full output on server] 为服务器原话）——spill 通知与全文只存在于打开会话时的实时拉取，cached_parts 恒短版

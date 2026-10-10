@@ -192,3 +192,20 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
 **另案登记**（同形不同域，未盲删）：#541（P2）snapToBottom 3×120ms 强推钉底——位移源=滚底后新入视口 item 延迟测量长高（#256 取证），消除源方向=引擎接管延迟测量域，盲删回归「FAB 拉不到最低」；#542（P3）ForceScroll verify-retry——显式意图域，随 #541 一裁。
 
 **验证**：残留 grep 零命中（11 个符号全仓）；compile 绿；全量 --rerun 绿（1m38s）；lintDevDebug 0 新错误（3m54s）。
+
+## 18. C2/C3 另案收口：#541 锤退役 + #542 verify-retry 退役（取证驱动）
+
+**取证（bbf90b44a 埋点 → 模拟器 E2E，v1:4199 Lighthouse 会话）**：
+- S1 FAB×5：pin→LEAP 原子落位（+2~3ms，27123px 级）；#256 位移源「滚底后延迟测量爆发」真实复现（3 卡 ×+197/+197/+255px，pin 后 35-99ms，正落锤窗内）但**零 fii/fiso 位移**——锤 15/15 击 consumed=0，pre/post 恒 (0,0)。
+- S2 发送×3：ForceScroll primary pin 3/3 一帧即贴底，verify 窗 0/3 开启、重滚 0/3。
+- 几何定谳：reverseLayout 贴底锚 (0,0) 下 item 增长向上扩展不移动锚点（#432 免派发同源）——#256 时代推动者已被 #432/#435/#437/#476 滚动域根修消灭，两兜底零承重。附加发现：verify-retry 无视 autoScroll，verify 窗（1s）内用户上滑翻历史会被强拉回底=阅读位置铁律违例面。
+
+**修复（513fae567）**：
+- snapToBottom 删 3×120ms scrollBy(-10000) 强推锤，保留单次 explicitPin 原子锚定（非 suspend 化）；真实离底（横幅插入 index 位移等）由 MSGEFFECT/GUARD 跟随族按用户语义重锚（尊重滚动让位）。
+- ForceScrollExecutor 删「一帧校验+1s 未回底重滚」块与 waitOneFrame 参数；atBottom()/AT_BOTTOM_OFFSET_MAX/VERIFY_TIMEOUT_MS 死件随删。
+- 网关 R5 豁免表删 snapToBottom 行（强推删除后该函数全经网关，无豁免项）。
+- 测试：④「补偿收敛不重滚」删除（前提消失）；⑤「永不收敛重滚一次」重设计为「永不收敛也不重滚」（#542 不变量：单次锚定即终态，防再引入事后修正）。
+
+**验证矩阵**：全量单测 --rerun 绿（1m42s）；lintDevDebug 0 新错误（9m11s，baseline 失效条目按 #534 裁决不顺带）；修复后 E2E 5/5 全绿——S1×3：pin→LEAP +3ms、atBot=false 零翻转（#256 症状零复现）、FAB 消失（dump 判定，右下余钮为常驻 Quick navigate）；S2×2（20s 窗）：tick→grew→pin 链完整、verify-retry 绝迹；**全流加证**：两段完整流式期（209s/216s，回复增至 ~5900px）atBot=false=0、SGR-GATE 全程仅 primary 一击（整段流式零程序化视口写入）——单次原子锚定与「贴底物理跟随」自洽的基线签名。原始日志 /tmp/541-{s1,s2,post-*}.log 与截图在档。
+
+**复发预案**（勿恢复锤/重滚）：「FAB 拉不到最低」复发 → 先查 index 位移推动者（横幅/问题卡插删引起 fii 抬升），归 MSGEFFECT/GUARD 跟随族域处理。
