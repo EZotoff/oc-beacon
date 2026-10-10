@@ -69,13 +69,14 @@
   - 修复方向（架构优先）：条目身份变更（重分片/换装）必须原地保持或原子交叠消除——先加 episode 级探针（hostItemKey+expansionKey+slot 身份）钉死双 key 具体形态，再在 chatEntries 派生域根修；禁 episode 层去重补丁（补偿味）
   - 根修+验证完成（af1e785a8 + journal §21）：真身=嵌套双 reveal（非双宿主，四假设判读定谳）；唯一所有权修复（CompactionCard+EventCard 同型）；houji 验证全绿（2/toggle→1/toggle、双锚→单锚、三跳/双取消→0、视觉无回归）；beta 0.4.0-beta/41 已含此修待用户真机验收
 
-- [ ] **#540 DSH 流式/输出后折叠卡展开「上推→跳回」瞬态——降级裸AV零配对 + 工具宿主 completed 恒 null 延长降级窗** `dsh` `scroll`
+- [~] **#540 DSH 流式/输出后折叠卡展开「上推→跳回」瞬态——降级裸AV零配对 + 工具宿主 completed 恒 null 延长降级窗** `dsh` `scroll`
   - 症状：DSH 会话 SSE 输出中/刚输出完展开折叠卡（思考卡/工具卡），展开过程把上方内容上推、展开完毕后卡位一次性跳回原位；重进会话后恢复「正常展开」（渲染前算高+反射原子落位）
   - 根因①（主）：流式 turn item 经 LocalInStreamingTurn=true 走降级裸 AV（零配对），reverseLayout 把 +H 全额转译为视口上推；#526 事后回锚等 AV 稳定（~300-650ms）才一次性反射恢复=「跳回」瞬态的结构来源
   - 根因②（DSH 独有窗）：dsh-call-* 工具宿主 Message.completed 恒 null（整装/回放腿均不携带），直到 turn/end→SessionIdle→markSessionIdle 才回填——「输出后」工具卡展开仍全程降级；重进会话从 Room 读已回填 completed=机件路径=正常。分析全文见 2026-10-10-540 journal
   - 五腿校验裁定（V1-V4+P）主体成立：RCA 3 处勘误（MC 编码点/V2 stale 注释/DSH streamingMsgId 非 null）均不动结论；探针帧级实证 E1-E3/E5/E6（nodis 免派发上推+LRef 一次性跳回+同卡双路径 A/B 对照）；修复方向修正：B 最小形态有效（V3 零收益判定被推翻）、A 缺口收窄为配对规则扩列；推荐 B 先行→A 终修。详见 journal §8-§11
   - 2026-10-10 用户 beta 复测（0.4.0-beta/41）反馈：输出中展开/收起仍上下震荡（静态正常）→ V2 SSE 腿仪器复现定罪降级路径负向配对三缺陷：D1 展开帧内缩 consumed=0 未配对+asyncParse 分档拖拽、D2 收起配对被 yield(external-pending) 误判饿死（76 帧零执行）、D3 大卡收起 dispatch 钳制缺口（capd=-3655 consumed=-277，3378px 未配对，录屏证瞬时猛拉 30% 屏高）。结构根因=负向补偿走 dispatchRawDelta 增量通道（边界钳制+yield 误判），正向反射 set 无此问题——A 案只修了正向。修复方向三支（负向反射化/dataKeyAt 越窗折叠、窗内 yield 豁免、展开重解析源消除）待裁决。证据 journal §22 + /tmp/v2leg-*、/tmp/v2col.mp4
   - 2026-10-11 四轮拷问裁决（spec §1 全文）：§12 推翻/#433 延伸/#420 原则维持实现退役；目标架构=C 全统一两刀落地（本卡=第一刀：③接线+负向反射化(揭示缘参照)+宽豁免+重挂补洞）；重挂裁 ii⁺ 幂等（续命=续陈锚被否）；第二刀拆 #544。用户实地观察佐证：展开稳+旧动画、收起不稳+旧动画（与 D1-D3 定谳吻合）
+  - 2026-10-11 第一刀落地+全验证（journal §23）：E2E 腿A/B/C 全绿（输出中展开/收起反射配对+静态机件零回归+cachedTerminal 实证）；verify 态待用户 beta 复测
 
 - [ ] **#522 B案升 stable 后余留装备清扫——JankHoldGate A/B 开关 + STREAM_DELTA_BUS 旗标退役（#499 余留范围）** `chore` `refactor`
   - 前置：STREAM_SHARD_PILOT / STREAM_DELTA_BUS 升 stable 并观察一批——当前 stable 均 false，JankHold 冻结链在 stable 仍是承重活体（B案开=旁路），现退役会回归 stable 流式滚动组合风暴。

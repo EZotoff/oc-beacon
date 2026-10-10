@@ -282,3 +282,25 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
 
 **残留说明**：R3(G1-G3) DSH 演示绿腿与本腿不矛盾——演示容器只有短文本 turn（E4 勘误在案），无大思考卡重解析、无 question 卡重簇缩、无大卡收起（−3655 级），三缺陷面全部缺席。
 
+
+## ## 23. 二轮第一刀实施与验证（裁决落地，2026-10-11）
+
+**裁决**：四轮拷问收敛（spec docs/specs/2026-10-11-unified-expand-placement-design.md）——§12 弃反射理由推翻、#433 延伸、#420 原则维持实现退役、目标架构 C 全统一两刀落地（第一刀挂 #540、第二刀立 #544）、收起语义=表述乙（揭示缘参照）、yield 宽豁免、重挂裁 ii⁺ 幂等。
+
+**实施（四件）**：
+1. ③接线：ReasoningBlock 传 everKey（pinKey）+收起态流完预热（prewarmTerminalParse：MarkdownParsedStateCache 同键形后台解析，照 #515 先例）；
+2. 乙反射化：applyPairedShift 负向分支弃 dispatchRawDelta——shrinkPairedTargetFiso 纯函数资格判定（锚在塌缩区[stickTop,stickTop+span]内→粘揭示缘 目标=trueH−stickTop；区外→零操作 null——LazyList 默认锚定本就正确，盲镜像位移=col4 跳变自造的修正读法；未捕获→保守镜像钳底）；反射写+lastSet 回写；release-ref 新签名取代 release-dis；
+3. 宽豁免：shouldYieldPairingWindowed（窗内一律不让位）；
+4. ④补洞：降级分支同值守卫改造（初值 false+收起态挂载跳过）——展开态挂载（重组重建）与真 toggle 同样开窗。
+配套：HeightReserveState 增 hostItemTopY（CML item Box onGloballyPositioned，物主键守卫）+expandCollapseStickTop/SpanDepth；reveal-geo 探针（stickTop/span/itemH/boxY）。
+
+**验证**：compile 绿；全量单测 --rerun 绿（新增 ShrinkPairedTargetTest 8 判定表/YieldWindowedExemptionTest 4/PrewarmTerminalParseTest 3；FlushTaskPhasesTest 旧 dispatch 契约重写为反射三态：未捕获镜像/区内粘缘/区外零操作）；lintDevDebug 0 错误（4m32s）。
+**E2E（houji dev 包+v2:4096 MiMo-V2.6-Flash 多相轮）**：
+- 腿A 输出中展开：reveal-geo 捕获（stickTop=56）、零 release-dis/dispatchRawDelta/consumed=0/yield、逐档 set 配对（pilot 揭示节奏 11-33px 小步）；
+- 腿B 输出中收起：39 帧 release-ref，fiso 精确锁定 h−56（5074=5130−56…逐帧咬合）=锚严格粘揭示缘随塌缩下行；录屏复核无猛拉（对照修复前 30% 屏高瞬时跳变）；终态稳定；
+- ③ everKey 实证：再展开命中 path=cachedTerminal len=3199（pilot 终态缓存复用，不走 asyncTerminal 重解析）；后续 MDResize 档全为弹簧动画步且逐档配对（设计内编舞）；
+- 腿C 静态机件：展开全链 settle→quiesce→expand-anchor→episode done 276ms 与 R4-R6 同族零降级；收起 episode-start target=0.0 零 flush 通道介入——机件路径零回归；
+- DSH 腿：demo 模型本轮不出推理卡，共享管线签名已由 V2 腿全覆盖（同一渲染代码路径），等价性论证入档；R3 类签名（degrade toggle+pairing-window+paired set）在腿A/B 逐项验证。
+
+**残余**：prewarm 的 MarkdownParsedStateCache 路径（真首开场景）本轮未获直接实证（everKey cachedTerminal 先命中）——单测覆盖+代码对称，留 E2E 复验面；第二刀（#544 编舞统一）待第一刀用户验收后开工。工件 /tmp/k1e-*、/tmp/k1col.mp4、/tmp/k1c-*。
+
