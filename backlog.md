@@ -62,6 +62,7 @@
   - 症状：DSH 会话 SSE 输出中/刚输出完展开折叠卡（思考卡/工具卡），展开过程把上方内容上推、展开完毕后卡位一次性跳回原位；重进会话后恢复「正常展开」（渲染前算高+反射原子落位）
   - 根因①（主）：流式 turn item 经 LocalInStreamingTurn=true 走降级裸 AV（零配对），reverseLayout 把 +H 全额转译为视口上推；#526 事后回锚等 AV 稳定（~300-650ms）才一次性反射恢复=「跳回」瞬态的结构来源
   - 根因②（DSH 独有窗）：dsh-call-* 工具宿主 Message.completed 恒 null（整装/回放腿均不携带），直到 turn/end→SessionIdle→markSessionIdle 才回填——「输出后」工具卡展开仍全程降级；重进会话从 Room 读已回填 completed=机件路径=正常。分析全文见 2026-10-10-540 journal
+  - 五腿校验裁定（V1-V4+P）主体成立：RCA 3 处勘误（MC 编码点/V2 stale 注释/DSH streamingMsgId 非 null）均不动结论；探针帧级实证 E1-E3/E5/E6（nodis 免派发上推+LRef 一次性跳回+同卡双路径 A/B 对照）；修复方向修正：B 最小形态有效（V3 零收益判定被推翻）、A 缺口收窄为配对规则扩列；推荐 B 先行→A 终修。详见 journal §8-§11
 
 - [ ] **#522 B案升 stable 后余留装备清扫——JankHoldGate A/B 开关 + STREAM_DELTA_BUS 旗标退役（#499 余留范围）** `chore` `refactor`
   - 前置：STREAM_SHARD_PILOT / STREAM_DELTA_BUS 升 stable 并观察一批——当前 stable 均 false，JankHold 冻结链在 stable 仍是承重活体（B案开=旁路），现退役会回归 stable 流式滚动组合风暴。
