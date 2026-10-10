@@ -324,3 +324,21 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
 
 **结论**：第一刀在真机输出中/静态/竞态/位置矩阵全绿；两处显式残余（prewarm>2048 真机实证、步间窗复验）交由 beta 复测窗口。
 
+
+## ## 25. review 轮回执处置：P1+三 P2 即修，两 P2 登记 #544（2026-10-11）
+
+**双轴 review（分身，ec4c39551..HEAD）**：Standards 零硬违规（SSE 铁律逐条过）；Spec 发现分级处置如下。
+
+**即修（本 commit，全量单测绿+lint 0 错误+真机静态抽查同签名）**：
+- **P1 混合帧拆账**（applyPairedShift 负向分支）：total=帽净负+ledger 增长的合并量曾让 noop 格把同帧本应 +g 配对的批增长一并吞掉（takePaired 已清账不补→收起窗内全部批增长累计为一次性上漂，正坐在被定罪的「输出中收起」流形）。修=决策只用帽负分量（reserveShift），ledger 折加按格处理：区内格绝对量免疫（trueH−stickTop 已含同 item 增长/他 item 增长在此锚位格恒免配对）；镜像格折净量；noop 格 ledger 非零仍写 fiso+ledger。
+- **P2 物主守卫**：shrinkPairedTargetFiso 隐含假设锚 item=帽物主——排队发消息（物主 index≥1）/收起动画中换锚时 anchorTop=itemTrueH−fiso 为跨 item 垃圾值可误判入区向错误 item 写 stick。修=visibleItemsInfo 反查物主 index，fii≠物主一律区外零操作。
+- **P2 prewarm 触发面收窄**（ReasoningBlock）：LaunchedEffect(isStreaming,expanded) 首组必跑曾让滚动浏览历史会话时每张 >2048 收起思考卡都烧一次 Default 解析（CPU+LRU32 扰动）。修=prevStreaming 翻转门（仅 true→false 才预热）。
+- **P2 亚像素防御**：净量∈(−1,0)（分数 ledger+整数帽负）曾可 require(delta<0) 收 0 崩 flush。修=reserveShift>−1f 亚像素门（跳过塌缩判定只走 ledger 折加）。
+- nit：reveal-geo 探针 boxY=NaN 打 "na"（原 NaN.toInt()=0 与真 0 不可辨）。
+
+**登记 #544（第二刀同批）**：①ScrollCompensation.kt:877/:962 头注释漂移（仍称"已改走 dispatchRawDelta"与本刀相反）②多窗单槽冲突（同 item 两卡并发收起时后开窗者独占 stick 槽，先收起卡负向帧引用错误揭示缘=有界瞬态；修=槽位带 entryKey 标签按 hostKey 匹配消费）。
+
+**测试**：FlushTaskPhasesTest +3（物主守卫 noop/混合帧 noop 格 ledger 折加 set(3,1650)/亚像素镜像 499）+ 既有 3 例改 stateWithOwnerItem（物主可见性缝）；全量 --rerun 绿（1m47s）；lint 0 错误（4m39s）；houji 静态抽查：settle→expand-anchor→episode done 282ms 零降级介入、收起 episode-start target=0.0（唯一 flush 行为机件 #430 稳态正配对=设计内）。
+
+**review 裁决依据存档**：分身总裁决「可放行 E2E 无 P0」；P1 为分析性发现（不在 leg B 已验证区内几何上）——按「发现即修」纪律随 beta 复测包一并落地。
+

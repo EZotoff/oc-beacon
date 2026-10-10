@@ -62,6 +62,7 @@
   - 终态谓词（终高已知→同快照原子帧 / 未知→动画相走帽通道）取代 LocalInStreamingTurn 双路径；AV enter/exit 退役；幂等重挂不变量（缓存命中 coldReveal 单帧/无缓存开窗配对）；#420 头注释矩阵第一条改写
   - 前置：第一刀（#540）全绿签名当基线；重挂探针门（slot-compose/episode-start 测流式期重挂率）
   - → spec: docs/specs/2026-10-11-unified-expand-placement-design.md
+  - 2026-10-11 review 轮登记两项同批：①ScrollCompensation 877/962 头注释漂移（dispatchRawDelta 旧述）②stick 槽 entryKey 标签化（同 item 双卡并发收起单槽冲突）
 
 - [~] **#543 #543 压缩卡换装重建窗双宿主——双 episode 双锚定三跳瞬态（R9 系统性 E2E 发现，定向复现已定罪）** `scroll` `chat`
   - 真机 R9 + 定向复现 2/4 RED：displayItems 重建（upsert:MergeStrategy→[452-display]）窗内同一压缩消息以两个不同 item key 的条目并存 ~300ms（两 CardExpandReveal 并发完整 episode），共享屏幕级 expansionKey 一次 toggle 点亮两宿主→同 +H 双锚定（111/127ms 间隔）→旧宿主离场收缩修正（R9 变体 −H 第三跳）；净效≈单次展开但三跳瞬态可见
@@ -77,6 +78,7 @@
   - 2026-10-10 用户 beta 复测（0.4.0-beta/41）反馈：输出中展开/收起仍上下震荡（静态正常）→ V2 SSE 腿仪器复现定罪降级路径负向配对三缺陷：D1 展开帧内缩 consumed=0 未配对+asyncParse 分档拖拽、D2 收起配对被 yield(external-pending) 误判饿死（76 帧零执行）、D3 大卡收起 dispatch 钳制缺口（capd=-3655 consumed=-277，3378px 未配对，录屏证瞬时猛拉 30% 屏高）。结构根因=负向补偿走 dispatchRawDelta 增量通道（边界钳制+yield 误判），正向反射 set 无此问题——A 案只修了正向。修复方向三支（负向反射化/dataKeyAt 越窗折叠、窗内 yield 豁免、展开重解析源消除）待裁决。证据 journal §22 + /tmp/v2leg-*、/tmp/v2col.mp4
   - 2026-10-11 四轮拷问裁决（spec §1 全文）：§12 推翻/#433 延伸/#420 原则维持实现退役；目标架构=C 全统一两刀落地（本卡=第一刀：③接线+负向反射化(揭示缘参照)+宽豁免+重挂补洞）；重挂裁 ii⁺ 幂等（续命=续陈锚被否）；第二刀拆 #544。用户实地观察佐证：展开稳+旧动画、收起不稳+旧动画（与 D1-D3 定谳吻合）
   - 2026-10-11 第一刀落地+全验证（journal §23）：E2E 腿A/B/C 全绿（输出中展开/收起反射配对+静态机件零回归+cachedTerminal 实证）；verify 态待用户 beta 复测
+  - 2026-10-11 review 轮 P1（混合帧拆账）+P2×3（物主守卫/prewarm 翻转门/亚像素防御）即修随 beta 包重发；两 P2（注释漂移/多窗单槽）登记 #544（journal §25）
 
 - [ ] **#522 B案升 stable 后余留装备清扫——JankHoldGate A/B 开关 + STREAM_DELTA_BUS 旗标退役（#499 余留范围）** `chore` `refactor`
   - 前置：STREAM_SHARD_PILOT / STREAM_DELTA_BUS 升 stable 并观察一批——当前 stable 均 false，JankHold 冻结链在 stable 仍是承重活体（B案开=旁路），现退役会回归 stable 流式滚动组合风暴。

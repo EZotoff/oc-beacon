@@ -768,16 +768,49 @@ private fun applyPairedShift(
             // [shrinkPairedTargetFiso]——锚在塌缩区内 → 粘揭示缘（随塌缩逐帧
             // 追踪卡头）；区外 → 零操作（LazyList 默认锚定保持本就正确）；
             // 未捕获 → 保守镜像钳底。
-            val stickFiso = if (reserve != null) {
+            //
+            // review 轮两加固（2026-10-11）：
+            // ①混合帧拆账（P1）：total = 帽净负 + ledger 增长——决策只用帽负分量
+            //   （塌缩资格），ledger 增长折加到所选目标。noop 格原先把同帧本应
+            //   +g 配对的批增长一并吞掉（takePaired 已清账不补）→ 收起窗内全部
+            //   批增长累计为一次性上漂。区内格目标为绝对量（trueH−stickTop）天然
+            //   免疫；镜像格按净量；noop 格 ledger 非零时仍写 fiso+ledger。
+            // ②物主守卫（P2）：shrinkPairedTargetFiso 隐含假设锚 item=帽物主；
+            //   排队发消息（物主 index≥1）或收起动画中快速换锚时 fiso 属别的
+            //   item，anchorTop=itemTrueH−fiso 是跨 item 垃圾值 → 误判入区会向
+            //   错误 item 写 stick 目标。fii≠物主（或物主不可见）一律按区外处理。
+            val reserveShift = pendingPlan?.delta?.toFloat() ?: 0f
+            val ownerIdx = listState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.key == reserve?.itemKey }?.index
+            val anchorIsOwner = reserve != null && ownerIdx != null &&
+                ownerIdx == listState.firstVisibleItemIndex
+            val stickTopV = reserve?.expandCollapseStickTop ?: -1
+            val spanDepthV = reserve?.expandCollapseSpanDepth ?: -1
+            // 区内格目标为绝对量（trueH−stickTop）——同帧 ledger 增长已含于
+            // trueH（同 item 量测）或与锚位格互斥（他 item 增长在此几何下恒免
+            // 配对），均无需折加（review 轮「区内 cell 免疫」）；镜像格折净量、
+            // noop 格只折 ledger（见下方 effectiveTarget）。
+            val stickFiso: Int? = if (reserveShift > -1f) {
+                // 亚像素负余量（|reserveShift|<1）：无塌缩量可判，只走 ledger 折加
+                null
+            } else if (reserve == null) {
+                // 无 reserve（宿主未挂）：保守净镜像钳底
+                (listState.firstVisibleItemScrollOffset + total.toInt()).coerceAtLeast(0)
+            } else if (!anchorIsOwner) {
+                // 锚不在物主 item：按区外零操作（塌缩在锚下方，默认锚定本就正确）
+                null
+            } else if (stickTopV < 0 || spanDepthV < 0) {
+                // 未捕获几何：保守净镜像 + ledger 折加（review 轮镜像 cell 配方）
+                (listState.firstVisibleItemScrollOffset + reserveShift.toInt() + ledgerTotal.toInt())
+                    .coerceAtLeast(0)
+            } else {
                 shrinkPairedTargetFiso(
                     fiso = listState.firstVisibleItemScrollOffset,
                     itemTrueH = reserve.trueHeight,
-                    delta = total.toInt(),
-                    stickTop = reserve.expandCollapseStickTop,
-                    spanDepth = reserve.expandCollapseSpanDepth,
+                    delta = reserveShift.toInt(),
+                    stickTop = stickTopV,
+                    spanDepth = spanDepthV,
                 )
-            } else {
-                (listState.firstVisibleItemScrollOffset + total.toInt()).coerceAtLeast(0)
             }
             var writtenReserve = false
             var wroteScroll = false
@@ -788,8 +821,13 @@ private fun applyPairedShift(
                     reserve.reserved = reserve.trueHeight
                     writtenReserve = true
                 }
-                if (stickFiso != null) {
-                    targetFiso = stickFiso
+                // noop 格的 ledger 折加：塌缩零操作，但同帧增长配对义务仍履行
+                val effectiveTarget = stickFiso
+                    ?: (if (ledgerTotal != 0f && anchorIsOwner)
+                        (listState.firstVisibleItemScrollOffset + ledgerTotal.toInt()).coerceAtLeast(0)
+                    else null)
+                if (effectiveTarget != null) {
+                    targetFiso = effectiveTarget
                     wroteScroll = true
                     LazyListReflection.requestScrollToItemNoCancel(listState, targetFii, targetFiso)
                     mem.lastSetFii = targetFii
@@ -808,6 +846,7 @@ private fun applyPairedShift(
                     "release-ref t=" + android.os.SystemClock.elapsedRealtime() +
                         " capd=" + (pendingPlan?.delta ?: 0) + " led=" + ledgerTotal.toInt() +
                         (if (wroteScroll) " set(fii=" + targetFii + ",fiso=" + targetFiso + ")" else " noop(outside-span)") +
+                        (if (!anchorIsOwner) " anchor-not-owner" else "") +
                         " h->" + (if (writtenReserve) reserve?.trueHeight.toString() else "-"),
                 )
             }

@@ -44,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -296,8 +297,13 @@ internal fun ReasoningBlock(
                 // MDResize =「展开先跳再拖」分档面（journal §22 D1）。预热后首开
                 // 命中 MarkdownParsedStateCache（首测即终高）。展开态不需要
                 // （pilot 在场自持/毕业保持）；幂等；Default 线程。
+                // review 轮收窄（P2）：仅 isStreaming true→false **翻转**才触发——
+                // 挂载即历史完结卡（滚动浏览）不烧 Default 解析、不扰动 LRU32。
+                var prevStreamingForPrewarm by remember { androidx.compose.runtime.mutableStateOf(isStreaming) }
                 LaunchedEffect(isStreaming, expanded) {
-                    if (!isStreaming && !expanded) {
+                    val flipped = prevStreamingForPrewarm && !isStreaming
+                    prevStreamingForPrewarm = isStreaming
+                    if (flipped && !expanded) {
                         prewarmTerminalParse(text, isUser = false)
                     }
                 }

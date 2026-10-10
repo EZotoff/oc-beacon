@@ -619,7 +619,8 @@ internal fun CardExpandReveal(
                         "[DEBUG-540] pairing-window open host=" + hostItemKey.toString().take(24) +
                             " windows=" + pairingReserve.expandPairingWindows +
                             " reveal-geo stickTop=" + stickTop + " span=" + spanDepth +
-                            " itemH=" + itemH + " boxY=" + revealTopRootY.value.toInt(),
+                            " itemH=" + itemH + " boxY=" +
+                            (if (revealTopRootY.value.isNaN()) "na" else revealTopRootY.value.toInt().toString()),
                     )
                 }
                 try {
