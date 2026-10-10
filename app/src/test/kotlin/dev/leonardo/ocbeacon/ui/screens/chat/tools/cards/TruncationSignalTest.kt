@@ -15,9 +15,18 @@ import org.junit.Test
 class TruncationSignalTest {
 
     private val liveTail =
-        "10001\n10002\n…\n11999\n12000\n…0001-12000 of 12000; full output saved to /home/u/.local/share/opencode/shell/abc/sh_x.out"
+        "10001\n10002\n…\n11999\n12000\n…0001-12000 of 12000; full output saved to /home/u/.local/share/opencode/shell/abc/sh_x.out]"
     private val legacyPrefix =
         "...output truncated...\n\nFull output saved to: /tmp/opencode/f.txt"
+
+    @Test
+    fun `live tail bracket suffix stripped from path`() {
+        // 现网尾注整段包方括号（真机实证 .out%5D 致 viewer 404）——路径不得带 ] 尾巴
+        assertEquals(
+            "/home/u/.local/share/opencode/shell/abc/sh_x.out",
+            TruncationSignal.path(null, liveTail),
+        )
+    }
 
     private fun meta(truncated: Boolean) = buildJsonObject { put("truncated", truncated) }
 

@@ -1,5 +1,6 @@
 package dev.leonardo.ocbeacon.ui.screens.chat.tools.cards
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -66,7 +67,11 @@ private val ANSI_ESCAPE_REGEX = Regex("\u001B\\[[0-9;]*[a-zA-Z]")
 internal fun BashToolCard(
     tool: Part.Tool,
     isExpanded: Boolean,
-    onToggleExpand: () -> Unit
+    onToggleExpand: () -> Unit,
+    /** #539 ⑤B：截断提示「查看全文」→ ChatScreen FileViewer 拉服务器落盘全文
+     *（V2 /api/fs/read 双斜杠绝对路径 200 实证；V1 /file/content 项目外 500 →
+     * viewer 既有错误提示兜底；DSH 无路径信号自然无按钮）。null 时隐藏动作。 */
+    onOpenFile: ((filePath: String) -> Unit)? = null,
 ) {
     val isAmoled = isAmoledTheme()
     val input = extractToolInput(tool)
@@ -208,16 +213,33 @@ internal fun BashToolCard(
         if (isTruncated) {
             // #539：路径不可解析（冷恢复 Room 500c 预览不含服务器尾行/outputPaths
             // 未随 part 落库）→ 无路径变体文案，避免「已保存至：」悬空冒号。
-            Text(
-                text = if (truncationPath != null) {
-                    stringResource(dev.leonardo.ocbeacon.R.string.chat_output_truncated, truncationPath)
-                } else {
-                    stringResource(dev.leonardo.ocbeacon.R.string.chat_output_truncated_no_path)
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.tertiary,
-                modifier = Modifier.padding(top = SpacingTokens.XS.dp, start = SpacingTokens.XS.dp, end = SpacingTokens.XS.dp)
-            )
+            // ⑤B：路径在手且 onOpenFile 可用 → 「查看全文」动作（FileViewer 全文）。
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = SpacingTokens.XS.dp, start = SpacingTokens.XS.dp, end = SpacingTokens.XS.dp),
+            ) {
+                Text(
+                    text = if (truncationPath != null) {
+                        stringResource(dev.leonardo.ocbeacon.R.string.chat_output_truncated, truncationPath)
+                    } else {
+                        stringResource(dev.leonardo.ocbeacon.R.string.chat_output_truncated_no_path)
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.weight(1f),
+                )
+                val path = truncationPath
+                if (path != null && onOpenFile != null) {
+                    Text(
+                        text = stringResource(dev.leonardo.ocbeacon.R.string.chat_output_view_full),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier
+                            .clickable { onOpenFile.invoke(path) }
+                            .padding(start = SpacingTokens.SM.dp, top = 2.dp, bottom = 2.dp),
+                    )
+                }
+            }
         }
         if (spillNotice != null) {
             SpillNoticeBanner(

@@ -286,6 +286,7 @@
     <string name="chat_manage_models">Zarządzaj modelami</string>
     <string name="chat_output_truncated">Dane wyjściowe skrócone przez serwer. Pełne dane zapisane w: %1$s</string>
     <string name="chat_output_truncated_no_path">Dane wyjściowe skrócone przez serwer. Pełne dane wyjściowe są na serwerze.</string>
+    <string name="chat_output_view_full">Pokaż pełne dane wyjściowe</string>
     <string name="chat_output_spilled">Część danych wyjściowych została pominięta przez serwer (%1$s). Pełny wynik zapisano w: %2$s</string>
     <string name="chat_output_spilled_unknown">Część danych wyjściowych została pominięta przez serwer. Pełny wynik zapisano w: %1$s</string>
     <string name="chat_permission_label">Uprawnienie: %1$s</string>

@@ -222,6 +222,7 @@
     <string name="chat_manage_models">Kelola model</string>
     <string name="chat_output_truncated">Output dipotong oleh server. Output lengkap disimpan di: %1$s</string>
     <string name="chat_output_truncated_no_path">Keluaran dipotong oleh server. Keluaran lengkap ada di sisi server.</string>
+    <string name="chat_output_view_full">Lihat keluaran lengkap</string>
     <string name="chat_output_spilled">Sebagian keluaran dihilangkan oleh server (%1$s). Hasil lengkap disimpan di: %2$s</string>
     <string name="chat_output_spilled_unknown">Sebagian keluaran dihilangkan oleh server. Hasil lengkap disimpan di: %1$s</string>
     <string name="chat_permission_label">Izin: %1$s</string>

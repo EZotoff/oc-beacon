@@ -294,6 +294,7 @@
     <string name="chat_manage_models">إدارة النماذج</string>
     <string name="chat_output_truncated">تم اقتطاع المخرجات بواسطة الخادم. المخرجات الكاملة محفوظة في: %1$s</string>
     <string name="chat_output_truncated_no_path">تم اقتطاع المخرجات بواسطة الخادم. المخرجات الكاملة على الخادم.</string>
+    <string name="chat_output_view_full">عرض المخرجات الكاملة</string>
     <string name="chat_output_spilled">تم حذف جزء من المخرجات بواسطة الخادم (%1$s). حُفظت النتيجة الكاملة في: %2$s</string>
     <string name="chat_output_spilled_unknown">تم حذف جزء من المخرجات بواسطة الخادم. حُفظت النتيجة الكاملة في: %1$s</string>
     <string name="chat_permission_label">الإذن: %1$s</string>

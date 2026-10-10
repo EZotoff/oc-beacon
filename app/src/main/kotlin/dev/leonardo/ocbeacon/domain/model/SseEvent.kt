@@ -500,7 +500,10 @@ sealed class SseEvent {
 
     // 会话压缩
     @Serializable
-    data class SessionCompacted(val sessionId: String) : SseEvent()
+    /** #539 ①B：压缩完成事件的全文摘要（上游 ended.text，2026-10-10 现网实证在席）。
+     * 现网消费链走 compactedSessions 计数→refreshMessages（REST 拉压缩消息分割线），
+     * summary 先行建模锁契约——未来分割线直连事件文本时免再动 wire 层。默认 null 向后兼容。 */
+    data class SessionCompacted(val sessionId: String, val summary: String? = null) : SseEvent()
 
     // ============ #378 DSH 转录实体事件（命令/压缩卡族流内重建） ============
     // 设计：docs/journal/2026-09-09-378-380-wire.md §五。这族事件是「转录卡」的域

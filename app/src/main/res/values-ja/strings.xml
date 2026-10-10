@@ -278,6 +278,7 @@
     <string name="chat_manage_models">モデルを管理</string>
     <string name="chat_output_truncated">出力がサーバーによって切り捨てられました。完全な出力は %1$s に保存されました</string>
     <string name="chat_output_truncated_no_path">サーバーにより出力が切り詰められました。完全な出力はサーバー側にあります。</string>
+    <string name="chat_output_view_full">全文を見る</string>
     <string name="chat_output_spilled">サーバーにより出力の一部が省略されました（%1$s）。完全な結果は次に保存されています: %2$s</string>
     <string name="chat_output_spilled_unknown">サーバーにより出力の一部が省略されました。完全な結果は次に保存されています: %1$s</string>
     <string name="chat_permission_label">権限: %1$s</string>

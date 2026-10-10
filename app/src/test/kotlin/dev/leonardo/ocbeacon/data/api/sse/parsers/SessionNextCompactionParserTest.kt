@@ -58,6 +58,45 @@ class SessionNextCompactionParserTest {
         assertTrue(inner !is SessionNextEvent.CompactionEnded || inner.sessionId.isNotEmpty())
     }
 
+    // ============ ①B：ended 摘要/边界建模 ============
+
+    @Test
+    fun `1B ended success carries summary text`() {
+        val props = buildJsonObject {
+            put("sessionID", "s1")
+            put("reason", "manual")
+            put("text", "## Objective\n- 摘要")
+            put("recent", "msg_r")
+        }
+        val event = parser.parse("session.next.compaction.ended", props)
+        val compacted = event as SseEvent.SessionCompacted
+        assertEquals("## Objective\n- 摘要", compacted.summary)
+    }
+
+    @Test
+    fun `1B CompactionEnded DTO decodes text and recent`() {
+        val props = json.parseToJsonElement(
+            """{"sessionID":"s1","messageID":"m1","text":"SUMMARY","recent":"last-msg","reason":"manual"}"""
+        ).jsonObject
+        val event = parser.parseSessionNextEvent("session.next.compaction.ended", props) as SessionNextEvent.CompactionEnded
+        assertEquals("SUMMARY", event.text)
+        assertEquals("last-msg", event.recent)
+        assertEquals("", event.error)
+    }
+
+    @Test
+    fun `1B beta-name ended maps summary via V2EventParser`() {
+        // beta 命名（现网 2.0.26 实际族）：session.compaction.ended 的 text → SessionCompacted.summary
+        val parserV2 = dev.leonardo.ocbeacon.data.api.v2.V2EventParser(json)
+        val props = json.parseToJsonElement(
+            """{"sessionID":"s2","reason":"manual","model":{"id":"glm"},"text":"全文摘要"}"""
+        ).jsonObject
+        val event = parserV2.parse("session.compaction.ended", props)
+        val compacted = event as SseEvent.SessionCompacted
+        assertEquals("s2", compacted.sessionId)
+        assertEquals("全文摘要", compacted.summary)
+    }
+
     // ============ G2：delta 字段双读 ============
 
     @Test

@@ -278,6 +278,7 @@
     <string name="chat_manage_models">Modelle verwalten</string>
     <string name="chat_output_truncated">Ausgabe vom Server gekürzt. Vollständige Ausgabe gespeichert unter: %1$s</string>
     <string name="chat_output_truncated_no_path">Ausgabe vom Server gekürzt. Die vollständige Ausgabe liegt auf dem Server.</string>
+    <string name="chat_output_view_full">Vollständige Ausgabe anzeigen</string>
     <string name="chat_output_spilled">Die Ausgabe wurde vom Server teilweise ausgelassen (%1$s). Vollständiges Ergebnis gespeichert unter: %2$s</string>
     <string name="chat_output_spilled_unknown">Die Ausgabe wurde vom Server teilweise ausgelassen. Vollständiges Ergebnis gespeichert unter: %1$s</string>
     <string name="chat_permission_label">Berechtigung: %1$s</string>

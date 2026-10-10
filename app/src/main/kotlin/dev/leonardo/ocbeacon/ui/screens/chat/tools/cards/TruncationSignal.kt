@@ -22,10 +22,11 @@ import kotlinx.serialization.json.jsonPrimitive
 internal object TruncationSignal {
 
     /** 旧文档前缀拼写：output truncated … saved to|Full output saved to: <path> */
-    private val LEGACY_PREFIX_PATH = Regex("""output truncated[\s\S]*?(?:saved to|Full output saved to:)\s*(\S+)""")
+    private val LEGACY_PREFIX_PATH = Regex("""output truncated[\s\S]*?(?:saved to|Full output saved to:)\s*([^\s\]\)]+)""")
 
-    /** 现网 2.0.26 尾行拼写：… of 12000; full output saved to <path> */
-    private val LIVE_TAIL_PATH = Regex("""full output saved to[:\s]+(\S+)""")
+    /** 现网 2.0.26 尾行拼写：… of 12000; full output saved to <path>] ——整段尾注
+     * 包在方括号里（2026-10-10 真机实证 %5D 尾巴致 viewer 404），捕获组排除右括号。 */
+    private val LIVE_TAIL_PATH = Regex("""full output saved to[:\s]+([^\s\]\)]+)""")
 
     /** 截断事实判定：outputPaths 在席 / metadata.truncated==true / 文本约定。 */
     fun isTruncated(

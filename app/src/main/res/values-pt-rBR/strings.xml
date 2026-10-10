@@ -278,6 +278,7 @@
     <string name="chat_manage_models">Gerenciar modelos</string>
     <string name="chat_output_truncated">Saída truncada pelo servidor. Saída completa salva em: %1$s</string>
     <string name="chat_output_truncated_no_path">Saída truncada pelo servidor. A saída completa está no servidor.</string>
+    <string name="chat_output_view_full">Ver saída completa</string>
     <string name="chat_output_spilled">Parte da saída foi omitida pelo servidor (%1$s). Resultado completo salvo em: %2$s</string>
     <string name="chat_output_spilled_unknown">Parte da saída foi omitida pelo servidor. Resultado completo salvo em: %1$s</string>
     <string name="chat_permission_label">Permissão: %1$s</string>

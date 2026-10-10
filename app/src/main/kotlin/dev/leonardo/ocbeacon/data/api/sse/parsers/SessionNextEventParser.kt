@@ -31,7 +31,11 @@ class SessionNextEventParser(private val json: Json) : SseEventParser {
             if (sid != null) {
                 val err = props["error"]?.jsonObject?.get("message")?.jsonPrimitive?.contentOrNull
                 return if (err.isNullOrBlank()) {
-                    SseEvent.SessionCompacted(sessionId = sid)
+                    // #539 ①B：成功 payload 的 text=全文摘要（现网实证），随事件透传
+                    SseEvent.SessionCompacted(
+                        sessionId = sid,
+                        summary = props["text"]?.jsonPrimitive?.contentOrNull,
+                    )
                 } else {
                     SseEvent.SessionNext(
                         SessionNextEvent.CompactionEnded(
