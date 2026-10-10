@@ -267,7 +267,8 @@ def heal_adb(cycles=3):
             out = ""
         for line in out.splitlines():
             parts = line.split()
-            if len(parts) >= 3 and parts[0] == f"adb-{token}":
+            # 端口轮换后 mDNS 可能新旧双记录并存（新名带 " (2)" 去重后缀）——都试
+            if len(parts) >= 3 and (parts[0] == f"adb-{token}" or parts[0].startswith(f"adb-{token} (")):
                 hostport = parts[2]
                 r = subprocess.run([ADB, "connect", hostport], capture_output=True, text=True, timeout=20)
                 if "connected" in (r.stdout or "") or "already" in (r.stdout or ""):
@@ -388,15 +389,16 @@ def dismiss_dialogs(root=None):
 
 # ---------- 导航 ----------
 def entry():
+    # 2026-10-10 加固包装：保留原返回值语义（启动门 `if not entry()` 判定）
     for attempt in range(3):
         try:
-            _entry_once()
-            return
+            return _entry_once()
         except Exception as e:
             log(f"entry 失败({attempt}) {type(e).__name__}: {e}——heal 后重试")
             if not heal_adb():
                 raise
             time.sleep(3)
+    return False
 
 
 def _entry_once():
