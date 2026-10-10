@@ -558,6 +558,8 @@ internal fun CardExpandReveal(
     val departure = LocalCardExpandDeparture.current
     // #508:宿主 item 身份在组合层读取(LaunchedEffect 协程内不可读 CompositionLocal)
     val hostItemKey = LocalCardExpandHostKey.current
+    // #543 探针：组合期捕获（episode 块非组合上下文，不能现场读 local）。
+    val cacheKeyAtComposition = LocalCardExpandCacheKey.current
     // #540:列表级帽状态（机件原子帧单写者抬/落帽用；组合层读取同上）
     val hatReserve = LocalCardExpandReserve.current
     if (listState == null || LocalInStreamingTurn.current) {
@@ -731,6 +733,16 @@ internal fun CardExpandReveal(
             if (target > 0f) {
                 onExpandComputing?.invoke(true)
                 withFrameNanos { }
+            }
+            // #543 定罪探针：episode 起点=hostItemKey+cacheKey 身份对——双宿主
+            // （同 item 双实例 / 跨 item 双条目）在此一次分辨。
+            if (BuildConfig.DEBUG) {
+                AppLogger.d(
+                    "CardExpand",
+                    "[DEBUG-543] episode-start hostKey=" + hostItemKey +
+                        " cacheKey=" + cacheKeyAtComposition +
+                        " target=" + target,
+                )
             }
             // 批次九(用户裁决 2026-09-22):统一高度控制——渲染前计算 + 反射逐帧
             // 设置。钉位武装/FLUSH 修正环/两阶段揭示全部退役:高度分数与滚动位

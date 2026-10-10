@@ -1057,6 +1057,20 @@ fun ChatScreen(
                                     "[452-display] n=" + displayItemsState.size,
                                 )
                             }
+                            // #543 H4 探测器：displayItems 同消息 id 双行（派生上游
+                            // 瞬态重复会直接制造双宿主）。
+                            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                displayItemsState
+                                    .groupingBy { it.second.message.id }
+                                    .eachCount()
+                                    .filterValues { it > 1 }
+                                    .forEach { (id, n) ->
+                                        dev.leonardo.ocbeacon.logging.AppLogger.w(
+                                            "ChatScreen",
+                                            "[DEBUG-543] display-dual id=" + id.takeLast(24) + " n=" + n,
+                                        )
+                                    }
+                            }
                             true
                         }
 
