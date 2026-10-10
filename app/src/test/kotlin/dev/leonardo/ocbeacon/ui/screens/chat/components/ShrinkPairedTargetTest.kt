@@ -25,7 +25,7 @@ class ShrinkPairedTargetTest {
         // fiso=700 → 距顶 4300 ∈ [4000,4800]；镜像 = 700−300 = 400
         assertEquals(
             400,
-            shrinkPairedTargetFiso(fiso = 700, itemTrueH = 5000, delta = -300, stickTop = 4000, spanDepth = 800),
+            shrinkPairedTargetFiso(fiso = 700, itemPreH = 5000, delta = -300, stickTop = 4000, spanDepth = 800),
         )
     }
 
@@ -35,7 +35,7 @@ class ShrinkPairedTargetTest {
         // 旧版零操作漏配镜像=上半部分被拖；镜像 = 4900−800 = 4100
         assertEquals(
             4100,
-            shrinkPairedTargetFiso(fiso = 4900, itemTrueH = 5000, delta = -800, stickTop = 4000, spanDepth = 800),
+            shrinkPairedTargetFiso(fiso = 4900, itemPreH = 5000, delta = -800, stickTop = 4000, spanDepth = 800),
         )
     }
 
@@ -44,7 +44,7 @@ class ShrinkPairedTargetTest {
         // fiso=200 → 距顶 4800 = 盒底（边界含入镜像侧）
         assertEquals(
             100,
-            shrinkPairedTargetFiso(fiso = 200, itemTrueH = 5000, delta = -100, stickTop = 4000, spanDepth = 800),
+            shrinkPairedTargetFiso(fiso = 200, itemPreH = 5000, delta = -100, stickTop = 4000, spanDepth = 800),
         )
     }
 
@@ -52,7 +52,7 @@ class ShrinkPairedTargetTest {
     fun `锚在盒下方新内容侧 零操作`() {
         // fiso=100 → 距顶 4900 > 4800（盒下方）：坐标不变，默认锚定正确
         assertNull(
-            shrinkPairedTargetFiso(fiso = 100, itemTrueH = 5000, delta = -800, stickTop = 4000, spanDepth = 800),
+            shrinkPairedTargetFiso(fiso = 100, itemPreH = 5000, delta = -800, stickTop = 4000, spanDepth = 800),
         )
     }
 
@@ -61,7 +61,7 @@ class ShrinkPairedTargetTest {
         // fiso=400，塌缩 −800 → −400 钳 0
         assertEquals(
             0,
-            shrinkPairedTargetFiso(fiso = 400, itemTrueH = 5000, delta = -800, stickTop = 4000, spanDepth = 800),
+            shrinkPairedTargetFiso(fiso = 400, itemPreH = 5000, delta = -800, stickTop = 4000, spanDepth = 800),
         )
     }
 
@@ -70,12 +70,12 @@ class ShrinkPairedTargetTest {
         // 帧1：fiso=700 距顶 4300，塌 400 → 镜像 300
         assertEquals(
             300,
-            shrinkPairedTargetFiso(fiso = 700, itemTrueH = 4600, delta = -400, stickTop = 4000, spanDepth = 800),
+            shrinkPairedTargetFiso(fiso = 700, itemPreH = 4600, delta = -400, stickTop = 4000, spanDepth = 800),
         )
         // 帧2：真高 4200（盒塌完），fiso 已骑至 300 → 距顶 3900 仍 ≤4800，续镜像
         assertEquals(
             0,
-            shrinkPairedTargetFiso(fiso = 300, itemTrueH = 4200, delta = -400, stickTop = 4000, spanDepth = 800),
+            shrinkPairedTargetFiso(fiso = 300, itemPreH = 4200, delta = -400, stickTop = 4000, spanDepth = 800),
         )
     }
 
@@ -84,12 +84,12 @@ class ShrinkPairedTargetTest {
         // col4 形态：fiso=277，收缩 −3655 → 镜像越界钳 0
         assertEquals(
             0,
-            shrinkPairedTargetFiso(fiso = 277, itemTrueH = 5000, delta = -3655, stickTop = -1, spanDepth = -1),
+            shrinkPairedTargetFiso(fiso = 277, itemPreH = 5000, delta = -3655, stickTop = -1, spanDepth = -1),
         )
         // col3 形态：fiso=4287 → 镜像 632
         assertEquals(
             632,
-            shrinkPairedTargetFiso(fiso = 4287, itemTrueH = 5000, delta = -3655, stickTop = -1, spanDepth = -1),
+            shrinkPairedTargetFiso(fiso = 4287, itemPreH = 5000, delta = -3655, stickTop = -1, spanDepth = -1),
         )
     }
 
@@ -97,7 +97,7 @@ class ShrinkPairedTargetTest {
     fun `spanDepth 未捕获同样走保守镜像`() {
         assertEquals(
             0,
-            shrinkPairedTargetFiso(fiso = 277, itemTrueH = 5000, delta = -3655, stickTop = 4000, spanDepth = -1),
+            shrinkPairedTargetFiso(fiso = 277, itemPreH = 5000, delta = -3655, stickTop = 4000, spanDepth = -1),
         )
     }
 }

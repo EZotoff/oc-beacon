@@ -482,14 +482,19 @@ internal fun hatPairedLower(reserved: Int, ownerKey: Any?, hostKey: Any?, delta:
  *   跳到揭示缘」在锚位于体内深处时一次性把上半部分拖下一大截（用户复测定罪
  *   「收起拖动上半部分」①面）；「盒上方走零操作」漏配镜像=上半部分被动被拖
  *   （②面）——镜像骑行两 face 同除，落位自然（终态 fiso₀−H，越界钳 item 底
- *   为跨 item 折叠的有界近似）。
+ *   为跨 item 折叠的有界近似：流式物主下方恒为零高横幅群，钳 item 底≈折叠终位）。
  * - **未捕获几何**（stickTop<0 或 spanDepth<0）：保守纯镜像钳底（兜底）。
+ *
+ * **itemPreH 必须传帧前高度**（帽协议 reserved——评估时刻尚未释放，恰为本帧
+ * 收缩前的值；递归自洽：上帧释放后 reserved=上帧后高=本帧前高）。曾用帧后
+ * 真高使 anchorTop 被低估一个 δ（塌缩初帧 δ 可达数百 px）——盒下方临界锚
+ * 误入镜像侧被拖（根修审计定罪，journal §27）。
  *
  * 返回 null=零操作（仅帽回写，无滚动写入）。
  */
 internal fun shrinkPairedTargetFiso(
     fiso: Int,
-    itemTrueH: Int,
+    itemPreH: Int,
     delta: Int,
     stickTop: Int,
     spanDepth: Int,
@@ -498,7 +503,7 @@ internal fun shrinkPairedTargetFiso(
     if (stickTop < 0 || spanDepth < 0) {
         return (fiso + delta).coerceAtLeast(0)
     }
-    val anchorTop = itemTrueH - fiso
+    val anchorTop = itemPreH - fiso
     return if (anchorTop > stickTop + spanDepth) {
         null
     } else {
@@ -723,9 +728,10 @@ private fun reservePhase(listState: LazyListState, reserve: HeightReserveState?)
         expandPaired = reserve.expandPairingWindows > 0,
         // #540 二轮修订：锚在揭示缘上方（阅读位高于被展开卡）——正增长在锚
         // 下方，配对=自造位移，否决。未捕获几何（span=-1）不否决（legacy 盲配）。
+        // 锚位用帧前高度（reserved）与负向判定同源无偏（§27）。
         anchorAboveReveal = reserve.expandPairingWindows > 0 &&
             reserve.expandCollapseStickTop >= 0 && reserve.expandCollapseSpanDepth >= 0 &&
-            (reserve.trueHeight - listState.firstVisibleItemScrollOffset) < reserve.expandCollapseStickTop,
+            (reserve.reserved - listState.firstVisibleItemScrollOffset) < reserve.expandCollapseStickTop,
     )
     // [R1-A2] 单出口：帽 plan 延后与 ledger 配对合并为同帧单次滚动 set——
     // 原先帽 set 先落、ledger set 覆盖（requestPosition 覆盖写非叠加），同帧
@@ -825,7 +831,9 @@ private fun applyPairedShift(
             } else {
                 shrinkPairedTargetFiso(
                     fiso = listState.firstVisibleItemScrollOffset,
-                    itemTrueH = reserve.trueHeight,
+                    // 帧前高度=reserved（帽协议评估时刻的未释放值）——帧后真高会
+                    // 把锚位低估一个 δ 使盒下方临界锚误入镜像侧（根修审计 §27）
+                    itemPreH = reserve.reserved,
                     delta = reserveShift.toInt(),
                     stickTop = stickTopV,
                     spanDepth = spanDepthV,
