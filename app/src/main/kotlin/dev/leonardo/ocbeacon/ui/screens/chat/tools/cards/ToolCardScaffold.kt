@@ -127,9 +127,10 @@ internal fun ToolCardScaffold(
     /** #453 终态冻结时长——非 running 且 >0 时行尾静态显示。 */
     completedDurationMs: Long? = null,
     /**
-     * #540：展开终高缓存键（part id）——入 [CardExpandFinalHStore] 进程级 floor
-     * （#533 切片槽位出窗即弃的欠测兜底）。此前仅 ReasoningBlock 有键，工具卡
-     * （大输出=欠测重灾区）反而不受保护；null=不入店（维持现状）。
+     * #540：展开终高缓存键——入 [CardExpandFinalHStore] 进程级 floor（#533 切片
+     * 槽位出窗即弃的欠测兜底）。缺省兜底读 [LocalCardExpandCacheKey]（PartContent
+     * 逐 part 供给 part.id）——全部专用工具卡零签名改动统一入店；显式传参仅用于
+     * 覆盖（如 part 域之外的调用）。null 且无 local=不入店。
      */
     cacheKey: Any? = null,
     expandedContent: @Composable () -> Unit,
@@ -294,7 +295,8 @@ internal fun ToolCardScaffold(
             // 展开的内容（2026-08-30 用户裁决：统一顶边垂直揭幕，见 CardExpandTransitions.kt）
             CardExpandReveal(
                 visible = expanded && hasContent,
-                cacheKey = cacheKey,
+                // #540 全量接入：显式键优先，缺省兜底 part 域 local（15 专用卡一次覆盖）
+                cacheKey = cacheKey ?: dev.leonardo.ocbeacon.ui.screens.chat.components.LocalCardExpandCacheKey.current,
             ) {
                 // 2026-09-20 单行形态:展开区左竖线层级(Roo 式 border-l,零背景)——
                 // 修饰必须在 Reveal content 内部(#420 硬地板教训:外层固定

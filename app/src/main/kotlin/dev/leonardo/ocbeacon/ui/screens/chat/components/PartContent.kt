@@ -105,18 +105,25 @@ internal fun PartContent(
     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
         android.os.Trace.beginSection(partTraceName(part))
     }
-    PartContentInner(
-        part = part,
-        textColor = textColor,
-        isUser = isUser,
-        onViewSubSession = onViewSubSession,
-        turnAgentName = turnAgentName,
-        onOpenFile = onOpenFile,
-        onViewTool = onViewTool,
-        markdownStateOverride = markdownStateOverride,
-        preParsedState = preParsedState,
-        asyncParse = asyncParse,
-    )
+    // #540 全量接入：part 域展开卡的默认缓存键（part.id 跨毕业稳定——#509 宿主
+    // 前缀）。ToolCardScaffold/直调 reveal 的 part 域卡以「显式参数 ?: 本 local」
+    // 取键入 #533 进程级 floor；键律见 LocalCardExpandCacheKey KDoc。
+    androidx.compose.runtime.CompositionLocalProvider(
+        dev.leonardo.ocbeacon.ui.screens.chat.components.LocalCardExpandCacheKey provides part.id,
+    ) {
+        PartContentInner(
+            part = part,
+            textColor = textColor,
+            isUser = isUser,
+            onViewSubSession = onViewSubSession,
+            turnAgentName = turnAgentName,
+            onOpenFile = onOpenFile,
+            onViewTool = onViewTool,
+            markdownStateOverride = markdownStateOverride,
+            preParsedState = preParsedState,
+            asyncParse = asyncParse,
+        )
+    }
     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
         android.os.Trace.endSection()
     }

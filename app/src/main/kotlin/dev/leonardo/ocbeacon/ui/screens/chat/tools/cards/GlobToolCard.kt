@@ -111,6 +111,8 @@ internal fun GlobToolCard(
             // Expandable file list（2026-08-30 用户裁决：统一顶边垂直揭幕）
             CardExpandReveal(
                 visible = isExpanded,
+                // #540 全量接入：glob part 域 local（PartContent 供给 part.id）
+                cacheKey = dev.leonardo.ocbeacon.ui.screens.chat.components.LocalCardExpandCacheKey.current,
             ) {
                 Surface(
                     shape = ShapeTokens.extraSmall,

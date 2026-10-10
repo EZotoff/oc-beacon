@@ -145,6 +145,9 @@ internal fun CompactionNoticeCard(
         // #389 三轮c：内容栏 AnimatedVisibility（统一展开/收起动画）。
         // 有支持行＝内容常驻（null，正文走卡内 AV）；无支持行＝随展开态动画。
         contentExpanded = if (hasSupportRows) null else expanded,
+        // #540 全量接入：认领消息时间戳=稳定内容身份（0=尾部兜底无时间源——
+        // 瞬态卡不入店，键律禁常量键）
+        expandCacheKey = if (timeMs > 0) "compact-$timeMs" else null,
     ) {
         // 支持行：失败原因（排障优先）＋ #384 吸收的源命令结算
         if (!errorText.isNullOrBlank()) {
@@ -171,6 +174,8 @@ internal fun CompactionNoticeCard(
         if (canExpand) {
             CardExpandReveal(
                 visible = expanded,
+                // #540 全量接入：同 expandCacheKey 源（认领消息时间戳）
+                cacheKey = if (timeMs > 0) "compact-$timeMs" else null,
             ) {
                 Box(
                     modifier = Modifier

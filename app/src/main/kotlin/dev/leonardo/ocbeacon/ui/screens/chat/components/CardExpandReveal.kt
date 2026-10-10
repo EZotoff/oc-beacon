@@ -106,6 +106,21 @@ internal val LocalCardExpandHostKey = compositionLocalOf<Any?> { null }
  */
 internal val LocalCardExpandReserve = compositionLocalOf<HeightReserveState?> { null }
 
+/**
+ * #540 全量接入（用户裁决：所有展开卡统一入 #533 进程级终高 floor）：part 域
+ * 展开卡的默认缓存键——[PartContent] 逐 part 供给 `part.id`；[ToolCardScaffold]
+ * 等以 `显式参数 ?: 本 local` 取键。
+ *
+ * **键律（竞态稳定性承重，违反即单调 store 跨内容污染=过冲族）**：
+ * 1. 键 = 稳定内容身份（part.id / 消息级 eventKey / 对象 id）——part id 跨毕业
+ *    稳定（#509 宿主前缀）、msgId 跨换名稳定（MessageIdSwapped 原地改名）；
+ * 2. 禁止类型级常量键——内容随状态变化的瞬态卡（状态横幅族）无稳定身份，
+ *    显式不入店并以注释声明排除理由；
+ * 3. floor 语义集中在 [CardExpandGeometryNode]（1.5s 稳定释放/宽度键控/LRU），
+ *    接入只供键，机制全卡一致。
+ */
+internal val LocalCardExpandCacheKey = compositionLocalOf<Any?> { null }
+
 /** 展开位移离开贴底区(补偿后)判定阈值,对齐 isAtBottom 的 100px 判据。 */
 private const val DEPARTURE_THRESHOLD_PX = 100f
 

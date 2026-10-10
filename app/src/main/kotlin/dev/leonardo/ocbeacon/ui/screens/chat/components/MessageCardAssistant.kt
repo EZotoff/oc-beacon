@@ -454,6 +454,9 @@ internal fun MessageCardAssistant(
                                     CardExpandReveal(
                                         visible = qEntered && pendingQuestion != null &&
                                             item.group.part.id == effectiveAnchorId,
+                                        // #540 全量接入：锚 part id（#2024-09 语义：提问卡
+                                        // 锚定 part 槽位——part.id 稳定身份）
+                                        cacheKey = item.group.part.id,
                                     ) {
                                         val avQuestion = pendingQuestion ?: lastQuestion
                                         if (avQuestion != null &&
@@ -522,6 +525,8 @@ internal fun MessageCardAssistant(
             if (fallbackSlotActive) {
                 CardExpandReveal(
                     visible = qEntered && pendingQuestion != null && effectiveAnchorId == null,
+                    // #540 全量接入：兜底槽的提问实例键（q.id 稳定身份）
+                    cacheKey = pendingQuestion?.id ?: lastQuestion?.id,
                 ) {
                     val avQuestion = pendingQuestion ?: lastQuestion
                     if (avQuestion != null) {

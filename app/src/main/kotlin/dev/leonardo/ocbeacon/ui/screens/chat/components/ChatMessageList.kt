@@ -205,6 +205,13 @@ private fun BannerReveal(
     /** [#492 检测网] 横幅身份（传出实高探针日志用）——revealed 高度在 CardExpandReveal
      *  层（动画），内层内容 Box 探针量不到；空串=不探。 */
     diagKey: String = "",
+    /**
+     * #540 全量接入：横幅实例稳定内容身份（question.id/permission.id 等）——
+     * 入 #533 进程级终高 floor。**键律**：仅传实例级 id；内容随状态变化的
+     * 瞬态横幅（revert/retry/maxTokens/工具条/步进——无稳定内容身份）显式
+     * 不传（null=不入店）：单调 store 配常量键会把旧实例高度过冲给新实例。
+     */
+    cacheKey: Any? = null,
     content: @Composable () -> Unit,
 ) {
     CompositionLocalProvider(
@@ -217,7 +224,7 @@ private fun BannerReveal(
                 Modifier.bannerHeightDiag(diagKey)
             } else Modifier
         ) {
-            CardExpandReveal(visible = visible) { content() }
+            CardExpandReveal(visible = visible, cacheKey = cacheKey) { content() }
         }
     }
 }
@@ -1817,6 +1824,8 @@ fun ChatMessageList(
                                                 lastPrefixQ = prefixQ
                                                 dev.leonardo.ocbeacon.ui.screens.chat.components.CardExpandReveal(
                                                     visible = prefixQ != null,
+                                                    // #540 全量接入：前缀提问实例键
+                                                    cacheKey = prefixQ?.id ?: lastPrefixQ?.id,
                                                 ) {
                                                     lastPrefixQ?.let { pq ->
                                                         dev.leonardo.ocbeacon.ui.screens.chat.dialog.QuestionCard(
@@ -2811,6 +2820,8 @@ fun ChatMessageList(
                             streamingActive = turnActive,
                             visible = question != null,
                              diagKey = "question_pending",
+                            // #540 全量接入：提问实例键
+                            cacheKey = question?.id,
                         ) {
                             if (question != null) {
                                 Box(modifier = Modifier.bannerHeightDiag("question_pending").padding(bottom = messageSpacing)) {
@@ -2841,6 +2852,8 @@ fun ChatMessageList(
                             streamingActive = turnActive,
                             visible = permission != null,
                              diagKey = "perm_pending",
+                            // #540 全量接入：权限实例键
+                            cacheKey = permission?.id,
                         ) {
                             if (permission != null) {
                                 Box(modifier = Modifier.bannerHeightDiag("perm_pending").padding(bottom = messageSpacing)) {

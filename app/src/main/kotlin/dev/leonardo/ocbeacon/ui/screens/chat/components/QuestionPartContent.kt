@@ -139,6 +139,8 @@ internal fun CollapsibleQuestionPart(question: String) {
             // 2026-08-30 用户裁决：撤销展开补偿，回归 AV 出厂默认
             CardExpandReveal(
                 visible = expanded,
+                // #540 全量接入：question part 域 local（PartContent 供给 part.id）
+                cacheKey = dev.leonardo.ocbeacon.ui.screens.chat.components.LocalCardExpandCacheKey.current,
             ) {
                 Column(modifier = Modifier.padding(start = 20.dp, top = SpacingTokens.XS.dp, end = SpacingTokens.XS.dp, bottom = SpacingTokens.XS.dp)) {
                     Text(

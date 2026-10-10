@@ -81,6 +81,9 @@ internal fun MessageBubble(
      *  对称），展开/收起恒有动画（取代三轮b 的 contentVisible 条件卸载——它把
      *  收起动画截胡成了瞬间消失）。 */
     contentExpanded: Boolean? = null,
+    /** #540 全量接入：contentExpanded 展开路径的终高缓存键（调用方传消息级稳定
+     *  身份，如 EventCard 的 eventKey）；null=不入店。 */
+    expandCacheKey: Any? = null,
     // ---- 2026-09-12 扁平化 / 2026-09-17 v2 两段式 ----
     /** true = 角色消息两段式（无背景 / 无边框 / 无圆角、无头部标签栏）——委派 [MessageSectionScaffold]。
      *  false（默认）= 通知层卡片容器（EventCard / 合成通知卡 / 用户气泡沿用）。 */
@@ -217,6 +220,7 @@ internal fun MessageBubble(
                 } else {
                     CardExpandReveal(
                         visible = contentExpanded,
+                        cacheKey = expandCacheKey,
                     ) {
                         contentBody()
                     }

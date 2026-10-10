@@ -110,6 +110,8 @@ internal fun InjectionCard(
                 }
                 CardExpandReveal(
                     visible = expanded,
+                    // #540 全量接入：eventKey 即展开态记忆键（消息级稳定身份）
+                    cacheKey = eventKey,
                 ) {
                     Box(
                         modifier = Modifier

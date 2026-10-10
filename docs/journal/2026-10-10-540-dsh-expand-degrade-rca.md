@@ -155,3 +155,22 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
 - 降级路径窗关后的卡内迟到增长（分批表格/asyncParse）无 steady 配对接管（机件有 #430）——大表在「输出中」展开的窗后增量仍走流式语义；B 落地后「输出后」窗大卡直接走机件（settle+loading）大幅缩面。观察卡素材。
 - 专用工具卡（Patch/Edit/Task/Skill/WebFetch）cacheKey 未接（输出小非重灾区）。
 - V2 交叉 E2E 未跑（无 profile）。
+
+## #540 cacheKey 全量接入（2026-10-10 用户裁决：所有卡统一入店 + 键律保竞态稳定）
+
+
+## 16. cacheKey 全量接入（用户裁决）
+
+用户裁决：接 cache 即所有卡片接入，且一致性/竞态稳定性各方面保持一致。落地为**键律 + 全覆盖**：
+
+**键律（LocalCardExpandCacheKey KDoc 承载，竞态稳定性承重）**：
+1. 键 = 稳定内容身份（part.id 跨毕业稳定 #509 / 消息级 eventKey / 对象 id）；
+2. 禁类型级常量键——单调 store 下旧实例高度会过冲给新实例（1.5s 有界但违规）；
+3. floor 语义集中在 CardExpandGeometryNode（1.5s 稳定释放/宽度键控/LRU 512）——接入只供键，机制全卡一致。
+
+**覆盖矩阵**：
+- part 域（机制化）：`LocalCardExpandCacheKey` 由 PartContent 逐 part 供给 part.id；ToolCardScaffold 兜底读 local（15 个专用工具卡零签名改动一次覆盖）；GlobToolCard/TodoListCard/QuestionPartContent 直调 reveal 处读 local；ReasoningBlock 维持显式 pinKey（=part.id，同值）。
+- 消息域（显式键）：InjectionCard/EventCard=eventKey（展开态记忆键复用）；CompactionCard="compact-{timeMs}"（0=尾部兜底无时间源→不入店）；MessageBubble 增 expandCacheKey 参数透传（仅 EventCard/CompactionCard 两消费方）；MessageCardAssistant 两处提问块=锚 part.id / pendingQuestion.id。
+- 横幅域（实例键+显式排除）：question/permission/prefixQ 三横幅传实例 id；五个状态横幅（revert/retry/maxTokens/工具条/步进）内容随状态变化、无稳定内容身份——按键律**显式不入店**，BannerReveal KDoc 声明排除理由。
+
+**验证**：compileDevDebugKotlin 绿；全量 testDevDebugUnitTest --rerun 绿（1m33s）；lintDevDebug 0 新错误（3m50s）。floor 机器（store/bridge/geometry node）既有单测在役；新增面为纯供键接线（compose 层），E2E 判读沿用 #533/#540 既有探针（RESIZE/GapDiag/finalH 脉冲签名）。

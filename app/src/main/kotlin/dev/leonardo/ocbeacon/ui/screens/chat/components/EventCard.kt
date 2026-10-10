@@ -143,6 +143,8 @@ internal fun EventCard(
         // #389 三轮c：内容栏 AnimatedVisibility（统一展开/收起动画）。
         // 有描述行＝内容常驻（null，正文走卡内 AV）；无描述行＝随展开态动画。
         contentExpanded = if (description != null) null else (hasBody && expanded),
+        // #540 全量接入：eventKey 即展开态记忆键（消息级稳定身份）
+        expandCacheKey = eventKey,
         onCardClick = if (hasBody) ({ expandedStates[eventKey] = !expanded }) else null,
         labelTrailing = {
             // 跳转箭头（Q4 常驻折叠+展开两态；点击不冒泡到整卡 toggle）
@@ -185,6 +187,8 @@ internal fun EventCard(
         // 出厂默认动画（spring + fade + 默认揭幕方向）
         CardExpandReveal(
             visible = hasBody && expanded,
+            // #540 全量接入：eventKey 即展开态记忆键（消息级稳定身份）
+            cacheKey = eventKey,
         ) {
             // ★ AnimatedVisibility 内容是 Box 叠放语义（非 Column）——多子级全部
             // 原点重叠：分割线被正文整体盖住（透明 Markdown 时从字底透出、
