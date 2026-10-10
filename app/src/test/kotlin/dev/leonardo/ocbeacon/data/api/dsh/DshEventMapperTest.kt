@@ -823,6 +823,7 @@ class DshEventMapperTest {
         val host = ((mapped[0] as DshMappedEvent.Sse).event as SseEvent.MessageUpdated).info as Message.Assistant
         assertEquals("dsh-call-call_1", host.id) // tool/result 的无状态连接键
         assertEquals(1788109999000L, host.time.created)
+        assertNull(host.time.completed) // #540 B 守卫：起始腿不预完结
         val tool = ((mapped[1] as DshMappedEvent.Sse).event as SseEvent.MessagePartUpdated).part as Part.Tool
         assertEquals("call_1", tool.id)
         assertEquals("call_1", tool.callId)
@@ -845,7 +846,12 @@ class DshEventMapperTest {
                 """{"turn":3,"step":2,"message":{"source":{"kind":"tool","callId":"call_1"},"content":[{"type":"tool-result","toolCallId":"call_1","content":[{"type":"text","text":"file-a\nfile-b"}]}]}}""",
             ),
         )
-        val tool = (eventsOf(mapped).single() as SseEvent.MessagePartUpdated).part as Part.Tool
+        // #540 B：tool/result 边界给宿主回填 completed（服务器信封时刻——组判据
+        // 步间翻非流式，「输出后」降级窗关闭；merge created=min 保 #453 计时锚）
+        val host = (eventsOf(mapped).filterIsInstance<SseEvent.MessageUpdated>().single().info as Message.Assistant)
+        assertEquals("dsh-call-call_1", host.id)
+        assertEquals(1788109999000L, host.time.completed)
+        val tool = (eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>().single().part as Part.Tool)
         assertEquals("call_1", tool.id)
         assertEquals("dsh-call-call_1", tool.messageId)
         val completed = tool.state as ToolState.Completed
@@ -864,10 +870,14 @@ class DshEventMapperTest {
                 """{"turn":3,"step":2,"error":{"code":"command-error","message":"exit 1"},"message":{"source":{"kind":"tool","callId":"call_2"},"content":[]}}""",
             ),
         )
-        val tool = (eventsOf(mapped).single() as SseEvent.MessagePartUpdated).part as Part.Tool
+        // #540 B：错误终态同样回填宿主 completed（调用已终结，错误语义在 part 上）
+        val host = (eventsOf(mapped).filterIsInstance<SseEvent.MessageUpdated>().single().info as Message.Assistant)
+        assertEquals("dsh-call-call_2", host.id)
+        assertEquals(1788109999000L, host.time.completed)
+        val tool = (eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>().single().part as Part.Tool)
         val error = tool.state as ToolState.Error
         assertEquals("exit 1", error.error)
-        // #453：Error 终态同补 time（错误调用同样显示累积时长）
+        // #453：Error 终态同补 time（错误调用同样累积时长）
         assertEquals(1788109999000L, error.time!!.end)
     }
 
@@ -920,6 +930,10 @@ class DshEventMapperTest {
         )
         val tool = (eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>().single().part as Part.Tool)
         assertEquals("call_r1:subagent", tool.id)
+        // #540 B：subagent 终态帧的宿主重申携带 completed（本分支即终态）
+        val host = (eventsOf(mapped).filterIsInstance<SseEvent.MessageUpdated>().single().info as Message.Assistant)
+        assertEquals("dsh-call-call_r1:subagent", host.id)
+        assertEquals(1788109999000L, host.time.completed)
         val completed = tool.state as ToolState.Completed
         assertEquals("started subagent bd5a33c9-cd05-4d73-baff-2319c036681e", completed.output)
         assertEquals(

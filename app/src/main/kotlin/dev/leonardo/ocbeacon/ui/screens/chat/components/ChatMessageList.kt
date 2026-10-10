@@ -2935,6 +2935,11 @@ fun ChatMessageList(
                                 // 知道 +H 落在哪个 item(宿主=锚永不折叠;宿主在上方
                                 // 按增长后容量向旧侧折算)。
                                 LocalCardExpandHostKey provides entry.key,
+                                // #540:列表级帽状态——流式降级分支的展开配对窗 +
+                                // 机件原子帧的帽×机件单写者抬/落帽。
+                                LocalCardExpandReserve provides heightReserve,
+                                // #540 B:回合级活动（3s 防抖）——统计栏视觉族步间防翻转
+                                dev.leonardo.ocbeacon.ui.screens.chat.util.LocalTurnActive provides turnActive,
                             ) {
                                 val extras = transcriptCardExtras[entry.key]
                                 if (extras == null || extras.isEmpty) {

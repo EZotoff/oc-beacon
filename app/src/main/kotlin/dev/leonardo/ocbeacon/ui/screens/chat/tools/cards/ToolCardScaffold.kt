@@ -126,6 +126,12 @@ internal fun ToolCardScaffold(
     runningStartMs: Long? = null,
     /** #453 终态冻结时长——非 running 且 >0 时行尾静态显示。 */
     completedDurationMs: Long? = null,
+    /**
+     * #540：展开终高缓存键（part id）——入 [CardExpandFinalHStore] 进程级 floor
+     * （#533 切片槽位出窗即弃的欠测兜底）。此前仅 ReasoningBlock 有键，工具卡
+     * （大输出=欠测重灾区）反而不受保护；null=不入店（维持现状）。
+     */
+    cacheKey: Any? = null,
     expandedContent: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -288,6 +294,7 @@ internal fun ToolCardScaffold(
             // 展开的内容（2026-08-30 用户裁决：统一顶边垂直揭幕，见 CardExpandTransitions.kt）
             CardExpandReveal(
                 visible = expanded && hasContent,
+                cacheKey = cacheKey,
             ) {
                 // 2026-09-20 单行形态:展开区左竖线层级(Roo 式 border-l,零背景)——
                 // 修饰必须在 Reveal content 内部(#420 硬地板教训:外层固定

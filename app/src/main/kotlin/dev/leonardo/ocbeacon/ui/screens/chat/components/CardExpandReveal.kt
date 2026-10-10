@@ -99,6 +99,13 @@ internal val LocalInStreamingTurn = staticCompositionLocalOf { false }
  */
 internal val LocalCardExpandHostKey = compositionLocalOf<Any?> { null }
 
+/**
+ * #540：列表级 [HeightReserveState]（CML 逐 item 供给；null=宿主未挂/横幅/单测/
+ * 预览——降级路径维持裸 AV 现状）。两处消费：流式降级分支的开合「展开配对窗」
+ * （窗内帽释放恒配对=消除上推源）；机件原子帧的帽×机件单写者抬/落帽。
+ */
+internal val LocalCardExpandReserve = compositionLocalOf<HeightReserveState?> { null }
+
 /** 展开位移离开贴底区(补偿后)判定阈值,对齐 isAtBottom 的 100px 判据。 */
 private const val DEPARTURE_THRESHOLD_PX = 100f
 
@@ -563,6 +570,8 @@ internal fun CardExpandReveal(
     val departure = LocalCardExpandDeparture.current
     // #508:宿主 item 身份在组合层读取(LaunchedEffect 协程内不可读 CompositionLocal)
     val hostItemKey = LocalCardExpandHostKey.current
+    // #540:列表级帽状态（机件原子帧单写者抬/落帽用；组合层读取同上）
+    val hatReserve = LocalCardExpandReserve.current
     if (listState == null || LocalInStreamingTurn.current) {
         // #526 定罪探针：降级路径（无 listState=非会话列表场景 / 流式 turn）不
         // 走反射锚定——DSH 展开方向不稳定疑涉此路径，toggle 时打点判别。
@@ -578,38 +587,57 @@ internal fun CardExpandReveal(
                 prevVis.value = visible
             }
         }
-        // #526 根修：流式降级路径展开保顶。降级机件零配对——输出流式期展开
-        // 思考卡时，贴底跟随族把展开增量当流式增长滚掉（卡头连同上方整体上推
-        // H＝用户「有时候向上展开」；完成后走机件路径反射锚定＝「向下展开」，
-        // 两态交替即「不稳定」）。保顶语义与机件路径 (fii, fiso+H) 同式：toggle
-        // 时记 (fii,fiso) 与盒高，AV 尺寸稳定后按 Δ 一次性反射回锚。恢复后视口
-        // 自然离底，后续流式增长按读历史族免派发——下方延展、上方纹丝不动。
+        // #540 方向 A 根修（取代 #526 事后回锚）：流式降级路径的展开/收起增长改经
+        // 帽协议 flush 单事务「恒配对」释放——toggle 时开「展开配对窗」（计数制，
+        // 同 item 多卡并发共容），AV 尺寸稳定后关窗。窗内每档增量（含并发流式
+        // 增长——展开语义=离底让位，与机件路径 departure 同向）原子配对落地，
+        // 上推源从构造上消失；#526 的「先上推、稳定后一次性反射回锚」瞬态随之
+        // 退役。无 reserve 供给（横幅/预览/宿主未挂/单测）维持裸 AV 现状。
         val degradeH = remember { androidx.compose.runtime.mutableIntStateOf(0) }
-        if (listState != null) {
+        val pairingReserve = LocalCardExpandReserve.current
+        if (listState != null && pairingReserve != null) {
             val toggled = remember { androidx.compose.runtime.mutableStateOf(visible) }
             LaunchedEffect(visible) {
                 if (toggled.value == visible) return@LaunchedEffect // 首组合同值非 toggle
                 toggled.value = visible
-                val before = degradeH.intValue
-                val fii = listState.firstVisibleItemIndex
-                val fiso = listState.firstVisibleItemScrollOffset
-                var last = -1
-                var stable = 0
-                var waited = 0
-                while (stable < 3 && waited < 40) { // AV spring ~300ms；上限 ~650ms
-                    withFrameNanos { }
-                    waited++
-                    val s = degradeH.intValue
-                    if (s == last) stable++ else {
-                        stable = 0
-                        last = s
-                    }
+                pairingReserve.expandPairingWindows++
+                if (BuildConfig.DEBUG) {
+                    AppLogger.d(
+                        "CardExpand",
+                        "[DEBUG-540] pairing-window open host=" + hostItemKey.toString().take(24) +
+                            " windows=" + pairingReserve.expandPairingWindows,
+                    )
                 }
-                val delta = degradeH.intValue - before
-                if (delta != 0) {
-                    LazyListReflection.requestScrollToItemNoCancel(listState, fii, fiso + delta)
+                try {
+                    // E2E 边界定罪（540-fix-w1-r2）：静默期 toggle 时空卡时 AV 内容可
+                    // 迟到（实测 +63ms）——toggle 时刻盒高与稳定值同值会让「3 帧稳定」
+                    // 在内容落地前触发（窗 211ms 早闭，增量落窗外免配对）。守卫：
+                    // 盒高必须**相对 toggle 时刻发生过变化**才允许计稳；零净变化
+                    // （空输出卡）由 40 帧上限收窗（窗内无增长=配对零操作，无害）。
+                    val atToggle = degradeH.intValue
+                    var sawChange = false
+                    var last = -1
+                    var stable = 0
+                    var waited = 0
+                    while (stable < 3 && waited < 40) { // AV spring ~300ms；上限 ~650ms
+                        withFrameNanos { }
+                        waited++
+                        val s = degradeH.intValue
+                        if (s != atToggle) sawChange = true
+                        if (!sawChange) continue
+                        if (s == last) stable++ else {
+                            stable = 0
+                            last = s
+                        }
+                    }
+                } finally {
+                    pairingReserve.expandPairingWindows--
                     if (BuildConfig.DEBUG) {
-                        AppLogger.d("CardExpand", "[DEBUG-526] top-pin restore fii=$fii fiso=$fiso +Δ=$delta")
+                        AppLogger.d(
+                            "CardExpand",
+                            "[DEBUG-540] pairing-window close host=" + hostItemKey.toString().take(24) +
+                                " windows=" + pairingReserve.expandPairingWindows,
+                        )
                     }
                 }
             }
@@ -926,6 +954,14 @@ internal fun CardExpandReveal(
                         clock.tweening = true
                         androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
                             clock.driveTo(1f)
+                            // #540 帽×机件单写者：宿主=帽物主（#440 宽限窗，turn 刚完结
+                            // 帽未卸）时，抬帽与增长同快照——反射 (fii,fiso+H) 不被
+                            // min(child,reserved) 钳一帧，flush 亦无残差二次释放。
+                            hatReserve?.let { r ->
+                                if (r.itemKey == hostItemKey) {
+                                    r.reserved = hatPairedRaise(r.reserved, r.itemKey, hostItemKey, H)
+                                }
+                            }
                         }
                         clock.tweening = false
                         if (!anchored) {
@@ -1065,6 +1101,15 @@ internal fun CardExpandReveal(
                     clock.tweening = false
                     androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
                         clock.driveTo(0f)
+                        // #540 镜像：物主 item 上的收起塌缩同快照落帽——防 reserved
+                        // 残留旧高使后续增长绕过一帧缓冲（帽协议失效=裸落地）。
+                        hatReserve?.let { r ->
+                            if (r.itemKey == hostItemKey) {
+                                r.reserved = hatPairedLower(
+                                    r.reserved, r.itemKey, hostItemKey, mirrorConsumed.toInt(),
+                                )
+                            }
+                        }
                     }
                     if (!anchorKnown && !clock.userScrollCancelled) {
                         // 用户滚动打断路径不再派发(取消相已反射恢复锚点;fling 中

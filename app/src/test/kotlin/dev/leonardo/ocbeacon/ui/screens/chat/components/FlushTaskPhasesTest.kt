@@ -220,4 +220,42 @@ class FlushTaskPhasesTest {
         streamingGrowFlushTask(mockState(3, 500), emptyLedger(), reserve).onPreDraw()
         assertEquals(true, reserve.alignBottom)
     }
+
+    // ============ #540 方向 A：展开配对窗的 flush 接线 ============
+
+    @Test
+    fun `540 展开窗内帽释放恒配对 - 贴底原点走反射不nodis`() {
+        mockkObject(LazyListReflection)
+        mockkObject(ScrollQuiescence)
+        val reserve = HeightReserveState().apply {
+            itemKey = "k1"
+            trueHeight = 1066
+            reserved = 1000
+            expandPairingWindows = 1
+        }
+        // 贴底原点存量语义是 nodis；窗内必须反射配对（消除流式期展开上推源）
+        val task = streamingGrowFlushTask(mockState(0, 5), emptyLedger(), reserve)
+        assertTrue(task.onPreDraw())
+        assertEquals(1066, reserve.reserved)
+        verify(exactly = 1) { LazyListReflection.requestScrollToItemNoCancel(any(), 0, 71, null) }
+    }
+
+    @Test
+    fun `540 收起窗内负向位移走dispatch镜像 - 不反射不拒绘`() {
+        mockkObject(LazyListReflection)
+        mockkObject(ScrollQuiescence)
+        val reserve = HeightReserveState().apply {
+            itemKey = "k1"
+            trueHeight = 900
+            reserved = 1000
+            expandPairingWindows = 1
+        }
+        val state = mockState(0, 100)
+        every { state.dispatchRawDelta(any()) } returns -100f
+        val task = streamingGrowFlushTask(state, emptyLedger(), reserve)
+        assertTrue(task.onPreDraw())
+        assertEquals(900, reserve.reserved)
+        verify(exactly = 1) { state.dispatchRawDelta(-100f) }
+        verify(exactly = 0) { LazyListReflection.requestScrollToItemNoCancel(any(), any(), any(), any()) }
+    }
 }

@@ -58,7 +58,7 @@
 
 ## P2 — 优化与锦上添花
 
-- [ ] **#540 DSH 流式/输出后折叠卡展开「上推→跳回」瞬态——降级裸AV零配对 + 工具宿主 completed 恒 null 延长降级窗** `dsh` `scroll`
+- [~] **#540 DSH 流式/输出后折叠卡展开「上推→跳回」瞬态——降级裸AV零配对 + 工具宿主 completed 恒 null 延长降级窗** `dsh` `scroll`
   - 症状：DSH 会话 SSE 输出中/刚输出完展开折叠卡（思考卡/工具卡），展开过程把上方内容上推、展开完毕后卡位一次性跳回原位；重进会话后恢复「正常展开」（渲染前算高+反射原子落位）
   - 根因①（主）：流式 turn item 经 LocalInStreamingTurn=true 走降级裸 AV（零配对），reverseLayout 把 +H 全额转译为视口上推；#526 事后回锚等 AV 稳定（~300-650ms）才一次性反射恢复=「跳回」瞬态的结构来源
   - 根因②（DSH 独有窗）：dsh-call-* 工具宿主 Message.completed 恒 null（整装/回放腿均不携带），直到 turn/end→SessionIdle→markSessionIdle 才回填——「输出后」工具卡展开仍全程降级；重进会话从 Room 读已回填 completed=机件路径=正常。分析全文见 2026-10-10-540 journal

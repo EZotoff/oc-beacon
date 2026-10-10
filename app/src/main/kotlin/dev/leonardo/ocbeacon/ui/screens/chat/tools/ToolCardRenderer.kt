@@ -115,6 +115,8 @@ internal fun ToolCallCard(
         // #453：累积计时（运行中走动/终态冻结；无锚不显示）
         runningStartMs = tool.state.timingStartMs(),
         completedDurationMs = tool.state.frozenDurationMs(),
+        // #540：工具卡入 #533 进程级终高 floor（part id 键控——切片槽位重建欠测兜底）
+        cacheKey = tool.id,
         titleContent = if (isTask) {
             {
                 Row(

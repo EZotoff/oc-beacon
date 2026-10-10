@@ -185,6 +185,12 @@ internal fun MessageCardAssistant(
     // turn 级流式判定：turn 内任一消息仍在流式即视为流式（多消息 turn 的
     // 代表消息是 oldest 可能已完成，仅看自身会漏判 → 统计栏延迟出现）。
     val isStreaming = isStreamingTurn || (assistantMsg?.time?.completed == null)
+    // #540 B：视觉族判据——DSH 工具宿主 step 边界回填 completed 后，组判据在
+    // 步间空窗翻非流式；统计栏计时器/流式徽标/反馈钮门并上回合级活动（3s 防抖）
+    // 整 turn 恒稳。parse 族（下方 asyncParse）仍吃 isStreaming——完结即终态
+    // 解析（#428 防线/#509 毕业不切渲染器）是既定语义，不吃防抖。
+    val visualStreaming = isStreaming ||
+        dev.leonardo.ocbeacon.ui.screens.chat.util.LocalTurnActive.current
 
     // 预计算的元数据
     val copyText = renderableTurn.copyText
@@ -254,7 +260,7 @@ internal fun MessageCardAssistant(
                     renderableTurn = renderableTurn,
                     assistantMsg = assistantMsg,
                     isTurnLast = isTurnLast,
-                    isStreaming = isStreaming,
+                    isStreaming = visualStreaming,
                     agents = agents,
                     onAgentClick = onAgentClick,
                     onCopy = onCopy,

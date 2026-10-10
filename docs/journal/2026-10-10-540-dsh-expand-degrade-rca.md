@@ -116,3 +116,42 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
 1. 轴 1 选型：B（数据正字，兼修步时长/红点喂入）vs E（纯 UI 活动门，零数据风险）；
 2. A 的三格语义：贴底原点展开（维持机件「+H+立即解跟随」）、读历史展开（维持全域 (fii,fiso+H) vs 接受锚即意图免派发）、收起镜像；
 3. B 若先行：统计栏流式判据是否并 FSM activity（否则步间计时器翻转抖动）。
+
+## #540 方向 A+B+cacheKey 实施与验证（2026-10-10）
+
+
+## 12. 方向 A 实施内容（消除位移源）
+
+- `reserveReleasePlan` 增 `expandPaired` 通道（ScrollCompensation.kt）：展开窗内增长/收缩恒配对（覆盖贴底原点/读历史格）；收缩在窗外维持「帽不回改」存量语义。
+- `HeightReserveState.expandPairingWindows` 计数窗（换主 resetIfOwnerChanged 清零；计数制支持同 item 多卡并发）。
+- flush 单出口 `applyPairedShift` 增负向分支（`release-dis` 日志签名）：收起配对走 dispatchRawDelta 镜像同帧消费——反射负向目标需向 index 减小折叠而 reverseLayout 下方项不在可见窗（尺寸谱缺失）；dispatch 后回写 lastSet 防 yield 误判；无拒绘（同帧生效）。
+- `LocalCardExpandReserve`（CML 逐 item 供给）两处消费：降级分支配对窗 + 机件原子帧单写者。
+- 降级分支（CardExpandReveal.kt:566+）：#526 事后回锚**删除**，替换为「toggle 开窗 → AV 尺寸稳定关窗」；E2E 边界定罪后补 `sawChange` 守卫（静默期空卡 AV 内容迟到 +63ms 时 3 帧稳定会在内容落地前触发=窗 211ms 早闭——盒高须相对 toggle 时刻变化过才计稳，零净变化由 40 帧上限收窗）。
+- 机件单写者（§4.1 收编）：展开/收起原子帧的 `withMutableSnapshot{driveTo}` 内同快照 `hatPairedRaise/hatPairedLower`（纯函数，非物主/未初始化/零增量不动；落帽下界归 -1 哨兵）。
+
+## 13. 方向 B 实施内容（数据域根因②）
+
+- `mapToolResult`：tool/result 边界给 `dsh-call-*` 宿主回填 `completed = 事件信封时刻`（错误终态同回填；merge `created=min` 保 #453 计时锚；#338 消毒第一守卫短路、markSessionIdle 幂等只填 null）。
+- `mapCodeDispatch`：subagent 终态帧的宿主重申携带 completed（本分支即终态）。
+- 统计栏视觉族配套：`LocalTurnActive`（ChatViewModel.turnActiveState，3s 防抖）经 CML 供给；`MessageCardAssistant` 拆 `visualStreaming = isStreaming || turnActive` 只喂 `AssistantTurnTail`（计时器/流式徽标/反馈钮门）——**parse 族（asyncParse）仍吃 isStreaming**（完结即终态解析= #428/#509 既定毕业语义，不吃防抖）。
+- cacheKey：`ToolCardScaffold` 增 `cacheKey` 参数 → `CardExpandReveal`；通用渲染器 `ToolCardRenderer` 传 `tool.id`（工具卡入 #533 进程级终高 floor；专用小卡 Patch/Edit/Task 等输出小、非欠测重灾区，维持 null 后续按需）。
+
+## 14. 验证矩阵
+
+- 单测（红→绿）：ReserveReleasePlanTest +6（窗内恒配对×3/收缩规划/手势持帽/窗外语义不变）+ FlushTaskPhasesTest +2（贴底原点走反射不 nodis / 负向走 dispatch 镜像不反射不拒绘）+ ExpandHatWriterTest 新文件 7（单写者纯函数）+ DshEventMapperTest 更新 3+守卫 1（起始腿 assertNull completed）+ DshHistoryFolderTest 金样本 +1 事件（19）。
+- 全量 `testDevDebugUnitTest --rerun` 三轮绿（含 sawChange 守卫后终轮 1m40s）；`lintDevDebug` 0 新错误（3m46s）。
+- **E2E 红→绿（emulator-5554 + dsh-pw-demo@8181，与修复前同会话同卡天然 A/B）**：
+  - G1 ✓ 流式中展开：degrade toggle + pairing-window open/close；窗内 8 条 release **全 set(fii=..) 配对、0 nodis、0 drop、0 top-pin**（修复前：≥10 条 nodis 连环 + VDRAW h 振荡 fiso 恒 0 + top-pin restore 跳回）。
+  - G2 ✓ 流式中收起：13 条 `release-dis` 逐帧 `capd==consumed` 精确（-124/-1015/-880…），h/fiso 锁步收缩。
+  - G3 ✓ 几何：VDRAW h 递增与 fiso 递增逐条咬合（修复前 h 振荡 148→160→148、fiso 恒 0）。
+  - G4 ✓ 输出后/重进：机件路径不变（expand-anchor + episode done completed=true，438/521ms；另有 3 次意外 turn 后 tap 全走机件=附加样本）。
+  - G5 ✓ 巡检：23MB logcat 零 FATAL/零 CardExpand 异常/VTRACE 无抖动。
+  - G6 跳过（模拟器仅配置 DSH 8181，无 V2 profile；三端共享管线+单测覆盖）。
+- 边界观察（已修）：静默期空卡窗早闭（§12 sawChange 守卫）。
+- B 的 E2E 腿：本轮 A 验证构建早于 B 落地；B 行为面（TurnFin 移至 step 边界/统计栏不抖）待下一构建真机/模拟器复验——单测与 V2 全影响面审计（§8 V2 腿 B1-B14）已覆盖语义面。
+
+## 15. 残余与后续
+
+- 降级路径窗关后的卡内迟到增长（分批表格/asyncParse）无 steady 配对接管（机件有 #430）——大表在「输出中」展开的窗后增量仍走流式语义；B 落地后「输出后」窗大卡直接走机件（settle+loading）大幅缩面。观察卡素材。
+- 专用工具卡（Patch/Edit/Task/Skill/WebFetch）cacheKey 未接（输出小非重灾区）。
+- V2 交叉 E2E 未跑（无 profile）。

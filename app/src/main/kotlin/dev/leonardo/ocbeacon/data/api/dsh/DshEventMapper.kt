@@ -1461,6 +1461,20 @@ object DshEventMapper {
             )
         }
         return listOf(
+            // #540 B：tool/result 边界给宿主回填 completed（服务器信封时刻，与 created
+            // 腿同域——时间契约 §2.3）。此前工具宿主恒 null 至 turn/end→markSessionIdle
+            // 兜底，「组内任一 completed==null」判据把整 turn 条目钉在流式（展开走
+            // 降级路径）——步间/输出后窗由此关闭。merge created=min 保 #453 计时锚。
+            DshMappedEvent.Sse(
+                SseEvent.MessageUpdated(
+                    Message.Assistant(
+                        id = hostId,
+                        sessionId = sessionId,
+                        time = TimeInfo(created = time, completed = time),
+                        parentId = "",
+                    )
+                )
+            ),
             DshMappedEvent.Sse(
                 SseEvent.MessagePartUpdated(
                     Part.Tool(
@@ -1608,13 +1622,15 @@ object DshEventMapper {
             )
         }
         return listOf(
-            // 宿主重申（幂等 upsert）：防实况/回放边界上 start 帧缺席导致孤儿 part
+            // 宿主重申（幂等 upsert）：防实况/回放边界上 start 帧缺席导致孤儿 part；
+            // #540 B：本分支即终态帧（Completed/Error）——重申携带 completed（同
+            // tool/result 腿的步边界回填语义，关闭 subagent 宿主的降级窗尾巴）。
             DshMappedEvent.Sse(
                 SseEvent.MessageUpdated(
                     Message.Assistant(
                         id = toolHostMessageId(key),
                         sessionId = sessionId,
-                        time = TimeInfo(created = time),
+                        time = TimeInfo(created = time, completed = time),
                         parentId = "",
                     )
                 )

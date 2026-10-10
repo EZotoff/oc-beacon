@@ -326,9 +326,17 @@ internal class HeightReserveState {
     /** 帽归属 item key（attach 相登记；换流式项自动重置）。 */
     var itemKey: Any? = null
     /** 对齐策略（用户验收二十二世：底对齐修贴底统计栏、却让阅读态回归推-回闪烁——
-     *  底钉增长=每 append 全块上推 Δ，配对释放才补偿=中间帧闪烁。改为随态切换：
-     *  贴底原点=底对齐（统计栏钉死、溢出朝上裁）；阅读态=顶对齐（原验证几何）。 */
+     * 底钉增长=每 append 全块上推 Δ，配对释放才补偿=中间帧闪烁。改为随态切换：
+     * 贴底原点=底对齐（统计栏钉死、溢出朝上裁）；阅读态=顶对齐（原验证几何）。 */
     var alignBottom: Boolean by androidx.compose.runtime.mutableStateOf(true)
+
+    /**
+     * #540 方向 A：展开配对窗计数（>0 = 本物主 item 上有展开/收起集进行中）。
+     * 窗内帽释放/收缩**恒配对**（覆盖贴底原点/读历史免派发格）——流式降级路径
+     * 的展开增长经帽通道逐档原子落地，上推源从构造上消失（#526 事后回锚退役）。
+     * 计数制支持同 item 多卡并发窗；换主时随 resetIfOwnerChanged 清零。
+     */
+    var expandPairingWindows: Int = 0
 }
 
 /** 帽修饰符：测真高、报帽高；增量越界由外层 clipToBounds 裁剪。 */
@@ -363,6 +371,7 @@ private fun HeightReserveState.resetIfOwnerChanged(itemKey: Any) {
         this.itemKey = itemKey
         reserved = -1
         trueHeight = -1
+        expandPairingWindows = 0
     }
 }
 
@@ -388,14 +397,18 @@ internal fun reserveReleasePlan(
     firstVisibleOffset: Int,
     isScrollInProgress: Boolean,
     growthIndex: Int?,
+    /** #540：展开配对窗内（物主 item 上展开/收起集进行中）——增长/收缩恒配对。 */
+    expandPaired: Boolean = false,
 ): ReserveReleasePlan? {
     if (reserved < 0) return null                       // 未初始化（首帧直通由 flush 初始化）
-    if (trueHeight <= reserved) return null             // 无增量（或收缩：帽不回改）
-    if (isScrollInProgress) return null                 // 手势持帽（零位移无豁免）
+    if (isScrollInProgress) return null                 // 手势持帽（零位移无豁免——展开窗同守）
     val delta = trueHeight - reserved
+    if (delta == 0) return null                         // 无增量
+    if (delta < 0 && !expandPaired) return null         // 收缩：帽不回改（存量语义；窗内例外=收起配对）
     // R1 统一配对谓词（原 z3 锚 index 语义+贴底原点判定合并入 StreamingAnchorRule）：
     // 贴底原点物理跟随免派发；跟随区免双重补偿；锚≤增长源同帧配对；读历史免。
-    val paired = StreamingAnchorRule.pairedDelta(
+    // #540：展开窗内的增长是用户主动揭示意图——锚位格全部让位，恒配对。
+    val paired = expandPaired || StreamingAnchorRule.pairedDelta(
         anchorIndex = firstVisibleIndex,
         anchorOffset = firstVisibleOffset,
         growthIndex = growthIndex,
@@ -403,6 +416,21 @@ internal fun reserveReleasePlan(
     ) != 0f
     return ReserveReleasePlan(delta = delta, scrollPaired = paired)
 }
+
+/**
+ * #540 帽×机件单写者（planned 抬帽，纯函数）：机件原子帧（反射待定位 + driveTo
+ * 同遍 measure）落在帽物主 item 上时，抬帽必须与增长**同快照**——否则增长被
+ * min(child, reserved) 钳一帧，反射 (+H) 先消费而布局未长，flush 残差释放与机件
+ * 反射叠成错帧/双注入（§4.1 宽限帽污染面收编）。非物主/未初始化/零增量=不动。
+ */
+internal fun hatPairedRaise(reserved: Int, ownerKey: Any?, hostKey: Any?, delta: Int): Int =
+    if (ownerKey != null && ownerKey == hostKey && reserved >= 0 && delta > 0) reserved + delta else reserved
+
+/** #540 镜像：收起集落帽（reserved 回落）；下界越界归 -1（未初始化哨兵，flush 首帧直通重建）。 */
+internal fun hatPairedLower(reserved: Int, ownerKey: Any?, hostKey: Any?, delta: Int): Int =
+    if (ownerKey != null && ownerKey == hostKey && reserved >= 0 && delta > 0) {
+        (reserved - delta).let { if (it < 0) -1 else it }
+    } else reserved
 
 /**
  * #438 R-1（2026-09-28 null-key 裸 index 通道根修）：配对目标位解析纯函数。
@@ -602,6 +630,8 @@ private fun reservePhase(listState: LazyListState, reserve: HeightReserveState?)
         // 导致锚键误判（该配对的释放落 paired=false）——按 index 反查锚键。
         growthIndex = listState.layoutInfo.visibleItemsInfo
             .firstOrNull { it.key == reserve.itemKey }?.index,
+        // #540：物主 item 上的展开/收起集窗内恒配对（覆盖贴底原点/读历史格）。
+        expandPaired = reserve.expandPairingWindows > 0,
     )
     // [R1-A2] 单出口：帽 plan 延后与 ledger 配对合并为同帧单次滚动 set——
     // 原先帽 set 先落、ledger set 覆盖（requestPosition 覆盖写非叠加），同帧
@@ -660,6 +690,38 @@ private fun applyPairedShift(
     total: Float,
 ): Boolean {
     if (total != 0f || pendingPlan != null) {
+        if (total < 0f) {
+            // #540 收起配对（负向位移）：反射目标位需向 index 减小折叠，而 reverseLayout
+            // 的下方项（更新侧）不在可见窗——尺寸谱缺失。改走 dispatchRawDelta 镜像
+            // 同帧消费（同步、物理边缘吸收残量；机件收起 fallback 同语义）。帽回改
+            // 同快照先行；dispatch 后读位即时生效，回写 lastSet 防 yield 误判。
+            var writtenReserve = false
+            androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
+                if (pendingPlan != null && reserve != null) {
+                    reserve.reserved = reserve.trueHeight
+                    writtenReserve = true
+                }
+            }
+            val consumed = try {
+                listState.dispatchRawDelta(total)
+            } catch (t: Throwable) {
+                AppLogger.w("CardExpand", "paired shrink dispatch failed: " + t.message)
+                0f
+            }
+            mem.lastSetFii = listState.firstVisibleItemIndex
+            mem.lastSetFiso = listState.firstVisibleItemScrollOffset
+            mem.lastSetFrame = mem.frameSeq
+            if (BuildConfig.DEBUG) {
+                AppLogger.d(
+                    "SGR-435",
+                    "release-dis t=" + android.os.SystemClock.elapsedRealtime() +
+                        " capd=" + (pendingPlan?.delta ?: 0) + " led=" + ledgerTotal.toInt() +
+                        " consumed=" + consumed.toInt() +
+                        " h->" + (if (writtenReserve) reserve?.trueHeight.toString() else "-"),
+                )
+            }
+            return true // dispatch 同帧生效，无需拒绘
+        }
         // #437 验收五轮（用户裁决，对齐 #427 引擎先例）：渲染前计算目标位+
         // 反射 requestPosition 写入待定区，由下一遍 measure 原子消费——与
         // dispatchRawDelta（渲染后滚动修正=先画增长态再跳位，整屏闪烁）的

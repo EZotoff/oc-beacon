@@ -38,7 +38,7 @@ class DshHistoryFolderTest {
     fun `golden sample folds to exact ordered sse event sequence`() {
         val result = DshHistoryFolder.fold(goldenRows())
         val events = result.sseEvents
-        assertEquals(18, events.size) // #356：+1（user/message rpcId 回显拆除 pending echo）
+        assertEquals(19, events.size) // #356：+1（user/message rpcId 回显拆除 pending echo）；#540 B：+1（tool/result 宿主 completed 回填）
         // 顺序即历史行序（保序）：三 knob（sandbox/approval/permission）→ SessionPermissionChanged
         // （权限预设切换器事件回显，不再 Ignored），随后 turn/start → busy；user/message 整装
         assertEquals(
@@ -72,28 +72,31 @@ class DshHistoryFolderTest {
         val pending = (events[9] as SseEvent.MessagePartUpdated).part as Part.Tool
         assertEquals("call_fixture_1", pending.id)
         assertTrue(pending.state is dev.leonardo.ocbeacon.domain.model.ToolState.Pending)
-        // tool/result → Completed 工具卡（同 callId 汇合）
-        val completed = (events[10] as SseEvent.MessagePartUpdated).part as Part.Tool
+        // tool/result → 宿主 completed 回填（#540 B）+ Completed 工具卡（同 callId 汇合）
+        val hostComplete = (events[10] as SseEvent.MessageUpdated).info as Message.Assistant
+        assertEquals("dsh-call-call_fixture_1", hostComplete.id)
+        assertEquals(1788109000018L, hostComplete.time.completed)
+        val completed = (events[11] as SseEvent.MessagePartUpdated).part as Part.Tool
         assertEquals("call_fixture_1", completed.id)
         assertTrue(completed.state is dev.leonardo.ocbeacon.domain.model.ToolState.Completed)
         // assistant/message 整装：流式桥原地换名（宿主行在场时）+ 消息 + reasoning/text part
         //（#509：MessageIdSwapped；历史 fold 无宿主行时消费端幂等 no-op）
-        assertEquals(SseEvent.MessageIdSwapped("fixture-0001", "dsh-t1s1", "seq-fixture-0001-13"), events[11])
-        val assistant = (events[12] as SseEvent.MessageUpdated).info as Message.Assistant
+        assertEquals(SseEvent.MessageIdSwapped("fixture-0001", "dsh-t1s1", "seq-fixture-0001-13"), events[12])
+        val assistant = (events[13] as SseEvent.MessageUpdated).info as Message.Assistant
         assertEquals("seq-fixture-0001-13", assistant.id)
         assertEquals(1788109000019L, assistant.time.completed)
-        assertEquals("thinking...", ((events[13] as SseEvent.MessagePartUpdated).part as Part.Reasoning).text)
-        assertEquals("answer", ((events[14] as SseEvent.MessagePartUpdated).part as Part.Text).text)
+        assertEquals("thinking...", ((events[14] as SseEvent.MessagePartUpdated).part as Part.Reasoning).text)
+        assertEquals("answer", ((events[15] as SseEvent.MessagePartUpdated).part as Part.Text).text)
         // #509：权威 part id 用**流式宿主前缀**派生（跨实况/历史同源）——part 身份
         // 自首帧起永久稳定，id 键控缓存（预解析注册表/分片账本/换装指纹）跨毕业
         // 连续；messageId 仍指向权威 seq id（归属不变）。
-        assertEquals("dsh-t1s1_reasoning_ord_0", (events[13] as SseEvent.MessagePartUpdated).part.id)
-        assertEquals("seq-fixture-0001-13", (events[13] as SseEvent.MessagePartUpdated).part.messageId)
-        assertEquals("dsh-t1s1_text_ord_1", (events[14] as SseEvent.MessagePartUpdated).part.id)
+        assertEquals("dsh-t1s1_reasoning_ord_0", (events[14] as SseEvent.MessagePartUpdated).part.id)
+        assertEquals("seq-fixture-0001-13", (events[14] as SseEvent.MessagePartUpdated).part.messageId)
+        assertEquals("dsh-t1s1_text_ord_1", (events[15] as SseEvent.MessagePartUpdated).part.id)
         // turn/end → idle；todo/title
-        assertEquals(SseEvent.SessionIdle("fixture-0001", 1788109000021), events[15])  // #294：time 透传
-        assertTrue(events[16] is SseEvent.TodoUpdated)
-        val updated = events[17] as SseEvent.SessionUpdated
+        assertEquals(SseEvent.SessionIdle("fixture-0001", 1788109000021), events[16])  // #294：time 透传
+        assertTrue(events[17] is SseEvent.TodoUpdated)
+        val updated = events[18] as SseEvent.SessionUpdated
         assertEquals("fixture session", updated.info.title)
     }
 

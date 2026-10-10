@@ -17,7 +17,8 @@ class ReserveReleasePlanTest {
         fiso: Int = 900,
         scrolling: Boolean = false,
         growthIndex: Int? = 7,
-    ) = reserveReleasePlan(reserved, trueHeight, fii, fiso, scrolling, growthIndex)
+        expandPaired: Boolean = false,
+    ) = reserveReleasePlan(reserved, trueHeight, fii, fiso, scrolling, growthIndex, expandPaired)
 
     @Test
     fun `未初始化不释放`() {
@@ -73,5 +74,49 @@ class ReserveReleasePlanTest {
             ReserveReleasePlan(delta = 66, scrollPaired = false),
             plan(reserved = 1000, trueHeight = 1066, growthIndex = null),
         )
+    }
+
+    // ============ #540 方向 A：展开配对窗（expandPaired 通道——流式降级路径展开增长恒配对） ============
+
+    @Test
+    fun `540 展开窗内贴底原点恒配对`() {
+        assertEquals(
+            ReserveReleasePlan(delta = 66, scrollPaired = true),
+            plan(reserved = 1000, trueHeight = 1066, fii = 0, fiso = 5, expandPaired = true),
+        )
+    }
+
+    @Test
+    fun `540 展开窗内读历史位恒配对`() {
+        assertEquals(
+            ReserveReleasePlan(delta = 66, scrollPaired = true),
+            plan(reserved = 1000, trueHeight = 1066, fii = 9, growthIndex = 7, expandPaired = true),
+        )
+    }
+
+    @Test
+    fun `540 展开窗内增长项不可见恒配对`() {
+        assertEquals(
+            ReserveReleasePlan(delta = 66, scrollPaired = true),
+            plan(reserved = 1000, trueHeight = 1066, growthIndex = null, expandPaired = true),
+        )
+    }
+
+    @Test
+    fun `540 展开窗内收缩规划回改配对`() {
+        assertEquals(
+            ReserveReleasePlan(delta = -100, scrollPaired = true),
+            plan(reserved = 1000, trueHeight = 900, expandPaired = true),
+        )
+    }
+
+    @Test
+    fun `540 展开窗内手势进行中仍持帽不释放`() {
+        assertNull(plan(reserved = 1000, trueHeight = 1066, scrolling = true, expandPaired = true))
+    }
+
+    @Test
+    fun `540 窗外收缩仍不回改（存量语义不变）`() {
+        assertNull(plan(reserved = 1000, trueHeight = 900, expandPaired = false))
     }
 }

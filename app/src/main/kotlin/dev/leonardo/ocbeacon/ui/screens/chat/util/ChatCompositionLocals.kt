@@ -35,6 +35,15 @@ val LocalHapticFeedbackEnabled = compositionLocalOf { true }
  */
 val LocalSessionStreaming = staticCompositionLocalOf { false }
 
+/**
+ * #540 B：回合级活动信号（ChatViewModel.turnActiveState——上升沿即时、下降沿
+ * 3s 防抖）。统计栏**视觉族**（计时器/流式徽标/反馈钮门）的步间防翻转判据：
+ * DSH 工具宿主在 step 边界回填 completed 后，组判据在步间空窗翻非流式——
+ * 视觉族并上本信号整 turn 恒稳；parse 族（asyncParse）不吃本信号（完结即
+ * 终态解析是 #428/#509 的既定毕业语义）。
+ */
+val LocalTurnActive = staticCompositionLocalOf { false }
+
 /** 图片保存请求回调，供图片预览 composable 使用。 */
 val LocalImageSaveRequest = compositionLocalOf<(ByteArray, String, String?) -> Unit> { { _, _, _ -> } }
 
