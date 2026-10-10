@@ -75,7 +75,9 @@ class VoiceSessionRepository(
                         pendingContext?.let { context ->
                             if (client.sendControl(context)) lastContext = context
                         }
-                        audio.start()
+                        // NOTE: no eager audio.start() here — the engine acquires focus/
+                        // player only on actual capture/playback (activity-scoped), so a
+                        // warm idle session no longer holds call-audio mode device-wide.
                         if (isHeld) {
                             audio.pressPtt()
                             inputPending = audio.pttHeld.value
@@ -97,7 +99,9 @@ class VoiceSessionRepository(
             client.incoming.collect { event ->
                 when (event) {
                     is VoiceIncoming.Audio -> if (state.value == VoiceSessionConnection.Live) {
-                        audio.playAudio(event.bytes)
+                        // Activity-scoped: acquire focus/player on incoming audio (self-
+                        // starting for greeting-without-press), refresh the idle timer.
+                        if (audio.ensureActive()) audio.playAudio(event.bytes)
                     }
                     is VoiceIncoming.Control -> {
                         if (event.frame is dev.leonardo.ocbeacon.data.api.voice.ShowFrame) mutableShowFrame.value = event.frame

@@ -40,6 +40,12 @@ class VoiceAudioEngine(
     val focusLost = mutableFocusLost.asStateFlow()
     private var started = false
     private var recordingGeneration = 0
+    /** 2026-10-10: communication audio (focus + VOICE_COMMUNICATION track) is ACTIVITY-scoped:
+     * acquired on capture/playback, auto-released after ~2s of silence. Holding it while the
+     * session is merely warm put the whole device in call-audio mode (media routed to the
+     * earpiece, notification sounds flipping the route). */
+    private var lastPlaybackAt = 0L
+    private var idleWatch: kotlinx.coroutines.Job? = null
     private var playback: Job? = null
     private var queue: Channel<ByteArray>? = null
 
@@ -56,6 +62,18 @@ class VoiceAudioEngine(
             started = true
             mutableFailure.value = null
             startPlayback()
+            idleWatch?.cancel()
+            idleWatch = scope.launch {
+                while (true) {
+                    kotlinx.coroutines.delay(1_000)
+                    synchronized(this@VoiceAudioEngine) {
+                        if (started && !mutablePtt.value &&
+                            System.currentTimeMillis() - lastPlaybackAt > 2_000) {
+                            stop()
+                        }
+                    }
+                }
+            }
         } catch (error: Exception) {
             player.stop()
             focus.abandon()
@@ -95,6 +113,14 @@ class VoiceAudioEngine(
         mutablePtt.value = false
         recordingGeneration++
         recorder.stop()
+    }
+
+    /** Activity-scoped acquisition for the incoming-audio path: starts the engine if
+     *  idle (e.g., Vox greeting without a press) and always refreshes the idle timer. */
+    @Synchronized
+    fun ensureActive(): Boolean {
+        lastPlaybackAt = System.currentTimeMillis()
+        return started || start()
     }
 
     @Synchronized
@@ -144,6 +170,8 @@ class VoiceAudioEngine(
 
     @Synchronized
     fun stop() {
+        idleWatch?.cancel()
+        idleWatch = null
         releasePtt()
         cancelPlayback()
         if (started) {
