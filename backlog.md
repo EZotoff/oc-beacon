@@ -58,12 +58,6 @@
 
 ## P2 — 优化与锦上添花
 
-- [~] **#539 #146①⑤ 客户端消费：compaction 新命名 G1/G2 修正 + outputPaths 结构化截断优先（排期 B4）** `sse` `v2`
-  - G2 确定性缺陷：新命名 compaction.delta 模型只映射 delta 应双读 text（SessionNextEvent.kt:274）→新命名服务器进行中分割线摘要恒空；G1：session.next.compaction.ended 不触发完成 snackbar+刷新链（仅 SessionCompacted 驱动，EventDispatcher.kt:441）
-  - ⑤A：ToolState.Completed/Part.Tool 增 outputPaths 可选字段 + BashToolCard 结构化优先文本回退（截断 UI 已存在仅换信号源）；V1/DSH 判缺失零变化
-  - 排期：取证腿 R1 前真机回归顺带（4096 v2.0.26 命名族 + outputPaths 在场性）→ 实现腿并入 B4；全文 docs/research/2026-10-10-146-consumption-research.md
-  - 2026-10-10 实现落地全验证（journal 539 批）：取证=现网 beta 命名族（G1/G2 防御性）+ metadata.truncated 现网在席（⑤A=现网实修，旧文本匹配从不触发）；真机 compact 全链 PASS + 截断提示带完整路径上屏；单测+12/lint/i18n 全绿（5f74a015c+d0c20ff7b）。余项：⑤B 查看全文动作=B5 候选（fs/read 可达性未验）；①B text/recent 建模收益低未做
-
 - [ ] **#522 B案升 stable 后余留装备清扫——JankHoldGate A/B 开关 + STREAM_DELTA_BUS 旗标退役（#499 余留范围）** `chore` `refactor`
   - 前置：STREAM_SHARD_PILOT / STREAM_DELTA_BUS 升 stable 并观察一批——当前 stable 均 false，JankHold 冻结链在 stable 仍是承重活体（B案开=旁路），现退役会回归 stable 流式滚动组合风暴。
   - 清扫面：JankHoldGate system-prop A/B、ChatScreen jkHold 冻结链（含 B3 埋点）、STREAM_DELTA_BUS 旗标与旁路分支；probe 按 keep-probes 裁决保留。#499 于 2026-10-06 完成范围内部迁移，余留拆本卡。
@@ -99,14 +93,6 @@
   - 2026-09-30 定性翻转(用户裁决B降级观察):今日冷启进程两会话十几个turn(0-20k chars全路径)零盲例——五假设全推翻(拆段线:3585原文标准段落格式未触发/Q换帧:7523混合part同经换帧暴露/长文=盲:4077五段纯散文注入段段暴露/路径=盲/密集dump自伤:10连dump后仍暴露);原定罪(长文语义零暴露)重定性=疑似长跑进程状态性退化(R假设:昨21:22同屏老表格turn暴露vs新essay盲分野=内容创建时刻;盲取证全部集中于4h+单一进程晚期);再撞上(长跑进程新组合内容dump全盲)即抓:logcat a11y错误+dumpsys meminfo+uptime;A11yDiag探针留树备用
   - 2026-10-09 用户裁决：转 #535 soak 主动狩猎（周期盲 dump 检测器：dump vs mock 语料/Room 直查 ground truth；命中即抓 a11y 错误+dumpsys accessibility+meminfo+uptime；R 假设=同语料进程早晚期对比可同批验证）
   - 2026-10-10 B2评估：两晚5起blind捕获全良性（短回复/鉴权失败错误轮的稀疏但有效dump；像素var 800+证实内容丰富）。新增判读工具沉淀：①像素统计（mean/var）快速分盲屏与暗色内容屏；②uiautomator bounds为视口裁剪值——钉在视口顶的块其上方元素整棵不出树（#488批3①勘误），裁剪线以下缺席≠未渲染。无真盲渲染线索→维持观察。
-
-- [ ] **#473 调试探针族清扫——历代 campaign 遗留 DEBUG 打点归档** `chore`
-  - grep \\\[DEBUG- 盘点:CardExpandReveal(#420-427/466)/ChatMessageList+MessageCardAssistant(hflick/jk)/SafeFlingBehavior(flng)/ChatScrollController(drift)/rbexp 等几十处打点,均 BuildConfig.DEBUG 门控、release 零影响,但污染调试 logcat(472 闪烁定罪时曾混入噪音)。逐族清理+保留关键结构注释;涉及文件多有编辑协议约束,单独批次执行。
-  - 2026-09-30 精化+新增三条方法教训:①「retained-subtree 盲区」实为 A11yDiag 语义=组合事件(内容经 pilot/preParsed state 对象流动时外层组合体跳过),内容级探针 MDPilot/ChunkDiag 一直覆盖,r3 实证 243/38 条——无真盲路径,改判读口径即可;②device 侧 grep 命令文本被 adbd in ShellService 记入 logcat→下轮自匹配假增长,监控必须 pull 到宿主 grep;③设备 nohup logcat 的 pkill -f 自匹配自杀(pkill 按进程名);宿主 nohup 不挺过 run_code 退出
-  - 2026-09-30 用户裁决：由于特殊情况先保留（不关闭，与探针永久保留裁决的冲突挂起由用户自持）
-  - 2026-10-09 探针开销取证（用户六问之 6，裁决依据）：release=探针族发射点全 BuildConfig.DEBUG 门控零执行；dev 构建 soak 实测探针 ~11.7 行/s 占 logcat 19.4%（GapDiag 独占 82%，#517 批埋点在重表格语料下高频命中），10h soak 201 轮零崩溃=性能无害实证
-  - 空间：设备侧 logcat 环形不落盘；持久化默认 INFO 起（探针 d 级不入库，MDPilot 等 i 级 dev 下入库但 ~0.56 行/s 量级）；诊断库有人工 clear() 无自动裁剪（业务 INFO 日志长期累积为既有事实，与探针无关）；宿主侧 soak 证据 166M（开发机 cap 轮转文件，非用户面）
-  - 后手：①R8 assumenosideeffects 剥 Log.d/v（推荐，~3 行配置，顺带清零未门控业务 d 站点）②GapDiag 节流聚合（可选）③用户关闭选项已存在=Settings 诊断级别调节+Diagnostics clear()，无需新增 ④宿主侧 cap 文件 zstd 归档（~10x）。建议：维持 keep-probes，#473 按 wontfix-by-ruling+后手① 落地收口，待用户拍板。证据：docs/research/2026-10-09-probe-overhead-audit.md
 
 - [ ] **#454 v1 真机 IME 换行注入后 prompt 未发出** `chat` `device` `v1`
   - 真机 IME keyevent 66 发送路径:消息含注入换行(Run\n\n)时 prompt POST 未发出,乐观气泡悬挂;二次干净发送正常(prompt_async 202)。发送链路疑有 IME 竞态边角,#453 验证时顺带观察,未复现第二次
