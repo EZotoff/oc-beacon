@@ -19,6 +19,30 @@ class SessionNextEventParser(private val json: Json) : SseEventParser {
     override fun canParse(eventType: String): Boolean = eventType.startsWith(prefix)
 
     override fun parse(eventType: String, props: JsonObject): SseEvent? {
+        // #539 G1：新命名 session.next.compaction.ended 成功态映射 SessionCompacted
+        // ——复刻 beta 命名 V2EventParser 对 session.compaction.ended 的既有语义
+        //（完成 snackbar + 消息刷新由 compactedSessions 计数判变驱动；横幅终结由
+        // EventDispatcher 跨 handler 处理）。此前新命名只走 SessionNext(CompactionEnded)
+        // 终结横幅，完成 UX 链整段断裂。失败态（error.message 非空）保持
+        // CompactionEnded——失败广播走 compactionFailures，无完成语义。手映射而非
+        // DTO：wire 的 error 是对象而 DTO.error 是 String，直解码会抛 Unknown。
+        if (eventType == "session.next.compaction.ended") {
+            val sid = props["sessionID"]?.jsonPrimitive?.contentOrNull
+            if (sid != null) {
+                val err = props["error"]?.jsonObject?.get("message")?.jsonPrimitive?.contentOrNull
+                return if (err.isNullOrBlank()) {
+                    SseEvent.SessionCompacted(sessionId = sid)
+                } else {
+                    SseEvent.SessionNext(
+                        SessionNextEvent.CompactionEnded(
+                            sessionId = sid,
+                            messageId = props["messageID"]?.jsonPrimitive?.contentOrNull ?: "",
+                            error = err,
+                        )
+                    )
+                }
+            }
+        }
         val nextEvent = parseSessionNextEvent(eventType, props)
         return SseEvent.SessionNext(nextEvent)
     }

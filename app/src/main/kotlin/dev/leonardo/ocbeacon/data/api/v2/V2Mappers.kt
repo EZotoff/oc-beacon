@@ -555,7 +555,11 @@ object V2MessageMapper {
                     "completed" -> ToolState.Completed(
                         input = inputMap,
                         output = outputText,
-                        metadata = metadataMap.ifEmpty { null }
+                        metadata = metadataMap.ifEmpty { null },
+                        // #539 ⑤A：2.x core 的超限全文落盘路径（现网 2.0.26 尚未
+                        // 携带=null；截断旗标现网走 metadata.truncated，见 TruncationSignal）
+                        outputPaths = stateObj?.get("outputPaths")?.jsonArray
+                            ?.mapNotNull { it.jsonPrimitive.contentOrNull }.takeIf { !it.isNullOrEmpty() },
                     )
                     "error" -> ToolState.Error(
                         input = inputMap,

@@ -299,12 +299,15 @@ class SessionNextEventHandler @Inject constructor(
      * 未 started 先到 delta（事件乱序防御）时置 isActive=true 兜底。
      */
     private fun handleCompactionDelta(event: SessionNextEvent.CompactionDelta) {
-        if (event.delta.isEmpty()) return
+        // #539 G2：双读 effectiveDelta（新命名 text / 旧 delta）——只读 delta 时
+        // 新命名服务器解码恒空串 → 早退 → 进行中分割线实时摘要恒空白。
+        val chunk = event.effectiveDelta
+        if (chunk.isEmpty()) return
         _compactionState.update { current ->
             val existing = current[event.sessionId]
             val base = existing ?: CompactionStateInfo(isActive = true, reason = "")
             current + (event.sessionId to base.copy(
-                deltaText = base.deltaText + event.delta
+                deltaText = base.deltaText + chunk
             ))
         }
     }

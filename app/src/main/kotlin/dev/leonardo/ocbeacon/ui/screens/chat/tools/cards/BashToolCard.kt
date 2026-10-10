@@ -50,8 +50,7 @@ import dev.leonardo.ocbeacon.ui.screens.chat.tools.timingStartMs
 /** #135（D2-L43）：ANSI 转义序列剥离正则——顶层预编译（原每次重组现场编译）。 */
 private val ANSI_ESCAPE_REGEX = Regex("\u001B\\[[0-9;]*[a-zA-Z]")
 
-/** #106-4（#8 提示条）：截断路径提取正则——顶层预编译（原 remember(displayText) 内现场编译）。 */
-private val OUTPUT_TRUNCATION_PATH_REGEX = Regex("""output truncated[\s\S]*?(?:saved to|Full output saved to:)\s*(\S+)""")
+/** #539 ⑤A：截断路径提取正则迁 TruncationSignal.kt（纯函数，单测覆盖）。 */
 
 /**
  * Bash 工具卡片 —— 显示 $ 命令 + 输出（2 行布局，2026-08-11 用户要求：
@@ -185,19 +184,26 @@ internal fun BashToolCard(
         val scrollState = rememberScrollState()
         // 2026-08-16（#8 根治呈现）：服务器对 shell/bash 输出有意保尾截头
         //（官方 shell.ts：progress 超 30K 字符 slice(-30000)；终态超 2000 行/
-        // 50KB 加 "...output truncated...\n\nFull output saved to: <path>"）。
-        // 检测该前缀显示提示条——把截断事实告知用户而非静默缺开头。
-        val truncationPath = remember(displayText) {
-            val m = OUTPUT_TRUNCATION_PATH_REGEX.find(displayText)
-            m?.groupValues?.get(1)
+        // 50KB 截断）。#539 ⑤A（2026-10-10）：信号源三层优先——结构化
+        // outputPaths > metadata.truncated 旗标（现网 2.0.26 在席实证）> 文本
+        // 约定（现网尾行 "… of N; full output saved to <path>"——旧前缀拼写
+        // 在现网从不出现，只走文本匹配时提示条从不触发）。
+        val completedState = tool.state as? ToolState.Completed
+        val structuredPaths = completedState?.outputPaths
+        val truncationPath = remember(displayText, structuredPaths) {
+            TruncationSignal.path(structuredPaths, displayText)
         }
         // #536：spill 通知在席时抑制本横幅——DSH 预览正文内层还带子进程级
         // "output truncated; full output: <path>" 标记，会误触发本约定（其路径
         // 正则不匹配该拼写→空 %1$s），双横幅叠加且一条空路径；spill 横幅语义
         // 已覆盖「输出被服务器截断」事实，内层标记留在正文原样呈现。
-        val isTruncated = remember(displayText, spillNotice) {
-            spillNotice == null &&
-                (displayText.contains("output truncated") || displayText.startsWith("..."))
+        val isTruncated = remember(displayText, spillNotice, structuredPaths, completedState) {
+            TruncationSignal.isTruncated(
+                structuredPaths,
+                completedState?.metadata,
+                displayText,
+                spillNotice != null,
+            )
         }
         if (isTruncated) {
             Text(
