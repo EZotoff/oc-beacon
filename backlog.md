@@ -58,10 +58,11 @@
 
 ## P2 — 优化与锦上添花
 
-- [ ] **#539 #146①⑤ 客户端消费：compaction 新命名 G1/G2 修正 + outputPaths 结构化截断优先（排期 B4）** `sse` `v2`
+- [~] **#539 #146①⑤ 客户端消费：compaction 新命名 G1/G2 修正 + outputPaths 结构化截断优先（排期 B4）** `sse` `v2`
   - G2 确定性缺陷：新命名 compaction.delta 模型只映射 delta 应双读 text（SessionNextEvent.kt:274）→新命名服务器进行中分割线摘要恒空；G1：session.next.compaction.ended 不触发完成 snackbar+刷新链（仅 SessionCompacted 驱动，EventDispatcher.kt:441）
   - ⑤A：ToolState.Completed/Part.Tool 增 outputPaths 可选字段 + BashToolCard 结构化优先文本回退（截断 UI 已存在仅换信号源）；V1/DSH 判缺失零变化
   - 排期：取证腿 R1 前真机回归顺带（4096 v2.0.26 命名族 + outputPaths 在场性）→ 实现腿并入 B4；全文 docs/research/2026-10-10-146-consumption-research.md
+  - 2026-10-10 实现落地全验证（journal 539 批）：取证=现网 beta 命名族（G1/G2 防御性）+ metadata.truncated 现网在席（⑤A=现网实修，旧文本匹配从不触发）；真机 compact 全链 PASS + 截断提示带完整路径上屏；单测+12/lint/i18n 全绿（5f74a015c+d0c20ff7b）。余项：⑤B 查看全文动作=B5 候选（fs/read 可达性未验）；①B text/recent 建模收益低未做
 
 - [ ] **#522 B案升 stable 后余留装备清扫——JankHoldGate A/B 开关 + STREAM_DELTA_BUS 旗标退役（#499 余留范围）** `chore` `refactor`
   - 前置：STREAM_SHARD_PILOT / STREAM_DELTA_BUS 升 stable 并观察一批——当前 stable 均 false，JankHold 冻结链在 stable 仍是承重活体（B案开=旁路），现退役会回归 stable 流式滚动组合风暴。
@@ -70,10 +71,6 @@
   - 2026-10-09 R1 排程裁决 ok：stable 随批发版带双旗标（STREAM_SHARD_PILOT/STREAM_DELTA_BUS，build.gradle.kts stable 块现值 false 实证）提升→stable soak 观察一批→B4 清扫本卡；若 B2 狩猎批修了 #486（同 scroll 域）则 B4 必须隔批串行
 
 ## P3 — 观察项
-
-- [ ] **#538 #488 观感窗顺带：metadata/mark 角色视觉 + 400-2000c 首帧残余 pop 观感** `markdown`
-  - 源自 #488 批2 收官余项（非缺陷）：① CodeSyntaxTheme 中 @注解 metadata 与 mark 两角色暂映射 tertiary，设计时标注'批2 视觉试验'——观感窗顺带过目是否有更优色；② 400-2000 字符代码块冷看首帧仍有一次纯色→着色 pop（同步阈值 CAP=400 为帧预算所限，JVM/ARM 基准证伪了研究文档 2000c 假设），重看已被缓存消除——观感可接受度顺带确认。无排期：下次用户过屏时顺带，不单独开工。
-  - 2026-10-10 演示材料就绪（用户「演示」口令，真机 houji+V2/GLM-4.6V）：双 KOTLIN 顶栏+复制（d538_04_top.png）；@注解×7 tertiary 观感（d538_05_annotations.png）；3734c 块冷看纯色窗~150ms（d538_pop.mp4 t1.95→2.10 + pop_1/pop_2 对比帧；CodeHL len=3734 lang=kotlin spans=496 ms=93；重看零新增=缓存命中）。证据 human-sim-10h/evidence/demo538/。待用户过目拍板①②观感
 
 - [ ] **#537 DSH 同步通道 1KB 截断——工具卡全文与 spill 通知不落 Room，离线重开降级** `dsh` `data`
   - 2026-10-09 #536 E2E 通道性发现：DSH 服务器同步/投影通道把工具输出截到 ~1KB（尾标 [truncated, full output on server] 为服务器原话）——spill 通知与全文只存在于打开会话时的实时拉取，cached_parts 恒短版
