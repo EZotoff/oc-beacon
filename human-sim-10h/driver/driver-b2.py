@@ -237,7 +237,48 @@ def action(kind, **kw):
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 def sh(*args, timeout=20):
-    return subprocess.run([ADB, "-s", SERIAL] + list(args), capture_output=True, text=True, timeout=timeout)
+    # 2026-10-10 加固：无线 adb 闪断时 subprocess 超时（02:47 driver 死因——
+    # entry() 恢复流内 reverse 挂死 20s，TimeoutExpired 裸抛炸掉 driver）。
+    # 设备定向命令超时不再裸抛：先自愈重连一次再重试；仍败则抛给调用方既有
+    # except Exception 链。host 侧命令（mdns/disconnect/connect）不经此路径。
+    try:
+        return subprocess.run([ADB, "-s", SERIAL] + list(args), capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        log(f"sh 超时自愈: {' '.join(args[:3])}")
+        if heal_adb():
+            return subprocess.run([ADB, "-s", SERIAL] + list(args), capture_output=True, text=True, timeout=timeout)
+        raise
+
+
+def heal_adb(cycles=3):
+    """无线闪断自愈：断开全部 TCP 设备 → mDNS 重发现目标 → 重连。
+    SERIAL 为 mDNS 自动连接形态（adb-e69a99d8-…._adb-tls-connect._tcp），
+    端口随手机无线调试会话轮换——必须重发现而非重连旧口。
+    成功后 SERIAL 更新为 host:port 形态（后续 -s 全走新名）。模拟器为本地
+    设备不受 disconnect 影响；escalate kill-server 留人工（kill 会连带
+    模拟器重连，代价大于收益）。"""
+    global SERIAL
+    token = SERIAL.split("._adb-tls")[0].replace("adb-", "")  # e69a99d8
+    for cycle in range(cycles):
+        subprocess.run([ADB, "disconnect"], capture_output=True, text=True, timeout=10)
+        try:
+            out = subprocess.run([ADB, "mdns", "services"], capture_output=True, text=True, timeout=15).stdout or ""
+        except Exception:
+            out = ""
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 3 and parts[0] == f"adb-{token}":
+                hostport = parts[2]
+                r = subprocess.run([ADB, "connect", hostport], capture_output=True, text=True, timeout=20)
+                if "connected" in (r.stdout or "") or "already" in (r.stdout or ""):
+                    SERIAL = hostport
+                    log(f"heal_adb 成功 cycle={cycle} 新 SERIAL={SERIAL}")
+                    time.sleep(2)
+                    return True
+        log(f"heal_adb cycle={cycle} 未发现 {token}（手机休眠/无线调试关闭）——30s 后重试")
+        time.sleep(30)
+    log("heal_adb 放弃：需人工（唤醒手机/无线调试/USB）")
+    return False
 
 def shok(*args, timeout=20):
     r = sh(*args, timeout=timeout)
@@ -347,6 +388,18 @@ def dismiss_dialogs(root=None):
 
 # ---------- 导航 ----------
 def entry():
+    for attempt in range(3):
+        try:
+            _entry_once()
+            return
+        except Exception as e:
+            log(f"entry 失败({attempt}) {type(e).__name__}: {e}——heal 后重试")
+            if not heal_adb():
+                raise
+            time.sleep(3)
+
+
+def _entry_once():
     sh("reverse", f"tcp:{PORT}", f"tcp:{PORT}")
     sh("shell", "am", "force-stop", PKG)
     sh("logcat", "-c")
