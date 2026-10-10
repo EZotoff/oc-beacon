@@ -277,6 +277,7 @@
     <string name="chat_default_model">Modello predefinito</string>
     <string name="chat_manage_models">Gestisci modelli</string>
     <string name="chat_output_truncated">Output troncato dal server. Output completo salvato in: %1$s</string>
+    <string name="chat_output_truncated_no_path">Output troncato dal server. L\'output completo si trova sul server.</string>
     <string name="chat_output_spilled">Parte dell\'output è stata omessa dal server (%1$s). Risultato completo salvato in: %2$s</string>
     <string name="chat_output_spilled_unknown">Parte dell\'output è stata omessa dal server. Risultato completo salvato in: %1$s</string>
     <string name="chat_permission_label">Permesso: %1$s</string>

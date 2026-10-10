@@ -285,6 +285,7 @@
     <string name="chat_default_model">Модель за замовчуванням</string>
     <string name="chat_manage_models">Керувати моделями</string>
     <string name="chat_output_truncated">Вивід скорочено сервером. Повний вивід збережено в: %1$s</string>
+    <string name="chat_output_truncated_no_path">Вивід обрізано сервером. Повний вивід знаходиться на сервері.</string>
     <string name="chat_output_spilled">Частину виводу було опущено сервером (%1$s). Повний результат збережено в: %2$s</string>
     <string name="chat_output_spilled_unknown">Частину виводу було опущено сервером. Повний результат збережено в: %1$s</string>
     <string name="chat_permission_label">Дозвіл: %1$s</string>

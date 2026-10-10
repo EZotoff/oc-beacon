@@ -277,6 +277,7 @@
     <string name="chat_default_model">Modèle par défaut</string>
     <string name="chat_manage_models">Gérer les modèles</string>
     <string name="chat_output_truncated">Sortie tronquée par le serveur. Sortie complète enregistrée dans : %1$s</string>
+    <string name="chat_output_truncated_no_path">Sortie tronquée par le serveur. La sortie complète se trouve sur le serveur.</string>
     <string name="chat_output_spilled">Sortie partiellement omise par le serveur (%1$s). Résultat complet enregistré sous : %2$s</string>
     <string name="chat_output_spilled_unknown">Sortie partiellement omise par le serveur. Résultat complet enregistré sous : %1$s</string>
     <string name="chat_permission_label">Autorisation : %1$s</string>

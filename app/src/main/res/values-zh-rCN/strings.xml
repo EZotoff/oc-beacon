@@ -280,6 +280,7 @@
     <string name="chat_default_model">默认模型</string>
     <string name="chat_manage_models">管理模型</string>
     <string name="chat_output_truncated">输出已被服务器截断。完整输出已保存至：%1$s</string>
+    <string name="chat_output_truncated_no_path">输出已被服务器截断，完整输出在服务器侧。</string>
     <string name="chat_output_spilled">输出已被服务器部分省略（%1$s）。完整结果已保存至：%2$s</string>
     <string name="chat_output_spilled_unknown">输出已被服务器部分省略。完整结果已保存至：%1$s</string>
     <string name="chat_permission_label">权限：%1$s</string>

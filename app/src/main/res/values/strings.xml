@@ -274,6 +274,7 @@
     <string name="chat_default_model">Default model</string>
     <string name="chat_manage_models">Manage models</string>
     <string name="chat_output_truncated">Output truncated by server. Full output saved to: %1$s</string>
+    <string name="chat_output_truncated_no_path">Output truncated by server. Full output is on the server side.</string>
     <string name="chat_output_spilled">Output partially omitted by server (%1$s). Full result saved to: %2$s</string>
     <string name="chat_output_spilled_unknown">Output partially omitted by server. Full result saved to: %1$s</string>
     <string name="chat_permission_label">Permission: %1$s</string>

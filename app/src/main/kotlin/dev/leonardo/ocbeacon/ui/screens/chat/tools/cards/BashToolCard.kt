@@ -206,8 +206,14 @@ internal fun BashToolCard(
             )
         }
         if (isTruncated) {
+            // #539：路径不可解析（冷恢复 Room 500c 预览不含服务器尾行/outputPaths
+            // 未随 part 落库）→ 无路径变体文案，避免「已保存至：」悬空冒号。
             Text(
-                text = stringResource(dev.leonardo.ocbeacon.R.string.chat_output_truncated, truncationPath ?: ""),
+                text = if (truncationPath != null) {
+                    stringResource(dev.leonardo.ocbeacon.R.string.chat_output_truncated, truncationPath)
+                } else {
+                    stringResource(dev.leonardo.ocbeacon.R.string.chat_output_truncated_no_path)
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.tertiary,
                 modifier = Modifier.padding(top = SpacingTokens.XS.dp, start = SpacingTokens.XS.dp, end = SpacingTokens.XS.dp)
