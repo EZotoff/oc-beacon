@@ -174,3 +174,21 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
 - 横幅域（实例键+显式排除）：question/permission/prefixQ 三横幅传实例 id；五个状态横幅（revert/retry/maxTokens/工具条/步进）内容随状态变化、无稳定内容身份——按键律**显式不入店**，BannerReveal KDoc 声明排除理由。
 
 **验证**：compileDevDebugKotlin 绿；全量 testDevDebugUnitTest --rerun 绿（1m33s）；lintDevDebug 0 新错误（3m50s）。floor 机器（store/bridge/geometry node）既有单测在役；新增面为纯供键接线（compose 层），E2E 判读沿用 #533/#540 既有探针（RESIZE/GapDiag/finalH 脉冲签名）。
+
+## #540 事后回锚全量清剿（2026-10-10 用户裁决：所有服务器类型/所有卡/其他地方）
+
+
+## 17. 事后回锚全量清剿（穷举扫描 + 切除）
+
+**扫描**（穷举腿，90 处滚动写入全部核实）：全 chat UI 域按五类分拣——A 渲染前原子（4，KEEP）/ B pre-draw 同帧（4，KEEP）/ C 事后回锚（3）/ D 用户导航（8，KEEP）/ E 跟随守卫（5，KEEP——经 episode 租约+departure+流式静默三重门控证实不修展开位移）/ F 手势（2，KEEP）。三端（V1/V2/DSH）共享渲染管线，代码级清扫即全覆盖。
+
+**切除（本轮 commit）**：
+1. **C1 end-restore**（#424）：episode 终态上屏 2 帧后 dispatchRawDelta 对账纠偏——仓内唯一存活的「上屏后修正」活体（仅反射探针降级时可达）；删除=降级即弃配（dispatch fallback 本身全额重试）。
+2. **死补偿设备**（零运行时路径，占 CardExpandReveal ~430 行）：#423 钉位修正器全套（pinPending/pinAnchor/guardCur/coordStamp/pinLedgerBase/pinDispatchedTotal/pumpArm + FLUSH 修正环 + pin-placed 即时修正；pinPending 永假=批次九退役残留）、#426 drainPhaseA+phaseADrain（永假）、applyPreRenderShift（零调用）、dispatchClosedLoop（#425，零调用）、easedFraction+GEOMETRY_TWEEN_MS（零调用）、smoothScrollToBottom（KT1a 台账死代码）；episodeEndCorrection 及其单测随 C1 删除；HOLD_VENT_FRAMES/PIN_QUIET_MS 常量随之。**保留** closedLoopCommand（纯数学、成套单测在役、文档价值）。
+3. 取消路径锚点恢复（cancel-on-scroll）定谳为**渲染前原子**（反射恢复与 snap 塌缩同一遍 measure，无中间帧）——保留；其两点观察（陈旧绝对锚 vs 镜像目标的语义不一致、20k 级全额 teleport）留作后续改进素材。
+
+**保留理由清单**（非事后回锚）：A1/A2 反射待定位+driveTo 同遍 measure；A3/A4 dispatch fallback（measure 前）；B1 引擎 flush（pre-draw 单事务+拒绘）；B2 稳态账本（pre-draw）；E1-E5 跟随守卫（三重门控）；D1-D8 用户导航（含 JNC 900ms 稳定窗——蒙版遮蔽下导航收尾，标注事后性质）。
+
+**另案登记**（同形不同域，未盲删）：#541（P2）snapToBottom 3×120ms 强推钉底——位移源=滚底后新入视口 item 延迟测量长高（#256 取证），消除源方向=引擎接管延迟测量域，盲删回归「FAB 拉不到最低」；#542（P3）ForceScroll verify-retry——显式意图域，随 #541 一裁。
+
+**验证**：残留 grep 零命中（11 个符号全仓）；compile 绿；全量 --rerun 绿（1m38s）；lintDevDebug 0 新错误（3m54s）。
