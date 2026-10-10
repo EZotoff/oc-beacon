@@ -10,6 +10,7 @@
 #     版本号省略时读 version.properties 当前 VERSION_NAME
 #     --bump=major|minor|patch   正式版开新线的增量类型（默认 patch，对应 fix 类 +0.0.1）
 #     --dev                      dev 版线内迭代（X.Y.Z-dev.N → X.Y.Z-dev.N+1）
+#     --beta                     beta 版线内迭代（X.Y.Z-beta[-N] → -beta-N+1；bare -beta=1 号）
 #
 # 三级递进规则（2026-08-24 用户定规）：
 #   同一 X.Y.Z 必须依次走 dev → beta → 正式（stable），不得跳级；
@@ -57,15 +58,19 @@ last_stable_tag() {
   git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true
 }
 
-# 校验版本号形态：X.Y.Z | X.Y.Z-beta | X.Y.Z-dev.N（N>=1）
-# 注：beta.N（如 0.3.0-beta.9）是旧惯例；规则确立后 beta 每线单发无序号（§2.1）
+# 校验版本号形态：X.Y.Z | X.Y.Z-beta | X.Y.Z-beta-N | X.Y.Z-dev.N（N>=1）
+# 注：beta.N（如 0.3.0-beta.9）是旧惯例（仍违规）；-beta-N 为 2026-10-10 用户定规
+#（beta 线内序号迭代，bare -beta 视为第 1 号；正式版禁止任何后缀）
 is_valid_form() {
   local v="$1"
-  if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-dev\.[0-9]+|-beta)?$ ]]; then
+  if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-dev\.[0-9]+|-beta(-[0-9]+)?)?$ ]]; then
     return 1
   fi
   if [[ "$v" == *"-dev."* ]] && [[ "${v##*-dev.}" -eq 0 ]]; then
     return 1  # dev 序号从 1 开始
+  fi
+  if [[ "$v" =~ -beta-0$ ]]; then
+    return 1  # beta 序号从 1 开始（bare -beta 视为 1 号）
   fi
   return 0
 }
@@ -107,7 +112,7 @@ cmd_validate() {
   cur="$(read_version_name)"
   [ -z "$cur" ] && die "VERSION_NAME 为空"
   if ! is_valid_form "$cur"; then
-    printf '\033[31m[version][error]\033[0m %s\n' "version.properties 形态不合法: $cur（合法: X.Y.Z | X.Y.Z-beta | X.Y.Z-dev.N，N>=1）" >&2
+    printf '\033[31m[version][error]\033[0m %s\n' "version.properties 形态不合法: $cur（合法: X.Y.Z | X.Y.Z-beta | X.Y.Z-beta-N | X.Y.Z-dev.N，N>=1）" >&2
     errors=$((errors+1))
   else
     log "version.properties 形态合法: $cur"
@@ -130,7 +135,7 @@ cmd_validate() {
   # ---- 3. tag 三级递进链（仅校验 >= ENFORCE_SINCE 的版本线）----
   # 逐 tag 收集每条线的 dev/beta/stable 状态与时间戳（annotated tag 的 creatordate）
   local tag base suffix when
-  declare -A LINE_DEV LINE_BETA LINE_STABLE LINE_DEV_TIME LINE_BETA_TIME LINE_STABLE_TIME
+  declare -A LINE_DEV LINE_BETA LINE_STABLE LINE_DEV_TIME LINE_BETA_TIME LINE_BETA_FIRST LINE_STABLE_TIME
   while read -r tag when; do
     [ -z "$tag" ] && continue
     base="${tag#$TAG_PREFIX}"; base="${base%%-*}"
@@ -138,13 +143,22 @@ cmd_validate() {
     if [[ "${tag#$TAG_PREFIX}" == *"-"* ]]; then suffix="${tag#$TAG_PREFIX}"; suffix="${suffix#*-}"; fi
     version_ge "$base" "$ENFORCE_SINCE" || continue
     if [[ "$suffix" =~ ^beta\.[0-9]+$ ]]; then
-      printf '\033[31m[version][error]\033[0m %s\n' "tag $tag 违规: $base 线处于强制范围（>= $ENFORCE_SINCE），beta 每线单发无序号（§2.1）" >&2
+      printf '\033[31m[version][error]\033[0m %s\n' "tag $tag 违规: $base 线处于强制范围（>= $ENFORCE_SINCE），beta 旧点形态 beta.N 已废弃（现行: bare -beta 或 -beta-N 序号迭代，§2.1）" >&2
       errors=$((errors+1))
       continue
     fi
     case "$suffix" in
       dev.*)  LINE_DEV[$base]=1; LINE_DEV_TIME[$base]="${LINE_DEV_TIME[$base]:-} $when" ;;
-      beta)   LINE_BETA[$base]=1; LINE_BETA_TIME[$base]="$when" ;;
+      beta|beta-*)
+        # 2026-10-10 定规：beta 线内序号迭代——同线可有多个 beta tag，
+        # 记最早/最晚时间戳（顺序校验用）
+        LINE_BETA[$base]=1
+        if [ -z "${LINE_BETA_TIME[$base]:-}" ]; then
+          LINE_BETA_TIME[$base]="$when"; LINE_BETA_FIRST[$base]="$when"
+        else
+          [ "$when" -gt "${LINE_BETA_TIME[$base]}" ] && LINE_BETA_TIME[$base]="$when"
+          [ "$when" -lt "${LINE_BETA_FIRST[$base]}" ] && LINE_BETA_FIRST[$base]="$when"
+        fi ;;
       "")     LINE_STABLE[$base]=1; LINE_STABLE_TIME[$base]="$when" ;;
     esac
   done < <(git for-each-ref refs/tags --format='%(refname:short) %(creatordate:unix)')
@@ -171,10 +185,10 @@ cmd_validate() {
         errors=$((errors+1))
       fi
     fi
-    # 时间顺序：首个 dev <= beta <= 正式（同刻视为满足）
+    # 时间顺序：首个 dev <= 首个 beta <= 正式（同刻视为满足；多 beta tag 取首/末）
     if [ -n "${LINE_DEV[$b]:-}" ] && [ -n "${LINE_BETA[$b]:-}" ]; then
       first_dev="$(echo ${LINE_DEV_TIME[$b]} | tr ' ' '\n' | sort -n | grep -v '^$' | head -n1)"
-      beta_t="${LINE_BETA_TIME[$b]}"
+      beta_t="${LINE_BETA_FIRST[$b]}"
       if [ "$first_dev" -gt "$beta_t" ]; then
         printf '\033[31m[version][error]\033[0m %s\n' "版本线 $b 顺序违规: beta tag 早于首个 dev tag" >&2
         errors=$((errors+1))
@@ -210,14 +224,14 @@ cmd_validate() {
 
 # =============================================================================
 # next：给定状态输出下一个合法版本号（纯计算，不落盘）
-#   X.Y.Z-dev.N → X.Y.Z-beta（晋升；--dev 则 X.Y.Z-dev.N+1 线内迭代）
-#   X.Y.Z-beta  → X.Y.Z（晋升正式）
-#   X.Y.Z       → <bump 后的基座>-dev.1（开新线，默认 patch）
+#   X.Y.Z-dev.N      → X.Y.Z-beta（晋升；--dev 则 X.Y.Z-dev.N+1 线内迭代）
+#   X.Y.Z-beta[-N]   → X.Y.Z（晋升正式；--beta 则 -beta-N+1 线内迭代，bare=1 号）
+#   X.Y.Z            → <bump 后的基座>-dev.1（开新线，默认 patch）
 # =============================================================================
 cmd_next() {
-  local v="$1" bump="$2" dev_iter="$3"
+  local v="$1" bump="$2" dev_iter="$3" beta_iter="${4:-false}"
   if ! is_valid_form "$v"; then
-    die "版本号形态不合法: $v（合法: X.Y.Z | X.Y.Z-beta | X.Y.Z-dev.N）"
+    die "版本号形态不合法: $v（合法: X.Y.Z | X.Y.Z-beta | X.Y.Z-beta-N | X.Y.Z-dev.N）"
   fi
   local major minor patch label
   read -r major minor patch label <<< "$(parse_version "$v")"
@@ -230,10 +244,19 @@ cmd_next() {
     echo "$base-dev.$((n+1))"
     return 0
   fi
+  if $beta_iter; then
+    if [[ "$label" != "beta" && "$label" != beta-* ]]; then
+      die "--beta 仅适用于测试版（X.Y.Z-beta[-N] → X.Y.Z-beta-N+1）"
+    fi
+    local n=1
+    if [[ "$label" == beta-* ]]; then n="${label#beta-}"; fi
+    echo "$base-beta-$((n+1))"
+    return 0
+  fi
   case "$label" in
-    dev.*)  echo "$base-beta" ;;
-    beta)   echo "$base" ;;
-    "")     echo "$(apply_bump "$major" "$minor" "$patch" "$bump")-dev.1" ;;
+    dev.*)      echo "$base-beta" ;;
+    beta|beta-*) echo "$base" ;;
+    "")         echo "$(apply_bump "$major" "$minor" "$patch" "$bump")-dev.1" ;;
   esac
 }
 
@@ -250,11 +273,12 @@ case "$CMD" in
     ;;
   next)
     shift
-    V="" BUMP="patch" DEV_ITER=false
+    V="" BUMP="patch" DEV_ITER=false BETA_ITER=false
     for arg in "$@"; do
       case "$arg" in
         --bump=*) BUMP="${arg#*=}" ;;
         --dev) DEV_ITER=true ;;
+        --beta) BETA_ITER=true ;;
         -*) die "未知选项: $arg" ;;
         *) if [ -z "$V" ]; then V="$arg"; else die "多余的参数: $arg"; fi ;;
       esac
@@ -267,7 +291,7 @@ case "$CMD" in
       V="$(read_version_name)"
       [ -z "$V" ] && die "未提供版本号且 $VERSION_FILE 的 VERSION_NAME 为空"
     fi
-    cmd_next "$V" "$BUMP" "$DEV_ITER"
+    cmd_next "$V" "$BUMP" "$DEV_ITER" "$BETA_ITER"
     ;;
   *)
     die "未知子命令: $CMD（应为 validate | next）"
