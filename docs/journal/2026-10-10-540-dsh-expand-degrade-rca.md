@@ -223,3 +223,17 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
   - 与 #526 同形不同域；处置随 C2 卡（snapToBottom）一裁：若延迟测量源被引擎接管则本卡随之消解
   - 随 #541 一裁收口（513fae567，journal §18）：S2×3 verify 窗 0/3 开启、重滚 0/3 零承重，且 retry 无视 autoScroll 有强拉翻历史用户违例面；删一帧校验+1s 重滚块（waitOneFrame/atBottom/AT_BOTTOM_OFFSET_MAX 死件随删），单测重设计为「永不收敛也不重滚」不变量；修复后 S2×2+全流 209s/216s 零 atBot=false；verify 态待验收
   - 迁入依据：随 #541 一裁同批完结；证据 journal §18（backlog.sh migrate 2026-10-10）
+
+## 19. 系统性真机 E2E + 双轴代码 review（用户指令批）
+
+**代码 review（681db82d6...HEAD，5 代码 commit，Standards/Spec 双轴并行）**：
+- Standards：零硬违规。SSE 四铁律逐条对照通过（配对窗仅流式降级分支、帽写手 owner==host、引擎单出口、autoScroll 双键未动）。判断题 smell 存档：DshEventMapper 宿主 upsert ~6 处同形可提 helper、开/关窗 DEBUG 日志复制、调用点与 hatPairedRaise/Lower 双重守卫、cacheKey Any? 贯穿（仓库惯例压制）、hatReserve/pairingReserve 同物两名、注释「回合级」术语漂移（CONTEXT.md 轮次词条）。
+- Spec：A 三件齐且互斥正确；B 两腿落（含 error 腿）；13 处 cacheKey 合规（五状态横幅显式排除核实）；#17 删除符号零活引用；#541/#542 与 §18 一致。**UnreadStateStore 水位线核验闭环**：水位线取服务器 completed 时刻、B 回填值单调序保持（工具宿主时刻 ≤ 轮末整装时刻）、markSessionIdle 只填 null 不覆写——无不利交互。
+
+**review 双根修（196deb895）**：
+1. expandPairingWindows 负计数（架构级）：窗计数是列表级引用计数（卡侧协程 ++/finally -- 配对），resetIfOwnerChanged 换主清零在飞窗 → 关窗减成 −1 → `>0` 恒配对判据永久失效（DSH 步边界换主常规路径可触）。根修=计数所有权归卡侧窗协程，物主 reset 不再清零（reserved/trueHeight 重立保留——那是正确的物主域语义）。PairingWindowResetTest 双断言。
+2. turnActive 视觉防抖收窄：会话级 LocalTurnActive 直并 visualStreaming 会让所有历史轮尾部计时器复活跳动。根修=提取纯函数 turnTailVisualStreaming，防抖门收窄 isTurnLast（B 桥接语义完整保留），TurnTailVisualStreamingTest 四行判定表。
+
+**真机 E2E（houji e69a99d8，R1-R9 全 PASS，零崩溃，43 工件 /tmp/540r-*）**：R1 FAB×5（pin→LEAP 2-3ms、atBot=false 零、FAB 消失）·R2 发送×2（primary 恰 1 条/次、零 verify-retry、全流加证零翻转）·R3 DSH 流式中展开（pairing-window open/close 配对、38 组 set 全配对、零 nodis/drop/top-pin；11 份日志全局 windows= 负数零）·R4 输出完即展开（机件链完整、零 in-streaming-turn 降级；tap 晚于完全结算 ~60s，B 边界即打性由单测+R3/R4 两半覆盖）·R8 重进同签名 ✓·R5 cacheKey（思考卡 200/工具卡 259：PRD-warm 命中、两循环同高、互不污染）·R6 机件完整链 3 处交叉+episode 后零修正（清剿删净）·R7 取消路径原子生效零拉锯·R9 V2 stretch（mini-R2 + 压缩卡）。V6 截图 /tmp/540r-hist-tail.png 待人工核验（历史轮固定时长）。nodis/drop 仅出现在贴底跟随流式期=预期免派发路径。
+
+**R9 原始观测（open，定向复现在跑）**：V2 完成态压缩卡展开时窗内双 episode 同 H=720 并发锚定（(9,376)→(10,172)+720）→ 双 exit-CANCELLED → −714 收缩，净效≈单次展开但 135ms 三跳瞬态。认领逻辑已排除尾部兜底双认领（完成态必让位）；嫌疑=item 层同消息换装重组窗瞬态双渲染（共享屏幕级 expansionKey，一次 toggle 点亮两宿主）。定罪与处置见 §20。
