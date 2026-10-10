@@ -420,6 +420,13 @@ internal fun reserveReleasePlan(
     growthIndex: Int?,
     /** #540：展开配对窗内（物主 item 上展开/收起集进行中）——增长/收缩恒配对。 */
     expandPaired: Boolean = false,
+    /**
+     * #540 二轮修订（用户复测定罪「输出中展开震」）：锚在揭示缘**上方**（阅读位
+     * 高于被展开卡）时，窗内增长发生在锚下方——锚所见内容不动，配对位移反而是
+     * 自造推动。true=否决窗内配对（走免配对释放）。仅窗内消费；未捕获几何恒
+     * false（维持既有盲配=legacy 绿路径）。
+     */
+    anchorAboveReveal: Boolean = false,
 ): ReserveReleasePlan? {
     if (reserved < 0) return null                       // 未初始化（首帧直通由 flush 初始化）
     if (isScrollInProgress) return null                 // 手势持帽（零位移无豁免——展开窗同守）
@@ -428,13 +435,20 @@ internal fun reserveReleasePlan(
     if (delta < 0 && !expandPaired) return null         // 收缩：帽不回改（存量语义；窗内例外=收起配对）
     // R1 统一配对谓词（原 z3 锚 index 语义+贴底原点判定合并入 StreamingAnchorRule）：
     // 贴底原点物理跟随免派发；跟随区免双重补偿；锚≤增长源同帧配对；读历史免。
-    // #540：展开窗内的增长是用户主动揭示意图——锚位格全部让位，恒配对。
-    val paired = expandPaired || StreamingAnchorRule.pairedDelta(
-        anchorIndex = firstVisibleIndex,
-        anchorOffset = firstVisibleOffset,
-        growthIndex = growthIndex,
-        growthPx = delta.toFloat(),
-    ) != 0f
+    // #540：展开窗内的增长是用户主动揭示意图——锚位格全部让位，恒配对；
+    // 二轮修订：锚在揭示缘上方时增长位于锚下方，配对=自造位移 → 否决。
+    val paired = if (delta > 0 && expandPaired && anchorAboveReveal) {
+        // 仅正向（展开增长）可被否决——负向（收起）走负向分支自己的塌缩几何
+        // 判定（锚在揭示缘上方恰是镜像骑行格，不能在此被掐死导致帽不回放）。
+        false
+    } else {
+        expandPaired || StreamingAnchorRule.pairedDelta(
+            anchorIndex = firstVisibleIndex,
+            anchorOffset = firstVisibleOffset,
+            growthIndex = growthIndex,
+            growthPx = delta.toFloat(),
+        ) != 0f
+    }
     return ReserveReleasePlan(delta = delta, scrollPaired = paired)
 }
 
@@ -454,17 +468,22 @@ internal fun hatPairedLower(reserved: Int, ownerKey: Any?, hostKey: Any?, delta:
     } else reserved
 
 /**
- * #540 二轮（表述乙·揭示缘参照，裁决 2026-10-11）：窗内负向（收缩）配对决策
- * （纯函数，单测缝）。
+ * #540 二轮（表述乙·揭示缘参照，裁决 2026-10-11；同日用户复测定罪修订）：
+ * 窗内负向（收缩）配对决策（纯函数，单测缝）。
  *
- * 判定表（锚相对塌缩区的位置，塌缩区=揭示盒 [stickTop, stickTop+spanDepth]）：
- * - **锚在区内**：粘揭示缘——目标 fiso = 本帧真高 − stickTop（stickTop 是
- *   距顶不变量，随塌缩逐帧追踪卡头邻域落位；首帧一次反射到位后驻留）；
- * - **锚在区外**（上方旧内容/下方新内容）：**零操作（null）**——LazyList 默认
- *   锚定保持对该几何本就正确；旧 dispatch 盲镜像在区外发位移=col4 类跳变的
- *   自造根源（journal §22 D3 定罪的修正读法：钳制缺口之外，位移本不该发）；
- * - **未捕获区**（stickTop<0）：保守纯镜像（fiso−|Δ| 钳 item 底）——捕获失败
- *   的兜底，与旧通道行为差仅在不再走 dispatch。
+ * 判定表（锚相对塌缩几何的位置，塌缩区=揭示盒 [stickTop, stickTop+spanDepth]）：
+ * - **锚在揭示盒底以下**（anchorTop > stickTop+spanDepth，即盒下方新内容侧）：
+ *   **零操作（null）**——该侧内容坐标不随塌缩变化（item 底缘与下方内容不动），
+ *   LazyList 默认锚定本就正确；旧 dispatch 盲镜像在此发位移=col4 跳变自造
+ *   （journal §22 D3 修正读法）。
+ * - **锚在盒底及以上**（anchorTop ≤ stickTop+spanDepth：盒内或盒上方旧内容侧）：
+ *   **逐帧镜像**（fiso−|Δ| 钳 item 底）——上方内容与揭示缘的坐标随塌缩逐帧
+ *   下移（item 底不动、总高缩），保持画面固定=视口逐帧跟骑。修订前的「首帧
+ *   跳到揭示缘」在锚位于体内深处时一次性把上半部分拖下一大截（用户复测定罪
+ *   「收起拖动上半部分」①面）；「盒上方走零操作」漏配镜像=上半部分被动被拖
+ *   （②面）——镜像骑行两 face 同除，落位自然（终态 fiso₀−H，越界钳 item 底
+ *   为跨 item 折叠的有界近似）。
+ * - **未捕获几何**（stickTop<0 或 spanDepth<0）：保守纯镜像钳底（兜底）。
  *
  * 返回 null=零操作（仅帽回写，无滚动写入）。
  */
@@ -480,10 +499,10 @@ internal fun shrinkPairedTargetFiso(
         return (fiso + delta).coerceAtLeast(0)
     }
     val anchorTop = itemTrueH - fiso
-    return if (anchorTop in stickTop..(stickTop + spanDepth)) {
-        (itemTrueH - stickTop).coerceAtLeast(0)
-    } else {
+    return if (anchorTop > stickTop + spanDepth) {
         null
+    } else {
+        (fiso + delta).coerceAtLeast(0)
     }
 }
 
@@ -702,6 +721,11 @@ private fun reservePhase(listState: LazyListState, reserve: HeightReserveState?)
             .firstOrNull { it.key == reserve.itemKey }?.index,
         // #540：物主 item 上的展开/收起集窗内恒配对（覆盖贴底原点/读历史格）。
         expandPaired = reserve.expandPairingWindows > 0,
+        // #540 二轮修订：锚在揭示缘上方（阅读位高于被展开卡）——正增长在锚
+        // 下方，配对=自造位移，否决。未捕获几何（span=-1）不否决（legacy 盲配）。
+        anchorAboveReveal = reserve.expandPairingWindows > 0 &&
+            reserve.expandCollapseStickTop >= 0 && reserve.expandCollapseSpanDepth >= 0 &&
+            (reserve.trueHeight - listState.firstVisibleItemScrollOffset) < reserve.expandCollapseStickTop,
     )
     // [R1-A2] 单出口：帽 plan 延后与 ledger 配对合并为同帧单次滚动 set——
     // 原先帽 set 先落、ledger set 覆盖（requestPosition 覆盖写非叠加），同帧
@@ -786,10 +810,9 @@ private fun applyPairedShift(
                 ownerIdx == listState.firstVisibleItemIndex
             val stickTopV = reserve?.expandCollapseStickTop ?: -1
             val spanDepthV = reserve?.expandCollapseSpanDepth ?: -1
-            // 区内格目标为绝对量（trueH−stickTop）——同帧 ledger 增长已含于
-            // trueH（同 item 量测）或与锚位格互斥（他 item 增长在此几何下恒免
-            // 配对），均无需折加（review 轮「区内 cell 免疫」）；镜像格折净量、
-            // noop 格只折 ledger（见下方 effectiveTarget）。
+            // 镜像骑行目标 + 同帧 ledger 折加（增长与塌缩同帧时骑行量相应调整）；
+            // noop 格只折 ledger（见下方 effectiveTarget）。未捕获几何的保守
+            // 镜像已并入 [shrinkPairedTargetFiso] 内部。
             val stickFiso: Int? = if (reserveShift > -1f) {
                 // 亚像素负余量（|reserveShift|<1）：无塌缩量可判，只走 ledger 折加
                 null
@@ -799,10 +822,6 @@ private fun applyPairedShift(
             } else if (!anchorIsOwner) {
                 // 锚不在物主 item：按区外零操作（塌缩在锚下方，默认锚定本就正确）
                 null
-            } else if (stickTopV < 0 || spanDepthV < 0) {
-                // 未捕获几何：保守净镜像 + ledger 折加（review 轮镜像 cell 配方）
-                (listState.firstVisibleItemScrollOffset + reserveShift.toInt() + ledgerTotal.toInt())
-                    .coerceAtLeast(0)
             } else {
                 shrinkPairedTargetFiso(
                     fiso = listState.firstVisibleItemScrollOffset,
@@ -810,7 +829,7 @@ private fun applyPairedShift(
                     delta = reserveShift.toInt(),
                     stickTop = stickTopV,
                     spanDepth = spanDepthV,
-                )
+                )?.let { it + ledgerTotal.toInt() }
             }
             var writtenReserve = false
             var wroteScroll = false

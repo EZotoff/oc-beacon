@@ -18,7 +18,8 @@ class ReserveReleasePlanTest {
         scrolling: Boolean = false,
         growthIndex: Int? = 7,
         expandPaired: Boolean = false,
-    ) = reserveReleasePlan(reserved, trueHeight, fii, fiso, scrolling, growthIndex, expandPaired)
+        anchorAboveReveal: Boolean = false,
+    ) = reserveReleasePlan(reserved, trueHeight, fii, fiso, scrolling, growthIndex, expandPaired, anchorAboveReveal)
 
     @Test
     fun `未初始化不释放`() {
@@ -118,5 +119,32 @@ class ReserveReleasePlanTest {
     @Test
     fun `540 窗外收缩仍不回改（存量语义不变）`() {
         assertNull(plan(reserved = 1000, trueHeight = 900, expandPaired = false))
+    }
+
+    @Test
+    fun `540 二轮修订 锚在揭示缘上方 窗内正增长否决配对（增长在锚下方）`() {
+        // 用户复测定罪「输出中展开震」：阅读位高于被展开卡时，+H 在锚下方——
+        // 锚所见内容不动，配对位移=自造推动 → 免配对释放（帽放行无滚动写）
+        assertEquals(
+            ReserveReleasePlan(delta = 66, scrollPaired = false),
+            plan(reserved = 1000, trueHeight = 1066, expandPaired = true, anchorAboveReveal = true),
+        )
+    }
+
+    @Test
+    fun `540 二轮修订 否决只作用正向 窗内收缩不受影响`() {
+        // 负向（收起）走负向分支自己的塌缩几何判定——锚在缘上方恰是镜像格
+        assertEquals(
+            ReserveReleasePlan(delta = -100, scrollPaired = true),
+            plan(reserved = 1000, trueHeight = 900, expandPaired = true, anchorAboveReveal = true),
+        )
+    }
+
+    @Test
+    fun `540 二轮修订 未触发否决时窗内正增长照常恒配对`() {
+        assertEquals(
+            ReserveReleasePlan(delta = 66, scrollPaired = true),
+            plan(reserved = 1000, trueHeight = 1066, expandPaired = true, anchorAboveReveal = false),
+        )
     }
 }

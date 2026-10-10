@@ -278,7 +278,7 @@ class FlushTaskPhasesTest {
     }
 
     @Test
-    fun `540 二轮 锚在塌缩区内 - 反射粘揭示缘`() {
+    fun `540 二轮修订 锚在塌缩区内 - 逐帧镜像骑行不跳揭示缘`() {
         mockkObject(LazyListReflection)
         mockkObject(ScrollQuiescence)
         val reserve = HeightReserveState().apply {
@@ -289,18 +289,19 @@ class FlushTaskPhasesTest {
             expandCollapseStickTop = 4000
             expandCollapseSpanDepth = 800
         }
-        // 锚 fiso=200 → 距顶 4200−200=4000 = stickTop 边界（区内）
+        // 锚 fiso=200 → 距顶 4200−200=4000 ≤ 4800（镜像侧）。修订前「跳揭示缘」
+        // 在锚深体内时一次性拖下半部分（用户复测定罪）；修订后逐帧镜像：
+        // 200−800 → 钳 0
         val state = stateWithOwnerItem(3, 200, ownerIndex = 3)
         every { state.dispatchRawDelta(any()) } returns 0f
         assertTrue(streamingGrowFlushTask(state, emptyLedger(), reserve).onPreDraw())
         assertEquals(4200, reserve.reserved)
         verify(exactly = 0) { state.dispatchRawDelta(any()) }
-        // 粘住目标 = 4200−4000 = 200
-        verify(exactly = 1) { LazyListReflection.requestScrollToItemNoCancel(any(), 3, 200, null) }
+        verify(exactly = 1) { LazyListReflection.requestScrollToItemNoCancel(any(), 3, 0, null) }
     }
 
     @Test
-    fun `540 二轮 锚在塌缩区外 - 零操作仅帽回写`() {
+    fun `540 二修订 锚在盒下方新内容侧 - 零操作仅帽回写`() {
         mockkObject(LazyListReflection)
         mockkObject(ScrollQuiescence)
         val reserve = HeightReserveState().apply {
@@ -311,8 +312,10 @@ class FlushTaskPhasesTest {
             expandCollapseStickTop = 4000
             expandCollapseSpanDepth = 800
         }
-        // 锚 fiso=1500 → 距顶 2700 < 4000（盒下方新内容侧）——零操作
-        val state = stateWithOwnerItem(3, 1500, ownerIndex = 3)
+        // 夹具：盒 [4000,4100]（span 收窄为 100），盒下方新内容 [4100,4200]；
+        // 锚 fiso=50 → 距顶 4150 > 4100（盒下方）——零操作
+        reserve.expandCollapseSpanDepth = 100
+        val state = stateWithOwnerItem(3, 50, ownerIndex = 3)
         every { state.dispatchRawDelta(any()) } returns 0f
         assertTrue(streamingGrowFlushTask(state, emptyLedger(), reserve).onPreDraw())
         assertEquals(4200, reserve.reserved)
@@ -344,7 +347,7 @@ class FlushTaskPhasesTest {
     }
 
     @Test
-    fun `540 review 混合帧拆账 - noop格ledger增长仍配对不被吞`() {
+    fun `540 review 混合帧拆账 - 镜像格ledger增长折加不被吞`() {
         mockkObject(LazyListReflection)
         mockkObject(ScrollQuiescence)
         val reserve = HeightReserveState().apply {
@@ -355,9 +358,8 @@ class FlushTaskPhasesTest {
             expandCollapseStickTop = 4000
             expandCollapseSpanDepth = 800
         }
-        // 输出中收起且锚在揭示缘下方（看输出收起上方卡）：帽净负（−800）落
-        // noop 格，但同帧 ledger 增长 +150 本应配对——review 轮 P1 拆账后
-        // 仍写 fiso+ledger（旧行为被 noop 一并吞掉 → 收起窗内批增长累计上漂）
+        // 输出中收起且锚在镜像侧（距顶 4200−1500=2700 ≤4800）：帽净负 −800 镜像
+        // 骑行 + 同帧 ledger 增长 +150 折加——review 轮 P1 拆账：1500−800+150=850
         val ledger = emptyLedger()
         every { ledger.hasPending } returns true
         every { ledger.takePaired(any(), any(), any()) } returns 150f
@@ -366,8 +368,32 @@ class FlushTaskPhasesTest {
         assertTrue(streamingGrowFlushTask(state, ledger, reserve).onPreDraw())
         assertEquals(4200, reserve.reserved)
         verify(exactly = 0) { state.dispatchRawDelta(any()) }
-        // noop 格 ledger 折加：1500+150=1650（塌缩分量零操作）
-        verify(exactly = 1) { LazyListReflection.requestScrollToItemNoCancel(any(), 3, 1650, null) }
+        verify(exactly = 1) { LazyListReflection.requestScrollToItemNoCancel(any(), 3, 850, null) }
+    }
+
+    @Test
+    fun `540 review 混合帧拆账 - noop格（盒下方）ledger仍折加`() {
+        mockkObject(LazyListReflection)
+        mockkObject(ScrollQuiescence)
+        val reserve = HeightReserveState().apply {
+            itemKey = "k1"
+            trueHeight = 4200
+            reserved = 5000
+            expandPairingWindows = 1
+            expandCollapseStickTop = 4000
+            expandCollapseSpanDepth = 100 // 盒 [4000,4100]，下方 [4100,4200]
+        }
+        // 锚 fiso=50 → 距顶 4150（盒下方）塌缩零操作，但 ledger +150 仍配对
+        val ledger = emptyLedger()
+        every { ledger.hasPending } returns true
+        every { ledger.takePaired(any(), any(), any()) } returns 150f
+        val state = stateWithOwnerItem(3, 50, ownerIndex = 3)
+        every { state.dispatchRawDelta(any()) } returns 0f
+        assertTrue(streamingGrowFlushTask(state, ledger, reserve).onPreDraw())
+        assertEquals(4200, reserve.reserved)
+        verify(exactly = 0) { state.dispatchRawDelta(any()) }
+        // noop 格 ledger 折加：50+150=200（塌缩分量零操作）
+        verify(exactly = 1) { LazyListReflection.requestScrollToItemNoCancel(any(), 3, 200, null) }
     }
 
     @Test
