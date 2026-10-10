@@ -331,10 +331,12 @@ internal class HeightReserveState {
     var alignBottom: Boolean by androidx.compose.runtime.mutableStateOf(true)
 
     /**
-     * #540 方向 A：展开配对窗计数（>0 = 本物主 item 上有展开/收起集进行中）。
+     * #540 方向 A：展开配对窗计数（>0 = 物主 item 上有展开/收起集进行中）。
      * 窗内帽释放/收缩**恒配对**（覆盖贴底原点/读历史免派发格）——流式降级路径
      * 的展开增长经帽通道逐档原子落地，上推源从构造上消失（#526 事后回锚退役）。
-     * 计数制支持同 item 多卡并发窗；换主时随 resetIfOwnerChanged 清零。
+     * 计数制支持同 item 多卡并发窗。**只由卡侧窗协程配对维护**（开窗 ++/关窗
+     * finally --）——换主 reset 不得清零：在飞窗被外部清零后关窗减成负数，
+     * `>0` 恒配对判据自此永久失效（2026-10-10 review 轮定罪，步边界换主可触）。
      */
     var expandPairingWindows: Int = 0
 }
@@ -371,7 +373,9 @@ private fun HeightReserveState.resetIfOwnerChanged(itemKey: Any) {
         this.itemKey = itemKey
         reserved = -1
         trueHeight = -1
-        expandPairingWindows = 0
+        // expandPairingWindows 不清零：它是列表级引用计数，所有权归卡侧窗协程
+        // （开窗 ++/关窗 finally -- 严格配对）。此处清零会让在飞窗的关窗减成
+        // 负数 → `>0` 恒配对判据永久失效（review 轮定罪）。
     }
 }
 

@@ -105,6 +105,18 @@ import androidx.compose.ui.draw.alpha
 import kotlin.math.sin
 
 /**
+ * #540 B 视觉族门（纯函数，单测缝）：回合级 turnActive 防抖是否点亮本 turn
+ * 的流式视觉（计时器/徽标/反馈钮）。防抖的目的域只有**当前（最后）轮**统计栏
+ * ——DSH 步间空窗的组判据闪断由它桥接；历史轮必须保持完成态固定时长，否则
+ * 会话任一回活期间所有历史尾部计时器复活跳动（review 轮定罪收窄）。
+ */
+internal fun turnTailVisualStreaming(
+    entryStreaming: Boolean,
+    sessionTurnActive: Boolean,
+    isTurnLast: Boolean,
+): Boolean = entryStreaming || (sessionTurnActive && isTurnLast)
+
+/**
  * 智能体消息（v2 两段式：正文 + 尾部统计栏）——扁平，无气泡容器、无头部标签栏。
  * 正文 = renderItems（文本 / 推理 / 工具卡片 / 分隔线）+ 错误展示；
  * 尾部 = 逐消息 agent 标签 / 提供商·模型 / 时长 + 复制 + 「详情」入口（时间
@@ -187,10 +199,15 @@ internal fun MessageCardAssistant(
     val isStreaming = isStreamingTurn || (assistantMsg?.time?.completed == null)
     // #540 B：视觉族判据——DSH 工具宿主 step 边界回填 completed 后，组判据在
     // 步间空窗翻非流式；统计栏计时器/流式徽标/反馈钮门并上回合级活动（3s 防抖）
-    // 整 turn 恒稳。parse 族（下方 asyncParse）仍吃 isStreaming——完结即终态
-    // 解析（#428 防线/#509 毕业不切渲染器）是既定语义，不吃防抖。
-    val visualStreaming = isStreaming ||
-        dev.leonardo.ocbeacon.ui.screens.chat.util.LocalTurnActive.current
+    // 整 turn 恒稳。**防抖只许作用于当前（最后）轮**（review 轮收窄：会话级
+    // turnActive 直接并会让所有历史轮尾部计时器复活跳动）。parse 族（下方
+    // asyncParse）仍吃 isStreaming——完结即终态解析（#428 防线/#509 毕业不切
+    // 渲染器）是既定语义，不吃防抖。
+    val visualStreaming = turnTailVisualStreaming(
+        entryStreaming = isStreaming,
+        sessionTurnActive = dev.leonardo.ocbeacon.ui.screens.chat.util.LocalTurnActive.current,
+        isTurnLast = isTurnLast,
+    )
 
     // 预计算的元数据
     val copyText = renderableTurn.copyText

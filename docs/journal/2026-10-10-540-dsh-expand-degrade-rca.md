@@ -209,3 +209,17 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
 **验证矩阵**：全量单测 --rerun 绿（1m42s）；lintDevDebug 0 新错误（9m11s，baseline 失效条目按 #534 裁决不顺带）；修复后 E2E 5/5 全绿——S1×3：pin→LEAP +3ms、atBot=false 零翻转（#256 症状零复现）、FAB 消失（dump 判定，右下余钮为常驻 Quick navigate）；S2×2（20s 窗）：tick→grew→pin 链完整、verify-retry 绝迹；**全流加证**：两段完整流式期（209s/216s，回复增至 ~5900px）atBot=false=0、SGR-GATE 全程仅 primary 一击（整段流式零程序化视口写入）——单次原子锚定与「贴底物理跟随」自洽的基线签名。原始日志 /tmp/541-{s1,s2,post-*}.log 与截图在档。
 
 **复发预案**（勿恢复锤/重滚）：「FAB 拉不到最低」复发 → 先查 index 位移推动者（横幅/问题卡插删引起 fii 抬升），归 MSGEFFECT/GUARD 跟随族域处理。
+
+## 已完结卡片迁入（2026-10-10）
+
+### **#541 snapToBottom 3×120ms 强推钉底——位移源（滚底后新入视口 item 延迟测量长高）未消除，靠事后周期性强拉补偿（#540 清剿扫描 C2）** `scroll`
+  - FAB 点击/错误 snackbar 后 snapToBottom（ChatScrollUtils.kt）到底部后 3×120ms 周期性 scrollBy(-10000) 强推钉底——#256 实证位移源=滚底后新入视口 item 的延迟测量长高（+55/+194/+466，30-70ms RESIZE 爆发窗）
+  - 属贴底钉底域非展开补偿；消除源方向=延迟测量增长经引擎域接管（帽只覆盖流式 item，此域是滚底后旧 item 重组）——需先取证引擎覆盖缺口再动；盲删会回归「FAB 拉不到最低」用户可见缺陷（#256 验收史）
+  - 取证退役（bbf90b44a→513fae567，journal §18）：模拟器 S1×5 锤 15/15 击零消费——#256 延迟测量爆发真实复现但零位移（reverseLayout 贴底锚增长向上扩展不动锚，#432/#435/#437/#476 已灭推动者）；删 3×120ms 强推锤保留单次 explicitPin；修复后 S1×3 全绿（pin→LEAP +3ms、atBot=false 零翻转、FAB 消失）+两段全流期加证零翻转；verify 态待验收
+  - 迁入依据：2026-10-10 用户确认修复完毕（本批 systematic E2E+review 随后进行）；证据 journal §18（backlog.sh migrate 2026-10-10）
+
+### **#542 ForceScroll verify-retry 发送后补滚——显式意图域内的下一帧校验修正（#540 清剿扫描 C3）** `scroll`
+  - ChatScrollController.kt:410-417：强滚锚底后 waitOneFrame + ≤1s snapshotFlow 等待未到位重滚——位移源=发送后新消息异步布局长高，域=用户显式意图（发送后跟随），量级=锚底差值
+  - 与 #526 同形不同域；处置随 C2 卡（snapToBottom）一裁：若延迟测量源被引擎接管则本卡随之消解
+  - 随 #541 一裁收口（513fae567，journal §18）：S2×3 verify 窗 0/3 开启、重滚 0/3 零承重，且 retry 无视 autoScroll 有强拉翻历史用户违例面；删一帧校验+1s 重滚块（waitOneFrame/atBottom/AT_BOTTOM_OFFSET_MAX 死件随删），单测重设计为「永不收敛也不重滚」不变量；修复后 S2×2+全流 209s/216s 零 atBot=false；verify 态待验收
+  - 迁入依据：随 #541 一裁同批完结；证据 journal §18（backlog.sh migrate 2026-10-10）
