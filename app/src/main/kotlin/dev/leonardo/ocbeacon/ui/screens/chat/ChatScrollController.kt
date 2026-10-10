@@ -410,11 +410,21 @@ internal class ForceScrollExecutor(
         dev.leonardo.ocbeacon.ui.screens.chat.components.ViewportDispatchGateway.explicitPinAction("ForceScroll", "primary") { gate.requestScrollToItem(0) }
 
         // 滚后校验：超时兜底路径（grew==null，消息未到/发送失败）与补偿后未到位时重滚一次
+        // #542 取证埋点（[DEBUG-542]）：verify 窗开启（一帧后即离底）与 1s 超时重滚
+        // 分别打点——重滚频率=发送后异步布局位移的事后修正承重度。
         waitOneFrame()
         if (!atBottom()) {
+            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                AppLogger.d(TAG, "[DEBUG-542] verify open fii=" + gate.firstVisibleItemIndex + " fiso=" + gate.firstVisibleItemScrollOffset)
+            }
             withTimeoutOrNull(VERIFY_TIMEOUT_MS) {
                 snapshotFlow { atBottom() }.first { it }
-            } ?: dev.leonardo.ocbeacon.ui.screens.chat.components.ViewportDispatchGateway.explicitPinAction("ForceScroll", "verify-retry") { gate.requestScrollToItem(0) }
+            } ?: run {
+                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                    AppLogger.d(TAG, "[DEBUG-542] verify-retry FIRE fii=" + gate.firstVisibleItemIndex + " fiso=" + gate.firstVisibleItemScrollOffset)
+                }
+                dev.leonardo.ocbeacon.ui.screens.chat.components.ViewportDispatchGateway.explicitPinAction("ForceScroll", "verify-retry") { gate.requestScrollToItem(0) }
+            }
         }
 
         if (grew == null) {
