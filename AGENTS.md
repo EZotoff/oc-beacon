@@ -27,7 +27,7 @@ Unofficial OpenCode Android client. Jetpack Compose + Kotlin + Hilt + Ktor.
 | 🟡 SHOULD | [`docs/i18n-guide.md`](docs/i18n-guide.md) | 国际化工作流（15 语言 + 检查脚本 + CI） | 任何文案改动前 |
 | 🟡 SHOULD | [`docs/ui-conventions.md`](docs/ui-conventions.md) | Material 3、Theme Tokens、表格一致性 | 编写/修改 UI 组件前 |
 | 🟡 SHOULD | [`docs/agents-file-design.md`](docs/agents-file-design.md) | AGENTS.md 维护规范（本文件设计依据） | 新增/修改 AGENTS.md 规则时 |
-| 🟡 SHOULD | [`backlog.md`](backlog.md) | **未决工作项卡片清单**（P0-P3 + Tag + 状态流转 + journal/spec 约定） | 录入新条目前（避免重复）、开始新任务了解待办时 |
+| 🟡 SHOULD | [`backlog.md`](backlog.md) | **未决工作项卡片清单**（P0-P4 + Tag + 状态流转 + journal/spec 约定；P3=观察项、P4=外部前提阻塞） | 录入新条目前（避免重复）、开始新任务了解待办时 |
 | 🟢 MAY | `docs/journal/` | 批次执行记录与验证证据（完结条目归档处，历史查询） | 回溯某批次修复细节/取证/勘误链时 |
 | 🟢 MAY | [`docs/learning/AGENTS.md`](docs/learning/AGENTS.md) | **个人学习专区**（Kotlin/Android 教程，无业务语义，不承接功能性文档） | 在 docs/learning 下工作、或需确认某文档是否属于业务文档时 |
 | 🟡 SHOULD | [`docs/specs/2026-08-21-in-session-audio-feedback-design.md`](docs/specs/2026-08-21-in-session-audio-feedback-design.md) | 会话内提示音设计 spec | 实现提示音、通知抑制、backlog #155 前 |
