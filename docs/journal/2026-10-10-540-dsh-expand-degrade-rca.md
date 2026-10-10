@@ -237,3 +237,15 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
 **真机 E2E（houji e69a99d8，R1-R9 全 PASS，零崩溃，43 工件 /tmp/540r-*）**：R1 FAB×5（pin→LEAP 2-3ms、atBot=false 零、FAB 消失）·R2 发送×2（primary 恰 1 条/次、零 verify-retry、全流加证零翻转）·R3 DSH 流式中展开（pairing-window open/close 配对、38 组 set 全配对、零 nodis/drop/top-pin；11 份日志全局 windows= 负数零）·R4 输出完即展开（机件链完整、零 in-streaming-turn 降级；tap 晚于完全结算 ~60s，B 边界即打性由单测+R3/R4 两半覆盖）·R8 重进同签名 ✓·R5 cacheKey（思考卡 200/工具卡 259：PRD-warm 命中、两循环同高、互不污染）·R6 机件完整链 3 处交叉+episode 后零修正（清剿删净）·R7 取消路径原子生效零拉锯·R9 V2 stretch（mini-R2 + 压缩卡）。V6 截图 /tmp/540r-hist-tail.png 待人工核验（历史轮固定时长）。nodis/drop 仅出现在贴底跟随流式期=预期免派发路径。
 
 **R9 原始观测（open，定向复现在跑）**：V2 完成态压缩卡展开时窗内双 episode 同 H=720 并发锚定（(9,376)→(10,172)+720）→ 双 exit-CANCELLED → −714 收缩，净效≈单次展开但 135ms 三跳瞬态。认领逻辑已排除尾部兜底双认领（完成态必让位）；嫌疑=item 层同消息换装重组窗瞬态双渲染（共享屏幕级 expansionKey，一次 toggle 点亮两宿主）。定罪与处置见 §20。
+
+## 20. R9 压缩卡三跳瞬态定罪（定向复现 2/4 RED）→ #543 立卡
+
+**复现**（houji，ses_edc0918d9ffeGkF5JsuOwrHL43，脚本 /tmp/543-round.sh v15）：R19/R21 两轮 RED——同窗两条同 +H=720 expand-anchor（间隔 111/127ms）+ 双 episode 并发（tap 同刻出生、97-107ms 先后完成，并存 ~300ms=≈18 帧持续双组合）。编舞勘误：TurnFin±0.5ms 内 tap 被 burst#1 重组风暴吞掉（4 轮实证零响应）；有效配方 TurnFin+1.35~1.41s（burst#1 与 burst#1.5 reconcile 之间）。模型事故处置：exo-free 410 → 切 zhipuai glm-4.6v。
+
+**双宿主来源裁定=槽位迁移旧新并存（换装重建窗），排除数据重复**：Room（WAL 三件套 89 行 89 distinct id）/服务器 API 双零重复；第二锚严格出现在 upsert:MergeStrategy→[452-display] 重建之后；InjCard 同 id 双渲染；稳态 dump 节点数=1（瞬态收敛）；阴性对照成立（idle tap 单 episode、手动收起单 steady-report −720、无重建重叠轮全单锚）。
+
+**静态排除**：diffListInto 同长就地 set/异长 clear+addAll——单组合内原子应用，不产生可见中间态；diffDisplayItemsInto 同。嫌疑收敛：itemsIndexed key=entry.key **含 chunk #c<i> 后缀**（#438 注释实证）——重建窗内同一消息条目身份变更（重分片/换装 key 变更）产生新旧两 key 并存，未走 #509 原地换名语义。两宿主共享屏幕级 expandedStates[expansionKey]（CompactionDividerPolicy.kt:184,256 expansionKey=msg.id），toggle 一次点亮两宿主各自跑完整机件 episode（各自局部语义正确，总和=双倍位移）。
+
+**变体谱**：R9=双 episode 同刻 exit-CANCELLED+−H 收缩第三跳；R19/R21=双 completed 无回撤跳。同族双锚根因。
+
+**处置**（#543 立卡，P2）：修复靶=chatEntries 分片/换装身份变更的原子性（#509 域残余通道）；先加 episode 级探针（hostItemKey+expansionKey 打点）钉死双 key 具体形态再动刀；**禁 episode 层去重/幂等补丁**（补偿味，违反消除源哲学）。原始件：/tmp/543-repro-run{0..21}.log、/tmp/543-r{19,21}-shot*.png、/tmp/543-roomdir/、/tmp/540r-s9b.log。
