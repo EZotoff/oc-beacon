@@ -1070,6 +1070,28 @@ internal fun prewarmShardParse(texts: List<String>) {
 }
 
 /**
+ * #540 二轮③（裁决 2026-10-11）：终态预热——收起状态下流完的思考文本首次
+ * 展开时生平第一次入组合（pilot 未渲染过、#486 账本未标记），>2048 走
+ * asyncTerminal 首帧 Loading 短高、解析落地分档 MDResize=「展开先跳再拖」
+ * 分档面（journal §22 D1）。调用方（ReasoningBlock）在流式→终态翻转且卡收起
+ * 时触发：把解析结果按 [rememberAsyncMarkdownState] 同键形（原始串为键）后台
+ * 入 [MarkdownParsedStateCache]——首开命中即同步终态，首测即终高。
+ * 幂等（命中跳过）；Default 线程；LRU32 有界；≤2048 短文本同步路径本就
+ * 首测终高，直接跳过。
+ */
+internal fun prewarmTerminalParse(content: String, isUser: Boolean) {
+    if (content.length <= ASYNC_PARSE_MIN_CHARS) return
+    ShardPrewarmScope.launch { prewarmTerminalParseSync(content, isUser) }
+}
+
+/** #540 二轮③：预热同步核（JVM 可单测；幂等，命中跳过）。 */
+internal fun prewarmTerminalParseSync(content: String, isUser: Boolean) {
+    if (MarkdownParsedStateCache.get(content) == null) {
+        MarkdownParsedStateCache.put(content, parseMarkdown(normalizeForRender(content, isUser)))
+    }
+}
+
+/**
  * #428:同步解析的 MarkdownState——remember 时内联 parse 出终态,无 Loading 帧。
  *
  * 库的 [com.mikepenz.markdown.model.parseMarkdown] 为非 suspend 纯函数入口

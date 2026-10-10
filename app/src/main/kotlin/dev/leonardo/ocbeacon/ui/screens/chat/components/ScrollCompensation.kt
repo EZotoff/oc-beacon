@@ -339,6 +339,23 @@ internal class HeightReserveState {
      * `>0` 恒配对判据自此永久失效（2026-10-10 review 轮定罪，步边界换主可触）。
      */
     var expandPairingWindows: Int = 0
+
+    /**
+     * #540 二轮（表述乙·揭示缘参照，裁决 2026-10-11）：宿主 item 根的 root-Y
+     * （CML item Box onGloballyPositioned 逐 placement 更新；仅帽物主 item 写，
+     * 键不等守卫防跨 item 互抢）。卡侧 toggle 时刻把揭示盒 root-Y 换算成
+     * item 空间几何写入 [expandCollapseStickTop]/[expandCollapseSpanDepth]。
+     */
+    var hostItemTopY: Float = Float.NaN
+
+    /**
+     * #540 二轮：当前窗卡揭示盒顶距 item 顶的偏移（塌缩不变量——盒顶上方
+     * 内容在收起中不动）；-1=无在飞窗/未捕获。flush 负向配对资格判定用。
+     */
+    var expandCollapseStickTop: Int = -1
+
+    /** #540 二轮：toggle 时刻揭示盒高（塌缩区深度，资格判定界）。-1=未捕获。 */
+    var expandCollapseSpanDepth: Int = -1
 }
 
 /** 帽修饰符：测真高、报帽高；增量越界由外层 clipToBounds 裁剪。 */
@@ -435,6 +452,53 @@ internal fun hatPairedLower(reserved: Int, ownerKey: Any?, hostKey: Any?, delta:
     if (ownerKey != null && ownerKey == hostKey && reserved >= 0 && delta > 0) {
         (reserved - delta).let { if (it < 0) -1 else it }
     } else reserved
+
+/**
+ * #540 二轮（表述乙·揭示缘参照，裁决 2026-10-11）：窗内负向（收缩）配对决策
+ * （纯函数，单测缝）。
+ *
+ * 判定表（锚相对塌缩区的位置，塌缩区=揭示盒 [stickTop, stickTop+spanDepth]）：
+ * - **锚在区内**：粘揭示缘——目标 fiso = 本帧真高 − stickTop（stickTop 是
+ *   距顶不变量，随塌缩逐帧追踪卡头邻域落位；首帧一次反射到位后驻留）；
+ * - **锚在区外**（上方旧内容/下方新内容）：**零操作（null）**——LazyList 默认
+ *   锚定保持对该几何本就正确；旧 dispatch 盲镜像在区外发位移=col4 类跳变的
+ *   自造根源（journal §22 D3 定罪的修正读法：钳制缺口之外，位移本不该发）；
+ * - **未捕获区**（stickTop<0）：保守纯镜像（fiso−|Δ| 钳 item 底）——捕获失败
+ *   的兜底，与旧通道行为差仅在不再走 dispatch。
+ *
+ * 返回 null=零操作（仅帽回写，无滚动写入）。
+ */
+internal fun shrinkPairedTargetFiso(
+    fiso: Int,
+    itemTrueH: Int,
+    delta: Int,
+    stickTop: Int,
+    spanDepth: Int,
+): Int? {
+    require(delta < 0)
+    if (stickTop < 0 || spanDepth < 0) {
+        return (fiso + delta).coerceAtLeast(0)
+    }
+    val anchorTop = itemTrueH - fiso
+    return if (anchorTop in stickTop..(stickTop + spanDepth)) {
+        (itemTrueH - stickTop).coerceAtLeast(0)
+    } else {
+        null
+    }
+}
+
+/**
+ * #540 二轮（宽豁免裁决）：窗内让位判定——展开/收起配对窗开启期间，toggle
+ * 本身就是最新显式意图，外部 pending 让位守卫（shouldYieldPairing）对其豁免；
+ * 手势门（isScrollInProgress）在链路上游更硬，不受影响。
+ */
+internal fun shouldYieldPairingWindowed(
+    readFii: Int,
+    readFiso: Int,
+    lastSetFii: Int?,
+    lastSetFiso: Int?,
+    windowOpen: Boolean,
+): Boolean = !windowOpen && shouldYieldPairing(readFii, readFiso, lastSetFii, lastSetFiso)
 
 /**
  * #438 R-1（2026-09-28 null-key 裸 index 通道根修）：配对目标位解析纯函数。
@@ -543,8 +607,10 @@ internal fun streamingGrowFlushTask(
         val fiso = listState.firstVisibleItemScrollOffset
         val infos = listState.layoutInfo.visibleItemsInfo
         // 新bug根修：外部 pending 未消费（读位≠上批目标）→ 让位（配对覆盖写会抵消显式意图）
+        // #540 二轮（宽豁免裁决 2026-10-11）：窗内豁免——塌缩自带的被动锚漂移
+        // 曾被误判为外部意图，收起配对 76 帧饿死（journal §22 D2）；toggle 即意图。
         mem.frameSeq++
-        if (shouldYieldPairing(fii, fiso, mem.lastSetFii, mem.lastSetFiso)) {
+        if (shouldYieldPairingWindowed(fii, fiso, mem.lastSetFii, mem.lastSetFiso, windowOpen = (reserve?.expandPairingWindows ?: 0) > 0)) {
             if (shouldAdoptExternalPosition(fii, fiso, mem.prevFii, mem.prevFiso, mem.frameSeq - mem.lastSetFrame)) {
                 // #502：静止且 lastSet 陈旧 = 已定居的外部位置（非待消费 pending）——
                 // 采纳为配对基线，落回正常求值（帽释放计划当帧生效，防永久让位）
@@ -695,36 +761,57 @@ private fun applyPairedShift(
 ): Boolean {
     if (total != 0f || pendingPlan != null) {
         if (total < 0f) {
-            // #540 收起配对（负向位移）：反射目标位需向 index 减小折叠，而 reverseLayout
-            // 的下方项（更新侧）不在可见窗——尺寸谱缺失。改走 dispatchRawDelta 镜像
-            // 同帧消费（同步、物理边缘吸收残量；机件收起 fallback 同语义）。帽回改
-            // 同快照先行；dispatch 后读位即时生效，回写 lastSet 防 yield 误判。
+            // #540 二轮（表述乙·揭示缘参照，裁决 2026-10-11）：负向收缩弃
+            // dispatchRawDelta 镜像——底缘钳制缺口（col4 capd=-3655 consumed=-277）
+            // 与「锚在塌缩区外时位移本不需发，盲镜像自造跳变」双重定罪（journal
+            // §22 D3 及其修正读法）。改走与正向对称的反射位置写：资格判定见
+            // [shrinkPairedTargetFiso]——锚在塌缩区内 → 粘揭示缘（随塌缩逐帧
+            // 追踪卡头）；区外 → 零操作（LazyList 默认锚定保持本就正确）；
+            // 未捕获 → 保守镜像钳底。
+            val stickFiso = if (reserve != null) {
+                shrinkPairedTargetFiso(
+                    fiso = listState.firstVisibleItemScrollOffset,
+                    itemTrueH = reserve.trueHeight,
+                    delta = total.toInt(),
+                    stickTop = reserve.expandCollapseStickTop,
+                    spanDepth = reserve.expandCollapseSpanDepth,
+                )
+            } else {
+                (listState.firstVisibleItemScrollOffset + total.toInt()).coerceAtLeast(0)
+            }
             var writtenReserve = false
+            var wroteScroll = false
+            var targetFii = listState.firstVisibleItemIndex
+            var targetFiso = listState.firstVisibleItemScrollOffset
             androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
                 if (pendingPlan != null && reserve != null) {
                     reserve.reserved = reserve.trueHeight
                     writtenReserve = true
                 }
+                if (stickFiso != null) {
+                    targetFiso = stickFiso
+                    wroteScroll = true
+                    LazyListReflection.requestScrollToItemNoCancel(listState, targetFii, targetFiso)
+                    mem.lastSetFii = targetFii
+                    mem.lastSetFiso = targetFiso
+                    mem.lastSetFrame = mem.frameSeq
+                } else {
+                    // 零操作：以当下读位回写 lastSet，yield 守卫保持一致
+                    mem.lastSetFii = targetFii
+                    mem.lastSetFiso = targetFiso
+                    mem.lastSetFrame = mem.frameSeq
+                }
             }
-            val consumed = try {
-                listState.dispatchRawDelta(total)
-            } catch (t: Throwable) {
-                AppLogger.w("CardExpand", "paired shrink dispatch failed: " + t.message)
-                0f
-            }
-            mem.lastSetFii = listState.firstVisibleItemIndex
-            mem.lastSetFiso = listState.firstVisibleItemScrollOffset
-            mem.lastSetFrame = mem.frameSeq
             if (BuildConfig.DEBUG) {
                 AppLogger.d(
                     "SGR-435",
-                    "release-dis t=" + android.os.SystemClock.elapsedRealtime() +
+                    "release-ref t=" + android.os.SystemClock.elapsedRealtime() +
                         " capd=" + (pendingPlan?.delta ?: 0) + " led=" + ledgerTotal.toInt() +
-                        " consumed=" + consumed.toInt() +
+                        (if (wroteScroll) " set(fii=" + targetFii + ",fiso=" + targetFiso + ")" else " noop(outside-span)") +
                         " h->" + (if (writtenReserve) reserve?.trueHeight.toString() else "-"),
                 )
             }
-            return true // dispatch 同帧生效，无需拒绘
+            return true // 反射待定位下一遍 measure 原子消费
         }
         // #437 验收五轮（用户裁决，对齐 #427 引擎先例）：渲染前计算目标位+
         // 反射 requestPosition 写入待定区，由下一遍 measure 原子消费——与

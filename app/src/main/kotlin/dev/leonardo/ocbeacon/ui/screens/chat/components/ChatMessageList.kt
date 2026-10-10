@@ -2938,6 +2938,14 @@ fun ChatMessageList(
                                 // #476:链传导解除 autoScroll 武装(嵌套 dispatch 不置
                                 // isScrollInProgress,不解除则 250ms 后 GUARD 吸回底)。
                                 .cardFlingLeakGuard(onUserChain = onExpandDeparture)
+                                // #540 二轮（表述乙）：物主 item 根 root-Y 逐 placement
+                                // 供给——卡侧 toggle 时换算揭示盒距顶偏移（仅帽物主写，
+                                // 键不等守卫防跨 item 互抢）。
+                                .onGloballyPositioned { coords ->
+                                    if (heightReserve.itemKey == entry.key) {
+                                        heightReserve.hostItemTopY = coords.positionInRoot().y
+                                    }
+                                }
                                 .animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = null),
                         ) {
                             CompositionLocalProvider(

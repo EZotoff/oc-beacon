@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#544**（2026-10-10 #543 #543 压缩卡换装重建窗双宿主——双 epis）。
+**编号**：全局递增，不回收。下一编号：**#545**（2026-10-11 #544 #544 展开编舞统一（第二刀）——episod）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
@@ -58,6 +58,11 @@
 
 ## P2 — 优化与锦上添花
 
+- [ ] **#544 #544 展开编舞统一（第二刀）——episode 吞降级分支、AV 弹簧退役、终高谓词取代双路径** `scroll` `refactor`
+  - 终态谓词（终高已知→同快照原子帧 / 未知→动画相走帽通道）取代 LocalInStreamingTurn 双路径；AV enter/exit 退役；幂等重挂不变量（缓存命中 coldReveal 单帧/无缓存开窗配对）；#420 头注释矩阵第一条改写
+  - 前置：第一刀（#540）全绿签名当基线；重挂探针门（slot-compose/episode-start 测流式期重挂率）
+  - → spec: docs/specs/2026-10-11-unified-expand-placement-design.md
+
 - [~] **#543 #543 压缩卡换装重建窗双宿主——双 episode 双锚定三跳瞬态（R9 系统性 E2E 发现，定向复现已定罪）** `scroll` `chat`
   - 真机 R9 + 定向复现 2/4 RED：displayItems 重建（upsert:MergeStrategy→[452-display]）窗内同一压缩消息以两个不同 item key 的条目并存 ~300ms（两 CardExpandReveal 并发完整 episode），共享屏幕级 expansionKey 一次 toggle 点亮两宿主→同 +H 双锚定（111/127ms 间隔）→旧宿主离场收缩修正（R9 变体 −H 第三跳）；净效≈单次展开但三跳瞬态可见
   - 定罪档案：Room/服务器零重复（纯 UI 组合层）；diffListInto 单组合内原子（排除）；itemsIndexed key 含 chunk #c<i> 后缀——嫌疑=chatEntries 分片/换装身份变更未走 #509 原地换名语义；阴性对照（idle tap 单 episode）成立；有效复现配方 TurnFin+1.35~1.41s（burst#1 吞 tap，脚本 /tmp/543-round.sh v15）；证据 journal §20 + /tmp/543-*、/tmp/540r-s9b.log
@@ -70,6 +75,7 @@
   - 根因②（DSH 独有窗）：dsh-call-* 工具宿主 Message.completed 恒 null（整装/回放腿均不携带），直到 turn/end→SessionIdle→markSessionIdle 才回填——「输出后」工具卡展开仍全程降级；重进会话从 Room 读已回填 completed=机件路径=正常。分析全文见 2026-10-10-540 journal
   - 五腿校验裁定（V1-V4+P）主体成立：RCA 3 处勘误（MC 编码点/V2 stale 注释/DSH streamingMsgId 非 null）均不动结论；探针帧级实证 E1-E3/E5/E6（nodis 免派发上推+LRef 一次性跳回+同卡双路径 A/B 对照）；修复方向修正：B 最小形态有效（V3 零收益判定被推翻）、A 缺口收窄为配对规则扩列；推荐 B 先行→A 终修。详见 journal §8-§11
   - 2026-10-10 用户 beta 复测（0.4.0-beta/41）反馈：输出中展开/收起仍上下震荡（静态正常）→ V2 SSE 腿仪器复现定罪降级路径负向配对三缺陷：D1 展开帧内缩 consumed=0 未配对+asyncParse 分档拖拽、D2 收起配对被 yield(external-pending) 误判饿死（76 帧零执行）、D3 大卡收起 dispatch 钳制缺口（capd=-3655 consumed=-277，3378px 未配对，录屏证瞬时猛拉 30% 屏高）。结构根因=负向补偿走 dispatchRawDelta 增量通道（边界钳制+yield 误判），正向反射 set 无此问题——A 案只修了正向。修复方向三支（负向反射化/dataKeyAt 越窗折叠、窗内 yield 豁免、展开重解析源消除）待裁决。证据 journal §22 + /tmp/v2leg-*、/tmp/v2col.mp4
+  - 2026-10-11 四轮拷问裁决（spec §1 全文）：§12 推翻/#433 延伸/#420 原则维持实现退役；目标架构=C 全统一两刀落地（本卡=第一刀：③接线+负向反射化(揭示缘参照)+宽豁免+重挂补洞）；重挂裁 ii⁺ 幂等（续命=续陈锚被否）；第二刀拆 #544。用户实地观察佐证：展开稳+旧动画、收起不稳+旧动画（与 D1-D3 定谳吻合）
 
 - [ ] **#522 B案升 stable 后余留装备清扫——JankHoldGate A/B 开关 + STREAM_DELTA_BUS 旗标退役（#499 余留范围）** `chore` `refactor`
   - 前置：STREAM_SHARD_PILOT / STREAM_DELTA_BUS 升 stable 并观察一批——当前 stable 均 false，JankHold 冻结链在 stable 仍是承重活体（B案开=旁路），现退役会回归 stable 流式滚动组合风暴。

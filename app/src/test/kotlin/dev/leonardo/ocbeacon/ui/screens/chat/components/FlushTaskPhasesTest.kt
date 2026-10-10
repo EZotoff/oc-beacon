@@ -241,7 +241,7 @@ class FlushTaskPhasesTest {
     }
 
     @Test
-    fun `540 收起窗内负向位移走dispatch镜像 - 不反射不拒绘`() {
+    fun `540 二轮 未捕获几何的窗内负向 - 反射保守镜像 不再走dispatch`() {
         mockkObject(LazyListReflection)
         mockkObject(ScrollQuiescence)
         val reserve = HeightReserveState().apply {
@@ -249,13 +249,58 @@ class FlushTaskPhasesTest {
             trueHeight = 900
             reserved = 1000
             expandPairingWindows = 1
+            // 未捕获 stickTop/spanDepth（默认 -1）——保守镜像：100−100=0
         }
         val state = mockState(0, 100)
         every { state.dispatchRawDelta(any()) } returns -100f
         val task = streamingGrowFlushTask(state, emptyLedger(), reserve)
         assertTrue(task.onPreDraw())
         assertEquals(900, reserve.reserved)
-        verify(exactly = 1) { state.dispatchRawDelta(-100f) }
+        // 二轮裁决（2026-10-11）：负向弃 dispatch 镜像（底缘钳制缺口 D3 定罪）
+        verify(exactly = 0) { state.dispatchRawDelta(any()) }
+        verify(exactly = 1) { LazyListReflection.requestScrollToItemNoCancel(any(), 0, 0, null) }
+    }
+
+    @Test
+    fun `540 二轮 锚在塌缩区内 - 反射粘揭示缘`() {
+        mockkObject(LazyListReflection)
+        mockkObject(ScrollQuiescence)
+        val reserve = HeightReserveState().apply {
+            itemKey = "k1"
+            trueHeight = 4200 // 本帧收缩后真高
+            reserved = 5000
+            expandPairingWindows = 1
+            expandCollapseStickTop = 4000
+            expandCollapseSpanDepth = 800
+        }
+        // 锚 fiso=200 → 距顶 4200−200=4000 = stickTop 边界（区内）
+        val state = mockState(3, 200)
+        every { state.dispatchRawDelta(any()) } returns 0f
+        assertTrue(streamingGrowFlushTask(state, emptyLedger(), reserve).onPreDraw())
+        assertEquals(4200, reserve.reserved)
+        verify(exactly = 0) { state.dispatchRawDelta(any()) }
+        // 粘住目标 = 4200−4000 = 200
+        verify(exactly = 1) { LazyListReflection.requestScrollToItemNoCancel(any(), 3, 200, null) }
+    }
+
+    @Test
+    fun `540 二轮 锚在塌缩区外 - 零操作仅帽回写`() {
+        mockkObject(LazyListReflection)
+        mockkObject(ScrollQuiescence)
+        val reserve = HeightReserveState().apply {
+            itemKey = "k1"
+            trueHeight = 4200
+            reserved = 5000
+            expandPairingWindows = 1
+            expandCollapseStickTop = 4000
+            expandCollapseSpanDepth = 800
+        }
+        // 锚 fiso=1500 → 距顶 2700 < 4000（盒下方新内容侧）——零操作
+        val state = mockState(3, 1500)
+        every { state.dispatchRawDelta(any()) } returns 0f
+        assertTrue(streamingGrowFlushTask(state, emptyLedger(), reserve).onPreDraw())
+        assertEquals(4200, reserve.reserved)
+        verify(exactly = 0) { state.dispatchRawDelta(any()) }
         verify(exactly = 0) { LazyListReflection.requestScrollToItemNoCancel(any(), any(), any(), any()) }
     }
 }

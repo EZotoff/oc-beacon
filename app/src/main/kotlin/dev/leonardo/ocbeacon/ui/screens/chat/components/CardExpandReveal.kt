@@ -585,17 +585,41 @@ internal fun CardExpandReveal(
         // 退役。无 reserve 供给（横幅/预览/宿主未挂/单测）维持裸 AV 现状。
         val degradeH = remember { androidx.compose.runtime.mutableIntStateOf(0) }
         val pairingReserve = LocalCardExpandReserve.current
+        // #540 二轮（表述乙）：揭示盒顶 root-Y——toggle 时刻换算 item 空间几何
+        //（stickTop/spanDepth）供 flush 负向配对资格判定（粘揭示缘/区外零操作）。
+        val revealTopRootY = remember { androidx.compose.runtime.mutableFloatStateOf(Float.NaN) }
         if (listState != null && pairingReserve != null) {
-            val toggled = remember { androidx.compose.runtime.mutableStateOf(visible) }
+            // 同值守卫改造（二轮④）：初值 false——**收起态挂载**不效应（避免每个
+            // 折叠卡 mount 都开窗）；**展开态挂载**（重组重建槽位 while expanded）
+            // 与真 toggle 一样开窗——重挂帧的 +H 全高入组合必须配对（同值守卫
+            // 曾让 fresh-mount visible=true 零窗裸落=未配对跳变面，exp3 现场同族）。
+            val toggled = remember { androidx.compose.runtime.mutableStateOf(false) }
             LaunchedEffect(visible) {
-                if (toggled.value == visible) return@LaunchedEffect // 首组合同值非 toggle
+                if (!visible && !toggled.value) return@LaunchedEffect // 收起态挂载：非 toggle
                 toggled.value = visible
                 pairingReserve.expandPairingWindows++
+                // 表述乙几何捕获（塌缩不变量：盒顶上方内容收起中不动）——距 item
+                // 顶偏移=盒顶 root-Y − 物主 item 根 root-Y（CML 逐 placement 供给）。
+                val stickTop: Int
+                val spanDepth: Int
+                val itemTop = pairingReserve.hostItemTopY
+                val itemH = pairingReserve.trueHeight
+                if (!itemTop.isNaN() && itemH >= 0 && !revealTopRootY.value.isNaN()) {
+                    stickTop = (revealTopRootY.value - itemTop).toInt().coerceAtLeast(0)
+                    spanDepth = degradeH.intValue
+                    pairingReserve.expandCollapseStickTop = stickTop
+                    pairingReserve.expandCollapseSpanDepth = spanDepth
+                } else {
+                    stickTop = -1
+                    spanDepth = -1
+                }
                 if (BuildConfig.DEBUG) {
                     AppLogger.d(
                         "CardExpand",
                         "[DEBUG-540] pairing-window open host=" + hostItemKey.toString().take(24) +
-                            " windows=" + pairingReserve.expandPairingWindows,
+                            " windows=" + pairingReserve.expandPairingWindows +
+                            " reveal-geo stickTop=" + stickTop + " span=" + spanDepth +
+                            " itemH=" + itemH + " boxY=" + revealTopRootY.value.toInt(),
                     )
                 }
                 try {
@@ -604,6 +628,7 @@ internal fun CardExpandReveal(
                     // 在内容落地前触发（窗 211ms 早闭，增量落窗外免配对）。守卫：
                     // 盒高必须**相对 toggle 时刻发生过变化**才允许计稳；零净变化
                     // （空输出卡）由 40 帧上限收窗（窗内无增长=配对零操作，无害）。
+                    // 展开态挂载（sawChange 系初值 atToggle=盒高）同守卫适用。
                     val atToggle = degradeH.intValue
                     var sawChange = false
                     var last = -1
@@ -622,6 +647,10 @@ internal fun CardExpandReveal(
                     }
                 } finally {
                     pairingReserve.expandPairingWindows--
+                    if (pairingReserve.expandPairingWindows <= 0) {
+                        pairingReserve.expandCollapseStickTop = -1
+                        pairingReserve.expandCollapseSpanDepth = -1
+                    }
                     if (BuildConfig.DEBUG) {
                         AppLogger.d(
                             "CardExpand",
@@ -632,7 +661,13 @@ internal fun CardExpandReveal(
                 }
             }
         }
-        Box(modifier = modifier.onSizeChanged { degradeH.intValue = it.height }) {
+        Box(
+            modifier = modifier
+                .onSizeChanged { degradeH.intValue = it.height }
+                .onGloballyPositioned { coords ->
+                    revealTopRootY.value = coords.positionInRoot().y
+                },
+        ) {
             AnimatedVisibility(
                 visible = visible,
                 enter = CardExpandEnterTransition,
