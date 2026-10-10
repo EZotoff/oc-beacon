@@ -249,3 +249,15 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
 **变体谱**：R9=双 episode 同刻 exit-CANCELLED+−H 收缩第三跳；R19/R21=双 completed 无回撤跳。同族双锚根因。
 
 **处置**（#543 立卡，P2）：修复靶=chatEntries 分片/换装身份变更的原子性（#509 域残余通道）；先加 episode 级探针（hostItemKey+expansionKey 打点）钉死双 key 具体形态再动刀；**禁 episode 层去重/幂等补丁**（补偿味，违反消除源哲学）。原始件：/tmp/543-repro-run{0..21}.log、/tmp/543-r{19,21}-shot*.png、/tmp/543-roomdir/、/tmp/540r-s9b.log。
+
+## 21. #543 根修：嵌套双 reveal 引擎定罪与唯一所有权修复（af1e785a8）
+
+**定罪（判读轮，e99e93197 探针）**：四假设裁定——H1/H2（跨 item 双条目）/H4（displayItems 双行，display-dual 恒 0）全排除；真身=H3 精确化：**单槽单卡内嵌套双 reveal 引擎**。压缩卡内部 MessageBubble 内容栏 CardExpandReveal（contentExpanded 分支）+ CompactionCard markdown body CardExpandReveal 被同一 expanded 驱动，每 toggle 各跑完整 episode 各锚 +H（6/6 恒成对 episode-start 同 hostKey 同毫秒）；换装重建不重建槽位（slot-compose 零新增），其作用=取消在飞 episode 对（LeftCompositionCancellationException ×2 = R9 −H 回撤变体）+同槽重武装。reasoning 折叠块对照恒单 episode（结构对照成立）。
+
+**根修（af1e785a8）**：展开引擎唯一所有权——CompactionCard:147 注释自述互斥意图（「无支持行＝随展开态动画」）但实现成「外层动+内层也动」。修复：无支持行分支卡内去 reveal 直渲染 body（外层 MessageBubble reveal 独享动画）；有支持行分支维持卡内 reveal（外层常驻 null）。**EventCard 同型同修**（description==null 分支；InjectionCard 本就独占无恙）。非补丁——实现纠正回自述设计意图，与家族约定对齐。
+
+**验证（houji Phase 6 全绿）**：V1 idle toggle ×10：10/10 恰 1 episode-start、5/5 恰 1 锚（+H=720）、LEAP 严格对称 ±192、零取消/零三跳；视觉无回归（展开体 156→756 正常渲染，收起归零）。V2 重建编舞 5 轮：「同 toggle 双 episode-start」0 次出现（核心断言）；V4 reasoning 对照 3/3 保持单 episode（未误伤邻域）。V3 EventCard 腿 SKIPPED——4096 全会话无带正文的 event 消息（无实例可测；同型修复经代码对称覆盖）。修复前→后：压缩卡 2/toggle→1/toggle、双锚→单锚、双取消变体→0。工件 /tmp/543-fix-*。
+
+**探针处置**：[DEBUG-543] 三探针（episode-start/slot-compose/display-dual）按用户「探针永久保留 DEBUG-only」裁决保留为 #543 回归探测器（签名：toggle 双 episode-start=复发）。
+
+**单测缝说明**：嵌套双 reveal 是组合结构属性，JVM 缝不可达（无 compose 树断言基建）；回归防线=E2E 探针签名（本轮即 Phase 1 回路的绿态）。

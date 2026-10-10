@@ -58,10 +58,11 @@
 
 ## P2 — 优化与锦上添花
 
-- [ ] **#543 #543 压缩卡换装重建窗双宿主——双 episode 双锚定三跳瞬态（R9 系统性 E2E 发现，定向复现已定罪）** `scroll` `chat`
+- [~] **#543 #543 压缩卡换装重建窗双宿主——双 episode 双锚定三跳瞬态（R9 系统性 E2E 发现，定向复现已定罪）** `scroll` `chat`
   - 真机 R9 + 定向复现 2/4 RED：displayItems 重建（upsert:MergeStrategy→[452-display]）窗内同一压缩消息以两个不同 item key 的条目并存 ~300ms（两 CardExpandReveal 并发完整 episode），共享屏幕级 expansionKey 一次 toggle 点亮两宿主→同 +H 双锚定（111/127ms 间隔）→旧宿主离场收缩修正（R9 变体 −H 第三跳）；净效≈单次展开但三跳瞬态可见
   - 定罪档案：Room/服务器零重复（纯 UI 组合层）；diffListInto 单组合内原子（排除）；itemsIndexed key 含 chunk #c<i> 后缀——嫌疑=chatEntries 分片/换装身份变更未走 #509 原地换名语义；阴性对照（idle tap 单 episode）成立；有效复现配方 TurnFin+1.35~1.41s（burst#1 吞 tap，脚本 /tmp/543-round.sh v15）；证据 journal §20 + /tmp/543-*、/tmp/540r-s9b.log
   - 修复方向（架构优先）：条目身份变更（重分片/换装）必须原地保持或原子交叠消除——先加 episode 级探针（hostItemKey+expansionKey+slot 身份）钉死双 key 具体形态，再在 chatEntries 派生域根修；禁 episode 层去重补丁（补偿味）
+  - 根修+验证完成（af1e785a8 + journal §21）：真身=嵌套双 reveal（非双宿主，四假设判读定谳）；唯一所有权修复（CompactionCard+EventCard 同型）；houji 验证全绿（2/toggle→1/toggle、双锚→单锚、三跳/双取消→0、视觉无回归）；beta 0.4.0-beta/41 已含此修待用户真机验收
 
 - [~] **#540 DSH 流式/输出后折叠卡展开「上推→跳回」瞬态——降级裸AV零配对 + 工具宿主 completed 恒 null 延长降级窗** `dsh` `scroll`
   - 症状：DSH 会话 SSE 输出中/刚输出完展开折叠卡（思考卡/工具卡），展开过程把上方内容上推、展开完毕后卡位一次性跳回原位；重进会话后恢复「正常展开」（渲染前算高+反射原子落位）
