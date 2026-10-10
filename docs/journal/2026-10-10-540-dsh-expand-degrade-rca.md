@@ -261,3 +261,24 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
 **探针处置**：[DEBUG-543] 三探针（episode-start/slot-compose/display-dual）按用户「探针永久保留 DEBUG-only」裁决保留为 #543 回归探测器（签名：toggle 双 episode-start=复发）。
 
 **单测缝说明**：嵌套双 reveal 是组合结构属性，JVM 缝不可达（无 compose 树断言基建）；回归防线=E2E 探针签名（本轮即 Phase 1 回路的绿态）。
+
+## ## 22. 用户 beta 复测反馈定罪：降级路径负向配对三缺陷（V2 SSE 腿仪器+视觉三层实证，2026-10-10 深夜）
+
+**用户反馈（原话要义）**：输出中展开/收起仍上下震荡、像渲染后补偿；输出完毕列表静态后同一操作正常。修正澄清：仅输出中有，静态无——排除翻转竞态假设，嫌疑域=流式活跃期降级路径本身。
+
+**环境**：houji dev 包（与 HEAD ec4c39551 同码）+ v2:4096 真实 SSE（此腿 R3/G6 从未仪器覆盖过）；新会话 MiMo-V2.6-Flash（reasoning+question 工具+双子智能体多相 turn）。工件 /tmp/v2leg-*、/tmp/v2col.mp4。
+
+**绿腿（先立基线）**：步间窗（question 等待中）展开 44 档/收起 15 档全配对（set/release-dis consumed==capd 逐帧精确、零 nodis/yield）；离底锚重复展开亦干净——A 案正通道在 V2 上工作正常。
+
+**红腿三缺陷（输出中）**：
+- **D1 展开帧内缩未配对（consumed=0）**：exp3——toggle 后 21ms flush(0,0) release-dis capd=-699 **consumed=0**（同时窗 GapDiag MC len=2468 async=true=展开触发 asyncParse 重解析 + InjCard re-render 重组）→ −699 全额未配对=首跳；随后 parse 分档增长逐档 set LEAP (0,0)→(7,3256) 共 +3615=拖拽第二段。用户观感=先跳再拖。
+- **D2 收起配对被 yield 误判饿死**：col3——收起全程 76 帧 release-dis 全被 yield(external-pending) 拒发：塌缩自带被动锚漂移使 read≠lastSet 逐帧成立，shouldYieldPairing 无法区分「自身塌缩漂移」与「外部显式意图」；read 持续运动 → shouldAdoptExternalPosition 静止采纳永不触发。配对设计全程零执行，视口被动漂至 (7,477)。
+- **D3 大卡收起 dispatch 边界钳制缺口**：col4——首档 release-dis capd=**-3655 consumed=-277**（LEAP 7→0 off 277→0 触底原点墙），**3378px 补偿缺口全额未配对**；后续每档 consumed=0。录屏视觉定谳：收起=瞬时猛拉（下方内容上跳约 30% 屏高，非动画），1 秒内完成。
+- 辅证（D0 行为差异根）：降级路径无 settle 等待（机件 #422 settleUntilContentStable 专属），asyncParse 分档落地期视口被逐档拖拽；机件路径静态 settle+原子反射+幕布揭示零中间帧=用户「静态正常」的机制面。
+
+**结构根因陈述**：降级路径（流式 turn 卡）与机件路径（静态）确为两套逻辑（CardExpandReveal.kt:565 单分叉，LocalInStreamingTurn 门控）；A 案修好了**正向（展开增长）反射通道**，但**负向（收缩）补偿走 dispatchRawDelta 增量通道**——该通道在贴底/近底几何被列表滚动边界钳制（消费不足/为零）且被 yield 守卫误判饿死；正向反射 set 写 item 内偏移无边界问题。负向通道缺一个与正向对称的反射出口（§12 当年弃反射因「负向折叠越窗尺寸谱缺失」——#438 R-1 dataKeyAt 越窗键投影已提供该机构）。
+
+**修复方向（消除源，待用户裁决）**：①负向配对改走反射通道（复用 resolvePairedTarget+#438 dataKeyAt 越窗折叠；D3 根修）②yield 守卫对窗内（expandPairingWindows>0）负向释放豁免或以「预测塌缩漂移」判别（D2 根修）③展开触发 asyncParse 重解析的源消除（retainState/预热，D1 的分档面）。禁：episode 层兜底/事后回锚（补偿味，违 #540 清剿）。
+
+**残留说明**：R3(G1-G3) DSH 演示绿腿与本腿不矛盾——演示容器只有短文本 turn（E4 勘误在案），无大思考卡重解析、无 question 卡重簇缩、无大卡收起（−3655 级），三缺陷面全部缺席。
+
