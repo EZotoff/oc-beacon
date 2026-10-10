@@ -73,6 +73,7 @@
 
 - [ ] **#538 #488 观感窗顺带：metadata/mark 角色视觉 + 400-2000c 首帧残余 pop 观感** `markdown`
   - 源自 #488 批2 收官余项（非缺陷）：① CodeSyntaxTheme 中 @注解 metadata 与 mark 两角色暂映射 tertiary，设计时标注'批2 视觉试验'——观感窗顺带过目是否有更优色；② 400-2000 字符代码块冷看首帧仍有一次纯色→着色 pop（同步阈值 CAP=400 为帧预算所限，JVM/ARM 基准证伪了研究文档 2000c 假设），重看已被缓存消除——观感可接受度顺带确认。无排期：下次用户过屏时顺带，不单独开工。
+  - 2026-10-10 演示材料就绪（用户「演示」口令，真机 houji+V2/GLM-4.6V）：双 KOTLIN 顶栏+复制（d538_04_top.png）；@注解×7 tertiary 观感（d538_05_annotations.png）；3734c 块冷看纯色窗~150ms（d538_pop.mp4 t1.95→2.10 + pop_1/pop_2 对比帧；CodeHL len=3734 lang=kotlin spans=496 ms=93；重看零新增=缓存命中）。证据 human-sim-10h/evidence/demo538/。待用户过目拍板①②观感
 
 - [ ] **#537 DSH 同步通道 1KB 截断——工具卡全文与 spill 通知不落 Room，离线重开降级** `dsh` `data`
   - 2026-10-09 #536 E2E 通道性发现：DSH 服务器同步/投影通道把工具输出截到 ~1KB（尾标 [truncated, full output on server] 为服务器原话）——spill 通知与全文只存在于打开会话时的实时拉取，cached_parts 恒短版
