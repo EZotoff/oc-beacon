@@ -378,3 +378,9 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
 - **[非缺陷·环境] BLANK-RENDER-FREEZE ×5 → 已登记 #545**（P2）：历史会话内整串 input text 必现主线程渲染冻结（a11y 树空 2627B、进程存活、仅 force-stop 可恢复）；新空会话+分块注入 40+ 周期零复现；手工几乎不可达。
 - **测试侧勘误（分身终报自纠）**：镜像断言行序一帧错位（行内自洽语义 fiso_n=fiso_{n-1}+capd_n）；长上下文 ~84k tokens 抑制 MiMo reasoning（NOCARD 根因→改每周期新会话）；c17 大跳为测试侧刹车滚动污染已剔。
 - **beta 重打**：14:49 版 app-beta-release.apk（0.4.0-beta/41 沿用测试包豁免；release keystore CN=OC Beacon 验签 ✓）——含 §26/§27 全部根修（逐帧镜像+正向否决门+帧前高度）。**03:29 旧 beta 不含帧前根修作废，以本包为准**。装机时无线 adb 闪断发作（mDNS 陈旧端口拒连），后台轮询自愈后补装（见 §29 补记）。
+
+## §29 补记——beta 装机阻塞于无线 adb 掉线（待用户恢复）
+
+- 14:49 beta 包验签后装机两次失败：`adb install` 会话卡死（3.5min 无响应）→ push/pm install 报 `connect failed: closed / device offline`——houji 无线 adb 闪断再发作（[[wireless-adb-flapping]] 已知史）。
+- 与既往「端口轮换」不同：mDNS 广播完全消失（旧记录 192.168.1.110:41571 拒连且不再刷新），15min 后台轮询 60 次未自愈 → 判定设备端无线调试服务整体掉线，需物理介入（重开无线调试或插 USB）。
+- 按真机纪律未触碰任何系统设置。APK 已就绪：`app/build/outputs/apk/beta/release/app-beta-release.apk`（0.4.0-beta/41，14:49，含 §23-§27 全部根修）。恢复连接后直接 pm install -r 覆盖装（同证书，无数据迁移）。
