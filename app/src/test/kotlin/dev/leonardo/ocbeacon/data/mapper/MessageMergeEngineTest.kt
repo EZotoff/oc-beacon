@@ -274,6 +274,43 @@ class MessageMergeEngineTest {
         assertEquals(2, out.size)
     }
 
+    // ============ #540 四报 SILENT-STATE-RESET：dedup 身份先行 ============
+
+    @Test
+    fun `四报 REST权威胜出仍采派生id - 展开状态map键跨刷新稳定`() {
+        // soak4r c9 定罪：分段切换 REST 全量（真实 id bbb…、文本更长）覆盖
+        // SSE 派生孪生 → id 换名 → partId 键控展开态 map miss → 卡片静默
+        // 回退收起。根修：胜者内容权威、身份采派生契约 id。
+        val derived = text("m1_reasoning_ord_0", text = "思考到一半")
+        val restAuthority = text("bbb657fa", text = "思考到一半，后面还有权威补全")
+        val out = MessageMergeEngine.dedupOverlappingTextParts(listOf(derived, restAuthority))
+        assertEquals(1, out.size)
+        assertEquals("m1_reasoning_ord_0", out[0].id)
+        assertEquals(restAuthority.text, (out[0] as Part.Text).text) // 内容取 REST 权威
+    }
+
+    @Test
+    fun `四报 mergePartsList REST刷新场景 - 存活part保派生id`() {
+        // mergePartsList 装配序：incoming(REST) 在前、SSE 独有 preserved 在后
+        // → dedup 时 REST 占槽位、派生孪生后到——胜者无论是谁，id 必须落回
+        // 派生契约（UI 在册身份）。
+        val existingSse = listOf(text("m1_reasoning ord-fix".replace(" ord-fix", "_ord_0"), text = "流式累积文本前半"))
+        val restRefresh = listOf(text("9f2c11d0", text = "流式累积文本前半+REST权威续写"))
+        val out = MessageMergeEngine.mergePartsList(existingSse, restRefresh)
+        assertEquals(1, out.size)
+        assertTrue(out[0].id.contains("_reasoning_ord_0"))
+        assertEquals(restRefresh[0].text, (out[0] as Part.Text).text)
+    }
+
+    @Test
+    fun `四报 双legacy重叠 - 维持原胜者语义不受身份回填影响`() {
+        val legacyBlank = text("", text = "旧文本")
+        val legacyNamed = text("legacy_1", text = "旧文本")
+        val out = MessageMergeEngine.dedupOverlappingTextParts(listOf(legacyBlank, legacyNamed))
+        assertEquals(1, out.size)
+        assertEquals("legacy_1", out[0].id)
+    }
+
     // ============ 谓词 ============
 
     @Test

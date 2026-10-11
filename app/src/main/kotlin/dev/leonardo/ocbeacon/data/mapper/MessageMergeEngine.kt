@@ -307,7 +307,29 @@ internal object MessageMergeEngine {
                     (rt.length <= pt.length && pt.startsWith(rt)) ||
                     (pt.length <= rt.length && rt.startsWith(pt))
                 if (overlaps) {
-                    val winner = if (pt.length > rt.length || (pt.length == rt.length && p.id.isNotBlank())) p else r
+                    val winnerRaw = if (pt.length > rt.length || (pt.length == rt.length && p.id.isNotBlank())) p else r
+                    // #540 四报 SILENT-STATE-RESET 根修（soak4r c9 定罪）：REST
+                    // 权威刷新携真实 part id 与 SSE 派生孪生（`_reasoning_ord_N`）
+                    // 内容重叠时，胜者若换 id → partId 键控的展开状态 map 查无
+                    // 此键 → 思考卡展开态**静默回退收起**（无 toggle 日志，2s 内
+                    // 复现实证 ng_ord_0→bbb657fa）。身份先行、内容权威：胜者采
+                    // **派生契约 id**（流式在册身份；兼防 Room 孤儿行，#266 教义
+                    // 的 dedup 侧对齐）。双侧皆非契约（legacy）保持原胜者语义。
+                    val loser = if (winnerRaw === p) r else p
+                    val idKeep = when {
+                        PartIdContract.isDerived(winnerRaw.id) -> winnerRaw.id
+                        PartIdContract.isDerived(loser.id) -> loser.id
+                        else -> winnerRaw.id
+                    }
+                    val winner = if (idKeep == winnerRaw.id) {
+                        winnerRaw
+                    } else {
+                        when (winnerRaw) {
+                            is Part.Text -> winnerRaw.copy(id = idKeep)
+                            is Part.Reasoning -> winnerRaw.copy(id = idKeep)
+                            else -> winnerRaw
+                        }
+                    }
                     result[i] = winner
                     // 桶成员同步：索引 i 保持在 all 桶；legacy 桶按胜者契约属性增删
                     val winnerIsNew = isNew(winner.id)
