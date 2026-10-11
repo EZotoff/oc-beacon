@@ -577,6 +577,57 @@ class SessionNotificationCoordinatorTest {
         assertEquals(listOf("streak:server1:ses_parent", "showSessionError:ses_parent:boom"), port.calls)
     }
 
+    // ============ 2026-10-10：abort 类错误零反馈（通知/提示音/streak 全跳过） ============
+
+    @Test
+    fun abortedByUserErrorProducesNoFeedback() = runTest {
+        background()
+
+        coordinator.processEvent(server, SseEvent.SessionError(sessionId = "sess1", error = "aborted by user"))
+
+        assertTrue(port.calls.isEmpty())
+    }
+
+    @Test
+    fun abortErrorNameFallbackSuppressed() = runTest {
+        // str() 提取在 data.message 缺席时回退 error.name —— 名称形态同样命中
+        background()
+
+        coordinator.processEvent(server, SseEvent.SessionError(sessionId = "sess1", error = "MessageAbortedError"))
+
+        assertTrue(port.calls.isEmpty())
+    }
+
+    @Test
+    fun toolExecutionAbortedSuppressed() = runTest {
+        background()
+
+        coordinator.processEvent(server, SseEvent.SessionError(sessionId = "sess1", error = "Tool execution aborted"))
+
+        assertTrue(port.calls.isEmpty())
+    }
+
+    @Test
+    fun abortErrorForegroundSkipsInSessionSound() = runTest {
+        focusOn("sess1")
+
+        coordinator.processEvent(server, SseEvent.SessionError(sessionId = "sess1", error = "Aborted"))
+
+        assertTrue(port.calls.isEmpty())
+    }
+
+    @Test
+    fun abortErrorDoesNotConsumeErrorStreak() = runTest {
+        background()
+
+        coordinator.processEvent(server, SseEvent.SessionError(sessionId = "sess1", error = "Aborted"))
+        coordinator.processEvent(server, error())
+
+        // 中止不烧 streak —— 随后的真实错误仍按首条投递
+        assertEquals(listOf("streak:server1:sess1", "showSessionError:sess1:boom"), port.calls)
+    }
+
+
     // ============ MessageUpdated：streak 重置信号 ============
 
     @Test

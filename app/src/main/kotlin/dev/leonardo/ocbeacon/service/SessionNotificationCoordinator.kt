@@ -53,6 +53,20 @@ internal fun sanitizeNotificationText(raw: String): String? =
 internal fun isNotificationPreviewText(text: String): Boolean =
     sanitizeNotificationText(text)?.let { it.trimStart().startsWith("<system-reminder>").not() } ?: false
 
+/**
+ * 2026-10-10：abort 类会话错误识别——中止（MessageAbortedError / "Aborted" /
+ * "aborted by user" / "Tool execution aborted"）是用户或测试工具的主动行为，
+ * 非故障。与 Web/TUI 口径对齐（TUI app.tsx 对 MessageAbortedError 不 toast）。
+ *
+ * 实证：ez-omo-config 回归 corpus（bash-group-cleanup-timeout 等）对 live server
+ * 跑 `opencode run` + 故意中止 `sleep 60`（crash-resume 探针同理），每个测试
+ * 会话的手机端都弹「错误 · <sessionId>」推送——临时会话随后被清，深链 404
+ * （Session not found）。文本按子串不区分大小写匹配 "abort"：str() 提取在
+ * data.message 缺席时回退 error.name，两类形态都被覆盖。
+ */
+internal fun isAbortClassSessionError(error: String): Boolean =
+    error.contains("abort", ignoreCase = true)
+
 
 /** D2-L30（#112）：response-ready 收敛检查次数与间隔（无输出会话最坏多等 750ms）。 */
 private const val RESPONSE_READY_ATTEMPTS = 3
@@ -344,6 +358,12 @@ class SessionNotificationCoordinator @Inject constructor(
     }
 
     private suspend fun onSessionError(server: ServerConfig, event: SseEvent.SessionError) {
+        // 2026-10-10：abort 类错误最先短路——通知、会话内提示音、streak 占用
+        // 全部跳过（中止非故障，且不应烧掉错误 streak——真实错误仍应弹首条）。
+        if (isAbortClassSessionError(event.error)) {
+            AppLogger.i(TAG, "[${server.displayName}] Skip abort-class session error (session=${event.sessionId})")
+            return
+        }
         // #339：回放的历史错误轮不重发通知（「错误·hi」×7-8 同题重发实证——
         // 重放用户消息曾重置 streak 致连环通过；时刻缺席（V1/V2）保持原行为）。
         event.time?.let { eventTime ->
