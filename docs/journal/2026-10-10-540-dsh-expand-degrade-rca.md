@@ -425,3 +425,34 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
 - **落账**：#547 新卡（P1，三修向 a/b/c 推荐 a=ExpandStateStore）；#544 note 扩充（六候选+递进+报告存档）；spec §5 补章（税基线/六候选/soak 对账/执行序）；本节。
 - **顺手修**：RB-EXP 探针越裁（W 级无条件→D 级+DEBUG 守卫，已 commit）。
 - **待裁决**：#547 修复时机（独立先修 vs 随 C4/第二刀合流）；发版前 #547 修复或接受残留。#540 用户五测验收仍挂起。
+
+## §35 #547 根修——展开态稳定键（宿主级联换名免疫，2026-10-12 凌晨）
+
+### 定罪复述（soak5r r13）
+
+V2 多消息 turn 重组换宿主（msg_12b9107bf001JPaf83 → msg_12b91c58a001eWpX9i），派生 partId 前缀级联漂移 → partId 键控 _toolExpandedStates map 脱靶 → toggle 后 79ms 静默回退收起（无 toggle 日志，mapHit true→false）。与四报 SILENT-STATE-RESET（REST dedup 换名）同类不同源。map 无删除路径（toggleToolExpanded 只增写）——脱靶纯系键漂移。
+
+### 修向 a（C4 键律先行）落地三件套（67f1cb867）
+
+1. **ExpandStateKeys.forPart**（ChatCompositionLocals.kt）：派生契约 id（内嵌宿主前缀者）→ "x<kind>:空白归一化前96字符指纹"；服务器赋值 id（工具/patch/shell）直通；空白文本直通。不变量：流式 append 只增长→入窗后指纹恒定；换宿主内容不变→跨重组同键；H1 空白折叠两套字节表示归一同键。
+2. **migrateExpandAlias 别名收养**（MessageDataDelegate + Local 管线）：键演化（成长跨指纹窗/空白直通→首内容）时旧键状态单向迁移新键（幂等，新键有值不覆盖）；消费点组合期同步调用（LaunchedEffect 晚一帧=一帧假塌缩，#540 四报组合期同步注册同款先例）。
+3. **键切换帧权威读**（PartContent）：rbKeyJustChanged 帧直读 toolStatesFlow.value[key]（migrate 同步写已完成），不读 collectAsState 镜像——镜像下一帧才跟上，读镜像=一帧假塌缩（驱动盒方向翻转复活入口）。
+
+测试逮住的设计缺陷（先行后修，TDD 实效）：初版指纹窗变长窗口（toggle 时文本<96 字符则跨窗键变）——ExpandStateKeysTest「成长跨指纹窗键变」用例钉住该事实，别名收养由此立项。
+
+### E2E 双包 A/B 证据（houji，V2 4096 + MiMo p1，配方 /home/leonardo/.cache/547e2e/）
+
+- **旧包（23:57，无权威帧读）**：r3 抢救轮天然跨窗 c94433c1→ed797412，中间夹 27ms (expanded=false, mapHit=true) 假塌缩帧——预判竞态的反向实证。
+- **新包**：9 轮全 PASS（r4-r7、r9-r12；r8 驱动失手非产品）。R1（同键 true→false 无 toggle）/R1'（跨键连续性，扫描器为本卡新增红线）/R2（mapHit 脱靶）零违例；6 起天然跨窗迁移全部 expanded=true/mapHit=true 直落零闪断；k=6 burst 连点轮含。r11/r12 实证同前缀指纹跨会话复现（MiMo 公式化前导）——会话内存 map 隔离，无影响，符合有界碰撞设计语义。
+- **宿主换名本体未自然再现**（9 轮全单 turn item；1/12 概率类）：该不变量由单测钉死（r13 双宿主原始 id 同键用例）；线上机制与跨窗迁移同构（map/收养/权威读三件套同路径）。
+
+### 验证清单
+
+ExpandStateKeysTest 10/10；全量 testDevDebugUnitTest 4046 零失败；lintDevDebug 门禁过（基线陈旧提示为既有现象）；commit 67f1cb867。卡片 #547 → verify 态待验收。
+
+### 勘误与登记
+
+- 红线扫描器初版盲区：按键分组漏跨键 true→false（R1' 补上）——判读工具教训同 soak5r N2（可见域≠全部事实域）。
+- RB-EXP 探针改完整 id+key+mapHit（N2 落地）；toggle 侧探针同步去 takeLast(8)。
+- C4 关系：ExpandStateKeys.forPart 即 C4 ExpandStateStore 键律先行；store 化单一真相源/default 冻结仍在 #544 第二刀范围。
+

@@ -56,12 +56,16 @@
 ## P1 — 核心功能需求
 
 
-- [ ] **#547 SILENT-STATE-RESET 残留变体——宿主换名级联派生 partId 前缀（展开态 map 脱靶）** `identity` `race` `ui`
+- [~] **#547 SILENT-STATE-RESET 残留变体——宿主换名级联派生 partId 前缀（展开态 map 脱靶）** `identity` `race` `ui`
   - soak5r r13 定罪（23:25:23.140→.219，79ms）：用户展开后多消息轮次重组换宿主（新 turn item t_msg_12b91c58a 出现+RESIZE -4159/LEAP 7 项），派生 part id= 前缀随宿主变 → partId 键控展开态 map 脱靶 → 静默回退收起；无 toggle 日志
   - 与四报根修（dedup 身份先行，MessageMergeEngine:312）同类不同源：那次是 REST 权威孪生换名（已修），这次是宿主消息级联；修复②驱动列表化 12 轮全绿零回归
   - 修复方向（架构审查 C4 强化）：a) 展开状态键与宿主消息解耦（ExpandStateStore，推荐）b) merge/store 层换宿主时迁移 map 键 c) 宿主稳定扩展（#509 原地换名覆盖此重组路径）；顺带：RB-EXP 探针改打完整 id（takeLast(8) 前缀盲，N2）
   - 证据：/home/leonardo/.cache/soak5r/r13_evidence.txt + report.md；发版前需修复或用户裁决接受残留
   - 勘误：第一行「派生 part id= 前缀随宿主变」应为「派生 part id=<msgId>_reasoning_ord_N 的前缀随宿主消息 id 变」（登记时反引号被 shell 吞）
+  - 根修+验证完成（67f1cb867，verify 态）：修向 a 落地——ExpandStateKeys.forPart（派生 id 改 kind+空白归一化前96指纹键，服务器 id 直通）+ migrateExpandAlias 别名收养（成长跨窗旧键状态单向迁移，组合期同步）+ 键切换帧权威读（消 collectAsState 一帧陈旧假塌缩，旧包 27ms flash 反证）；N2 探针完整 id 已随修
+  - 验证链：ExpandStateKeysTest 10/10（含 r13 原始双宿主 id 换宿主同键用例）；全量 4046 单测零失败；lintDevDebug 门禁过；真机 houji 新包 9 轮 E2E 全 PASS（R1/R1'/R2 红线零违——同键/跨键 true→false 无 toggle 均零、mapHit 零脱靶、6 起天然成长跨窗迁移存活零闪断、burst 连点轮含）
+  - 宿主换名本体（r13 触发面）未在 9 轮中自然再现（1/12 概率类，全部单 turn item）——该不变量由单测直接钉死（r13 双宿主原始 id 同键）；E2E 复用配方与红线扫描器存 /home/leonardo/.cache/547e2e/（e547.sh，可复跑）
+  - C4 关系：ExpandStateKeys.forPart 即 C4 ExpandStateStore 的键律先行落地（单一真相源/store 化与 default 冻结仍在 #544 第二刀范围）
 
 ## P2 — 优化与锦上添花
 
