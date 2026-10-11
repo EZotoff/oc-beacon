@@ -241,7 +241,13 @@ class FlushTaskPhasesTest {
     }
 
     /** 可见窗内含物主 item 的 mock（物主守卫测试缝）。 */
-    private fun stateWithOwnerItem(fii: Int, fiso: Int, ownerIndex: Int, ownerKey: Any = "k1"): LazyListState =
+    private fun stateWithOwnerItem(
+        fii: Int,
+        fiso: Int,
+        ownerIndex: Int,
+        ownerKey: Any = "k1",
+        ownerSize: Int = 2400,
+    ): LazyListState =
         mockk(relaxed = true) {
             every { firstVisibleItemIndex } returns fii
             every { firstVisibleItemScrollOffset } returns fiso
@@ -251,6 +257,7 @@ class FlushTaskPhasesTest {
                     mockk<androidx.compose.foundation.lazy.LazyListItemInfo> {
                         every { index } returns ownerIndex
                         every { key } returns ownerKey
+                        every { size } returns ownerSize
                     },
                 )
             }
@@ -416,5 +423,96 @@ class FlushTaskPhasesTest {
         assertTrue(streamingGrowFlushTask(state, ledger, reserve).onPreDraw())
         // 无崩溃即主断言；未捕获几何走镜像格：500−1+0=499
         verify(exactly = 1) { LazyListReflection.requestScrollToItemNoCancel(any(), 3, 499, null) }
+    }
+
+    // ============ #540 三轮：降级驱动（AV 尺寸退役→flush 单事务步进）============
+
+    @Test
+    fun `540 三轮 驱动步进纯函数 - 指数逼近·终态直达·挂起守卫`() {
+        assertEquals(-160, degradeDriveStep(500, 0))   // 收起向首步 32%
+        assertEquals(30, degradeDriveStep(100, 196))   // 展开向 96×0.32=30.72→30
+        assertEquals(-2, degradeDriveStep(2, 0))       // ≤2px 终态直达
+        assertEquals(0, degradeDriveStep(0, 0))        // 稳态零步进
+        assertEquals(0, degradeDriveStep(50, -1))      // 展开中等测高：挂起不步进
+        assertEquals(1, degradeDriveStep(0, 3))        // 截断保底 1px 防停滞
+        assertEquals(-1, degradeDriveStep(3, 0))
+    }
+
+    @Test
+    fun `540 三轮 纯驱动帧 - 步进与滚动写同快照原子推进（震荡根修）`() {
+        mockkObject(LazyListReflection)
+        mockkObject(ScrollQuiescence)
+        val drive = DegradeDriveState(hInitial = 1000, hTarget = 0)
+        val reserve = HeightReserveState().apply {
+            itemKey = "k1"
+            trueHeight = 2303 // 实测已含历史步进；预记账恰好追平 → 纯驱动帧
+            reserved = 2303
+            expandPairingWindows = 1
+            expandCollapseStickTop = 405
+            expandCollapseSpanDepth = 1000
+            degradeDrive = drive
+        }
+        // 锚 fiso=1303 → 距顶 2303−1303=1000 ≤ 1405（镜像侧）
+        val state = stateWithOwnerItem(7, 1303, ownerIndex = 7)
+        every { state.dispatchRawDelta(any()) } returns 0f
+        val task = streamingGrowFlushTask(state, emptyLedger(), reserve)
+        assertTrue(task.onPreDraw())
+        // 步进 −320 与滚动写同事务：目标 1303−320=983；弃 dispatch（二轮裁决）
+        verify(exactly = 1) { LazyListReflection.requestScrollToItemNoCancel(any(), 7, 983, null) }
+        verify(exactly = 0) { state.dispatchRawDelta(any()) }
+        // 驱动态推进 + 帽预记步进（=trueHeight+step；旧 `=trueHeight` 会残差帧
+        // 再释放一步=重复记账）
+        assertEquals(680, drive.h)
+        assertEquals(1983, reserve.reserved)
+    }
+
+    @Test
+    fun `540 三轮 手势帧 - 驱动步进随计划丢弃冻结不推进`() {
+        mockkObject(LazyListReflection)
+        mockkObject(ScrollQuiescence)
+        val drive = DegradeDriveState(hInitial = 500, hTarget = 0)
+        val reserve = HeightReserveState().apply {
+            itemKey = "k1"
+            trueHeight = 1000
+            reserved = 1000
+            expandPairingWindows = 1
+            degradeDrive = drive
+        }
+        val state = mockk<LazyListState>(relaxed = true) {
+            every { firstVisibleItemIndex } returns 7
+            every { firstVisibleItemScrollOffset } returns 100
+            every { isScrollInProgress } returns true // 手势进行中：上游更硬的门
+            every { layoutInfo } returns mockk<LazyListLayoutInfo> {
+                every { visibleItemsInfo } returns emptyList()
+            }
+        }
+        assertTrue(streamingGrowFlushTask(state, emptyLedger(), reserve).onPreDraw())
+        assertEquals(500, drive.h) // 冻结未推进（幂等重算，非错位）
+        verify(exactly = 0) { LazyListReflection.requestScrollToItemNoCancel(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `540 三轮 展开步进锚在揭示缘上方 - 否决配对但高度仍原子推进`() {
+        mockkObject(LazyListReflection)
+        mockkObject(ScrollQuiescence)
+        val drive = DegradeDriveState(hInitial = 0, hTarget = 1000)
+        val reserve = HeightReserveState().apply {
+            itemKey = "k1"
+            trueHeight = 2000
+            reserved = 2000
+            expandPairingWindows = 1
+            expandCollapseStickTop = 1500
+            expandCollapseSpanDepth = 400
+            degradeDrive = drive
+        }
+        // 锚距顶 2000−1000=1000 < 1500 → 锚在揭示缘上方：正步进否决配对（二轮
+        // 修订同款——锚所见内容不动，配对位移=自造推动）
+        val state = stateWithOwnerItem(7, 1000, ownerIndex = 7)
+        every { state.dispatchRawDelta(any()) } returns 0f
+        assertTrue(streamingGrowFlushTask(state, emptyLedger(), reserve).onPreDraw())
+        // 高度照推 + 帽预记；滚动零写（否决）
+        assertEquals(320, drive.h)
+        assertEquals(2320, reserve.reserved)
+        verify(exactly = 0) { LazyListReflection.requestScrollToItemNoCancel(any(), any(), any(), any()) }
     }
 }

@@ -24,6 +24,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.LayoutModifier
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onPlaced
@@ -529,6 +530,25 @@ internal class CardExpandClock(initialFraction: Float) {
 }
 
 /**
+ * #540 三轮：驱动盒布局——内容按自然高无约束测高（高度不受盒驱动值压缩），
+ * 盒布局高=hProvider()（读快照态，flush 写入即失效重测），顶锚放置+外层
+ * clipToBounds=shrinkTowards/expandFrom Top 语义。
+ */
+private fun Modifier.degradeRevealHeight(hProvider: () -> Int): Modifier =
+    this then object : LayoutModifier {
+        override fun MeasureScope.measure(
+            measurable: Measurable,
+            constraints: Constraints,
+        ): MeasureResult {
+            val child = measurable.measure(
+                constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity),
+            )
+            val h = hProvider().coerceIn(0, child.height)
+            return layout(constraints.maxWidth, h) { child.place(0, 0) }
+        }
+    }
+
+/**
  * 卡片展开面统一包装(#420):原地揭示 + 同帧位移配对。
  * drop-in 替换各卡片的 AnimatedVisibility(CardExpandEnter/Exit);
  * 无作用域限定(任意父容器可用)。
@@ -579,16 +599,27 @@ internal fun CardExpandReveal(
         }
         // #540 方向 A 根修（取代 #526 事后回锚）：流式降级路径的展开/收起增长改经
         // 帽协议 flush 单事务「恒配对」释放——toggle 时开「展开配对窗」（计数制，
-        // 同 item 多卡并发共容），AV 尺寸稳定后关窗。窗内每档增量（含并发流式
+        // 同 item 多卡并发共容），尺寸稳定后关窗。窗内每档增量（含并发流式
         // 增长——展开语义=离底让位，与机件路径 departure 同向）原子配对落地，
         // 上推源从构造上消失；#526 的「先上推、稳定后一次性反射回锚」瞬态随之
         // 退役。无 reserve 供给（横幅/预览/宿主未挂/单测）维持裸 AV 现状。
+        // #540 三轮（用户三报「收起来回震荡」定罪，2026-10-11）：AV 尺寸动画在
+        // 流式场景退役——shrinkVertically 在 measure 相直改布局高（收缩穿透
+        // min(child,reserved) 帽天花板），滚动修正却 pending 下一遍 measure →
+        // 每帧画「新高度×旧滚动」错位态=震荡（展开常见格被否决门判零写入故稳，
+        // 与三报「展开还好、收起震荡」吻合）。驱动盒：布局高=drive.h（flush 单
+        // 事务步进，与滚动写同遍 measure 原子消费）；内容常驻组合按自然高测高、
+        // 顶锚裁剪=shrinkTowards/expandFrom Top 语义；淡入淡出由 alpha 派生。
         val degradeH = remember { androidx.compose.runtime.mutableIntStateOf(0) }
         val pairingReserve = LocalCardExpandReserve.current
         // #540 二轮（表述乙）：揭示盒顶 root-Y——toggle 时刻换算 item 空间几何
         //（stickTop/spanDepth）供 flush 负向配对资格判定（粘揭示缘/区外零操作）。
         val revealTopRootY = remember { androidx.compose.runtime.mutableFloatStateOf(Float.NaN) }
-        if (listState != null && pairingReserve != null) {
+        // #540 三轮：内容自然高（内侧盒无约束测得；-1=未测）与驱动态。
+        val contentH = remember { androidx.compose.runtime.mutableIntStateOf(-1) }
+        val drive = remember { DegradeDriveState() }
+        val driven = listState != null && pairingReserve != null
+        if (driven) {
             // 同值守卫改造（二轮④）：初值 false——**收起态挂载**不效应（避免每个
             // 折叠卡 mount 都开窗）；**展开态挂载**（重组重建槽位 while expanded）
             // 与真 toggle 一样开窗——重挂帧的 +H 全高入组合必须配对（同值守卫
@@ -597,6 +628,15 @@ internal fun CardExpandReveal(
             LaunchedEffect(visible) {
                 if (!visible && !toggled.value) return@LaunchedEffect // 收起态挂载：非 toggle
                 toggled.value = visible
+                // 三轮：驱动注册——初高=当前盒高（展开挂载=0），终高=visible?
+                // 内容高（未测得先挂起 -1，onSizeChanged 落地）: 0。
+                drive.h = degradeH.intValue
+                drive.hTarget = if (visible) {
+                    if (contentH.intValue >= 0) contentH.intValue else -1
+                } else {
+                    0
+                }
+                pairingReserve.degradeDrive = drive
                 pairingReserve.expandPairingWindows++
                 // 表述乙几何捕获（塌缩不变量：盒顶上方内容收起中不动）——距 item
                 // 顶偏移=盒顶 root-Y − 物主 item 根 root-Y（CML 逐 placement 供给）。
@@ -620,7 +660,8 @@ internal fun CardExpandReveal(
                             " windows=" + pairingReserve.expandPairingWindows +
                             " reveal-geo stickTop=" + stickTop + " span=" + spanDepth +
                             " itemH=" + itemH + " boxY=" +
-                            (if (revealTopRootY.value.isNaN()) "na" else revealTopRootY.value.toInt().toString()),
+                            (if (revealTopRootY.value.isNaN()) "na" else revealTopRootY.value.toInt().toString()) +
+                            " drive h0=" + drive.h + " tgt=" + drive.hTarget,
                     )
                 }
                 try {
@@ -635,7 +676,7 @@ internal fun CardExpandReveal(
                     var last = -1
                     var stable = 0
                     var waited = 0
-                    while (stable < 3 && waited < 40) { // AV spring ~300ms；上限 ~650ms
+                    while (stable < 3 && waited < 40) { // 驱动 ~180ms；上限 ~650ms
                         withFrameNanos { }
                         waited++
                         val s = degradeH.intValue
@@ -652,6 +693,11 @@ internal fun CardExpandReveal(
                         pairingReserve.expandCollapseStickTop = -1
                         pairingReserve.expandCollapseSpanDepth = -1
                     }
+                    // 三轮：驱动完结注销；未完结（40 帧上限早闭/手势冻结）保留槽给
+                    // flush 续步（稳态步进=0 无害；下卡 toggle 覆盖之）。
+                    if (pairingReserve.degradeDrive === drive && !drive.animating) {
+                        pairingReserve.degradeDrive = null
+                    }
                     if (BuildConfig.DEBUG) {
                         AppLogger.d(
                             "CardExpand",
@@ -662,6 +708,27 @@ internal fun CardExpandReveal(
                 }
             }
         }
+        if (!driven) {
+            Box(
+                modifier = modifier
+                    .onSizeChanged { degradeH.intValue = it.height }
+                    .onGloballyPositioned { coords ->
+                        revealTopRootY.value = coords.positionInRoot().y
+                    },
+            ) {
+                AnimatedVisibility(
+                    visible = visible,
+                    enter = CardExpandEnterTransition,
+                    exit = CardExpandExitTransition,
+                ) {
+                    content()
+                }
+            }
+            return
+        }
+        // 三轮：驱动盒。高度唯一写者=flush（drive.h 仅在 applyPairedShift 事务内
+        // 推进）；孤儿回落（单槽被并发卡覆盖，罕见面）=稳态快照（visible?内容高:0）。
+        val driveOwned = pairingReserve.degradeDrive === drive && drive.animating
         Box(
             modifier = modifier
                 .onSizeChanged { degradeH.intValue = it.height }
@@ -669,12 +736,33 @@ internal fun CardExpandReveal(
                     revealTopRootY.value = coords.positionInRoot().y
                 },
         ) {
-            AnimatedVisibility(
-                visible = visible,
-                enter = CardExpandEnterTransition,
-                exit = CardExpandExitTransition,
-            ) {
-                content()
+            if (visible || driveOwned) {
+                Box(
+                    androidx.compose.ui.Modifier
+                        .degradeRevealHeight {
+                            if (driveOwned) drive.h else if (visible) contentH.intValue.coerceAtLeast(0) else 0
+                        }
+                        .clipToBounds()
+                        .graphicsLayer {
+                            val full = contentH.intValue
+                            alpha = if (full > 0) {
+                                (if (driveOwned) drive.h else if (visible) full else 0)
+                                    .toFloat() / full.toFloat()
+                            } else {
+                                1f
+                            }
+                        },
+                ) {
+                    Box(
+                        androidx.compose.ui.Modifier.onSizeChanged { sz ->
+                            contentH.intValue = sz.height
+                            // 展开相终高随内容高追踪（流式增长中展开=追靶）
+                            if (visible && drive.hTarget != sz.height) drive.hTarget = sz.height
+                        },
+                    ) {
+                        content()
+                    }
+                }
             }
         }
         return

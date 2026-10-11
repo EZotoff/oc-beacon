@@ -356,7 +356,57 @@ internal class HeightReserveState {
 
     /** #540 二轮：toggle 时刻揭示盒高（塌缩区深度，资格判定界）。-1=未捕获。 */
     var expandCollapseSpanDepth: Int = -1
+
+    /**
+     * #540 三轮：在飞降级驱动（单槽）。卡侧 toggle 注册/完结注销；flush 每帧
+     * 经 [degradeDriveStep] 算步进、以 plan.driveStep 携带，在 applyPairedShift
+     * 单出口事务内推进（与滚动写同快照、同遍 measure 原子消费）。同流式 item
+     * 多卡并发 toggle 后注册者覆盖（先卡孤儿化回落稳态快照，罕见面）。
+     */
+    var degradeDrive: DegradeDriveState? = null
 }
+
+/**
+ * #540 三轮（用户三报「收起来回震荡」定罪）：降级 toggle 高度驱动态——盒布局
+ * 高由 flush 单事务步进（帽通道），取代 AnimatedVisibility 的帧内自驱尺寸动画。
+ *
+ * 定罪链：shrinkVertically 每帧在 measure 相直改布局高（收缩穿透 `min(child,
+ * reserved)` 帽天花板——帽只遮增长不遮收缩），而滚动修正是 pending 待定位、
+ * 下一遍 measure 才消费 → 每帧 draw 画在「新高度×旧滚动」错位态、下帧回位
+ * =逐帧交替震荡；展开常见几何被揭示缘否决门判零写入（单写者=LazyList 默认
+ * 锚定本就正确）故稳定——与用户三报「展开还好、收起震荡」精确吻合。soak
+ * 日志断言只验写入目标（数学正确），相位错不可见=五小时 13 次收起全绿仍震荡。
+ *
+ * 驱动后：高度步进与滚动写同快照、同遍 measure 原子生效（帽协议增长向的
+ * 对称复刻）；让位/手势帧步进随 plan 丢弃（幂等重算）→ 冻结而非错位。
+ */
+internal class DegradeDriveState(
+    hInitial: Int = 0,
+    /** 终态高：收起=0 / 展开=内容高；-1=展开中等内容测高（挂起相不步进）。 */
+    var hTarget: Int = -1,
+) {
+    /** 盒布局驱动高 px（快照态：flush 单写、布局层读）。 */
+    var h: Int by androidx.compose.runtime.mutableIntStateOf(hInitial)
+
+    val animating: Boolean get() = hTarget >= 0 && h != hTarget
+}
+
+/** 驱动步进纯函数（指数逼近 ~180ms@60fps，AV spring 观感等价）。0=稳态/等测高。 */
+internal fun degradeDriveStep(hCur: Int, hTarget: Int): Int {
+    if (hTarget < 0) return 0
+    val remaining = hTarget - hCur
+    if (remaining == 0) return 0
+    if (kotlin.math.abs(remaining) <= DEGRADE_DRIVE_SNAP_PX) return remaining
+    val step = (remaining * DEGRADE_DRIVE_FRACTION).toInt()
+    return if (step == 0) {
+        if (remaining > 0) 1 else -1
+    } else {
+        step
+    }
+}
+
+private const val DEGRADE_DRIVE_FRACTION = 0.32f
+private const val DEGRADE_DRIVE_SNAP_PX = 2
 
 /** 帽修饰符：测真高、报帽高；增量越界由外层 clipToBounds 裁剪。 */
 internal fun Modifier.streamingHeightReserve(state: HeightReserveState, itemKey: Any): Modifier {
@@ -409,7 +459,12 @@ internal fun HeightReserveState.hardReset() {
 }
 
 /** 释放决策（纯函数，单测缝）。null=本帧不释放（未初始化/无增量/手势持帽）。 */
-internal data class ReserveReleasePlan(val delta: Int, val scrollPaired: Boolean)
+internal data class ReserveReleasePlan(
+    val delta: Int,
+    val scrollPaired: Boolean,
+    /** #540 三轮：本帧降级驱动步进量（applyPairedShift 事务内推进盒高+帽预记）。 */
+    val driveStep: Int = 0,
+)
 
 internal fun reserveReleasePlan(
     reserved: Int,
@@ -736,6 +791,23 @@ private fun reservePhase(listState: LazyListState, reserve: HeightReserveState?)
     // [R1-A2] 单出口：帽 plan 延后与 ledger 配对合并为同帧单次滚动 set——
     // 原先帽 set 先落、ledger set 覆盖（requestPosition 覆盖写非叠加），同帧
     // 双补偿只活一笔；合并后两笔叠加一次原子生效。
+    // #540 三轮：降级驱动步进并入同一计划（步进与滚动配对同源同帧；正步进
+    // 沿用揭示缘否决——锚上方增长配对=自造位移）。手势期在下方 626 早退丢弃
+    // （幂等重算），驱动冻结而非错位。
+    val drive = reserve.degradeDrive
+    val dStep = if (drive != null) degradeDriveStep(drive.h, drive.hTarget) else 0
+    if (dStep != 0) {
+        val drivePaired = !(
+            dStep > 0 && reserve.expandPairingWindows > 0 &&
+                reserve.expandCollapseStickTop >= 0 && reserve.expandCollapseSpanDepth >= 0 &&
+                (reserve.reserved - listState.firstVisibleItemScrollOffset) < reserve.expandCollapseStickTop
+            )
+        return ReserveReleasePlan(
+            delta = (plan?.delta ?: 0) + dStep,
+            scrollPaired = if (plan != null) plan.scrollPaired || drivePaired else drivePaired,
+            driveStep = dStep,
+        )
+    }
     if (plan != null) {
         return plan
     }
@@ -843,9 +915,14 @@ private fun applyPairedShift(
             var wroteScroll = false
             var targetFii = listState.firstVisibleItemIndex
             var targetFiso = listState.firstVisibleItemScrollOffset
+            val dStepV = pendingPlan?.driveStep ?: 0
             androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
+                // #540 三轮：驱动步进与滚动写同快照（同遍 measure 原子消费）
+                if (dStepV != 0) reserve?.degradeDrive?.let { it.h += dStepV }
                 if (pendingPlan != null && reserve != null) {
-                    reserve.reserved = reserve.trueHeight
+                    // 三轮：驱动帧帽预记步进——下一 measure 盒高落地后恰好追平；
+                    // 旧 `= trueHeight` 会让残差帧再释放一步=重复记账
+                    reserve.reserved = reserve.trueHeight + dStepV
                     writtenReserve = true
                 }
                 // noop 格的 ledger 折加：塌缩零操作，但同帧增长配对义务仍履行
@@ -871,7 +948,7 @@ private fun applyPairedShift(
                 AppLogger.d(
                     "SGR-435",
                     "release-ref t=" + android.os.SystemClock.elapsedRealtime() +
-                        " capd=" + (pendingPlan?.delta ?: 0) + " led=" + ledgerTotal.toInt() +
+                        " capd=" + (pendingPlan?.delta ?: 0) + " drv=" + dStepV + " led=" + ledgerTotal.toInt() +
                         (if (wroteScroll) " set(fii=" + targetFii + ",fiso=" + targetFiso + ")" else " noop(outside-span)") +
                         (if (!anchorIsOwner) " anchor-not-owner" else "") +
                         " h->" + (if (writtenReserve) reserve?.trueHeight.toString() else "-"),
@@ -894,10 +971,13 @@ private fun applyPairedShift(
             dataKeyAt = dataKeyAt,
         )
         var writtenReserve = false
+        val dStepP = pendingPlan?.driveStep ?: 0
         androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
             // 帽释放（若有）：与滚动待定位同一事务——高度扩展与位移下一遍 measure 同 pass 消费
+            // #540 三轮：驱动步进同快照推进 + 帽预记（负向分支同款，见上）
+            if (dStepP != 0) reserve?.degradeDrive?.let { it.h += dStepP }
             if (pendingPlan != null && reserve != null) {
-                reserve.reserved = reserve.trueHeight
+                reserve.reserved = reserve.trueHeight + dStepP
                 writtenReserve = true
             }
             if (total != 0f) {
