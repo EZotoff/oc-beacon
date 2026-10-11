@@ -620,50 +620,66 @@ internal fun CardExpandReveal(
         val drive = remember { DegradeDriveState() }
         val driven = listState != null && pairingReserve != null
         if (driven) {
-            // 同值守卫改造（二轮④）：初值 false——**收起态挂载**不效应（避免每个
-            // 折叠卡 mount 都开窗）；**展开态挂载**（重组重建槽位 while expanded）
-            // 与真 toggle 一样开窗——重挂帧的 +H 全高入组合必须配对（同值守卫
-            // 曾让 fresh-mount visible=true 零窗裸落=未配对跳变面，exp3 现场同族）。
+            val pr = pairingReserve!!
+            // 同值守卫（二轮④）：**收起态挂载**不开窗（避免每个折叠卡 mount 都效应）；
+            // **展开态挂载**（重组重建槽位 while expanded）与真 toggle 一样开窗——
+            // 重挂帧的 +H 全高入组合必须配对。
+            //
+            // #540 三轮修订（真机 19:02 竞态定罪）：翻转检测+驱动注册+开窗必须在
+            // **组合期同步**完成——LaunchedEffect 在本帧布局后才执行，visible 翻转
+            // 的重组当帧 contentActive/hProvider 先读到未注册态（driveOwned=false）
+            // → 收起内容瞬时 dispose（h0=0）、展开瞬时满高（h0=tgt），驱动动画被
+            // 完全旁路成单帧裸落。同步注册后同帧布局即读 driveOwned=true → 盒高
+            // 钉在驱动态，塌缩/展开全程走 flush 步进（动画相走帽通道原义）。
             val toggled = remember { androidx.compose.runtime.mutableStateOf(false) }
-            LaunchedEffect(visible) {
-                if (!visible && !toggled.value) return@LaunchedEffect // 收起态挂载：非 toggle
-                toggled.value = visible
-                // 三轮：驱动注册——初高=当前盒高（展开挂载=0），终高=visible?
-                // 内容高（未测得先挂起 -1，onSizeChanged 落地）: 0。
-                drive.h = degradeH.intValue
-                drive.hTarget = if (visible) {
-                    if (contentH.intValue >= 0) contentH.intValue else -1
-                } else {
-                    0
+            // prevVis 初值 false：挂载即展开读作翻转（二轮④语义）；挂载折叠无翻转。
+            val prevVis = remember { androidx.compose.runtime.mutableStateOf(false) }
+            val toggleSeq = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+            if (visible != prevVis.value) {
+                prevVis.value = visible
+                if (visible || toggled.value) {
+                    toggled.value = visible
+                    // 驱动注册——初高=当前盒高（展开挂载=0），终高=visible?
+                    // 内容高（未测得先挂起 -1，onSizeChanged 落地）: 0。
+                    drive.h = degradeH.intValue
+                    drive.hTarget = if (visible) {
+                        if (contentH.intValue >= 0) contentH.intValue else -1
+                    } else {
+                        0
+                    }
+                    pr.degradeDrive = drive
+                    pr.expandPairingWindows++
+                    // 表述乙几何捕获（塌缩不变量：盒顶上方内容收起中不动）——距 item
+                    // 顶偏移=盒顶 root-Y − 物主 item 根 root-Y（CML 逐 placement 供给）。
+                    val stickTop: Int
+                    val spanDepth: Int
+                    val itemTop = pr.hostItemTopY
+                    val itemH = pr.trueHeight
+                    if (!itemTop.isNaN() && itemH >= 0 && !revealTopRootY.value.isNaN()) {
+                        stickTop = (revealTopRootY.value - itemTop).toInt().coerceAtLeast(0)
+                        spanDepth = degradeH.intValue
+                        pr.expandCollapseStickTop = stickTop
+                        pr.expandCollapseSpanDepth = spanDepth
+                    } else {
+                        stickTop = -1
+                        spanDepth = -1
+                    }
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.d(
+                            "CardExpand",
+                            "[DEBUG-540] pairing-window open host=" + hostItemKey.toString().take(24) +
+                                " windows=" + pr.expandPairingWindows +
+                                " reveal-geo stickTop=" + stickTop + " span=" + spanDepth +
+                                " itemH=" + itemH + " boxY=" +
+                                (if (revealTopRootY.value.isNaN()) "na" else revealTopRootY.value.toInt().toString()) +
+                                " drive h0=" + drive.h + " tgt=" + drive.hTarget,
+                        )
+                    }
+                    toggleSeq.intValue++
                 }
-                pairingReserve.degradeDrive = drive
-                pairingReserve.expandPairingWindows++
-                // 表述乙几何捕获（塌缩不变量：盒顶上方内容收起中不动）——距 item
-                // 顶偏移=盒顶 root-Y − 物主 item 根 root-Y（CML 逐 placement 供给）。
-                val stickTop: Int
-                val spanDepth: Int
-                val itemTop = pairingReserve.hostItemTopY
-                val itemH = pairingReserve.trueHeight
-                if (!itemTop.isNaN() && itemH >= 0 && !revealTopRootY.value.isNaN()) {
-                    stickTop = (revealTopRootY.value - itemTop).toInt().coerceAtLeast(0)
-                    spanDepth = degradeH.intValue
-                    pairingReserve.expandCollapseStickTop = stickTop
-                    pairingReserve.expandCollapseSpanDepth = spanDepth
-                } else {
-                    stickTop = -1
-                    spanDepth = -1
-                }
-                if (BuildConfig.DEBUG) {
-                    AppLogger.d(
-                        "CardExpand",
-                        "[DEBUG-540] pairing-window open host=" + hostItemKey.toString().take(24) +
-                            " windows=" + pairingReserve.expandPairingWindows +
-                            " reveal-geo stickTop=" + stickTop + " span=" + spanDepth +
-                            " itemH=" + itemH + " boxY=" +
-                            (if (revealTopRootY.value.isNaN()) "na" else revealTopRootY.value.toInt().toString()) +
-                            " drive h0=" + drive.h + " tgt=" + drive.hTarget,
-                    )
-                }
+            }
+            LaunchedEffect(toggleSeq.intValue) {
+                if (toggleSeq.intValue == 0) return@LaunchedEffect // 挂载折叠：无窗
                 try {
                     // E2E 边界定罪（540-fix-w1-r2）：静默期 toggle 时空卡时 AV 内容可
                     // 迟到（实测 +63ms）——toggle 时刻盒高与稳定值同值会让「3 帧稳定」
@@ -688,21 +704,21 @@ internal fun CardExpandReveal(
                         }
                     }
                 } finally {
-                    pairingReserve.expandPairingWindows--
-                    if (pairingReserve.expandPairingWindows <= 0) {
-                        pairingReserve.expandCollapseStickTop = -1
-                        pairingReserve.expandCollapseSpanDepth = -1
+                    pr.expandPairingWindows--
+                    if (pr.expandPairingWindows <= 0) {
+                        pr.expandCollapseStickTop = -1
+                        pr.expandCollapseSpanDepth = -1
                     }
                     // 三轮：驱动完结注销；未完结（40 帧上限早闭/手势冻结）保留槽给
                     // flush 续步（稳态步进=0 无害；下卡 toggle 覆盖之）。
-                    if (pairingReserve.degradeDrive === drive && !drive.animating) {
-                        pairingReserve.degradeDrive = null
+                    if (pr.degradeDrive === drive && !drive.animating) {
+                        pr.degradeDrive = null
                     }
                     if (BuildConfig.DEBUG) {
                         AppLogger.d(
                             "CardExpand",
                             "[DEBUG-540] pairing-window close host=" + hostItemKey.toString().take(24) +
-                                " windows=" + pairingReserve.expandPairingWindows,
+                                " windows=" + pr.expandPairingWindows,
                         )
                     }
                 }
@@ -728,7 +744,7 @@ internal fun CardExpandReveal(
         }
         // 三轮：驱动盒。高度唯一写者=flush（drive.h 仅在 applyPairedShift 事务内
         // 推进）；孤儿回落（单槽被并发卡覆盖，罕见面）=稳态快照（visible?内容高:0）。
-        val driveOwned = pairingReserve.degradeDrive === drive && drive.animating
+        val driveOwned = pairingReserve?.degradeDrive === drive && drive.animating
         Box(
             modifier = modifier
                 .onSizeChanged { degradeH.intValue = it.height }
