@@ -267,13 +267,17 @@ private fun PartContentInner(
                 val onToggleToolExpanded = LocalOnToggleToolExpanded.current
                 val expandReasoningDefault = LocalExpandReasoning.current
                 val rbExpanded = toolExpandedOrDefault(part.id, expandReasoningDefault)
-                androidx.compose.runtime.LaunchedEffect(part.id, rbExpanded) {
-                    dev.leonardo.ocbeacon.logging.AppLogger.w(
-                        "RB-EXP",
-                        "[DEBUG-rbexp] RB id=" + part.id.takeLast(8) + " expanded=" + rbExpanded +
-                            " mapHit=" + (toolStatesFlow.value[part.id] != null) +
-                            " default=" + expandReasoningDefault
-                    )
+                // #540 身份稳定性探针（勘察轮纠偏：原无条件 W 级违「探针 DEBUG-only」
+                // 裁决且 release 泄漏）——降 D 级并加守卫。
+                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                    androidx.compose.runtime.LaunchedEffect(part.id, rbExpanded) {
+                        dev.leonardo.ocbeacon.logging.AppLogger.d(
+                            "RB-EXP",
+                            "[DEBUG-rbexp] RB id=" + part.id.takeLast(8) + " expanded=" + rbExpanded +
+                                " mapHit=" + (toolStatesFlow.value[part.id] != null) +
+                                " default=" + expandReasoningDefault
+                        )
+                    }
                 }
                 // #442 B案（B4）：推理流式同走 bus 快通道——重组收敛到本块
                 //（combine/ChatMessageList 静默后块内 Text 重排版=必要工作面）。
