@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#547**（2026-10-11 #546 16KB 页对齐构建改进（MIUI 安装告警））。
+**编号**：全局递增，不回收。下一编号：**#548**（2026-10-11 #547 SILENT-STATE-RESET 残留变体—）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
@@ -56,6 +56,13 @@
 ## P1 — 核心功能需求
 
 
+- [ ] **#547 SILENT-STATE-RESET 残留变体——宿主换名级联派生 partId 前缀（展开态 map 脱靶）** `identity` `race` `ui`
+  - soak5r r13 定罪（23:25:23.140→.219，79ms）：用户展开后多消息轮次重组换宿主（新 turn item t_msg_12b91c58a 出现+RESIZE -4159/LEAP 7 项），派生 part id= 前缀随宿主变 → partId 键控展开态 map 脱靶 → 静默回退收起；无 toggle 日志
+  - 与四报根修（dedup 身份先行，MessageMergeEngine:312）同类不同源：那次是 REST 权威孪生换名（已修），这次是宿主消息级联；修复②驱动列表化 12 轮全绿零回归
+  - 修复方向（架构审查 C4 强化）：a) 展开状态键与宿主消息解耦（ExpandStateStore，推荐）b) merge/store 层换宿主时迁移 map 键 c) 宿主稳定扩展（#509 原地换名覆盖此重组路径）；顺带：RB-EXP 探针改打完整 id（takeLast(8) 前缀盲，N2）
+  - 证据：/home/leonardo/.cache/soak5r/r13_evidence.txt + report.md；发版前需修复或用户裁决接受残留
+  - 勘误：第一行「派生 part id= 前缀随宿主变」应为「派生 part id=<msgId>_reasoning_ord_N 的前缀随宿主消息 id 变」（登记时反引号被 shell 吞）
+
 ## P2 — 优化与锦上添花
 
 - [ ] **#545 IME 注入×历史会话加载竞态致主线程渲染冻结（BLANK-RENDER-FREEZE）** `ui` `ime` `race`
@@ -68,6 +75,7 @@
   - 前置：第一刀（#540）全绿签名当基线；重挂探针门（slot-compose/episode-start 测流式期重挂率）
   - → spec: docs/specs/2026-10-11-unified-expand-placement-design.md
   - 2026-10-11 review 轮登记两项同批：①ScrollCompensation 877/962 头注释漂移（dispatchRawDelta 旧述）②stick 槽 entryKey 标签化（同 item 双卡并发收起单槽冲突）
+  - 架构审查落账（2026-10-11 深夜，终包 soak5r 交叉对账后）：勘察 8 摩擦点合成六候选 C1-C6，递进 C2→C3→C1——C2 CardExpandClock 死机制清剿（advance/absorb/pinTargetFraction 等 100+ 行生产零调用+半测试文件，纯删零风险，可先行）；C3 applyPairedShift 三量分通道（plan.delta 污染和→帽/驱动/ledger 正交通道，~30 行反解蒸发，C1 前置）；C1=本卡主体（降级分支退役）。C4 ExpandStateStore 由 #547 实测强化（展开态键与宿主解耦为推荐修向）；C5 单写者化/C6 快赢包随 C1 顺势。报告存档 /tmp/architecture-review-20261011-height-engine.html（勘察全文+前后对比图）；正向否决门 reserve 级单槽（四报只修负向半边）并入 C1 范围
 
 - [~] **#543 #543 压缩卡换装重建窗双宿主——双 episode 双锚定三跳瞬态（R9 系统性 E2E 发现，定向复现已定罪）** `scroll` `chat`
   - 真机 R9 + 定向复现 2/4 RED：displayItems 重建（upsert:MergeStrategy→[452-display]）窗内同一压缩消息以两个不同 item key 的条目并存 ~300ms（两 CardExpandReveal 并发完整 episode），共享屏幕级 expansionKey 一次 toggle 点亮两宿主→同 +H 双锚定（111/127ms 间隔）→旧宿主离场收缩修正（R9 变体 −H 第三跳）；净效≈单次展开但三跳瞬态可见
