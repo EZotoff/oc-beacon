@@ -192,6 +192,7 @@ import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalSessionDiffs
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalSessionStreaming
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalToolExpandedStates
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalOnToggleToolExpanded
+import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalOnMigrateExpandAlias
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalTaskOutputFetcher
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalToolCardResolver
 import dev.leonardo.ocbeacon.ui.screens.chat.util.ImageAttachment
@@ -630,6 +631,10 @@ fun ChatScreen(
         // #429 L0:StateFlow 整体下沉(稳定身份),读者 per-key 派生读取
         LocalToolExpandedStates provides viewModel.toolExpandedStates,
         LocalOnToggleToolExpanded provides onToggleToolExpandedLambda,
+        // #547：展开态键别名收养（身份键演化时旧键状态单向迁移）
+        LocalOnMigrateExpandAlias provides { fromKey, toKey ->
+            viewModel.migrateExpandAlias(fromKey, toKey)
+        },
         LocalToolCardResolver provides viewModel.toolCardResolver,
         // #182：Task 卡片展开时的全量输出拉取（part 优先→降级子智能体会话 transcript）
         LocalTaskOutputFetcher provides { partId, subSessionId ->

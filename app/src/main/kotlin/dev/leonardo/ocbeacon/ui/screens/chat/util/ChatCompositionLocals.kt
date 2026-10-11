@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import dev.leonardo.ocbeacon.domain.model.FileDiff
+import dev.leonardo.ocbeacon.domain.model.PartIdContract
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.DefaultToolCardResolver
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.ToolCardResolver
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,6 +68,47 @@ val LocalToolExpandedStates = compositionLocalOf<StateFlow<Map<String, Boolean>>
 internal fun toolExpandedOrDefault(key: String, default: Boolean = false): Boolean {
     val states: State<Map<String, Boolean>> = LocalToolExpandedStates.current.collectAsState()
     return remember(key) { derivedStateOf { states.value[key] ?: default } }.value
+}
+
+/**
+ * #547：展开状态稳定键——派生契约 id（`<messageId>_<kind>_ord_<n>`，V1/V2/DSH
+ * 流式 text/reasoning）内嵌宿主消息 id：多消息 turn 重组换宿主时前缀级联漂移 →
+ * partId 键控展开态 map 脱靶 → 静默回退收起（soak5r r13：toggle 后 79ms 无
+ * toggle 日志清回）。服务器赋值 id（工具/patch/shell…）自身稳定，原样直通；
+ * 仅派生 id 改按「kind + 空白归一化前缀指纹」键控：
+ * - 流式 append 只增长 → 归一化长度 ≥ 窗口后前缀指纹恒定（toggle 后继续输出不丢）；
+ * - 换宿主内容不变 → 跨重组稳定（本卡修复目标）；
+ * - 空白折叠两套字节表示（#515 H1 勘误同源）归一后同键；
+ * - 归一化前缀全同的两张卡同键（同开同关、会话内存态下罕见且无害——非错位）。
+ * 键演化窗口（成长跨窗/空白期直通→首内容）：由消费点别名收养
+ * （[LocalOnMigrateExpandAlias]）单向迁移旧键状态，mapHit 不闪断。
+ * 空白文本退回原 id（started 未收 delta 的零内容卡无可指纹物，亦无展开价值）。
+ * C4（ExpandStateStore 单一真相源）落地时本键即其键律。
+ */
+object ExpandStateKeys {
+    private const val PREFIX_CHARS = 96
+
+    fun forPart(partId: String, text: String): String {
+        if (!PartIdContract.isDerived(partId) || text.isBlank()) return partId
+        val kind = if (partId.contains(PartIdContract.REASONING_MARKER)) "r" else "t"
+        val sb = StringBuilder(PREFIX_CHARS + 8)
+        for (c in text) {
+            if (c.isWhitespace()) continue
+            sb.append(c)
+            if (sb.length >= PREFIX_CHARS) break
+        }
+        return "x$kind:" + sb.toString().hashCode().toUInt().toString(16)
+    }
+}
+
+/**
+ * #547：展开态键别名收养——卡片身份键演化（流式增长跨指纹窗、空白直通→首内容）
+ * 时旧键状态单向迁移到新键（一次性、幂等；旧键残留无害——map 本就 append-only）。
+ * 消费点在组合期同步调用（LaunchedEffect 晚一帧=一帧假塌缩闪烁，#540 四报
+ * 组合期同步注册同款先例）。
+ */
+val LocalOnMigrateExpandAlias = staticCompositionLocalOf<(fromKey: String, toKey: String) -> Unit> {
+    { _, _ -> }
 }
 
 /** 通过 part id 切换工具卡片展开状态的回调。 */

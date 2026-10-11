@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -266,15 +267,38 @@ private fun PartContentInner(
                 val toolStatesFlow = LocalToolExpandedStates.current
                 val onToggleToolExpanded = LocalOnToggleToolExpanded.current
                 val expandReasoningDefault = LocalExpandReasoning.current
-                val rbExpanded = toolExpandedOrDefault(part.id, expandReasoningDefault)
+                // #547：展开态稳定键（派生 id 内嵌宿主前缀，多消息 turn 重组换宿主
+                // 即漂移 → map 脱靶静默收起）；读/写同键，跨重组/跨流式增长恒等。
+                val rbStateKey = dev.leonardo.ocbeacon.ui.screens.chat.util.ExpandStateKeys.forPart(part.id, part.text)
+                // #547 别名收养：键演化（增长跨指纹窗/空白直通→首内容）时旧键状态
+                // 单向迁移到新键——组合期同步执行（LaunchedEffect 晚一帧=一帧假塌缩，
+                // #540 四报组合期同步注册同款先例）。幂等（新键有值不覆盖）。
+                val onMigrateExpandAlias = dev.leonardo.ocbeacon.ui.screens.chat.util.LocalOnMigrateExpandAlias.current
+                var rbLastKey by androidx.compose.runtime.remember(part.id) {
+                    androidx.compose.runtime.mutableStateOf(rbStateKey)
+                }
+                val rbKeyJustChanged = rbLastKey != rbStateKey
+                if (rbKeyJustChanged) {
+                    onMigrateExpandAlias(rbLastKey, rbStateKey)
+                    rbLastKey = rbStateKey
+                }
+                // 键切换帧读 StateFlow 权威值（migrate 同步写已完成；collectAsState
+                // 镜像下一帧才跟上——读镜像=一帧假塌缩，驱动盒方向翻转的复活入口）。
+                val rbExpanded = if (rbKeyJustChanged) {
+                    toolStatesFlow.value[rbStateKey] ?: expandReasoningDefault
+                } else {
+                    toolExpandedOrDefault(rbStateKey, expandReasoningDefault)
+                }
                 // #540 身份稳定性探针（勘察轮纠偏：原无条件 W 级违「探针 DEBUG-only」
                 // 裁决且 release 泄漏）——降 D 级并加守卫。
                 if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-                    androidx.compose.runtime.LaunchedEffect(part.id, rbExpanded) {
+                    androidx.compose.runtime.LaunchedEffect(part.id, rbStateKey, rbExpanded) {
                         dev.leonardo.ocbeacon.logging.AppLogger.d(
                             "RB-EXP",
-                            "[DEBUG-rbexp] RB id=" + part.id.takeLast(8) + " expanded=" + rbExpanded +
-                                " mapHit=" + (toolStatesFlow.value[part.id] != null) +
+                            // #547 N2：完整 id（takeLast(8) 前缀盲——r13 靠 mapHit 塌缩才定罪）
+                            "[DEBUG-rbexp] RB id=" + part.id + " key=" + rbStateKey +
+                                " expanded=" + rbExpanded +
+                                " mapHit=" + (toolStatesFlow.value[rbStateKey] != null) +
                                 " default=" + expandReasoningDefault
                         )
                     }
@@ -302,7 +326,7 @@ private fun PartContentInner(
                 ReasoningBlock(
                     text = liveReasoning ?: part.text,
                     isExpanded = rbExpanded,
-                    onToggleExpand = { onToggleToolExpanded(part.id, expandReasoningDefault) },
+                    onToggleExpand = { onToggleToolExpanded(rbStateKey, expandReasoningDefault) },
                     durationMs = reasoningDuration,
                     isStreaming = isStreaming,
                     startTimeMs = startTimeMs,

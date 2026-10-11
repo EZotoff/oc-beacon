@@ -671,6 +671,10 @@ class ChatViewModel @Inject constructor(
     fun isToolExpanded(toolId: String, autoExpand: Boolean): Boolean =
         messageData.isToolExpanded(toolId, autoExpand)
 
+    // #547：展开态键别名收养（身份键演化时旧键状态单向迁移）
+    fun migrateExpandAlias(fromKey: String, toKey: String) =
+        messageData.migrateExpandAlias(fromKey, toKey)
+
     // ============ 滚动状态 ============
     // 历史：默认 LazyListPrefetchStrategy 每次只预取 1 个 item，fling 快速滚动
     // （向下滑/看更旧）时预取跟不上 → item 进入视口才现场组合（重型 Markdown
