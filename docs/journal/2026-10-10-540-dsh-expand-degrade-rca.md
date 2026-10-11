@@ -405,3 +405,14 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
 
 - 19:23 beta（0.4.0-beta/41 沿用测试包豁免；release 验签 ✓）含 §26/§27/§31 全部根修（逐帧镜像+否决门+帧前高度+驱动盒+竞态热修）。
 - PLK110 USB 已拔（用户取走）；beta 落装 **houji**（覆盖 0.3.0→0.4.0-beta，19:24:10 生效，同证书保配置）。PLK110 侧待重插后 `pm install -r` 补装（APK 就绪于 `app/build/outputs/apk/beta/release/`）。
+
+## §33 四报收官——SILENT-STATE-RESET 定罪（partId 换名）+ 双根修 + soak4r + 复验
+
+- **四报**（用户 beta 复测：流式中连点展开/收起，每次结果不同，疑竞态严重）。
+- **系统性 soak4r**（subagent，12 轮 67 分钟，55 degrade toggle/64 窗全配对）：红线全绿（零 FATAL/零负窗/零 release-dis/零跨卡覆盖窗）；七类竞态签名扫描命中真凶——
+- **🔴 SILENT-STATE-RESET 定罪**（soak4r c9，RB-EXP 探针验尸）：展开完成的思考卡 2 秒内**无任何 toggle 日志**静默回退收起；id 从 `ng_ord_0`（=…_reasoning_ord_0 派生契约 id 尾 8 字符）变为 `bbb657fa`（REST 真实 partId）。根因链：分段切换（thinking part 结束/answer attach）REST 权威刷新 → `dedupOverlappingTextParts` 内容重叠判胜 → REST 侧胜出携真实 id 落位 → **partId 换名** → partId 键控的展开状态 map 查无此键 → 默认收起。此为 #266 身份回填（mergePart 侧）的 dedup 侧缺口；#509 只覆盖 DSH part id 首帧稳定，V2 派生 id 仍漂。
+- **根修 A（竞态三连，commit「驱动列表化」）**：①驱动单槽→列表制（多卡并发不互逐不孤儿）；②stick/span 随卡走 + `driveScrollShift` 逐卡 containment（单卡与旧判定表逐点等价，测试锁定）；③快速重向权威续值（drive.h 不被滞后一拍的放置值回拨）；④非驱动负余量过区界门。4033 测试绿。
+- **根修 B（换名，commit「dedup 胜者身份先行」）**：dedup 胜者**身份先行、内容权威**——胜者采派生契约 id（流式在册身份，兼防 Room 孤儿行）；双侧 legacy 维持原语义。+3 单测（REST 权威胜出保派生 id/mergePartsList 装配序落回派生 id/双 legacy 不受影响）。4036 全绿。
+- **复验（houji dev 21:27）**：①展开态跨分段存活 PASS——id 70s 全程 `ng_ord_0` 稳定（覆盖思考段完结=原 2s 复位点）、expanded=true 不丢；②连点爆发命中 toggle 签名教科书级（h0=3946 同步注册、指数步进 -1262→-12 每帧同快照 set()、fiso 骑降钳 0、锚离物主后 noop 守卫、零负窗零 FATAL）。8 连点仅 2 命中系卡头漂移+贴顶滚动推离（测试面，soak 已证；产品面健康）。
+- **次要发现**（不阻塞，#544 域）：#2 窗双开（分段边界自动路径 5ms 重入，id 稳定后预期消失，观察）；#3 流结束后 toggle 仍走降级路径/流中反走机件（episode 路由时序，无视觉损害）；#4 大 capd 单帧=设计内 deferred dispatch。
+- **交付**：beta 21:34 包（0.4.0-beta/41）落装 houji；PLK110 待重插补装（APK 就绪）。soak4r 证据 `/home/leonardo/.cache/soak4r/`（52 场景日志+40 录屏 470MB）。

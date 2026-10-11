@@ -87,6 +87,7 @@
   - 2026-10-11 用户二报①展开震②收起拖上半部→②两 face 定罪即修（跳揭示缘改逐帧镜像骑行+盒上方漏配镜像扩展，判定表三态重写，journal §26）；①正向否决门已加（tap 几何不可达，护④重挂面）+残余候选归档（#544 原子性/重组churn 待复测口径）
   - 5h soak 收官（journal §28）：53 周期/13 收起锤炼/红线全绿（零崩溃·windows 无负·旧通道零出现）；双 DEFECT 亲自取证均判非缺陷（窗后 yield=turn 完成重映射边界态；镜像偏差=断言模型不含塌缩动画推进量，写入本身正确）；BLANK-RENDER-FREEZE 环境发现拆至 #545；beta 14:49 重打含全部根修，待装真机交复测
   - 三轮根修（journal §31）：AV 尺寸退役为 flush 单事务驱动盒（相位差震荡定罪）+竞态热修（注册挪组合期同步段）；真机五腿+帧级数值验证零震荡；待 beta 四测
+  - 四报收官（journal §33）：soak4r 定罪 SILENT-STATE-RESET（REST 权威刷新 partId 换名→展开态 map miss 静默收起）+竞态三连（单槽驱逐/几何覆盖/重向回拨）；双根修（dedup 身份先行+驱动列表化）4036 绿；复验 id 70s 稳定+连点签名健康；beta 21:34 已装 houji 待用户五测
 
 - [ ] **#522 B案升 stable 后余留装备清扫——JankHoldGate A/B 开关 + STREAM_DELTA_BUS 旗标退役（#499 余留范围）** `chore` `refactor`
   - 前置：STREAM_SHARD_PILOT / STREAM_DELTA_BUS 升 stable 并观察一批——当前 stable 均 false，JankHold 冻结链在 stable 仍是承重活体（B案开=旁路），现退役会回归 stable 流式滚动组合风暴。
