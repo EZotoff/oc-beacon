@@ -10,6 +10,10 @@ No new palette, motion system, or dependency is introduced.
 A centered, single-column mini-display, at most 360dp wide. Home presents at most
 two attention summaries, a divider, and one current project/session. Neighbor
 labels are single-line, ellipsized; selection is bold and uses primary color.
+An attention summary's primary text is the card `headline` — depth 1 of the contract's
+progressive-disclosure pyramid (portable-supervisor-contract Amendment 2026-10-11);
+`ask`/`options`/`recommendation` render in the Detail dive; legacy `reasonText`
+becomes expandable audit detail. Glance takes no input (glance → dive → answer).
 Interactive rows are at least 48dp high. PTT remains 72dp in the thumb zone.
 Supervisor presentation replaces the home body, never adds a second pane.
 Its list/choice/table/progress/diff content is paged in groups of three; text is
