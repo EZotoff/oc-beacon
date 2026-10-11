@@ -442,7 +442,7 @@ class FlushTaskPhasesTest {
     fun `540 三轮 纯驱动帧 - 步进与滚动写同快照原子推进（震荡根修）`() {
         mockkObject(LazyListReflection)
         mockkObject(ScrollQuiescence)
-        val drive = DegradeDriveState(hInitial = 1000, hTarget = 0)
+        val drive = DegradeDriveState(hInitial = 1000, hTarget = 0, stickTop = 405, spanDepth = 1000)
         val reserve = HeightReserveState().apply {
             itemKey = "k1"
             trueHeight = 2303 // 实测已含历史步进；预记账恰好追平 → 纯驱动帧
@@ -450,7 +450,7 @@ class FlushTaskPhasesTest {
             expandPairingWindows = 1
             expandCollapseStickTop = 405
             expandCollapseSpanDepth = 1000
-            degradeDrive = drive
+            degradeDrives.add(drive)
         }
         // 锚 fiso=1303 → 距顶 2303−1303=1000 ≤ 1405（镜像侧）
         val state = stateWithOwnerItem(7, 1303, ownerIndex = 7)
@@ -476,7 +476,7 @@ class FlushTaskPhasesTest {
             trueHeight = 1000
             reserved = 1000
             expandPairingWindows = 1
-            degradeDrive = drive
+            degradeDrives.add(drive)
         }
         val state = mockk<LazyListState>(relaxed = true) {
             every { firstVisibleItemIndex } returns 7
@@ -495,7 +495,7 @@ class FlushTaskPhasesTest {
     fun `540 三轮 展开步进锚在揭示缘上方 - 否决配对但高度仍原子推进`() {
         mockkObject(LazyListReflection)
         mockkObject(ScrollQuiescence)
-        val drive = DegradeDriveState(hInitial = 0, hTarget = 1000)
+        val drive = DegradeDriveState(hInitial = 0, hTarget = 1000, stickTop = 1500, spanDepth = 400)
         val reserve = HeightReserveState().apply {
             itemKey = "k1"
             trueHeight = 2000
@@ -503,7 +503,7 @@ class FlushTaskPhasesTest {
             expandPairingWindows = 1
             expandCollapseStickTop = 1500
             expandCollapseSpanDepth = 400
-            degradeDrive = drive
+            degradeDrives.add(drive)
         }
         // 锚距顶 2000−1000=1000 < 1500 → 锚在揭示缘上方：正步进否决配对（二轮
         // 修订同款——锚所见内容不动，配对位移=自造推动）
@@ -514,5 +514,53 @@ class FlushTaskPhasesTest {
         assertEquals(320, drive.h)
         assertEquals(2320, reserve.reserved)
         verify(exactly = 0) { LazyListReflection.requestScrollToItemNoCancel(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `540 四报 多卡驱动 - 锚上方卡镜像+锚下方卡零操作,双卡高度均推进`() {
+        mockkObject(LazyListReflection)
+        mockkObject(ScrollQuiescence)
+        // 卡A：stick=300 区 [300,1300]，步 -320（锚 anchorTop=1000 区内→镜像）
+        val driveA = DegradeDriveState(hInitial = 1000, hTarget = 0, stickTop = 300, spanDepth = 1000)
+        // 卡B：stick=100 区 [100,150]，步 -160（锚 1000 > 150 卡下方→零操作）
+        val driveB = DegradeDriveState(hInitial = 500, hTarget = 0, stickTop = 100, spanDepth = 50)
+        val reserve = HeightReserveState().apply {
+            itemKey = "k1"
+            trueHeight = 3500
+            reserved = 3500
+            expandPairingWindows = 1
+            expandCollapseStickTop = 100 // reserve 级镜像=最新 toggle（卡B）
+            expandCollapseSpanDepth = 50
+            degradeDrives.add(driveA)
+            degradeDrives.add(driveB)
+        }
+        // 锚 fiso=2500 → anchorTop = 3500−2500 = 1000
+        val state = stateWithOwnerItem(7, 2500, ownerIndex = 7)
+        every { state.dispatchRawDelta(any()) } returns 0f
+        assertTrue(streamingGrowFlushTask(state, emptyLedger(), reserve).onPreDraw())
+        // 滚动分量=只有卡A（-320）：目标 2500−320=2180；卡B 零操作（区外）
+        verify(exactly = 1) { LazyListReflection.requestScrollToItemNoCancel(any(), 7, 2180, null) }
+        verify(exactly = 0) { state.dispatchRawDelta(any()) }
+        // 双卡高度都推进（原子性不分卡）
+        assertEquals(680, driveA.h)
+        assertEquals(340, driveB.h)
+        // 帽预记 = trueHeight + Σ(-480)
+        assertEquals(3020, reserve.reserved)
+    }
+
+    @Test
+    fun `540 四报 driveScrollShift 纯函数 - containment 逐卡判定与未捕获保守`() {
+        val a = DegradeDriveState(hInitial = 100, hTarget = 0, stickTop = 100, spanDepth = 50).apply { pendingStep = -30 }
+        val b = DegradeDriveState(hInitial = 100, hTarget = 0, stickTop = 400, spanDepth = 50).apply { pendingStep = -20 }
+        val uncaptured = DegradeDriveState(hInitial = 100, hTarget = 0).apply { pendingStep = -10 }
+        // 语义：锚在卡上方（anchorTop<stick）或区内 → 该卡塌缩移动锚内容 → 计入；
+        //        锚在卡下方（anchorTop>stick+span）→ 零操作。锚 120 在 A 区内且在 B 上方 → 三者全计入
+        assertEquals(-60, driveScrollShift(120, listOf(a, b, uncaptured)))
+        // 锚 500：在 A 下方（500>150）且 B 下方（500>450）→ 仅未捕获保守计入
+        assertEquals(-10, driveScrollShift(500, listOf(a, b, uncaptured)))
+        // 边界：锚=stick+span 恰在界上（区内含，A 计入；锚仍处 B 上方计入）
+        assertEquals(-50, driveScrollShift(150, listOf(a, b)))
+        // 锚 151：A 下方零操作；B 上方仍计入
+        assertEquals(-20, driveScrollShift(151, listOf(a, b)))
     }
 }

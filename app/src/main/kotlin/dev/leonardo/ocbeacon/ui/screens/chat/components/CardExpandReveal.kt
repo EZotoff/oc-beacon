@@ -639,18 +639,23 @@ internal fun CardExpandReveal(
                 prevVis.value = visible
                 if (visible || toggled.value) {
                     toggled.value = visible
-                    // 驱动注册——初高=当前盒高（展开挂载=0），终高=visible?
-                    // 内容高（未测得先挂起 -1，onSizeChanged 落地）: 0。
-                    drive.h = degradeH.intValue
+                    // 驱动注册——四报修订：列表制（多卡并发不互逐）+ 权威续值
+                    //（快速重向时 drive.h 是本帧已 pending 的高度真值，degradeH
+                    // 是上一放置值滞后一步——覆盖会把动画往回拨一步=连点抖动源）。
+                    val mineAlready = pr.degradeDrives.any { it === drive }
+                    drive.h = if (mineAlready && drive.animating) drive.h else degradeH.intValue
                     drive.hTarget = if (visible) {
                         if (contentH.intValue >= 0) contentH.intValue else -1
                     } else {
                         0
                     }
-                    pr.degradeDrive = drive
+                    if (!mineAlready) pr.degradeDrives.add(drive)
                     pr.expandPairingWindows++
                     // 表述乙几何捕获（塌缩不变量：盒顶上方内容收起中不动）——距 item
                     // 顶偏移=盒顶 root-Y − 物主 item 根 root-Y（CML 逐 placement 供给）。
+                    // 四报：几何**随卡走**（drive.stickTop/spanDepth）——reserve 级
+                    // 镜像字段只服务正向否决门（最新 toggle 意图），负向滚动分量
+                    // 已逐卡判定（driveScrollShift），不再被后卡覆盖。
                     val stickTop: Int
                     val spanDepth: Int
                     val itemTop = pr.hostItemTopY
@@ -658,11 +663,15 @@ internal fun CardExpandReveal(
                     if (!itemTop.isNaN() && itemH >= 0 && !revealTopRootY.value.isNaN()) {
                         stickTop = (revealTopRootY.value - itemTop).toInt().coerceAtLeast(0)
                         spanDepth = degradeH.intValue
+                        drive.stickTop = stickTop
+                        drive.spanDepth = spanDepth
                         pr.expandCollapseStickTop = stickTop
                         pr.expandCollapseSpanDepth = spanDepth
                     } else {
                         stickTop = -1
                         spanDepth = -1
+                        drive.stickTop = -1
+                        drive.spanDepth = -1
                     }
                     if (BuildConfig.DEBUG) {
                         AppLogger.d(
@@ -709,10 +718,10 @@ internal fun CardExpandReveal(
                         pr.expandCollapseStickTop = -1
                         pr.expandCollapseSpanDepth = -1
                     }
-                    // 三轮：驱动完结注销；未完结（40 帧上限早闭/手势冻结）保留槽给
-                    // flush 续步（稳态步进=0 无害；下卡 toggle 覆盖之）。
-                    if (pr.degradeDrive === drive && !drive.animating) {
-                        pr.degradeDrive = null
+                    // 三轮：驱动完结注销（四报列表制）；未完结（40 帧上限早闭/手势
+                    // 冻结）保留在列表给 flush 续步（稳态步进=0 无害）。
+                    if (!drive.animating) {
+                        pr.degradeDrives.removeAll { it === drive }
                     }
                     if (BuildConfig.DEBUG) {
                         AppLogger.d(
@@ -744,7 +753,7 @@ internal fun CardExpandReveal(
         }
         // 三轮：驱动盒。高度唯一写者=flush（drive.h 仅在 applyPairedShift 事务内
         // 推进）；孤儿回落（单槽被并发卡覆盖，罕见面）=稳态快照（visible?内容高:0）。
-        val driveOwned = pairingReserve?.degradeDrive === drive && drive.animating
+        val driveOwned = pairingReserve?.degradeDrives?.contains(drive) == true && drive.animating
         Box(
             modifier = modifier
                 .onSizeChanged { degradeH.intValue = it.height }
