@@ -384,3 +384,10 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
 - 14:49 beta 包验签后装机两次失败：`adb install` 会话卡死（3.5min 无响应）→ push/pm install 报 `connect failed: closed / device offline`——houji 无线 adb 闪断再发作（[[wireless-adb-flapping]] 已知史）。
 - 与既往「端口轮换」不同：mDNS 广播完全消失（旧记录 192.168.1.110:41571 拒连且不再刷新），15min 后台轮询 60 次未自愈 → 判定设备端无线调试服务整体掉线，需物理介入（重开无线调试或插 USB）。
 - 按真机纪律未触碰任何系统设置。APK 已就绪：`app/build/outputs/apk/beta/release/app-beta-release.apk`（0.4.0-beta/41，14:49，含 §23-§27 全部根修）。恢复连接后直接 pm install -r 覆盖装（同证书，无数据迁移）。
+
+## §30 装机落定——用户指令 USB 通道，实装 PLK110
+
+- houji 无线仍离线；用户 17:13 指令改走 USB——实际接入设备为 PLK110（3B165D00SX600000，USB transport，用户以此解禁本机本次安装操作）。
+- pm install -r 成功（17:13:46，versionCode=41/0.4.0-beta，覆盖 03:04 旧根修链包；同证书保数据保配置）。
+- reverse 重建：tcp:4096（v2）+ tcp:4199（v1）；设备侧 curl 127.0.0.1:4096/doc = 200 连通验证通过。
+- 复测面就绪：流式输出中展开（①震）+ 收起（②拖上半部）；PLK110 侧 beta 已含 §23–§27 全部根修。
