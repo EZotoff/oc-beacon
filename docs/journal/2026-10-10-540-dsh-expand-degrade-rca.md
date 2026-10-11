@@ -356,3 +356,14 @@ DSH 类型服务器会话中，SSE 输出的时候（输出后）**有时候**�
 
 **实施**：shrinkPairedTargetFiso 判定表重写（镜像/零操作/未捕获三态）；applyPairedShift 负向调用链简化（未捕获镜像并入纯函数）；reservePhase 计算 anchorAboveReveal 接线。测试：ShrinkPairedTargetTest 重写 8 判定；FlushTaskPhasesTest 改 3 增 2（镜像骑行/盒下方 noop+ledger 折加）；ReserveReleasePlanTest 增 3（否决正增长/负向不受否决/未否决恒配对）。全量 --rerun 绿；compile 绿。真机复验腿因流式目标 tap 漂移两次未命中（a11y 内容级盲化+卡片移动窗），行为面以单测矩阵+先前通道级 E2E（release-ref 反射链不变）收口，交用户 beta 复测直接验证。
 
+
+## ## 27. 根修审计（帧前高度）+ 炮台驱动可靠性定罪 + 5h soak 发射（2026-10-11 上午）
+
+**根修审计定罪（用户「确保根修」指令驱动）**：判定表锚位原用帧后真高（trueH−fiso）——塌缩帧 trueH 已含本帧收缩量，锚位被低估一个 δ（初帧 δ 实测可达数百 px），盒下方临界锚会误入镜像侧被拖。根修=帧前高度（reserved−fiso；帽协议下 reserved 恰为评估时刻未释放值，递归自洽：上帧释放后 reserved=上帧后高=本帧前高）——判定边界与 toggle 时刻捕获几何严格对齐。正向否决门同修。参数更名 itemPreH+KDoc 承载；单测全量绿（判定值全部不变=夹具本就是 toggle 时刻高度语义）。
+
+**炮台驱动可靠性定罪（非产品缺陷）**：rr-battery v1/v2 三轮 tap 全空——定罪链：uiautomator dump 取文档序第一卡=旧轮完结卡（走机件路径无 degrade 签名）→v2 改取最底卡仍空→活体取证：tap 事件均送达（MIUIInput DOWN/UP 在案）但 RB-EXP mapHit=false 无 toggle 注册+像素差分被流式刷新淹没——定性=**流式目标上 dump 驱动 tap 的组合不可靠**（陈旧树+目标移动+偶发未注册三因叠加，#477 域已知面的 tap 侧形态）。测试策略重构=验证式 tap 协议（位置双读稳定才 tap+签名验证+位移重试）并入 5h soak 分身执行。
+
+**5h soak 发射**（subagent driven，用户指令）：25 成功周期目标/5h 上限；变体矩阵（思考相/文本相/静态/连击×prompt 轮换含长卡轮）；断言组=展开（geo+零旧通道+配对）/收起（镜像骑行逐帧校验±4px+单调+无大跳）/连击（计数配对）/全局红线（零 FATAL/零 release-dis/零 windows 负）；缺陷分诊（tap-miss≠缺陷；断言 FAIL 保留片段继续；FATAL 循环才提前终止）。工件 /tmp/soak5h/。
+
+**beta 时序注记**：03:29 beta 不含本节帧前高度根修——soak 通过后重打。
+
