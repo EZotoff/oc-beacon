@@ -63,6 +63,9 @@
   - 监视器已布防（watch6b.sh：beta 前台时 gfxinfo 10s 零新帧=冻结嫌疑自动抓 dump/截图/logcat，~2.7h 窗口）；用户在 beta-3 复测报告①时若②复发即有现场
   - 复验轮（subagent 22:30-23:27，REVERIFY-REPORT.md）：B3/B4 fresh 复验被上游 provider 凭据失效阻塞（22:41 起免费+付费层全线 401/零输出，用户域凭据问题）——同构建间接证据（probe6 23×focus 全绿/p6b 40×全绿/s5+fuzz 无真命中）支持未见跳跃/死 UI；补跑脚本就绪 repro6c_dev.sh/repro6c_beta.sh（含前台包校验——勘误：此前 p6c beta 轮实为 dev 前台误测，两包同代码结论不变）
   - B1（高度偏移）同构建历史 5 轮全绿+B2（贴底上向）fresh+历史双证 PASS；新发现扫描器误报类：IME inset 动画窗（键盘收起 notifyFinished/onReady 产生 −838/−753 单次外部位移，非手势非 toggle）——scan5r5 需补 IME 窗排除（登记入 #549 修向附带）
+  - 环境修复+补验收官（2026-10-13 凌晨）：所谓凭据全线失效实为双源——zhipuai-coding-plan 余额耗尽（curl 实证 error 1113，充值属用户域）+opencode 免费中继账号凭据失效（401，重登录属用户域）；deepseek key 活着（余额 91 元）但模型 id 被误用（deepseek-reasoner 不在册，正确为 deepseek-flash/v4-pro）——改走 deepseek-flash 后测试链全恢复（出流+reasoning）
+  - B3/B4 补验（用户原话协议：空起步展开×12+ 轮，dev 探针版）：零真命中——全部 TITLE-GONE 经 dump 定罪=思考卡被流式答案顶出 a11y 视口（屏幕实为答案正文+完成栏，正常贴底 UX）；唯一 OSC=markdown 表格重排凹陷（数据驱动合法补偿）；零 DEAD-UI/FOCUS-0。判定：四刀修复版上 B3/B4 未复现
+  - 工具教训：TITLE 存活探针须带滚动感知（a11y 视口裁剪伪影）；scan5r5 需补 IME-inset 窗排除与重排凹陷容忍（本轮三类伪影全记录在案）
 
 - [ ] **#549 fuzz 发现残余族——动画边界帽-驱动清算净错（重向 slam/贴底不累积/尾段往返三脸）** `scroll` `race` `chat`
   - 五报四刀后随机 fuzz（真机 25 轮+模拟器 11 轮）挖出的低频残余族（~4 实例/43 轮 ≈ 9%），跨设备独立复现非伪影；三脸同源=帽-驱动通道动画边界清算净错——C3 三通道只拆了正向分支，负向 nonDriveNeg 提取与帽账本在重向/动画尾段仍污染
