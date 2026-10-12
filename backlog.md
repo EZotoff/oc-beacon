@@ -61,6 +61,8 @@
   - 已排除：ReasoningBlock 标题行无条件常驻（非设计显隐）；dev 包 23 探针轮+beta 包 40 探针轮（focus/dump 响应性）零死 UI；logcat 缓冲无 FATAL/ANR/输入超时；graphicsLayer alpha=0+clipToBounds 零高盒的命中域不构成持久盾（瞬态窗口）
   - 在查假设：#545 BLANK-RENDER-FREEZE 同族（渲染冻结仅 force-stop 可恢复——待用户差分：是否 force-stop 才恢复/离开重进屏幕是否自愈）；beta-2 无四刀的闪光脸下游（巨型内容单帧全量组合=长主线程停顿——beta-3 复测差分）；#547 组合期写流的后向写面
   - 监视器已布防（watch6b.sh：beta 前台时 gfxinfo 10s 零新帧=冻结嫌疑自动抓 dump/截图/logcat，~2.7h 窗口）；用户在 beta-3 复测报告①时若②复发即有现场
+  - 复验轮（subagent 22:30-23:27，REVERIFY-REPORT.md）：B3/B4 fresh 复验被上游 provider 凭据失效阻塞（22:41 起免费+付费层全线 401/零输出，用户域凭据问题）——同构建间接证据（probe6 23×focus 全绿/p6b 40×全绿/s5+fuzz 无真命中）支持未见跳跃/死 UI；补跑脚本就绪 repro6c_dev.sh/repro6c_beta.sh（含前台包校验——勘误：此前 p6c beta 轮实为 dev 前台误测，两包同代码结论不变）
+  - B1（高度偏移）同构建历史 5 轮全绿+B2（贴底上向）fresh+历史双证 PASS；新发现扫描器误报类：IME inset 动画窗（键盘收起 notifyFinished/onReady 产生 −838/−753 单次外部位移，非手势非 toggle）——scan5r5 需补 IME 窗排除（登记入 #549 修向附带）
 
 - [ ] **#549 fuzz 发现残余族——动画边界帽-驱动清算净错（重向 slam/贴底不累积/尾段往返三脸）** `scroll` `race` `chat`
   - 五报四刀后随机 fuzz（真机 25 轮+模拟器 11 轮）挖出的低频残余族（~4 实例/43 轮 ≈ 9%），跨设备独立复现非伪影；三脸同源=帽-驱动通道动画边界清算净错——C3 三通道只拆了正向分支，负向 nonDriveNeg 提取与帽账本在重向/动画尾段仍污染
