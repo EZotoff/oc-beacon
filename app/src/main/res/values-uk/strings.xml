@@ -935,6 +935,8 @@
     <string name="supervisor_detail_evidence_unavailable">Посилання на докази тут недоступні</string>
     <string name="supervisor_detail_section_next_step">Наступний крок</string>
     <string name="supervisor_detail_section_answer">Відповідь</string>
+    <string name="supervisor_detail_copy_section">Копіювати розділ</string>
+    <string name="supervisor_detail_copied">Скопійовано в буфер обміну</string>
     <string name="supervisor_view_details">Докладніше</string>
     <string name="supervisor_reply_state_sent">Відповідь надіслано</string>
     <string name="supervisor_push_title_approval">%1$s потребує вашого підтвердження</string>

@@ -936,6 +936,8 @@
     <string name="supervisor_detail_evidence_unavailable">Ссылки на свидетельства здесь недоступны</string>
     <string name="supervisor_detail_section_next_step">Следующий шаг</string>
     <string name="supervisor_detail_section_answer">Ответ</string>
+    <string name="supervisor_detail_copy_section">Копировать раздел</string>
+    <string name="supervisor_detail_copied">Скопировано в буфер обмена</string>
     <string name="supervisor_view_details">Подробнее</string>
     <string name="supervisor_reply_state_sent">Отвечено</string>
     <string name="supervisor_push_title_approval">%1$s требует вашего утверждения</string>

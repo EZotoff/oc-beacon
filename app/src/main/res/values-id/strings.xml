@@ -933,6 +933,8 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_detail_evidence_unavailable">Referensi bukti tidak tersedia di sini</string>
     <string name="supervisor_detail_section_next_step">Langkah berikutnya</string>
     <string name="supervisor_detail_section_answer">Jawaban</string>
+    <string name="supervisor_detail_copy_section">Salin bagian</string>
+    <string name="supervisor_detail_copied">Disalin ke clipboard</string>
     <string name="supervisor_view_details">Lihat detail</string>
     <string name="supervisor_reply_state_sent">Sudah dibalas</string>
     <string name="supervisor_push_title_approval">%1$s membutuhkan persetujuan Anda</string>

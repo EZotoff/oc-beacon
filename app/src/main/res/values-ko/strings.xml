@@ -927,6 +927,8 @@
     <string name="supervisor_detail_evidence_unavailable">근거 참조를 여기서 사용할 수 없습니다</string>
     <string name="supervisor_detail_section_next_step">다음 단계</string>
     <string name="supervisor_detail_section_answer">답변</string>
+    <string name="supervisor_detail_copy_section">섹션 복사</string>
+    <string name="supervisor_detail_copied">클립보드에 복사됨</string>
     <string name="supervisor_view_details">세부정보 보기</string>
     <string name="supervisor_reply_state_sent">답변함</string>
     <string name="supervisor_push_title_approval">%1$s에 승인이 필요합니다</string>

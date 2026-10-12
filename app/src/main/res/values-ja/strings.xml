@@ -927,6 +927,8 @@
     <string name="supervisor_detail_evidence_unavailable">エビデンスの参照はここでは利用できません</string>
     <string name="supervisor_detail_section_next_step">次のステップ</string>
     <string name="supervisor_detail_section_answer">回答</string>
+    <string name="supervisor_detail_copy_section">セクションをコピー</string>
+    <string name="supervisor_detail_copied">クリップボードにコピーしました</string>
     <string name="supervisor_view_details">詳細を表示</string>
     <string name="supervisor_reply_state_sent">回答済み</string>
     <string name="supervisor_push_title_approval">%1$s が承認を必要としています</string>

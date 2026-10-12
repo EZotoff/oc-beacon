@@ -925,6 +925,8 @@
     <string name="supervisor_detail_evidence_unavailable">Références de preuve indisponibles ici</string>
     <string name="supervisor_detail_section_next_step">Prochaine étape</string>
     <string name="supervisor_detail_section_answer">Réponse</string>
+    <string name="supervisor_detail_copy_section">Copier la section</string>
+    <string name="supervisor_detail_copied">Copié dans le presse-papiers</string>
     <string name="supervisor_view_details">Voir les détails</string>
     <string name="supervisor_reply_state_sent">Répondu</string>
     <string name="supervisor_push_title_approval">%1$s nécessite votre approbation</string>

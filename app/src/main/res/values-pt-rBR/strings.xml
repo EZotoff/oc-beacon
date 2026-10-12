@@ -927,6 +927,8 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_detail_evidence_unavailable">Referências de evidências não disponíveis aqui</string>
     <string name="supervisor_detail_section_next_step">Próxima etapa</string>
     <string name="supervisor_detail_section_answer">Resposta</string>
+    <string name="supervisor_detail_copy_section">Copiar seção</string>
+    <string name="supervisor_detail_copied">Copiado para a área de transferência</string>
     <string name="supervisor_view_details">Ver detalhes</string>
     <string name="supervisor_reply_state_sent">Respondido</string>
     <string name="supervisor_push_title_approval">%1$s precisa da sua aprovação</string>

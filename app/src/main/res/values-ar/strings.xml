@@ -943,6 +943,8 @@
     <string name="supervisor_detail_evidence_unavailable">مراجع الأدلة غير متاحة هنا</string>
     <string name="supervisor_detail_section_next_step">الخطوة التالية</string>
     <string name="supervisor_detail_section_answer">الإجابة</string>
+    <string name="supervisor_detail_copy_section">نسخ القسم</string>
+    <string name="supervisor_detail_copied">تم النسخ إلى الحافظة</string>
     <string name="supervisor_view_details">عرض التفاصيل</string>
     <string name="supervisor_reply_state_sent">تم الرد</string>
     <string name="supervisor_push_title_approval">‏%1$s يحتاج موافقتك</string>
