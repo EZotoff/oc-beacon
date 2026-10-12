@@ -155,6 +155,51 @@ class FlushTaskPhasesTest {
         verify(exactly = 0) { LazyListReflection.requestScrollToItemNoCancel(any(), any(), any(), any()) }
     }
 
+    // ============ 五报 F4''（2026-10-12）：空驱动窗不得劫持贴底跟随 ============
+
+    @Test
+    fun `五报F4 空卡窗内帽增长回落锚规则 - 贴底原点免派发（拉锯根修）`() {
+        mockkObject(LazyListReflection)
+        mockkObject(ScrollQuiescence)
+        motive("ep2 定罪场景：toggle 开窗但驱动 tgt 恒 -1（空内容卡）——旧行为窗内恒配对把流式增长升格「离底让位」，与回贴底力逐帧互搏（fiso 391↔0）；新行为回落 StreamingAnchorRule=贴底免派发")
+        val empty = DegradeDriveState(hInitial = 0, hTarget = -1)
+        val reserve = HeightReserveState().apply {
+            itemKey = "k1"
+            trueHeight = 1391
+            reserved = 1000
+            expandPairingWindows = 1
+            expandCollapseStickTop = 265
+            expandCollapseSpanDepth = 0
+            degradeDrives.add(empty)
+        }
+        val task = streamingGrowFlushTask(mockState(0, 0), emptyLedger(), reserve)
+        assertTrue(task.onPreDraw())
+        // 帽推进但零滚动派发（贴底原点免派发）
+        assertEquals(1391, reserve.reserved)
+        verify(exactly = 0) { LazyListReflection.requestScrollToItemNoCancel(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `五报F4 有效驱动窗内帽增长恒配对 - 离底让位语义保持`() {
+        mockkObject(LazyListReflection)
+        mockkObject(ScrollQuiescence)
+        val drive = DegradeDriveState(hInitial = 0, hTarget = 260, stickTop = 56, spanDepth = 0)
+        val reserve = HeightReserveState().apply {
+            itemKey = "k1"
+            trueHeight = 1000
+            reserved = 1000
+            expandPairingWindows = 1
+            degradeDrives.add(drive)
+        }
+        val state = stateWithOwnerItem(0, 0, ownerIndex = 0)
+        every { state.dispatchRawDelta(any()) } returns 0f
+        streamingGrowFlushTask(state, emptyLedger(), reserve).onPreDraw()
+        // 首步进 0.32×260=83 配对派发（离底让位；落点由 resolvePairedTarget 走
+        // 零高横幅带换算，断言派发次数+驱动推进而非具体坐标）
+        verify(exactly = 1) { LazyListReflection.requestScrollToItemNoCancel(any(), any(), any(), any()) }
+        assertEquals(83, drive.h)
+    }
+
     @Test
     fun `ledger派发帧必须拒绘 - 终审P1契约`() {
         mockkObject(LazyListReflection)
@@ -562,5 +607,34 @@ class FlushTaskPhasesTest {
         assertEquals(-50, driveScrollShift(150, listOf(a, b)))
         // 锚 151：A 下方零操作；B 上方仍计入
         assertEquals(-20, driveScrollShift(151, listOf(a, b)))
+    }
+
+    // ============ 五报（2026-10-12）F2/F3：符号感知 + 正向逐卡配对 ============
+
+    @Test
+    fun `五报 F2 driveScrollShift 符号感知 - 正步进不经塌缩 containment 表`() {
+        // 定罪场景：净负混合帧中正步进被 span=0 展开态几何判 outside-span 拒发
+        //（r2 取证 drv=+56/+38 noop），高度推进无配对=残差偏移源——正步进一律 0。
+        val expanding = DegradeDriveState(hInitial = 0, hTarget = 260, stickTop = 56, spanDepth = 0).apply { pendingStep = 56 }
+        val collapsing = DegradeDriveState(hInitial = 870, hTarget = 0, stickTop = 56, spanDepth = 870).apply { pendingStep = -38 }
+        // 锚在区内（两卡 containment 都会过）——但正步进不计入
+        assertEquals(-38, driveScrollShift(100, listOf(expanding, collapsing)))
+        // 正步进单独在场：恒 0（即便锚在揭示缘上方）
+        assertEquals(0, driveScrollShift(10, listOf(expanding)))
+    }
+
+    @Test
+    fun `五报 F3 drivePositivePairedShift - 揭示缘逐卡否决与未捕获保守`() {
+        val a = DegradeDriveState(hInitial = 0, hTarget = 260, stickTop = 100).apply { pendingStep = 56 }
+        val b = DegradeDriveState(hInitial = 0, hTarget = 300, stickTop = 400).apply { pendingStep = 30 }
+        val uncaptured = DegradeDriveState(hInitial = 0, hTarget = 200).apply { pendingStep = 10 }
+        val neg = DegradeDriveState(hInitial = 870, hTarget = 0, stickTop = 100, spanDepth = 870).apply { pendingStep = -38 }
+        // 锚在揭示缘上方（anchorTop<stick）：该卡增长在锚下方，配对=自造位移 → 否决
+        assertEquals(0, drivePositivePairedShift(80, listOf(a)))          // 锚在 A 上方→否决
+        assertEquals(10, drivePositivePairedShift(80, listOf(a, b, uncaptured, neg))) // 双卡皆否决+负步进0，仅未捕获保守
+        assertEquals(56, drivePositivePairedShift(100, listOf(a)))        // 锚=stick 恰在缘→配对（离底让位）
+        assertEquals(86, drivePositivePairedShift(500, listOf(a, b)))     // 锚在两卡下方→全配对（56+30）
+        assertEquals(10, drivePositivePairedShift(80, listOf(uncaptured))) // 未捕获→保守配对（legacy 盲配）
+        assertEquals(0, drivePositivePairedShift(500, listOf(neg)))       // 负步进不经本表
     }
 }

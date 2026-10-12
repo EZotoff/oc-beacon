@@ -752,8 +752,16 @@ internal fun CardExpandReveal(
             return
         }
         // 三轮：驱动盒。高度唯一写者=flush（drive.h 仅在 applyPairedShift 事务内
-        // 推进）；孤儿回落（单槽被并发卡覆盖，罕见面）=稳态快照（visible?内容高:0）。
-        val driveOwned = pairingReserve?.degradeDrives?.contains(drive) == true && drive.animating
+        // 推进）；孤儿回落（列表中被逐，罕见面）=稳态快照（visible?内容高:0）。
+        // 五报 F1：**已注册未接管**（hTarget 悬挂等测高）窗口同样走 drive.h——
+        // 旧回退读 contentH，而 contentH 由内侧 onSizeChanged 在放置后才写，其
+        // 失效触发的布局相重测会经**陈旧 driveOwned 捕获**把全高闪挂一帧
+        // （真机定罪：+260 全高挂载配对上跳 → 重组钳回 drive.h 未配对收缩
+        // −121 → 框架过滚纠正 fiso 回跳 −178 =「向上展开再跳回」三段式，
+        // 2026-10-12 五报 r2）。driveRegistered 在组合期同步注册后恒真、
+        // drive.h 为快照态活读——两窗口（等靶/动画中）合一，闪挂源消除。
+        val driveRegistered = pairingReserve?.degradeDrives?.contains(drive) == true
+        val driveOwned = driveRegistered && drive.animating
         Box(
             modifier = modifier
                 .onSizeChanged { degradeH.intValue = it.height }
@@ -765,13 +773,13 @@ internal fun CardExpandReveal(
                 Box(
                     androidx.compose.ui.Modifier
                         .degradeRevealHeight {
-                            if (driveOwned) drive.h else if (visible) contentH.intValue.coerceAtLeast(0) else 0
+                            if (driveRegistered) drive.h else if (visible) contentH.intValue.coerceAtLeast(0) else 0
                         }
                         .clipToBounds()
                         .graphicsLayer {
                             val full = contentH.intValue
                             alpha = if (full > 0) {
-                                (if (driveOwned) drive.h else if (visible) full else 0)
+                                (if (driveRegistered) drive.h else if (visible) full else 0)
                                     .toFloat() / full.toFloat()
                             } else {
                                 1f
