@@ -256,7 +256,7 @@ private fun AttentionCard(
             // 长按可选中文本（2026-10-12 操作员报告）；作用域限于 Text，不吞卡片点击。
             SelectionContainer {
                 Text(
-                    item.question,
+                    item.headline ?: item.question,
                     style = MaterialTheme.typography.titleMedium,
                     color = contentColor,
                     maxLines = 2,
