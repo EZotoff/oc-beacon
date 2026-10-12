@@ -930,6 +930,8 @@
     <string name="supervisor_detail_evidence_unavailable">证据引用在此不可用</string>
     <string name="supervisor_detail_section_next_step">下一步</string>
     <string name="supervisor_detail_section_answer">回答</string>
+    <string name="supervisor_detail_copy_section">复制本节</string>
+    <string name="supervisor_detail_copied">已复制到剪贴板</string>
     <string name="supervisor_view_details">查看详情</string>
     <string name="supervisor_reply_state_sent">已回复</string>
     <string name="supervisor_push_title_approval">%1$s 需要您的批准</string>

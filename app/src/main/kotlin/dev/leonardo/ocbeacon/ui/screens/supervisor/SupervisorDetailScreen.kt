@@ -1,15 +1,21 @@
 package dev.leonardo.ocbeacon.ui.screens.supervisor
 
+import android.content.ClipboardManager
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,13 +35,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.leonardo.ocbeacon.R
+import dev.leonardo.ocbeacon.domain.model.SupervisorAttentionItem
 import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
+import dev.leonardo.ocbeacon.util.copyToClipboard
 import java.time.Duration
 import java.time.Instant
 
@@ -71,6 +80,9 @@ internal fun SupervisorDetailScreen(
     onReply: (String) -> Unit,
 ) {
     Scaffold(
+        // 键盘弹出时整体上移（2026-10-12 操作员报告）：adjustResize+edge-to-edge 下，
+        // 无 imePadding 时内容仍延伸到 IME 之下，Answer 输入被键盘遮挡。
+        modifier = Modifier.fillMaxSize().imePadding(),
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.supervisor_title)) },
@@ -136,15 +148,21 @@ private fun DetailContent(
         } else {
             MaterialTheme.colorScheme.onSurface
         }
-
-        Section(title = R.string.supervisor_detail_section_what_happened) {
-            Text(
-                item.reasonText,
-                style = MaterialTheme.typography.titleMedium,
-                color = contentColor,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+        Section(title = R.string.supervisor_detail_section_what_happened, copyText = item.headline ?: item.reasonText) {
+            // What happened = 状态标题（headline）；旧镜像无 headline 时绝不重复 reasonText ——
+            // 只展示元信息行（2026-10-12：同文双节渲染问题）。
+            item.headline?.let { headline ->
+                // 长按可选中文本（2026-10-12 操作员报告）；作用域限于 Text。
+                SelectionContainer {
+                    Text(
+                        headline,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = contentColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             Text(
                 "${projectLabel(item.project)} · ${item.sessionLabel} · ${age(item.createdAt)}",
                 style = MaterialTheme.typography.bodySmall,
@@ -152,16 +170,45 @@ private fun DetailContent(
             )
         }
 
-        Section(title = R.string.supervisor_detail_section_judgment) {
-            Text(
-                stringResource(R.string.supervisor_detail_summary_label),
-                style = MaterialTheme.typography.labelMedium,
-                color = contentColor,
-            )
-            Text(item.reasonText, style = MaterialTheme.typography.bodyMedium, color = contentColor)
+        Section(title = R.string.supervisor_detail_section_judgment, copyText = judgmentBody(item)) {
+            // What needs your judgment = 待决问（ask）+ 可选选项 + 建议；
+            // 旧镜像回退 reasonText（仅此一节展示，不再双节重复）。“Supervisor summary
+            // (may be truncated)” 标签退役——不再为截断道歉，改为正确的体裁。
+            SelectionContainer {
+                Text(
+                    item.ask ?: item.reasonText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = contentColor,
+                )
+            }
+            if (item.options.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp)) {
+                    item.options.forEachIndexed { index, option ->
+                        SelectionContainer {
+                            Text(
+                                "${index + 1}) $option",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = contentColor,
+                            )
+                        }
+                    }
+                }
+            }
+            item.recommendation?.let { rec ->
+                SelectionContainer {
+                    Text(
+                        "→ $rec",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
         }
 
-        Section(title = R.string.supervisor_detail_section_why) {
+        Section(
+            title = R.string.supervisor_detail_section_why,
+            copyText = item.premiseTexts.joinToString("\n") { "• $it" },
+        ) {
             if (item.premiseTexts.isEmpty()) {
                 Text(
                     stringResource(R.string.supervisor_no_premises),
@@ -169,8 +216,13 @@ private fun DetailContent(
                     color = contentColor,
                 )
             } else {
-                item.premiseTexts.forEach { premise ->
-                    Text("• $premise", style = MaterialTheme.typography.bodyMedium, color = contentColor)
+                // 长按可选中文本（2026-10-12 操作员报告）。
+                SelectionContainer {
+                    Column(verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp)) {
+                        item.premiseTexts.forEach { premise ->
+                            Text("• $premise", style = MaterialTheme.typography.bodyMedium, color = contentColor)
+                        }
+                    }
                 }
             }
         }
@@ -235,22 +287,48 @@ private fun AnswerSection(
     }
 }
 
+/**
+ * 单节卡片。可选 [copyText]：非空时标题行尾渲染逐节复制按钮（2026-10-12 操作员报告
+ * ——复制粒度按节，不做整屏倾倒）。
+ */
 @Composable
-private fun Section(title: Int, content: @Composable () -> Unit) {
+private fun Section(title: Int, copyText: String? = null, content: @Composable () -> Unit) {
+    val context = LocalContext.current
+    val clipboard = context.getSystemService(ClipboardManager::class.java)
+    val copiedToast = stringResource(R.string.supervisor_detail_copied)
     Card(Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(SpacingTokens.MD.dp),
             verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
         ) {
-            Text(
-                stringResource(title),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(title),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                )
+                if (copyText != null) {
+                    IconButton(onClick = {
+                        clipboard?.copyToClipboard("supervisor", copyText)
+                        Toast.makeText(context, copiedToast, Toast.LENGTH_SHORT).show()
+                    }) {
+                        Icon(Icons.Default.ContentCopy, stringResource(R.string.supervisor_detail_copy_section))
+                    }
+                }
+            }
             content()
         }
     }
 }
+
+/** Judgment 节的可复制正文：ask（或旧镜像回退）+ 选项 + 建议，拼为一段纯文本。 */
+private fun judgmentBody(item: SupervisorAttentionItem): String =
+    buildList {
+        add(item.ask ?: item.reasonText)
+        item.options.forEachIndexed { index, option -> add("${index + 1}) $option") }
+        item.recommendation?.let { add("→ $it") }
+    }.joinToString("\n")
 
 @Composable
 private fun projectLabel(value: String): String =

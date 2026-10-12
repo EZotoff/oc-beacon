@@ -935,6 +935,8 @@ Tokeny: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_detail_evidence_unavailable">Odwołania do dowodów są tutaj niedostępne</string>
     <string name="supervisor_detail_section_next_step">Następny krok</string>
     <string name="supervisor_detail_section_answer">Odpowiedź</string>
+    <string name="supervisor_detail_copy_section">Kopiuj sekcję</string>
+    <string name="supervisor_detail_copied">Skopiowano do schowka</string>
     <string name="supervisor_view_details">Pokaż szczegóły</string>
     <string name="supervisor_reply_state_sent">Odpowiedziano</string>
     <string name="supervisor_push_title_approval">%1$s wymaga Twojej zgody</string>

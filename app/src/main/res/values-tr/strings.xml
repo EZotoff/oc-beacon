@@ -927,6 +927,8 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_detail_evidence_unavailable">Kanıt referansları burada kullanılamıyor</string>
     <string name="supervisor_detail_section_next_step">Sonraki adım</string>
     <string name="supervisor_detail_section_answer">Yanıt</string>
+    <string name="supervisor_detail_copy_section">Bölümü kopyala</string>
+    <string name="supervisor_detail_copied">Panoya kopyalandı</string>
     <string name="supervisor_view_details">Ayrıntıları gör</string>
     <string name="supervisor_reply_state_sent">Yanıtlandı</string>
     <string name="supervisor_push_title_approval">%1$s onayınızı bekliyor</string>

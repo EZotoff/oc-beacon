@@ -1,6 +1,7 @@
 package dev.leonardo.ocbeacon.ui.screens.supervisor
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -252,13 +253,16 @@ private fun AttentionCard(
             .clickable(enabled = !stale) { onOpenDetail(item.id) },
     ) {
         Column(Modifier.padding(SpacingTokens.MD.dp)) {
-            Text(
-                item.question,
-                style = MaterialTheme.typography.titleMedium,
-                color = contentColor,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // 长按可选中文本（2026-10-12 操作员报告）；作用域限于 Text，不吞卡片点击。
+            SelectionContainer {
+                Text(
+                    item.headline ?: item.question,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = contentColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(
                 "${project(item.project)} · ${age(item.createdAt)}",
                 style = MaterialTheme.typography.bodySmall,
@@ -296,7 +300,10 @@ private fun DecisionCard(decision: SupervisorDecision) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(SpacingTokens.MD.dp), verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp)) {
             Text(decision.action, color = actionColor(decision.action), style = MaterialTheme.typography.labelLarge)
-            Text(decision.rationale, maxLines = 2, style = MaterialTheme.typography.bodyMedium)
+            // 长按可选中文本（2026-10-12 操作员报告）。
+            SelectionContainer {
+                Text(decision.rationale, maxLines = 2, style = MaterialTheme.typography.bodyMedium)
+            }
             Text("${project(decision.project)} · ${age(decision.decidedAt)}", style = MaterialTheme.typography.bodySmall)
         }
     }

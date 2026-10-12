@@ -34,8 +34,13 @@ data class SupervisorAttentionItem(
     val severity: String = "",
     /** 会话标签（operator-view 卡片元数据，Detail 元信息行）。 */
     val sessionLabel: String = "",
-
+    /** 结构化操作卡字段（contract Amendment 2026-10-11；null = 旧发布端镜像，回退 reasonText）。 */
+    val headline: String? = null,
+    val ask: String? = null,
+    val options: List<String> = emptyList(),
+    val recommendation: String? = null,
 )
+
 
 data class SupervisorDecision(
     val action: String,

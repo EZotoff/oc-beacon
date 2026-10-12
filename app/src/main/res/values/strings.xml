@@ -1011,6 +1011,8 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_detail_evidence_unavailable">Evidence references not available here</string>
     <string name="supervisor_detail_section_next_step">Next step</string>
     <string name="supervisor_detail_section_answer">Answer</string>
+    <string name="supervisor_detail_copy_section">Copy section</string>
+    <string name="supervisor_detail_copied">Copied to clipboard</string>
     <string name="supervisor_view_details">View details</string>
     <string name="supervisor_reply_state_sent">Replied</string>
     <string name="supervisor_push_title_approval">%1$s needs your approval</string>
