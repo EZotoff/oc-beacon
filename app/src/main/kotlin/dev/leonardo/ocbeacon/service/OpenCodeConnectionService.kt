@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
+import java.lang.ref.WeakReference
 import dev.leonardo.ocbeacon.util.applyAppLanguage
 
 private const val TAG = "OpenCodeService"
@@ -138,7 +139,7 @@ class OpenCodeConnectionService : Service() {
     // C7（2026-08-26）：堆积消息状态补偿驱动改由 service 层（连接生命周期属主）启动；
     // 原在 EventDispatcher init（幂等 start，时序等价——service 本就注入 dispatcher）。
 
-    private val binder = LocalBinder()
+    private val binder = LocalBinder(this)
     private val serviceScope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, exception ->
             // 纵深防御：确保未捕获的异常（例如自动连接到不可达服务器
@@ -170,8 +171,16 @@ class OpenCodeConnectionService : Service() {
     /** 正在尝试连接的服务器 ID 的可观察集合。 */
     val connectingServerIds get() = connectionManager.connectingServerIds
 
-    inner class LocalBinder : Binder() {
-        fun getService(): OpenCodeConnectionService = this@OpenCodeConnectionService
+    /**
+     * 泄漏修复（LeakCanary GcRoot: Global variable in native code）：
+     * 原 inner class 的隐式 this$0 会把已 onDestroy 的 Service 强引用钉在
+     * libbinder 原生全局引用之后（Retaining 3.8 kB / 75 objects）。
+     * 改为嵌套类 + WeakReference——binder 不再持有 Service 强引用；Service
+     * 销毁后 [getService] 返回 null，调用方（HomeViewModel）已全部空安全处理。
+     */
+    class LocalBinder(service: OpenCodeConnectionService) : Binder() {
+        private val serviceRef = WeakReference(service)
+        fun getService(): OpenCodeConnectionService? = serviceRef.get()
     }
 
     @OptIn(FlowPreview::class)
