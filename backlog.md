@@ -66,6 +66,9 @@
   - 验证链：ExpandStateKeysTest 10/10（含 r13 原始双宿主 id 换宿主同键用例）；全量 4046 单测零失败；lintDevDebug 门禁过；真机 houji 新包 9 轮 E2E 全 PASS（R1/R1'/R2 红线零违——同键/跨键 true→false 无 toggle 均零、mapHit 零脱靶、6 起天然成长跨窗迁移存活零闪断、burst 连点轮含）
   - 宿主换名本体（r13 触发面）未在 9 轮中自然再现（1/12 概率类，全部单 turn item）——该不变量由单测直接钉死（r13 双宿主原始 id 同键）；E2E 复用配方与红线扫描器存 /home/leonardo/.cache/547e2e/（e547.sh，可复跑）
   - C4 关系：ExpandStateKeys.forPart 即 C4 ExpandStateStore 的键律先行落地（单一真相源/store 化与 default 冻结仍在 #544 第二刀范围）
+  - 双腿浸泡收官（2026-10-12，journal §36）：真机 houji 5h×91 轮——产品红线零违规（R1/R1'/R2/FATAL/windows/release-dis/已应用大跳全零）、成长跨窗迁移存活 76/80、HOST-SWAP 91 轮未再现（单测钉死不变量）；模拟器 subagent 1h×19 轮（7 完成轮）——零 R1/R1'/R2、KEYCHAIN 7/7（13 次跨键演化零塌缩）、双服务并行零 429
+  - 表面 FAIL 6 类全归案零产品罪：旧扫描器 R1' toggle 盲×2 轮（已修+重扫 PASS）、VIS-REPEAT×3（relocate 销毁窗重挂载记账 by-design，RB 佐证严格配对）、DRV-FLIP×2（r189=引擎拒发帧误计已补排除；r203=同宿主 0.44s 连点换向产生 windows=2 并发反向驱动——修复②驱动列表设计能力，2→1→0 严格闭合）、r3=旧包 A/B 证据轮；装置失手 32 起全归类
+  - 终报：/home/leonardo/.cache/547e2e/SOAK-SUMMARY.md（含终局修订）+ /home/leonardo/.cache/547emu/SOAK-EMU-REPORT.md；判定=通过双平台系统性浸泡，待用户验收
 
 ## P2 — 优化与锦上添花
 

@@ -456,3 +456,13 @@ ExpandStateKeysTest 10/10；全量 testDevDebugUnitTest 4046 零失败；lintDev
 - RB-EXP 探针改完整 id+key+mapHit（N2 落地）；toggle 侧探针同步去 takeLast(8)。
 - C4 关系：ExpandStateKeys.forPart 即 C4 ExpandStateStore 键律先行；store 化单一真相源/default 冻结仍在 #544 第二刀范围。
 
+
+## §36 #547 双腿浸泡收官——真机 5h×91 轮 + 模拟器 1h×19 轮零产品违规（2026-10-12）
+
+
+- **真机腿**（houji，5h/4h47m 实跑，91 轮 r100-r190，V2 4096 + MiMo p1/p2/p3 轮换，电池全程 100%）：产品红线零违规——R1/R1'/R2/FATAL/windows 负/release-dis/已应用大跳全零；成长跨窗键迁移存活 76/80 轮（全部 true/true 直落零闪断）；HOST-SWAP 未自然再现（91 轮彩票未中；不变量由单测钉死）。终报 /home/leonardo/.cache/547e2e/SOAK-SUMMARY.md（含终局修订节）。
+- **模拟器腿**（subagent，emulator-5554 1080x2400，1h/59min 实跑，19 轮 r200-r218，10.0.2.2:4096 同服务并行 42 分钟零 429）：7 个完成轮零 R1/R1'/R2、KEYCHAIN 7/7 命中（13 次跨键演化零塌缩）、构建守卫全过（RB 行全含 key= 字段）。终报 /home/leonardo/.cache/547emu/SOAK-EMU-REPORT.md。
+- **表面 FAIL 全数归案（双腿 6 类，零产品罪）**：①r100/r101 旧扫描器 R1' toggle 盲误报（开跑 6 分钟内修复+重扫转 PASS）；②r138/r140/r203 VIS-REPEAT=relocate 滑动销毁窗后的重挂载记账（二轮④「挂载即 toggle」by-design，RB 证据链佐证每对 toggle↔read 严格配对）；③r189 DRV-FLIP=引擎拒发帧误计（补 noop 排除后撤诉，soak5r 先例）；④r203 DRV-FLIP=同一宿主被 S2 连点 0.44s 内快速换向产生 windows=2 并发反向驱动（收垮驱动衰减中+新展开驱动起步，capd=-119 drv=30 即污染和与分量并存）——修复②驱动列表的设计能力，windows 2→1→0 严格闭合；⑤r3 旧包 A/B 证据轮（27ms flash 定罪素材）；⑥12+20 起装置失手（模拟器 dump 滞后 2-4s+clickable bounds 高估，subagent 四版定位器迭代 v4 收敛 6/7 PASS；真机 15 卡头失手+5 导航 flake）。
+- **过程自建装置 bug 三起当场修复**：serial 内嵌空格被 awk $1 截断（mDNS 名 adb-e69a99d8-yzT17Y (2)…）、timeout 套 bash 函数恒败、扫描器 R1' 不消化 toggle 事件——全装置层，产品代码零改动。
+- **扫描器粒度教训**（对账 soak5r N2 同类）：在线单通道 drv 符号检查不分卡/不分驱动归因，并发合法反向驱动会误报——判读必须回到原始日志按 host/驱动归因；VIS-REPEAT 判据需配 RB-EXP 佐证（无 toggle 写入的翻转才是真罪）。
+- **判定：#547 修复通过双平台系统性浸泡（真机 5h×91 轮 + 模拟器 1h×19 轮），零产品红线违规，进入用户验收。**
