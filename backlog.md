@@ -67,11 +67,13 @@
   - B3/B4 补验（用户原话协议：空起步展开×12+ 轮，dev 探针版）：零真命中——全部 TITLE-GONE 经 dump 定罪=思考卡被流式答案顶出 a11y 视口（屏幕实为答案正文+完成栏，正常贴底 UX）；唯一 OSC=markdown 表格重排凹陷（数据驱动合法补偿）；零 DEAD-UI/FOCUS-0。判定：四刀修复版上 B3/B4 未复现
   - 工具教训：TITLE 存活探针须带滚动感知（a11y 视口裁剪伪影）；scan5r5 需补 IME-inset 窗排除与重排凹陷容忍（本轮三类伪影全记录在案）
 
-- [ ] **#549 fuzz 发现残余族——动画边界帽-驱动清算净错（重向 slam/贴底不累积/尾段往返三脸）** `scroll` `race` `chat`
+- [~] **#549 fuzz 发现残余族——动画边界帽-驱动清算净错（重向 slam/贴底不累积/尾段往返三脸）** `scroll` `race` `chat`
   - 五报四刀后随机 fuzz（真机 25 轮+模拟器 11 轮）挖出的低频残余族（~4 实例/43 轮 ≈ 9%），跨设备独立复现非伪影；三脸同源=帽-驱动通道动画边界清算净错——C3 三通道只拆了正向分支，负向 nonDriveNeg 提取与帽账本在重向/动画尾段仍污染
   - 脸①重向 slam（r400）：收起动画中 burst 重展开→首步 +1018 配对→40ms 混合帧过度镜像 −1343 砸回（净错 ~300px+千像素闪烁）；脸②贴底不累积（r427）：burst 贴底连打时离底让位每帧读位回 (0,0)、写入 (7,step) 不滞留、驱动步进 83/56/38 逐帧蒸发=报告②低频残余；脸③动画尾往返（模拟器 r11+真机 r303/r304 交叉复现）：expand toggle 后 0.94-1.9s（pairing-window 生命周期内、reveal 动画尾段）±627px 0.1s 往返
   - 证据：/home/leonardo/.cache/540r5/r400|r427|r415、/home/leonardo/.cache/540emu/r11_full.log（19:54:35-38）+SOAK-EMU540-REPORT.md；修向=完成 C3 负向分支三通道拆分（nonDriveNeg 提取换帽账本独立通道）+反射位/零高横幅归一化对贴底累积的影响面勘察
   - → docs/journal/2026-10-10-540-dsh-expand-degrade-rca.md
+  - 根修完成（8f87083d9，journal §39）：Fix A=终高种子+600ms 单调护栏（M2 分期重组追靶）；Fix B=expandPairedPos 动画门槛（M1 底钳打架）。验证：单测 20/20+27/27+全量 4053 零失败；同型定向——空起步×4 全 PASS+burst 重向×4 零 slam；fuzz 复跑 8 轮 6 PASS+2 FAIL 全裁决为 V 形伪影（小幅 −92/−124、adopt 正确重基线、toggle 前置 ~300ms 超 150ms 前瞻窗）
+  - 残留降级观察类：分期表格批落地一次性重锚 V 形（~740-917px 单事件，#502 收养正确处置，非振荡）——随下批 pairing 域工作处理；scanner OSC 判据需 ≥3 换号或 ≥2 完整 V（flips>=2 会把单 V 当振荡）
 
 - [~] **#547 SILENT-STATE-RESET 残留变体——宿主换名级联派生 partId 前缀（展开态 map 脱靶）** `identity` `race` `ui`
   - soak5r r13 定罪（23:25:23.140→.219，79ms）：用户展开后多消息轮次重组换宿主（新 turn item t_msg_12b91c58a 出现+RESIZE -4159/LEAP 7 项），派生 part id= 前缀随宿主变 → partId 键控展开态 map 脱靶 → 静默回退收起；无 toggle 日志
