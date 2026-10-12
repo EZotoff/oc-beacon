@@ -108,6 +108,8 @@
   - 5h soak 收官（journal §28）：53 周期/13 收起锤炼/红线全绿（零崩溃·windows 无负·旧通道零出现）；双 DEFECT 亲自取证均判非缺陷（窗后 yield=turn 完成重映射边界态；镜像偏差=断言模型不含塌缩动画推进量，写入本身正确）；BLANK-RENDER-FREEZE 环境发现拆至 #545；beta 14:49 重打含全部根修，待装真机交复测
   - 三轮根修（journal §31）：AV 尺寸退役为 flush 单事务驱动盒（相位差震荡定罪）+竞态热修（注册挪组合期同步段）；真机五腿+帧级数值验证零震荡；待 beta 四测
   - 四报收官（journal §33）：soak4r 定罪 SILENT-STATE-RESET（REST 权威刷新 partId 换名→展开态 map miss 静默收起）+竞态三连（单槽驱逐/几何覆盖/重向回拨）；双根修（dedup 身份先行+驱动列表化）4036 绿；复验 id 70s 稳定+连点签名健康；beta 21:34 已装 houji 待用户五测
+  - 五报根修（2026-10-12，cc1a71dc4，journal §37）：①思考卡高度偏移+②贴底普通卡概率性上向——定罪两报一源（布局相活读×陈旧捕获=首帧全高闪挂→钳回未配对收缩→过滚纠正回跳三段式）+两独立缺陷（混合符号帧正步进误拒发；空卡窗劫持贴底跟随 391↔0 拉锯）；四刀 F1-F4 落地
+  - 验证：单测 27/27+全量 4050 零失败；真机四包 A/B FLASH/FIGHT/OSC 三签名 1→0/1→0/2→0；114fps 相位相关视频零符号翻转；70min soak 验证中（/home/leonardo/.cache/540r5/）；竞态矩阵 C1-C10 全覆盖落 journal §37
 
 - [ ] **#522 B案升 stable 后余留装备清扫——JankHoldGate A/B 开关 + STREAM_DELTA_BUS 旗标退役（#499 余留范围）** `chore` `refactor`
   - 前置：STREAM_SHARD_PILOT / STREAM_DELTA_BUS 升 stable 并观察一批——当前 stable 均 false，JankHold 冻结链在 stable 仍是承重活体（B案开=旁路），现退役会回归 stable 流式滚动组合风暴。
