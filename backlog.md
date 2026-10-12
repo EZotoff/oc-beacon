@@ -4,7 +4,7 @@
 
 **卡片格式**：标题（含全局编号）+ Tag + 状态 checkbox + **≤3 行**摘要 + 链接。需求全文、实现要点、验证证据一律写在链接目标（spec / journal）中，不内联。登记新批次用 `./scripts/backlog-new-batch.sh "<批次名>"`（自动建 journal 文件）；改动后跑 `./scripts/backlog-check.sh` 校验机械不变量。**放置规则（check 脚本强制）**：卡片一律写在下方对应 **Pn 节内**（按优先级定义归位；一节内新卡置顶）；头部编号行与优先级定义表之间**不放任何卡片**（仅允许编号勘误等注释）。**P4 格式增补**：P4 卡必含「**前提**：…」行——说清实现前提是什么、当前为何不可实现（外部硬阻碍所在）。**术语句**：卡片标题与摘要用词遵循 [CONTEXT.md](CONTEXT.md) 术语表（堆积消息/子智能体/轮次/撤销/中断…）；「待处理」保留给权限/问题（状态词待验证/待办/待裁决不受影响）；Tag 英文与 #N 编号不受中文术语约束；API 英文原词（cursor/fork）合法，_Avoid_ 仅限中文对应词。
 
-**编号**：全局递增，不回收。下一编号：**#548**（2026-10-11 #547 SILENT-STATE-RESET 残留变体—）。
+**编号**：全局递增，不回收。下一编号：**#549**（2026-10-12 #548 beta 测试包版本序号自动递增脚本（testb）。
 
 **操作纪律（2026-09-09 用户定规，账本事故后）**：卡片区**禁止手工直编**——登记/明细追加/状态流转/完结迁移一律经 `./scripts/backlog.sh`（add/note/status/migrate；真实 backlog 变更后自动跑 check）；journal 新节追加用 `backlog.sh journal append`（append-only）或编辑工具定位插入，**禁止全量覆写重写 journal**（2026-09-09 演示批覆写丢章事故定规）。**裁决优先级（2026-09-09 用户定规）**：同一问题域存在多项历史裁决时**以最新裁决为准**；新裁决落地时须回写旧裁决域卡片的注记（#350 为先例）。**反馈归卡（2026-09-12 用户定规）**：用户对某张卡片的反馈/裁决一律经 `backlog.sh note <N>` 记入**该卡片**明细，**不另开新卡**承载反馈；仅当反馈引出**新的独立缺陷**时才另立卡片，并在两卡明细互相引用（#401→#408 为先例）。**工作流脚本类直接修（2026-09-29 用户定规）**：项目工作流/脚本层的修复（`scripts/` 流程脚本等不进 APK 的项目设施）**不立卡**——发现即直接修+自测，证据记入当批 journal；#480 为末代先例（已立卡的按原流程走完迁移）。
 
@@ -71,6 +71,11 @@
   - 终报：/home/leonardo/.cache/547e2e/SOAK-SUMMARY.md（含终局修订）+ /home/leonardo/.cache/547emu/SOAK-EMU-REPORT.md；判定=通过双平台系统性浸泡，待用户验收
 
 ## P2 — 优化与锦上添花
+
+- [ ] **#548 beta 测试包版本序号自动递增脚本（testbuild.sh——免人工判定）** `build` `tooling`
+  - 痛点：每次 beta 测试包装机需人工判读 release-workflow §2 定规（bare -beta 视为第1号→下一次是 -beta-2、VERSION_CODE 同步+1、先改 properties 再 assemble、bump 是否落豁免域）——2026-10-12 装 0.4.0-beta-2/42 即全程手工
+  - 方案：scripts/testbuild.sh <flavor> [serial] [--no-install]——读 version.properties，仅同线纯序号递增（beta-N→beta-(N+1)/bare -beta→-beta-2）+VERSION_CODE+1 自动落盘；越域（开新线/通道晋升/stable 线）拒绝并指回 release.sh 确认门；assemble<Flavor>Release（dev 走时间戳免 bump）；可选无线装机（wake/unlock+MIUI 守卫）；bump 自动 chore commit
+  - 复用面：release.sh 的 derive_bump/apply_bump/版本解析可抽取共享；装机段可复用 debug-entry/soak env 的 wake+滑锁与 serial 解析（含 mDNS 名内嵌空格 cut -f1 教训，journal §36）；AGENTS 构建纪律（禁并发/超时）继承
 
 - [ ] **#545 IME 注入×历史会话加载竞态致主线程渲染冻结（BLANK-RENDER-FREEZE）** `ui` `ime` `race`
   - 5h soak ×5 复现：进入含历史会话后整串 input text 注入必现 Choreographer 跳帧后渲染冻结（a11y 树完整但空 2627B），无 FATAL/ANR，仅 force-stop 可恢复（空闲 3 分钟不自愈）
