@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -136,15 +137,17 @@ private fun DetailContent(
         } else {
             MaterialTheme.colorScheme.onSurface
         }
-
         Section(title = R.string.supervisor_detail_section_what_happened) {
-            Text(
-                item.reasonText,
-                style = MaterialTheme.typography.titleMedium,
-                color = contentColor,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // 长按可选中文本（2026-10-12 操作员报告）；作用域限于 Text。
+            SelectionContainer {
+                Text(
+                    item.reasonText,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = contentColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(
                 "${projectLabel(item.project)} · ${item.sessionLabel} · ${age(item.createdAt)}",
                 style = MaterialTheme.typography.bodySmall,
@@ -158,7 +161,10 @@ private fun DetailContent(
                 style = MaterialTheme.typography.labelMedium,
                 color = contentColor,
             )
-            Text(item.reasonText, style = MaterialTheme.typography.bodyMedium, color = contentColor)
+            // 长按可选中文本（2026-10-12 操作员报告）。
+            SelectionContainer {
+                Text(item.reasonText, style = MaterialTheme.typography.bodyMedium, color = contentColor)
+            }
         }
 
         Section(title = R.string.supervisor_detail_section_why) {
@@ -169,8 +175,13 @@ private fun DetailContent(
                     color = contentColor,
                 )
             } else {
-                item.premiseTexts.forEach { premise ->
-                    Text("• $premise", style = MaterialTheme.typography.bodyMedium, color = contentColor)
+                // 长按可选中文本（2026-10-12 操作员报告）。
+                SelectionContainer {
+                    Column(verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp)) {
+                        item.premiseTexts.forEach { premise ->
+                            Text("• $premise", style = MaterialTheme.typography.bodyMedium, color = contentColor)
+                        }
+                    }
                 }
             }
         }
