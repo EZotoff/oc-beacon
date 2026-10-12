@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -26,6 +27,9 @@ import dev.leonardo.ocbeacon.domain.model.ToolState
 import dev.leonardo.ocbeacon.ui.components.AmoledDefaultBorder
 import dev.leonardo.ocbeacon.ui.screens.chat.markdown.MarkdownContent
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.extractToolInput
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpillNotice
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpillNoticeMatcher
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpillNoticeBanner
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.extractToolOutput
 import dev.leonardo.ocbeacon.ui.theme.CodeTypography
 import dev.leonardo.ocbeacon.ui.screens.chat.util.halfScreenHeight
@@ -119,6 +123,15 @@ internal fun SearchToolCard(
         }
         val halfScreenHeight = halfScreenHeight()
         val scrollState = rememberScrollState()
+        // #536：DSH spill 通知剥离+横幅——grep 大结果溢出时通知行不再混入 markdown 正文
+        val spillNotice = remember(output) { SpillNoticeMatcher.match(output) }
+        val displayOutput = remember(output) { SpillNoticeMatcher.previewOf(output) }
+        if (spillNotice != null) {
+            SpillNoticeBanner(
+                notice = spillNotice,
+                modifier = Modifier.padding(top = SpacingTokens.XS.dp),
+            )
+        }
         Surface(
             shape = ShapeTokens.extraSmall,
             color = toolOutputContainerColor(),
@@ -131,7 +144,7 @@ internal fun SearchToolCard(
         ) {
             SelectionContainer {
                 MarkdownContent(
-                    markdown = output,
+                    markdown = displayOutput,
                     textColor = if (isAmoled) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AlphaTokens.AMOLED) else MaterialTheme.colorScheme.onSecondaryContainer,
                     isUser = false
                 )

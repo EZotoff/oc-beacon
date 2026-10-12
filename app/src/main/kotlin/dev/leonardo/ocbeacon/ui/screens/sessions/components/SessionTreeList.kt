@@ -97,6 +97,8 @@ internal fun SessionTreeList(
     // #311 归档：已归档行（workspace 快照集合 ∩ 会话缓存）+ 归档动作
     archivedSessions: List<SessionItem> = emptyList(),
     onArchive: (String) -> Unit = {},
+    // #352 取消归档：已归档行详情动作（动词上游 0.1.6-alpha.1 起在，与归档同能力位）
+    onUnarchive: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     // #106 lint 清偿：复制提示 hoist（两处 lambda 共用；context 仍供剪贴板）
@@ -250,11 +252,11 @@ internal fun SessionTreeList(
         // 归档会话时呈现；非 DSH 后端归档面整体隐藏（workspace 快照恒空 + 能力位
         // false）。
         //
-        // 契约事实（2026-09-05 四重取证，详见 SessionRowMenu.kt）：DSH
-        // workspace/archiveSession 为幂等 add-only——服务端 archivedSessionIds 无
-        // 任何移除路径（全包 grep 无 unarchive，官方 web 客户端同无恢复入口），
-        // 归档单向。故本区行菜单只留「详情」，无「取消归档」入口——后续勿在
-        // 无 wire 动词时误加恢复入口。
+        // 契约沿革：2026-09-05 四重取证时归档为幂等 add-only 单向（无恢复动词，
+        // 官方 web 同无入口），故已归档行只留「详情」。**2026-10-09 前提重验推翻**：
+        // 上游 0.1.6-alpha.1（2026-09-15）引入 workspace/unarchiveSession（幂等，
+        // 官方 web 'Unarchive session' 菜单+E2E 佐证），现网 0.2.0-rc.2 实证在——
+        // 已归档行详情加「取消归档」（#352），行去留仍走 follow 增量同链。
         val archiveSupported = ServerFeatures.SESSION_ARCHIVE in serverCapabilities
         if (archiveSupported && archivedSessions.isNotEmpty()) {
             item(key = "archived_sessions_section") {
@@ -318,6 +320,8 @@ internal fun SessionTreeList(
                                 deleteSupported = ServerFeatures.SESSION_DELETE in serverCapabilities,
                                 isArchived = true,
                                 archiveSupported = archiveSupported,
+                                onArchive = { onArchive(archivedItem.session.id) },
+                                onUnarchive = { onUnarchive(archivedItem.session.id) },
                                 agentPresetSupported = ServerFeatures.AGENT_PRESET in serverCapabilities,
                                 agentPresetNames = agentPresetNames,
                                 syncState = syncStates[archivedItem.session.id],

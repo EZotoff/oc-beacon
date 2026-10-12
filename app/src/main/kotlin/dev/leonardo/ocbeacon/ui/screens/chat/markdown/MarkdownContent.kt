@@ -13,7 +13,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
@@ -52,11 +54,14 @@ import com.mikepenz.markdown.utils.getUnescapedTextInNode
 import com.mikepenz.markdown.model.rememberMarkdownState
 import com.mikepenz.markdown.model.MarkdownState
 import com.mikepenz.markdown.model.State
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
 
 import dev.leonardo.ocbeacon.logging.AppLogger
 import dev.leonardo.ocbeacon.ui.screens.chat.util.isAmoledTheme
@@ -380,7 +385,32 @@ internal fun MarkdownContent(
     // #442 R2 分片唤醒（A2）：注册在案的流式大文本 part 的分片控制器
     //（PartContent 按 part.id 从 broker 查得；null=原路径零改造）。
     shardCtl: ShardController? = null,
+    // #517（2026-10-05）：终末块距载体修剪——内容末块恰为代码/公式块（闭栏
+    // 行结尾）且处于 turn 终态（liveText==null / 静态渲染 / 末片）时置 true：
+    // 块 bottom 外距归零，内容→统计栏间隙与 user 侧（4dp+行内）对齐。块间
+    // 分离不受影响（top 外距保留，非末块 bottom 保留）。
+    trimTrailingBlockGap: Boolean = false,
+    // #518①（2026-10-05）：内容终态旗标——true 时 pilot gate 拒绝即全量放行
+    //（完结后无后续增量，扣留=永扣）。由 PartContent 从 bus 覆盖生命周期与
+    // 会话流式态推导，仅 pilot 分支消费。
+    contentTerminal: Boolean = false,
+    // #486 根修（2026-10-09）：msgId 级「曾流式」账本键（PartContent 传
+    // part.messageId）。null（未穿线的调用面）= 行为不变。曾以 pilot 渲染的
+    // 消息在组合位销毁后冷重入时直接再入 pilot 分支（coldReveal 单帧揭示），
+    // 消除 asyncTerminal 首帧 Loading 空窗。
+    everKey: String? = null,
 ) {
+    // #517 GapDiag：入口旗标取证（DEBUG-only 探针）
+    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+        android.util.Log.w(
+            "GapDiag",
+            "MC len=" + markdown.length +
+                " trim=" + trimTrailingBlockGap +
+                " preParsed=" + (preParsedState != null) +
+                " override=" + (overrideState != null) +
+                " async=" + asyncParse,
+        )
+    }
     //（customFontSize/immediate 两死参数已随 2026-10-03 清理批次退役——
     // 排版/密度由 LocalChatDensity 驱动，解析策略由分支自身决定。）
     //
@@ -541,7 +571,7 @@ internal fun MarkdownContent(
     // codeSyntaxTheme。键必须包含它们：主题切换时颜色变化
     // → 重建闭包 → 内部 AnnotatedString 用新颜色重建，否则切换主题后文字颜色停留
     // 在旧主题（暗色浅色在亮色背景下"过曝"）。
-    val components = remember(density, isUser, linkListener, linkColor, textColor, codeBlockBg, codeBlockFg, typography.code, codeSyntaxTheme) {
+    val components = remember(density, isUser, linkListener, linkColor, textColor, codeBlockBg, codeBlockFg, typography.code, codeSyntaxTheme, trimTrailingBlockGap) {
         markdownComponents(
             text = { model ->
                 val settings = annotatorSettings(linkInteractionListener = linkListener)
@@ -680,6 +710,7 @@ internal fun MarkdownContent(
                     node = model.node,
                     style = model.typography.code,
                     theme = codeSyntaxTheme,
+                    trimBottomGap = trimTrailingBlockGap,
                 )
             },
             codeBlock = { model ->
@@ -688,6 +719,7 @@ internal fun MarkdownContent(
                     node = model.node,
                     style = model.typography.code,
                     theme = codeSyntaxTheme,
+                    trimBottomGap = trimTrailingBlockGap,
                 )
             },
             // #488①：块内 HTML——库对 HTML_BLOCK 零组件（v0.45.0 base+m3 AAR 二进制
@@ -755,17 +787,21 @@ internal fun MarkdownContent(
                 animations = animations,
                 imageTransformer = Coil3ImageTransformerImpl,
                 modifier = Modifier.fillMaxWidth(),
+                // #517②：全量静态路径专用 success 槽——跳过尾随空白子节点
+                //（内容结尾 \n 解析出尾随 EOL，mikepenz MarkdownSuccess 会在其
+                // 前垫 Spacer(padding.block)，终末块→统计栏间隙凭空多出一段；
+                // chunk 路径的计划态 AST 天然无尾随 EOL，两侧由此不一致）。
+                success = terminalSuccessSlot(),
             )
         }
         return
     }
 
-    // #265 P0-a 试点分支（spec §4）：开关开启、非用户消息、无外部覆写态且
-    // 非 asyncParse 时，流式渲染走 StreamingMarkdownState 前缀差分 append。
+    // #265 P0-a（spec §4；#499 退役旗标后为唯一路径）：非用户消息、无外部覆写态
+    // 且非 asyncParse 时，流式渲染走 StreamingMarkdownState 前缀差分 append。
     // #471③ 归一化前移（终帧=流式帧）：pilot 内部先归一化（与完结渲染同源
     // 逐字节一致）再前缀差分——流中即见最终形态（tex 围栏/真复选框），
     // 完结换装无归一化重排跳变。
-    // 回退 = flavor 的 STREAMING_MD_PILOT 置 false。
     // #461：准入收为 streamingPilotEligible 纯函数——静态文本(asyncParse=true)
     // 不得误入(空 state 靠逐帧 append 填充,ε 窗竞态 → H=0 僵尸展开态)。
     //（#472/#504 完结换装桥接机制已随「pilot 即终态」退役 2026-10-03——
@@ -786,21 +822,53 @@ internal fun MarkdownContent(
     // 终帧=流式帧，完结内容前缀一致（#509 方案B 真机两轮表格 hold 帧零 delta
     // 实证）。）
     var pilotEverRendered by remember { androidx.compose.runtime.mutableStateOf(false) }
-    val pilotRetained = StreamingMarkdownPilot.enabled && pilotEverRendered
-    if (streamingPilotEligible(overrideState != null, asyncParse, isUser) && StreamingMarkdownPilot.enabled ||
+    // #486 根修二期：账本终态缓存命中——冷重建直接复用已解析的 pilot state
+    //（首帧即有内容，零解析零空窗）。内容等值守卫：流式中途销毁缓存的是部分
+    // 内容、重连回填可能改写——不等则视为 miss。pilot 显示文本为归一化坐标
+    //（#471③），双比对。优先级：活动流式/幸存槽位（下方 eligible/remember 条件）
+    // 先于缓存——活流不被部分缓存劫持；缓存先于 ledgerArmed 冷 pilot。
+    val cachedTerminalState = everKey?.takeIf { !isUser && overrideState == null }?.let { key ->
+        EverStreamedPartLedger.cachedTerminal(key)?.takeIf { cached ->
+            val content = cached.content
+            content.contentEquals(markdown) || content.contentEquals(normalizeForStreaming(markdown))
+        }
+    }
+    // #486 根修：进程级账本武装——曾流式（msgId 级）消息的冷重入直接再入 pilot。
+    // 约束对齐 pilot 语义：isUser 恒不入、override 态不经此（外部 state 自管）；
+    // 仅当 remember 槽位确已销毁（本组合未见过 pilot）时才需要 coldReveal 单帧。
+    // 缓存命中时让位（更优路径）。
+    val ledgerArmed = everKey != null && !isUser && overrideState == null &&
+        cachedTerminalState == null && EverStreamedPartLedger.wasStreamed(everKey)
+    val slotRemembered = pilotEverRendered
+    val pilotRetained = pilotEverRendered || ledgerArmed
+    if (streamingPilotEligible(overrideState != null, asyncParse, isUser) ||
         pilotRetained ||
         shardHold
     ) {
         // #437：pilotState.state 只收 SafePrefixGate 放行的定案内容；扣留尾部
-        // 经毕业/EOF flush 释放（降亮区已退役）。回退 = STABLE_REVEAL_PILOT
-        // 置 false（gate 旁路，pilot 原行为）。
+        // 经毕业/EOF flush 释放（降亮区已退役）。
         pilotEverRendered = true
+        if (everKey != null) EverStreamedPartLedger.mark(everKey)
         // freeze 恒 false：#472 async 桥接窗已退役（无切换帧可桥），shard 冷续
         // 的 EOF flush 亦须放行——冻结语义全消。
         val pilotState = rememberPilotStreamingMarkdownState(
             markdown,
             shard = shardCtl,
+            // #518①：终态全量揭示旗标（来源见参数声明处注释）
+            terminal = contentTerminal,
+            // #486 根修：账本武装的真冷组合（remember 槽销毁后的重建）单帧揭示；
+            // 存活槽位（slotRemembered）与 Fire 重建（fastRefeed 路径）不受影响。
+            coldReveal = ledgerArmed && !slotRemembered,
         )
+        // #486 根修二期：槽位销毁时捕获 pilot 当前 state（终态或流式中途快照）
+        // 入进程级缓存——冷重建复用已解析对象，首帧即有内容。rememberUpdatedState
+        // 跟随 resetKey 重建后的最新实例。
+        val latestPilotState by rememberUpdatedState(pilotState.state)
+        if (everKey != null) {
+            DisposableEffect(everKey) {
+                onDispose { EverStreamedPartLedger.cacheTerminal(everKey, latestPilotState) }
+            }
+        }
         androidx.compose.foundation.layout.Column {
             // #437 崩溃修复：非前缀重建（resetKey++）换 state 实例的同一帧，
             // 库 Markdown 内部 collectAsState 对流实例的记忆可能残留旧 snapshot
@@ -824,6 +892,24 @@ internal fun MarkdownContent(
             android.util.Log.w("A11yDiag", "path=pilot retained=" + pilotRetained +
                 " len=" + markdown.length)
         }
+        return
+    }
+
+    // #486 根修二期：缓存命中渲染（计算已上移至 pilot 分支判定之前）
+    if (cachedTerminalState != null) {
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+            android.util.Log.w("A11yDiag", "path=cachedTerminal len=" + markdown.length)
+        }
+        Markdown(
+            streamingMarkdownState = cachedTerminalState,
+            colors = colors,
+            typography = typography,
+            components = components,
+            padding = padding,
+            animations = animations,
+            imageTransformer = Coil3ImageTransformerImpl,
+            modifier = Modifier.fillMaxWidth(),
+        )
         return
     }
 
@@ -882,6 +968,8 @@ internal fun MarkdownContent(
         animations = markdownAnimations(animateTextSize = { this }),
         imageTransformer = Coil3ImageTransformerImpl,
         modifier = Modifier.fillMaxWidth(),
+        // #517②：静态/异步路径同款终态槽（尾随空白子节点跳过，见 preParsed 分支注）
+        success = terminalSuccessSlot(),
     )
 }
 
@@ -974,6 +1062,51 @@ internal object MarkdownParsedStateCache {
 }
 
 /**
+ * #515（2026-10-06）：武装期预热解析同步核——把冻结块文本解析入
+ * [MarkdownParsedStateCache]（幂等：已在缓存则跳过）。调用方（pilot Arm 分支）
+ * 经 [prewarmShardParse] 走后台线程；换装帧 [StreamShardContent] 缓存命中，
+ * 免同步 parseMarkdown（真机实证换装帧 hitch 的主分量，47ms 中 parse
+ * ≈20-40ms）。解析为纯函数（自建 AST），线程安全；缓存同步 LRU。
+ */
+internal fun prewarmShardParseSync(texts: List<String>) {
+    for (t in texts) {
+        if (MarkdownParsedStateCache.get(t) == null) {
+            MarkdownParsedStateCache.put(t, parseMarkdown(t))
+        }
+    }
+}
+
+private val ShardPrewarmScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+/** #515：预热异步壳（fire-and-forget；Fire 先于完成时为 cache miss，回落同步解析）。 */
+internal fun prewarmShardParse(texts: List<String>) {
+    if (texts.isEmpty()) return
+    ShardPrewarmScope.launch { prewarmShardParseSync(texts) }
+}
+
+/**
+ * #540 二轮③（裁决 2026-10-11）：终态预热——收起状态下流完的思考文本首次
+ * 展开时生平第一次入组合（pilot 未渲染过、#486 账本未标记），>2048 走
+ * asyncTerminal 首帧 Loading 短高、解析落地分档 MDResize=「展开先跳再拖」
+ * 分档面（journal §22 D1）。调用方（ReasoningBlock）在流式→终态翻转且卡收起
+ * 时触发：把解析结果按 [rememberAsyncMarkdownState] 同键形（原始串为键）后台
+ * 入 [MarkdownParsedStateCache]——首开命中即同步终态，首测即终高。
+ * 幂等（命中跳过）；Default 线程；LRU32 有界；≤2048 短文本同步路径本就
+ * 首测终高，直接跳过。
+ */
+internal fun prewarmTerminalParse(content: String, isUser: Boolean) {
+    if (content.length <= ASYNC_PARSE_MIN_CHARS) return
+    ShardPrewarmScope.launch { prewarmTerminalParseSync(content, isUser) }
+}
+
+/** #540 二轮③：预热同步核（JVM 可单测；幂等，命中跳过）。 */
+internal fun prewarmTerminalParseSync(content: String, isUser: Boolean) {
+    if (MarkdownParsedStateCache.get(content) == null) {
+        MarkdownParsedStateCache.put(content, parseMarkdown(normalizeForRender(content, isUser)))
+    }
+}
+
+/**
  * #428:同步解析的 MarkdownState——remember 时内联 parse 出终态,无 Loading 帧。
  *
  * 库的 [com.mikepenz.markdown.model.parseMarkdown] 为非 suspend 纯函数入口
@@ -1002,15 +1135,23 @@ private fun rememberSyncMarkdownState(content: String, isUser: Boolean): Markdow
 /**
  * #442 R2 分片唤醒（A2）：流式冻结块渲染——归一化切片（pilot 归一化坐标，
  * 已是终态形态，#471③ 同源）同步解析 + preParsed 通道（无 Loading 空窗：
- * 换装帧首组合即全高）。冻结内容不可变 → remember(text) 单次解析；item
- * 回收重组合按 text 重解析（A2 接受；后续可接 SyncParseCache）。
+ * 换装帧首组合即全高）。冻结内容不可变 → remember(text) 单次解析。
+ * #515（2026-10-06）：接 [MarkdownParsedStateCache]——pilot Arm 期预热
+ * （[prewarmShardParse]）后换装帧命中免同步 parse（hitch 主分量）；item
+ * 回收重组合同键命中（A2 注释「后续可接 SyncParseCache」兑现）。
  */
 @Composable
-internal fun StreamShardContent(markdown: String, textColor: Color) {
-    val parsed = remember(markdown) { parseMarkdown(markdown) }
-    // [507-shard] #507 消失取证：冻结块组合事实（文本量）+ 实测高度
+internal fun StreamShardContent(markdown: String, textColor: Color, trimTrailingBlockGap: Boolean = false) {
+    // [507-shard] #515 增补：入场缓存命中事实（预热是否赶在换装帧前——命中
+    // = 换装帧免同步 parse）。读取在 remember 前，防 miss-回填污染探针。
+    val cacheHitAtCompose = MarkdownParsedStateCache.get(markdown) != null
+    val parsed = remember(markdown) {
+        MarkdownParsedStateCache.get(markdown)
+            ?: parseMarkdown(markdown).also { MarkdownParsedStateCache.put(markdown, it) }
+    }
     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
-        android.util.Log.w("507-shard", "shardContent len=" + markdown.length)
+        android.util.Log.w("507-shard", "shardContent len=" + markdown.length +
+            " cached=" + cacheHitAtCompose)
     }
     Box(
         modifier = Modifier
@@ -1026,8 +1167,29 @@ internal fun StreamShardContent(markdown: String, textColor: Color) {
             textColor = textColor,
             isUser = false,
             preParsedState = parsed,
+            trimTrailingBlockGap = trimTrailingBlockGap,
         )
     }
+}
+
+/**
+ * #517：终末块距载体判定——内容（trimEnd 后）最后一非空行恰为闭合围栏
+ * （≤3 空格缩进 + ≥3 个 ` 或 ~ 且标记后仅空白）= 终末块是代码/公式块，
+ * 其 bottom 外距在 turn 终态下属超额（内容→统计栏间隙统一到 user 侧）。
+ * 纯函数，调用方：PartContent（liveText==null 终态）/ MessageCardAssistant
+ * 末 chunk / ChatMessageList 末 #g 冻结片。
+ */
+internal fun endsWithBlockGapCarrier(content: String): Boolean {
+    val trimmed = content.trimEnd()
+    if (trimmed.isEmpty()) return false
+    val lastLine = trimmed.substring(trimmed.lastIndexOf('\n') + 1)
+    val marker = lastLine.trimStart(' ', '\t')
+    if (marker.isEmpty()) return false
+    val c = marker[0]
+    if (c != '`' && c != '~') return false
+    var n = 0
+    while (n < marker.length && marker[n] == c) n++
+    return n >= 3 && marker.drop(n).isBlank()
 }
 
 @Composable
@@ -1054,6 +1216,42 @@ private fun rememberAsyncMarkdownState(content: String, isUser: Boolean): Markdo
  * 扫描锚点签名重定位区间起点（索引漂移自愈），再按 AST 固有顺序渲染到
  * 计划终点——保证多片拼接与源文块顺序一致；找不到锚点 → 回退纯索引。
  */
+/**
+ * #517②：全量静态渲染（preParsed 非分片 / asyncTerminal / syncSmall / override）
+ * 的 success 槽——复刻 mikepenz [MarkdownSuccess] 的 Column+MarkdownElement 结构，
+ * 唯一差异：**跳过尾随空白子节点**。
+ *
+ * 根因：内容结尾的 `\n` 会被解析为尾随 EOL 顶层子节点，而 MarkdownElement 的
+ * includeSpacer 机制在**每个**子节点（含空白节点）前垫 `Spacer(padding.block)`
+ * ——终末块与统计栏之间凭空多出该间隔；分片路径的 chunk 计划态 AST 天然不含
+ * 尾随 EOL（其内容在计划构建期已裁尾），同一消息两侧路径间隙不一致即源于此。
+ * 尾随空白节点无可见内容，跳过仅消除尾部多余间隔，块间视觉零变化。
+ */
+internal fun terminalSuccessSlot():
+    @Composable (State.Success, com.mikepenz.markdown.compose.components.MarkdownComponents, Modifier) -> Unit =
+    { st, comps, mod ->
+        androidx.compose.foundation.layout.Column(mod) {
+            val kids = st.node.children
+            var last = kids.size
+            while (last > 0) {
+                val n = kids[last - 1]
+                val s0 = n.startOffset.coerceIn(0, st.content.length)
+                val e0 = n.endOffset.coerceIn(0, st.content.length)
+                if (e0 > s0 && !st.content.substring(s0, e0).isBlank()) break
+                last--
+            }
+            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG && last < kids.size) {
+                android.util.Log.w(
+                    "GapDiag",
+                    "terminalSlot skipped " + (kids.size - last) + " trailing blank kids=" + kids.size + " contentLen=" + st.content.length,
+                )
+            }
+            for (i in 0 until last) {
+                com.mikepenz.markdown.compose.MarkdownElement(kids[i], comps, st.content)
+            }
+        }
+    }
+
 private fun chunkSuccessSlot(
     blockRange: IntRange,
     anchor: String? = null,

@@ -503,10 +503,55 @@ class DshEventMapperTest {
         val mapped = DshEventMapper.mapFrame(
             "session/projection",
             json.parseToJsonElement(
-                """{"type":"session/projection","sessionId":"s1","key":"todos","value":{"items":[]},"seq":9}"""
+                """{"type":"session/projection","sessionId":"s1","key":"title","value":"t","seq":9}"""
             ).jsonObject,
         )
         assertEquals(listOf(DshMappedEvent.Ignored(DshIgnoreReason.PROJECTION)), mapped)
+    }
+
+    // ============ todos 投影整值帧（#521 冷进补灌） ============
+
+    @Test
+    fun `projection todos frame maps whole value to TodoUpdated`() {
+        val mapped = DshEventMapper.mapFrame(
+            "session/projection",
+            json.parseToJsonElement(
+                """{"type":"session/projection","sessionId":"s1","key":"todos",""" +
+                    """"value":[{"content":"接入投影帧","status":"in_progress"},{"content":"写单测","status":"completed"}],"seq":21}"""
+            ).jsonObject,
+        )
+        val updated = eventsOf(mapped).single() as SseEvent.TodoUpdated
+        assertEquals("s1", updated.sessionId)
+        assertEquals(2, updated.todos.size)
+        assertEquals("接入投影帧", updated.todos[0].content)
+        assertEquals("in_progress", updated.todos[0].status)
+        assertEquals("medium", updated.todos[0].priority)
+        assertEquals("completed", updated.todos[1].status)
+    }
+
+    @Test
+    fun `projection todos null tombstone maps to empty list`() {
+        // 服务端 turn/start 清空（apply: turn/start → null）——空表覆写非畸形
+        val mapped = DshEventMapper.mapFrame(
+            "session/projection",
+            json.parseToJsonElement(
+                """{"type":"session/projection","sessionId":"s1","key":"todos","value":null,"seq":22}"""
+            ).jsonObject,
+        )
+        val updated = eventsOf(mapped).single() as SseEvent.TodoUpdated
+        assertEquals("s1", updated.sessionId)
+        assertTrue(updated.todos.isEmpty())
+    }
+
+    @Test
+    fun `projection todos malformed value is ignored`() {
+        val mapped = DshEventMapper.mapFrame(
+            "session/projection",
+            json.parseToJsonElement(
+                """{"type":"session/projection","sessionId":"s1","key":"todos","value":"oops","seq":23}"""
+            ).jsonObject,
+        )
+        assertEquals(listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED)), mapped)
     }
 
     // ============ permissions 投影整值帧（#283-a2） ============
@@ -778,6 +823,7 @@ class DshEventMapperTest {
         val host = ((mapped[0] as DshMappedEvent.Sse).event as SseEvent.MessageUpdated).info as Message.Assistant
         assertEquals("dsh-call-call_1", host.id) // tool/result 的无状态连接键
         assertEquals(1788109999000L, host.time.created)
+        assertNull(host.time.completed) // #540 B 守卫：起始腿不预完结
         val tool = ((mapped[1] as DshMappedEvent.Sse).event as SseEvent.MessagePartUpdated).part as Part.Tool
         assertEquals("call_1", tool.id)
         assertEquals("call_1", tool.callId)
@@ -800,7 +846,12 @@ class DshEventMapperTest {
                 """{"turn":3,"step":2,"message":{"source":{"kind":"tool","callId":"call_1"},"content":[{"type":"tool-result","toolCallId":"call_1","content":[{"type":"text","text":"file-a\nfile-b"}]}]}}""",
             ),
         )
-        val tool = (eventsOf(mapped).single() as SseEvent.MessagePartUpdated).part as Part.Tool
+        // #540 B：tool/result 边界给宿主回填 completed（服务器信封时刻——组判据
+        // 步间翻非流式，「输出后」降级窗关闭；merge created=min 保 #453 计时锚）
+        val host = (eventsOf(mapped).filterIsInstance<SseEvent.MessageUpdated>().single().info as Message.Assistant)
+        assertEquals("dsh-call-call_1", host.id)
+        assertEquals(1788109999000L, host.time.completed)
+        val tool = (eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>().single().part as Part.Tool)
         assertEquals("call_1", tool.id)
         assertEquals("dsh-call-call_1", tool.messageId)
         val completed = tool.state as ToolState.Completed
@@ -819,10 +870,14 @@ class DshEventMapperTest {
                 """{"turn":3,"step":2,"error":{"code":"command-error","message":"exit 1"},"message":{"source":{"kind":"tool","callId":"call_2"},"content":[]}}""",
             ),
         )
-        val tool = (eventsOf(mapped).single() as SseEvent.MessagePartUpdated).part as Part.Tool
+        // #540 B：错误终态同样回填宿主 completed（调用已终结，错误语义在 part 上）
+        val host = (eventsOf(mapped).filterIsInstance<SseEvent.MessageUpdated>().single().info as Message.Assistant)
+        assertEquals("dsh-call-call_2", host.id)
+        assertEquals(1788109999000L, host.time.completed)
+        val tool = (eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>().single().part as Part.Tool)
         val error = tool.state as ToolState.Error
         assertEquals("exit 1", error.error)
-        // #453：Error 终态同补 time（错误调用同样显示累积时长）
+        // #453：Error 终态同补 time（错误调用同样累积时长）
         assertEquals(1788109999000L, error.time!!.end)
     }
 
@@ -875,6 +930,10 @@ class DshEventMapperTest {
         )
         val tool = (eventsOf(mapped).filterIsInstance<SseEvent.MessagePartUpdated>().single().part as Part.Tool)
         assertEquals("call_r1:subagent", tool.id)
+        // #540 B：subagent 终态帧的宿主重申携带 completed（本分支即终态）
+        val host = (eventsOf(mapped).filterIsInstance<SseEvent.MessageUpdated>().single().info as Message.Assistant)
+        assertEquals("dsh-call-call_r1:subagent", host.id)
+        assertEquals(1788109999000L, host.time.completed)
         val completed = tool.state as ToolState.Completed
         assertEquals("started subagent bd5a33c9-cd05-4d73-baff-2319c036681e", completed.output)
         assertEquals(
@@ -1589,17 +1648,80 @@ class DshEventMapperTest {
         assertTrue(snapshots.none { it is SseEvent.JobsSnapshot })
     }
 
+    // ============ #288：run 级聚合（agent-start/end 收编；载荷事实=现网样本） ============
+
+    private fun wfEvent(type: String, data: String): JsonObject =
+        json.parseToJsonElement("""{"type":"$type","seq":70,"time":1,"data":$data}""").jsonObject
+
+    private fun wfCardText(mapped: List<DshMappedEvent>): String {
+        val events = eventsOf(mapped)
+        return ((events[1] as SseEvent.MessagePartUpdated).part as Part.Text).text
+    }
+
     @Test
-    fun `workflow agent start and end stay ignored - phase details deferred`() {
-        listOf("tool-workflow/agent-start", "tool-workflow/agent-end").forEach { type ->
-            val mapped = DshEventMapper.mapSessionEvent(
-                "s1",
-                json.parseToJsonElement(
-                    """{"type":"$type","seq":70,"time":1,"data":{"runId":"wf_audit_1","seq":1,"label":"audit","outcome":"completed"}}"""
-                ).jsonObject,
-            )
-            assertEquals("$type", listOf(DshMappedEvent.Ignored(DshIgnoreReason.WORKFLOW_AGENT)), mapped)
+    fun `workflow agent events fold into run card with rolling progress`() {
+        // run-start 建档 → agent-start×2 → agent-end 乱序（现网实证 end 序与 start 序无关）
+        DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/run-start", """{"runId":"wf_agg_1","name":"audit"}"""))
+        val t1 = wfCardText(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-start", """{"runId":"wf_agg_1","seq":1,"label":"alpha","phase":"scan","childId":"c-1"}""")))
+        assertTrue(t1.contains("1 agents"))
+        assertTrue(t1.contains("[scan]"))
+        assertTrue(t1.contains("▸ alpha"))
+        val t2 = wfCardText(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-start", """{"runId":"wf_agg_1","seq":2,"label":"beta","phase":"scan","childId":"c-2"}""")))
+        assertTrue(t2.contains("2 agents"))
+        assertTrue(t2.contains("▸ beta"))
+        // end seq=2 先到（乱序回填）
+        val t3 = wfCardText(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-end", """{"runId":"wf_agg_1","seq":2,"outcome":"completed"}""")))
+        assertTrue(t3.contains("2 agents · 1 done"))
+        assertTrue(t3.contains("✓ beta"))
+        assertTrue(t3.contains("▸ alpha"))
+        // 非 completed outcome 标注
+        val t4 = wfCardText(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-end", """{"runId":"wf_agg_1","seq":1,"outcome":"error"}""")))
+        assertTrue(t4.contains("✗ alpha (error)"))
+        assertTrue(t4.contains("2 agents"))
+    }
+
+    @Test
+    fun `workflow run end prefers ledger name and appends member outcomes`() {
+        DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/run-start", """{"runId":"wf_agg_2","name":"audit"}"""))
+        DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-start", """{"runId":"wf_agg_2","seq":1,"label":"alpha","phase":"scan"}"""))
+        DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-end", """{"runId":"wf_agg_2","seq":1,"outcome":"completed"}"""))
+        val text = wfCardText(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/run-end", """{"runId":"wf_agg_2","stopReason":"completed"}""")))
+        assertTrue(text.contains("state=\"completed\""))
+        // 账本名优先于 runId（Task 3b 时代恒用 runId 的升级位）
+        assertTrue(text.contains("workflow: audit"))
+        assertTrue(text.contains("✓ alpha"))
+        val updated = eventsOf(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/run-end", """{"runId":"wf_agg_2","stopReason":"completed"}""")))[0] as SseEvent.MessageUpdated
+        assertEquals("dsh-workflow-wf_agg_2", updated.info.id)
+    }
+
+    @Test
+    fun `workflow agent end without run start creates skeleton member`() {
+        val text = wfCardText(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-end", """{"runId":"wf_orphan_9","seq":3,"outcome":"cancelled"}""")))
+        // start 未见：骨架成员按 seq 命名，乱序/分页边界不炸
+        assertTrue(text.contains("✗ agent #3 (cancelled)"))
+    }
+
+    @Test
+    fun `workflow replay is idempotent - same final card on duplicate sequence`() {
+        fun fullRun(): String {
+            DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/run-start", """{"runId":"wf_replay_1","name":"audit"}"""))
+            DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-start", """{"runId":"wf_replay_1","seq":1,"label":"alpha","phase":"scan"}"""))
+            DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-end", """{"runId":"wf_replay_1","seq":1,"outcome":"completed"}"""))
+            return wfCardText(DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/run-end", """{"runId":"wf_replay_1","stopReason":"completed"}""")))
         }
+        assertEquals(fullRun(), fullRun())
+    }
+
+    @Test
+    fun `workflow agent events malformed without runId or seq stay ignored`() {
+        assertEquals(
+            listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED)),
+            DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-start", """{"label":"x"}""")),
+        )
+        assertEquals(
+            listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED)),
+            DshEventMapper.mapSessionEvent("s1", wfEvent("tool-workflow/agent-end", """{"runId":"wf_agg_1"}""")),
+        )
     }
 
     // ============ #312⑤ seq 锚点反解（messageId 契约双向）============

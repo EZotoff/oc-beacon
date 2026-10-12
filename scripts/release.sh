@@ -10,7 +10,9 @@
 #   --force-bump: 强制开新版本线并指定递进类型（正常流程开新线由脚本自动判断）
 #
 # 版本线模型：同一 X.Y.Z 走完 dev → beta → 正式（通道切换不 bump）；
-# 当前线发布过正式版后，下一次发版自动开新线（feat→+0.1.0 / fix→+0.0.1）。
+# 当前线发布过正式版后，下一次发版自动开新线（feat→+0.1.0 / fix→+0.0.1）；
+# beta 线内序号迭代（-beta-N，bare -beta 视为 1 号，2026-10-10 用户定规）；
+# 任何版本号提升（新线/通道晋升/正式发布）须用户确认，纯序号递增豁免（同上定规）。
 #
 # 功能:
 #   1. 检查 git 工作树干净
@@ -93,6 +95,18 @@ last_stable_tag() {
 last_prerelease_num() {
   local base="$1" label="$2"
   git tag --list "v${base}-${label}.*" | sed -E "s/^v${base//./\\.}-${label}\.//" | sort -n | tail -n1
+}
+
+# 查询某版本线 beta 通道已发布的最大序号（2026-10-10 用户定规：beta 线内序号迭代）
+# bare -beta（旧惯例）视为第 1 号；-beta-N 取最大 N；无 beta tag 输出 0
+last_beta_num() {
+  local base="$1" max=0 n
+  if git rev-parse -q --verify "${TAG_PREFIX}${base}-beta" >/dev/null 2>&1; then
+    max=1
+  fi
+  n="$(git tag --list "${TAG_PREFIX}${base}-beta-*" | sed -E "s/^v${base//./\\.}-beta-//" | grep -E '^[0-9]+$' | sort -n | tail -n1 || true)"
+  if [ -n "$n" ] && [ "$n" -gt "$max" ]; then max="$n"; fi
+  echo "$max"
 }
 
 # 最近一个「非当前版本线」的 tag（任何通道，含正式版）——通道切换发版的变更基准。
@@ -295,15 +309,14 @@ if [ -n "$STABLE_BASE" ] && version_gt "$STABLE_BASE" "$CUR_BASE"; then
   read -r C_MAJOR C_MINOR C_PATCH C_LABEL <<< "$(parse_version "$CUR_BASE-")"
 fi
 
-# 通道闭合检测（该 base 在目标通道已发过 → 不能重发同名 tag，必须开新线）：
-#   stable 通道：v{BASE} 存在即闭合
-#   beta 通道：v{BASE}-beta 或 v{BASE} 任一存在即闭合（beta 每线单发、无序号）
+# 通道闭合检测（该 base 在目标通道已发过 → 不能重发同名 tag）：
+#   stable 通道：v{BASE} 存在即闭合（线已正式——所有通道随之闭合，后续必须开新线）
+#   beta 通道：线内序号迭代（2026-10-10 用户定规），永不闭合——bare -beta 视为
+#     1 号，其后 -beta-N 递增，同名 tag 冲突由下方 tag 冲突检查兜底
 #   dev 通道：仅 v{BASE}（正式版）存在时闭合——dev.N 序号天然去重
 CHANNEL_CLOSED=false
 if git rev-parse -q --verify "${TAG_PREFIX}${CUR_BASE}" >/dev/null 2>&1; then
   CHANNEL_CLOSED=true   # 正式版已发——所有通道闭合
-elif [ "$FLAVOR" = "beta" ] && git rev-parse -q --verify "${TAG_PREFIX}${CUR_BASE}-beta" >/dev/null 2>&1; then
-  CHANNEL_CLOSED=true   # 本线 beta 已发过
 fi
 
 if [ -n "$FORCE_BUMP" ]; then
@@ -343,7 +356,12 @@ fi
 
 case "$FLAVOR" in
   stable) NEW_VERSION_NAME="$NEW_BASE" ;;
-  beta)   NEW_VERSION_NAME="$NEW_BASE-beta" ;;   # 每线单发、无序号（2026-08-23 用户定规）
+  beta)
+    # 线内序号迭代（2026-10-10 用户定规，取代 2026-08-23「每线单发」）：
+    # bare -beta 视为第 1 号，其后 -beta-N 递增（序号递增免用户确认）
+    NUM="$(last_beta_num "$NEW_BASE")"
+    NEW_VERSION_NAME="$NEW_BASE-beta-$((NUM+1))"
+    ;;
   dev)
     # 线内序号以已发布 tag 为准（properties 可能滞后于 tag）
     NUM="$(last_prerelease_num "$NEW_BASE" dev)"
@@ -360,6 +378,44 @@ log "新版本: $NEW_VERSION_NAME (code=$NEW_VERSION_CODE)  tag=$NEW_TAG"
 # tag 冲突检查
 if git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
   die "tag $NEW_TAG 已存在！请检查是否重复发版。"
+fi
+
+# =============================================================================
+# 2.5 版本提升确认门（2026-10-10 用户定规）
+#   任何版本号提升（版本线 bump / 通道晋升 / 正式发布）须用户确认后才能落盘；
+#   纯预发布序号递增（同线同通道：dev.N→dev.N+1、-beta-N→-beta-N+1）豁免。
+# =============================================================================
+is_pure_sequence_bump() {
+  [ "$NEW_BASE" = "$CUR_BASE" ] || return 1
+  case "$FLAVOR" in
+    dev)  [[ "$C_LABEL" == dev.* ]] ;;
+    beta) [[ "$C_LABEL" == "beta" || "$C_LABEL" == beta-* ]] ;;
+    *)    return 1 ;;
+  esac
+}
+if is_pure_sequence_bump; then
+  log "纯序号递增（$CUR_VERSION_NAME → $NEW_VERSION_NAME），免确认（2026-10-10 定规）"
+  NEEDS_CONFIRM=false
+else
+  NEEDS_CONFIRM=true
+fi
+if $DRY_RUN; then
+  if $NEEDS_CONFIRM; then
+    log "[dry-run] 正式执行时将要求人工确认版本提升（$CUR_VERSION_NAME → $NEW_VERSION_NAME）"
+  fi
+elif $NEEDS_CONFIRM; then
+  echo ""
+  echo "──────────────────────────────────────────────────────────"
+  echo " ⚠️  版本提升确认（2026-10-10 用户定规：任何版本号提升须确认；仅序号递增免确认）"
+  echo "   当前: $CUR_VERSION_NAME (code=$CUR_VERSION_CODE)"
+  echo "   拟发: $NEW_VERSION_NAME (code=$NEW_VERSION_CODE)  [$FLAVOR]  tag=$NEW_TAG"
+  echo "   拒绝即中止（不修改任何文件）；如需改递进类型可用 --force-bump=major|minor|patch"
+  echo "──────────────────────────────────────────────────────────"
+  read -r -p " 确认提升到 $NEW_VERSION_NAME？[y/N] " CONFIRM_ANS
+  case "$CONFIRM_ANS" in
+    y|Y|yes|YES) log "用户已确认版本提升" ;;
+    *) die "用户未确认版本提升——已中止（未修改任何文件）" ;;
+  esac
 fi
 
 # =============================================================================
@@ -426,7 +482,7 @@ fi
 # 无本通道 tag 时退到最后正式版，再无则根提交。
 case "$FLAVOR" in
   stable) NOTES_SINCE="$LAST_STABLE" ;;
-  beta) NOTES_SINCE="$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-beta(\.[0-9]+)?$' | head -n1 || true)" ;;
+  beta) NOTES_SINCE="$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-beta([.-][0-9]+)?$' | head -n1 || true)" ;;
   dev)  NOTES_SINCE="$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-dev\.[0-9]+$' | head -n1 || true)" ;;
 esac
 if [ -z "$NOTES_SINCE" ]; then

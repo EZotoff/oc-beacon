@@ -156,4 +156,36 @@ class StreamingSplitMachineTest {
         assertEquals(0, m.origin)
         assertEquals(-1, m.armedOrigin)
     }
+
+    // ===== #515（2026-10-06）：武装期预演一致性 =====
+
+    @Test
+    fun `previewFirePlan 与 Fire 实发计划逐字节一致 - #515 预热`() {
+        val m = StreamingSplitMachine(minFreezeChars = min)
+        val arm = m.onBatch(snapshot, released = 200, quiescent = true, nowMs = tick())
+        assertTrue(arm is SplitAction.Arm)
+        val armedAt = (arm as SplitAction.Arm).armedOrigin
+
+        // 武装边界预演（快照可继续增长——前缀稳定，块切分不变）
+        val snapshotLater = snapshot + para("P31") + para("P32")
+        val preview = m.previewFirePlan(snapshotLater, armedAt)
+
+        // 追平静止 → Fire；实发计划与预演一致（块区间与 tailFrom）
+        val fire = m.onBatch(snapshotLater, released = 260, quiescent = true,
+            shadowLen = 260 - armedAt, nowMs = tick())
+        assertTrue(fire is SplitAction.Fire)
+        val fired = (fire as SplitAction.Fire).plan
+        assertEquals(fired.tailFrom, preview.tailFrom)
+        assertEquals(fired.chunks, preview.chunks)
+    }
+
+    @Test
+    fun `未武装时 previewFirePlan 返回当前账本语义 - #515`() {
+        val m = StreamingSplitMachine(minFreezeChars = min)
+        // 无武装（origin=0）：预演 = 以当前账本求值，不抛异常、不推进状态
+        val preview = m.previewFirePlan(snapshot, 200)
+        assertEquals(0, m.origin)
+        assertEquals(-1, m.armedOrigin)
+        assertTrue(preview.chunks.isNotEmpty())
+    }
 }

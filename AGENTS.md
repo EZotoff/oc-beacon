@@ -27,7 +27,7 @@ Unofficial OpenCode Android client. Jetpack Compose + Kotlin + Hilt + Ktor.
 | 🟡 SHOULD | [`docs/i18n-guide.md`](docs/i18n-guide.md) | 国际化工作流（15 语言 + 检查脚本 + CI） | 任何文案改动前 |
 | 🟡 SHOULD | [`docs/ui-conventions.md`](docs/ui-conventions.md) | Material 3、Theme Tokens、表格一致性 | 编写/修改 UI 组件前 |
 | 🟡 SHOULD | [`docs/agents-file-design.md`](docs/agents-file-design.md) | AGENTS.md 维护规范（本文件设计依据） | 新增/修改 AGENTS.md 规则时 |
-| 🟡 SHOULD | [`backlog.md`](backlog.md) | **未决工作项卡片清单**（P0-P3 + Tag + 状态流转 + journal/spec 约定） | 录入新条目前（避免重复）、开始新任务了解待办时 |
+| 🟡 SHOULD | [`backlog.md`](backlog.md) | **未决工作项卡片清单**（P0-P4 + Tag + 状态流转 + journal/spec 约定；P3=观察项、P4=外部前提阻塞） | 录入新条目前（避免重复）、开始新任务了解待办时 |
 | 🟢 MAY | `docs/journal/` | 批次执行记录与验证证据（完结条目归档处，历史查询） | 回溯某批次修复细节/取证/勘误链时 |
 | 🟢 MAY | [`docs/learning/AGENTS.md`](docs/learning/AGENTS.md) | **个人学习专区**（Kotlin/Android 教程，无业务语义，不承接功能性文档） | 在 docs/learning 下工作、或需确认某文档是否属于业务文档时 |
 | 🟡 SHOULD | [`docs/specs/2026-08-21-in-session-audio-feedback-design.md`](docs/specs/2026-08-21-in-session-audio-feedback-design.md) | 会话内提示音设计 spec | 实现提示音、通知抑制、backlog #155 前 |
@@ -114,7 +114,7 @@ Release keystore 位于 `app/keystore/`（gitignore，仅本地文件与 CI Secr
 
 SSE → UI 管线：**100ms token 批处理（`STREAM_FLUSH_INTERVAL_MS`，引擎域单一真相源）→ 高度引擎配对（StreamingGrowLedger → pre-draw flush，#435）→ 渲染**。违反任何一条都会重新引入闪烁、卡顿输出或视口跳底：
 
-- **`Markdown()` 必须使用 `rememberMarkdownState(content, retainState=true)`；流式 turn 走 `StreamingMarkdownState` 前缀差分 append（#265 试点，`STREAMING_MD_PILOT` 开关）** — 无状态 `Markdown(content=...)` 每次重组重新解析 → 高度振荡 → 闪烁。
+- **`Markdown()` 必须使用 `rememberMarkdownState(content, retainState=true)`；流式 turn 走 `StreamingMarkdownState` 前缀差分 append（#265，过渡开关已随 #499 退役为唯一路径）** — 无状态 `Markdown(content=...)` 每次重组重新解析 → 高度振荡 → 闪烁。
 - **`scheduleFlush()` 不得取消进行中的定时器** — 每个 token 都取消会在速率 > 20/s 时饿死 flush → 突发式卡顿输出。
 - **流式增长配对只应用于流式 turn**（`if (isStreamingMsg)`；#435 起经 `streamingGrowPairing` 记账入 `StreamingGrowLedger`）— 应用到所有 assistant 消息会让已完结消息暴露在不稳定测量下。
 - **流式增长的视口配对必须走高度引擎统一规则（#435「锚即意图」）：贴底跟随族/读历史一律免派发，锚上移进入增长源才 +Δ 同帧配对（PreRenderCoordinator flush 单点）** — 任何绕过引擎的流式滚动注入都会重新引入贴底震荡（工具横幅按批节奏增长推离贴底）或读历史拖拽。

@@ -126,6 +126,53 @@ class MessageIdSwapped509Test {
     }
 
     @Test
+    fun `double source merge keeps pending send-time created and resorts - 524`() = runTest {
+        // #524 次级形态：DSH journal 的 prompt entry 信封 time=落盘时刻（原生晚于
+        // turn 首输出）；乐观播种行（pending-*）的 created=客户端发送时刻才是
+        // 「消息创建时刻」——并入时取 min 且 created 变早按序移位，提问行不再
+        // 排到首段输出之下。
+        val handler = MessageEventHandler(null)
+        // 既有 assistant 输出（created=200，模拟 turn 首输出先落）
+        handler.handleMessageUpdated(SseEvent.MessageUpdated(
+            Message.Assistant(id = "seq-s1-out", sessionId = sid, time = TimeInfo(created = 200L), parentId = ""),
+        ))
+        // 权威 user 行（DSH journal 信封 time=300，晚于首输出 200）
+        handler.handleMessageUpdated(SseEvent.MessageUpdated(
+            Message.User(id = authId, sessionId = sid, time = TimeInfo(created = 300L)),
+        ))
+        // 乐观播种行（发送时刻 created=100）
+        handler.handleMessageUpdated(SseEvent.MessageUpdated(
+            Message.User(id = "pending-rpc9", sessionId = sid, time = TimeInfo(created = 100L)),
+        ))
+
+        handler.handleMessageIdSwapped(swap(from = "pending-rpc9", to = authId))
+
+        val rows = handler.messages.value[sid]!!
+        assertEquals(2, rows.size)
+        val user = rows.first { it.id == authId } as Message.User
+        assertEquals("并入保发送时刻（min）", 100L, user.time.created)
+        assertEquals("created 变早按序移位（user 在 assistant 输出之前）", 0, rows.indexOfFirst { it.id == authId })
+    }
+
+    @Test
+    fun `double source merge keeps later authoritative created when pending absent`() = runTest {
+        // 非 pending 双源（DSH 流式宿主/其他）不适用保发送时刻——created 不动
+        val handler = MessageEventHandler(null)
+        handler.handleMessageUpdated(SseEvent.MessageUpdated(
+            Message.User(id = hostId, sessionId = sid, time = TimeInfo(created = 100L)),
+        ))
+        handler.handleMessageUpdated(SseEvent.MessageUpdated(
+            Message.User(id = authId, sessionId = sid, time = TimeInfo(created = 300L)),
+        ))
+
+        handler.handleMessageIdSwapped(swap(from = hostId, to = authId))
+
+        val rows = handler.messages.value[sid]!!
+        assertEquals(1, rows.size)
+        assertEquals("非 pending 并入不修正 created", 300L, (rows[0] as Message.User).time.created)
+    }
+
+    @Test
     fun `pending echo swap records ledger - late seed dropped`() = runTest {
         // #490 竞态败者落序经 swap：换名先到（行缺席 no-op 但登记台账）→ 迟到
         // 播种命中台账被丢——终态恰一条（durable）。

@@ -192,6 +192,7 @@ import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalSessionDiffs
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalSessionStreaming
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalToolExpandedStates
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalOnToggleToolExpanded
+import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalOnMigrateExpandAlias
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalTaskOutputFetcher
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalToolCardResolver
 import dev.leonardo.ocbeacon.ui.screens.chat.util.ImageAttachment
@@ -630,6 +631,10 @@ fun ChatScreen(
         // #429 L0:StateFlow 整体下沉(稳定身份),读者 per-key 派生读取
         LocalToolExpandedStates provides viewModel.toolExpandedStates,
         LocalOnToggleToolExpanded provides onToggleToolExpandedLambda,
+        // #547：展开态键别名收养（身份键演化时旧键状态单向迁移）
+        LocalOnMigrateExpandAlias provides { fromKey, toKey ->
+            viewModel.migrateExpandAlias(fromKey, toKey)
+        },
         LocalToolCardResolver provides viewModel.toolCardResolver,
         // #182：Task 卡片展开时的全量输出拉取（part 优先→降级子智能体会话 transcript）
         LocalTaskOutputFetcher provides { partId, subSessionId ->
@@ -647,7 +652,6 @@ fun ChatScreen(
     val sessionTodos by viewModel.sessionTodos.collectAsStateWithLifecycle()
     // #313：队列计数（FAB 菜单角标）——sheet 内容另在 QUEUE 分支采集（同一源）
     val queueItemsForFab by viewModel.queueItems.collectAsStateWithLifecycle()
-    val todoCapable by viewModel.todoCapable.collectAsStateWithLifecycle()
     val taskUi by viewModel.taskUiState.collectAsStateWithLifecycle()
     var toolbarSheet by remember { mutableStateOf<ChatToolbarEntry?>(null) }
     // #286：目标状态（GoalSheet 数据源 + FAB/菜单项角标）
@@ -1057,6 +1061,20 @@ fun ChatScreen(
                                     "ChatScreen",
                                     "[452-display] n=" + displayItemsState.size,
                                 )
+                            }
+                            // #543 H4 探测器：displayItems 同消息 id 双行（派生上游
+                            // 瞬态重复会直接制造双宿主）。
+                            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                                displayItemsState
+                                    .groupingBy { it.second.message.id }
+                                    .eachCount()
+                                    .filterValues { it > 1 }
+                                    .forEach { (id, n) ->
+                                        dev.leonardo.ocbeacon.logging.AppLogger.w(
+                                            "ChatScreen",
+                                            "[DEBUG-543] display-dual id=" + id.takeLast(24) + " n=" + n,
+                                        )
+                                    }
                             }
                             true
                         }

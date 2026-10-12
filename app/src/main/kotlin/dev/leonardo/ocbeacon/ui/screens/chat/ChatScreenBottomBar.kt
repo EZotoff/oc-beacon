@@ -3,8 +3,10 @@ package dev.leonardo.ocbeacon.ui.screens.chat
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -18,6 +20,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,11 +35,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import dev.leonardo.ocbeacon.ui.theme.AlphaTokens
+import dev.leonardo.ocbeacon.ui.theme.ShapeTokens
 import androidx.compose.runtime.setValue
 import dev.leonardo.ocbeacon.ui.components.ConfirmDialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextRange
@@ -110,7 +116,7 @@ internal fun ChatScreenBottomBar(
     val clipboard = LocalClipboard.current
     val taskUi by viewModel.taskUiState.collectAsStateWithLifecycle()
     val taskToolbarText = if (taskUi.foregroundSubagentCount > 0) {
-        stringResource(R.string.task_toolbar_subagents, taskUi.foregroundSubagentCount)
+        pluralStringResource(R.plurals.task_toolbar_subagents, taskUi.foregroundSubagentCount, taskUi.foregroundSubagentCount)
     } else ""
     // #276 能力位门控：DSH 无 command 执行端点——斜杠命令面板与 /cmd 发送拦截均停用
     val serverCapabilities by viewModel.serverCapabilities.collectAsStateWithLifecycle()
@@ -128,9 +134,15 @@ internal fun ChatScreenBottomBar(
     // #310⑤ 会话源候选（与 fileSearchResults 同源同清,composer 统一状态）
     val sessionMentionResults by viewModel.composer.sessionSearchResults.collectAsStateWithLifecycle()
     val subagentMode by viewModel.subagentModeState.collectAsStateWithLifecycle()
+    val subagentsCapable = ServerFeatures.SUBAGENTS in serverCapabilities
     val subagentComposerVisible = SubagentComposerGate.composerVisible(
-        sessionMeta.sessionParentId, ServerFeatures.SUBAGENTS in serverCapabilities, subagentMode,
+        sessionMeta.sessionParentId, subagentsCapable, subagentMode,
     )
+    // #497 D4：DSH 子智能体会话 mode 异步解析期焦点接力——解析期骨架占位承接点击
+    //（pending 置位），composer 挂载完成后 FocusRequester 接力聚焦（键盘不
+    // 中断；parentId 变化=会话切换，remember 键自动复位 pending 防跨会话误聚焦）。
+    val composerFocusRequester = remember { FocusRequester() }
+    var pendingComposerFocus by remember(sessionMeta.sessionParentId) { mutableStateOf(false) }
     // #276 后端接口补全：DSH 无 shell 域——shell 模式入口（！ 前缀自动切换/
     //   长按切换/面板 shell 项）与 shell 发送全部停用，！ 前缀按普通消息发送。
     val shellCommandSupported = ServerFeatures.SHELL in serverCapabilities
@@ -149,6 +161,8 @@ internal fun ChatScreenBottomBar(
     // 组合层 stringResource（lambda 内不可调用 @Composable）；带参格式串 hoist
     // 模板、调用点 .format()（保留 locale 占位符次序）
     val shellEmptyMsg = stringResource(R.string.chat_shell_empty)
+    // #496：DSH 长按发送键（切 shell 死手势）的 M3 snackbar 反馈文案
+    val shellModeUnavailableMsg = stringResource(R.string.chat_shell_mode_unavailable)
     val shellAttachmentsUnsupportedMsg = stringResource(R.string.chat_shell_attachments_unsupported)
     val shellFailedMsg = stringResource(R.string.chat_shell_failed)
     // #312④：命令带图拦截提示（服务器 commands/execute 图片按命令声明门控，
@@ -435,6 +449,14 @@ internal fun ChatScreenBottomBar(
         }
     }
     if (subagentComposerVisible && !isTerminalMode && interaction.error == null) {
+        // #497 D4：挂载即焦点接力——骨架期预约的聚焦在此兑现（requestFocus 对
+        // 未挂载节点会抛 IllegalStateException，runCatching 兜底静默）。
+        LaunchedEffect(Unit) {
+            if (pendingComposerFocus) {
+                runCatching { composerFocusRequester.requestFocus() }
+                pendingComposerFocus = false
+            }
+        }
         val modelLabel = if (modelConfig.selectedModelId != null && modelConfig.providers.isNotEmpty()) {
             val provider = modelConfig.providers.find { it.id == modelConfig.selectedProviderId }
             val model = provider?.models?.get(modelConfig.selectedModelId)
@@ -510,12 +532,18 @@ internal fun ChatScreenBottomBar(
                 onInputModeChange = {
                     // #276：SHELL 模式入口能力位门控——发送钮长按切换在 DSH 下
                     // 无效（shell 域缺失），保持 NORMAL。
-                    if (it == ChatInputMode.SHELL && !shellCommandSupported) return@ChatInputBar
+                    // #496（2026-10-09 用户裁决）：静默 no-op → M3 snackbar 反馈
+                    //（消除死手势；覆盖长按/斜杠面板 shell 项等同拦截入口）。
+                    if (it == ChatInputMode.SHELL && !shellCommandSupported) {
+                        coroutineScope.launch { snackbarHostState.showSnackbar(shellModeUnavailableMsg) }
+                        return@ChatInputBar
+                    }
                     onInputModeChange(it.name)
                     if (it == ChatInputMode.SHELL) {
                         viewModel.composer.clearFileSearch()
                     }
                 },
+                focusRequester = composerFocusRequester,
                 isSending = interaction.isSending,
                 // 2026-08-17 修复（busy 指示闪烁）：显示侧下降沿消抖（#348 提升为
                 // stableBusy 局部值——onSend 拦截共用同一指示）。
@@ -650,9 +678,37 @@ internal fun ChatScreenBottomBar(
             }
         }
     }
+    // #497 D4：DSH 子智能体会话 mode 解析期（mode=null）composer 骨架占位——同位
+    // 同 footprint 防底部栏布局跳变；点击预约焦点（解析完成挂载后接力聚焦开
+    // 键盘）。与提示行互斥（mode=null 时提示行不渲染），V1/V2 无解析期不占位。
+    if (!subagentComposerVisible &&
+        SubagentComposerGate.composerPlaceholderVisible(sessionMeta.sessionParentId, subagentsCapable, subagentMode) &&
+        !isTerminalMode &&
+        interaction.error == null
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface)
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = SpacingTokens.LG.dp, vertical = SpacingTokens.XS.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .clip(ShapeTokens.largeMedium)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = AlphaTokens.MUTED))
+                    .clickable { pendingComposerFocus = true },
+            )
+        }
+    }
     // #310① one-shot 子会话只读提示行（明确不可续聊；加载中/失败保持全隐藏——
-    // 与 composer 同位替换渲染，占位底部栏避免布局跳变）
-    if (SubagentComposerGate.readOnlyHintVisible(sessionMeta.sessionParentId, ServerFeatures.SUBAGENTS in serverCapabilities, subagentMode) &&
+    // 与 composer 同位替换渲染，占位底部栏避免布局跳变）。
+    // #497 D3：无 subagents 能力位服务器（V1/V2）子智能体会话同位渲染只读镜像提示行
+    //（此前整块空白）——文案按能力位区分。
+    if (SubagentComposerGate.readOnlyHintVisible(sessionMeta.sessionParentId, subagentsCapable, subagentMode) &&
         !isTerminalMode
     ) {
         Surface(
@@ -660,7 +716,13 @@ internal fun ChatScreenBottomBar(
             color = MaterialTheme.colorScheme.surfaceVariant,
         ) {
             Text(
-                text = stringResource(R.string.chat_subagent_one_shot_read_only),
+                text = stringResource(
+                    if (subagentsCapable && subagentMode != SubagentComposerGate.MODE_UNRESOLVED) {
+                        R.string.chat_subagent_one_shot_read_only
+                    } else {
+                        R.string.chat_subagent_read_only_mirror
+                    },
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier

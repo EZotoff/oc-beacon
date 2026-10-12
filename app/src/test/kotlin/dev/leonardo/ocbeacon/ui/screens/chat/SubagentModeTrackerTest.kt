@@ -20,7 +20,8 @@ import org.junit.Test
  * #310① 子会话 mode 追踪器（纯流逻辑）：
  * - 主会话/非 DSH → 恒 null 且零 RPC；
  * - DSH 子会话 → 先 null（加载中保守隐藏 composer——防 one-shot 误发）再目录 mode；
- * - 失败/目录无本行 → 停留 null（隐藏降级）。
+ * - 失败/目录无本行 → [SubagentComposerGate.MODE_UNRESOLVED] 终态（#497 D4：
+ *   与加载中区分——0.2.x subagents/list 404 防骨架占位永久化）。
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SubagentModeTrackerTest {
@@ -92,7 +93,7 @@ class SubagentModeTrackerTest {
     }
 
     @Test
-    fun `catalog failure degrades to null without throwing`() = runTest {
+    fun `catalog failure degrades to unresolved sentinel without throwing`() = runTest {
         val repo = mockk<ChatRepository>()
         coEvery { repo.subagentCatalog("srv-1", "parent-1") } returns
             Result.failure(IllegalStateException("parent offline"))
@@ -106,11 +107,12 @@ class SubagentModeTrackerTest {
         }
         advanceUntilIdle()
         job.cancel()
-        assertEquals(listOf<String?>(null), emissions)
+        // #497 D4：失败=终态哨兵（非 null）——门控据此落只读提示行而非骨架
+        assertEquals(listOf(null, SubagentComposerGate.MODE_UNRESOLVED), emissions)
     }
 
     @Test
-    fun `child missing from catalog or non null result stays null`() = runTest {
+    fun `child missing from catalog or non null result emits unresolved`() = runTest {
         val repo = mockk<ChatRepository>()
         // 非 DSH 后端经仓储层返回 null（端点缺席降级）——目录无本行同语义
         coEvery { repo.subagentCatalog("srv-1", "parent-1") } returns Result.success(null)
@@ -124,6 +126,7 @@ class SubagentModeTrackerTest {
         }
         advanceUntilIdle()
         job.cancel()
-        assertEquals(listOf<String?>(null), emissions)
+        // #497 D4：目录无本行=续聊无法建立 → 终态哨兵
+        assertEquals(listOf(null, SubagentComposerGate.MODE_UNRESOLVED), emissions)
     }
 }

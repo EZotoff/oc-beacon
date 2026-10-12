@@ -274,6 +274,43 @@ class MessageMergeEngineTest {
         assertEquals(2, out.size)
     }
 
+    // ============ #540 四报 SILENT-STATE-RESET：dedup 身份先行 ============
+
+    @Test
+    fun `四报 REST权威胜出仍采派生id - 展开状态map键跨刷新稳定`() {
+        // soak4r c9 定罪：分段切换 REST 全量（真实 id bbb…、文本更长）覆盖
+        // SSE 派生孪生 → id 换名 → partId 键控展开态 map miss → 卡片静默
+        // 回退收起。根修：胜者内容权威、身份采派生契约 id。
+        val derived = text("m1_reasoning_ord_0", text = "思考到一半")
+        val restAuthority = text("bbb657fa", text = "思考到一半，后面还有权威补全")
+        val out = MessageMergeEngine.dedupOverlappingTextParts(listOf(derived, restAuthority))
+        assertEquals(1, out.size)
+        assertEquals("m1_reasoning_ord_0", out[0].id)
+        assertEquals(restAuthority.text, (out[0] as Part.Text).text) // 内容取 REST 权威
+    }
+
+    @Test
+    fun `四报 mergePartsList REST刷新场景 - 存活part保派生id`() {
+        // mergePartsList 装配序：incoming(REST) 在前、SSE 独有 preserved 在后
+        // → dedup 时 REST 占槽位、派生孪生后到——胜者无论是谁，id 必须落回
+        // 派生契约（UI 在册身份）。
+        val existingSse = listOf(text("m1_reasoning ord-fix".replace(" ord-fix", "_ord_0"), text = "流式累积文本前半"))
+        val restRefresh = listOf(text("9f2c11d0", text = "流式累积文本前半+REST权威续写"))
+        val out = MessageMergeEngine.mergePartsList(existingSse, restRefresh)
+        assertEquals(1, out.size)
+        assertTrue(out[0].id.contains("_reasoning_ord_0"))
+        assertEquals(restRefresh[0].text, (out[0] as Part.Text).text)
+    }
+
+    @Test
+    fun `四报 双legacy重叠 - 维持原胜者语义不受身份回填影响`() {
+        val legacyBlank = text("", text = "旧文本")
+        val legacyNamed = text("legacy_1", text = "旧文本")
+        val out = MessageMergeEngine.dedupOverlappingTextParts(listOf(legacyBlank, legacyNamed))
+        assertEquals(1, out.size)
+        assertEquals("legacy_1", out[0].id)
+    }
+
     // ============ 谓词 ============
 
     @Test
@@ -378,6 +415,31 @@ class MessageMergeEngineTest {
             Message.User(id = "u2", sessionId = "s1", time = TimeInfo(created = 0L)),
         ) as Message.User
         assertFalse(plain.viaSteer)
+    }
+
+    // ============ #524：created 单调防线（DSH entry touch 后移族） ============
+
+    @Test
+    fun `earliestCreated 三态 - 后移拦、前移放、未知填充`() {
+        // 后移拦截：既有非零 created，incoming 更晚 → 保既有
+        assertEquals(100L, MessageMergeEngine.earliestCreated(100L, 200L))
+        // 前移放行：incoming 更早（#485 REST 权威 created 前跳）→ 采纳
+        assertEquals(50L, MessageMergeEngine.earliestCreated(100L, 50L))
+        // 未知填充：既有 0（骨架/未知）→ 采纳 incoming
+        assertEquals(200L, MessageMergeEngine.earliestCreated(0L, 200L))
+        // 等值幂等
+        assertEquals(100L, MessageMergeEngine.earliestCreated(100L, 100L))
+    }
+
+    @Test
+    fun `mergeMessageMeta user 行 REST 域不设防线 - 更晚的权威值照常采纳`() {
+        // #524 边界钉死：防线仅在 SSE/live 合并域（handleMessageUpdated）——
+        // REST 域（#485 V2）SSE created 为客户端钟（早 0.5-1s），更晚的 REST
+        // 权威值必须采纳（服务端真相序），否则 #485 回归
+        val sse = Message.User(id = "u1", sessionId = "s1", time = TimeInfo(created = 1_000L))
+        val rest = Message.User(id = "u1", sessionId = "s1", time = TimeInfo(created = 61_000L))
+        val merged = MessageMergeEngine.mergeMessageMeta(sse, rest) as Message.User
+        assertEquals("REST 域采纳更晚的权威 created（#485）", 61_000L, merged.time.created)
     }
 
     // ============ #453：Tool state time 继承（累积计时锚保全） ============

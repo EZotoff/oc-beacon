@@ -61,3 +61,12 @@
 -assumevalues class androidx.compose.foundation.ComposeFoundationFlags {
     public static boolean isPausableCompositionInPrefetchEnabled return false;
 }
+
+# #473 后手①（2026-10-09 用户裁决根修域）：R8 剥离 Log.d/v 调用——release 侧
+# 探针族已由 BuildConfig.DEBUG 门控零执行，此条兜底清零「未门控业务级 AppLogger.d」
+# 的字符串构建+JNI 写成本。AppLogger 持久化路径（queue.trySend）不受影响——
+# 用户下调诊断级别时落库行为保持（trySend 非 Log 调用，不满足无副作用假设）。
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+}

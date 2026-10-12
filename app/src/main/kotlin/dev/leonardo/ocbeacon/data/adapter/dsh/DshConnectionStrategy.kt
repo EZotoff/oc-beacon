@@ -23,6 +23,11 @@ class DshConnectionStrategy(
 
     override val wireKind: WireKind = WireKind.MUX
 
+    /** #534：#512 密码提示每轮刷新沉入本钩子（凭据回落链源）——监督层不见类型。 */
+    override fun onConnectPrepare(conn: ServerConnection, password: String?) {
+        protocolSource.setPasswordHint(conn.baseUrl, password)
+    }
+
     override suspend fun probe(conn: ServerConnection): Handshake = when (
         val outcome = protocolSource.ensureProbed(conn.baseUrl)
     ) {

@@ -12,6 +12,7 @@ import dev.leonardo.ocbeacon.domain.model.ServerConnection
 import dev.leonardo.ocbeacon.domain.model.ServerFeature
 import dev.leonardo.ocbeacon.domain.model.ServerFeatures
 import dev.leonardo.ocbeacon.domain.model.ServerType
+import dev.leonardo.ocbeacon.ui.screens.chat.withTodoCapability
 import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -71,6 +72,7 @@ class ServerCapabilitiesDerivationTest {
         val c = caps(ServerType.OpenCode, ApiVersion.V1)
         assertOpenCodeCommon(c)
         assertTrue(has(c, ServerFeatures.SESSION_SHARE))
+        assertTrue(has(c, ServerFeatures.TODOS))
         assertFalse(has(c, ServerFeatures.SESSION_BACKGROUND))
         assertFalse(has(c, ServerFeatures.QUEUE))
         assertFalse(has(c, ServerFeatures.QUEUE_EDIT))
@@ -82,6 +84,8 @@ class ServerCapabilitiesDerivationTest {
         val c = caps(ServerType.OpenCode, ApiVersion.V2)
         assertOpenCodeCommon(c)
         assertFalse(has(c, ServerFeatures.SESSION_SHARE))
+        // #495：V2 beta 无 todo 路由——静态缺席（探测成功才经 withTodoCapability 折入）
+        assertFalse(has(c, ServerFeatures.TODOS))
         assertTrue(has(c, ServerFeatures.SESSION_BACKGROUND))
         assertTrue(has(c, ServerFeatures.QUEUE))
         assertFalse(has(c, ServerFeatures.QUEUE_EDIT))
@@ -93,6 +97,7 @@ class ServerCapabilitiesDerivationTest {
         val c = caps(ServerType.OpenCode, ApiVersion.UNKNOWN)
         assertOpenCodeCommon(c)
         assertTrue(has(c, ServerFeatures.SESSION_SHARE))
+        assertTrue(has(c, ServerFeatures.TODOS))
         assertFalse(has(c, ServerFeatures.SESSION_BACKGROUND))
         assertFalse(has(c, ServerFeatures.QUEUE))
         assertEquals(CoreFlags(false, false, false, true), c.coreFlags)
@@ -120,6 +125,8 @@ class ServerCapabilitiesDerivationTest {
         // 既有子能力
         assertFalse(has(c, ServerFeatures.SESSION_SHARE))
         assertFalse(has(c, ServerFeatures.SESSION_BACKGROUND))
+        // #495 勘误：DSH 有 todo 域（todo/write 帧事件）——TODOS 静态声明
+        assertTrue(has(c, ServerFeatures.TODOS))
         assertFalse(has(c, ServerFeatures.SESSION_DELETE))
         assertFalse(has(c, ServerFeatures.SESSION_REVERT))
         assertFalse(has(c, ServerFeatures.FILE_READ))
@@ -146,5 +153,27 @@ class ServerCapabilitiesDerivationTest {
         assertFalse(has(cV2, ServerFeatures.SESSION_SHARE))
         assertFalse(has(cV1, ServerFeatures.QUEUE))
         assertTrue(has(cV2, ServerFeatures.QUEUE))
+    }
+
+    // ===== #495：TODO 端点探测折入（V2 dev 分支有路由、beta 没有） =====
+
+    @Test
+    fun `todo probe success folds TODOS into capabilities`() {
+        val c = caps(ServerType.OpenCode, ApiVersion.V2).withTodoCapability(probed = true)
+        assertTrue(has(c, ServerFeatures.TODOS))
+        assertTrue(has(c, ServerFeatures.QUEUE)) // 折入不改其余位
+    }
+
+    @Test
+    fun `todo probe failure leaves capabilities untouched`() {
+        val c = caps(ServerType.OpenCode, ApiVersion.V2).withTodoCapability(probed = false)
+        assertFalse(has(c, ServerFeatures.TODOS))
+    }
+
+    @Test
+    fun `todo probe fold is idempotent on already capable V1`() {
+        val c = caps(ServerType.OpenCode, ApiVersion.V1).withTodoCapability(probed = true)
+        assertTrue(has(c, ServerFeatures.TODOS))
+        assertEquals(1, c.features.count { it == ServerFeatures.TODOS })
     }
 }

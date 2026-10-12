@@ -9,7 +9,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import dev.leonardo.ocbeacon.data.api.dsh.DshPairPayload
 import dev.leonardo.ocbeacon.ui.components.voice.VoiceWidget
 import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 
@@ -28,9 +27,6 @@ fun HomeRoute(
     onNavigateToDiagnostics: () -> Unit = {},
     onNavigateToSupervisor: (serverId: String) -> Unit,
     onNavigateToPortable: () -> Unit = {},
-    // #325②：DSH 配对深链预填载荷（null = 无待处理；消费后由 NavGraph 置空）
-    pendingPairRequest: DshPairPayload? = null,
-    onPairRequestConsumed: () -> Unit = {},
 ) {
     val viewModel: HomeViewModel = hiltViewModel()
     Box(Modifier.fillMaxSize()) {
@@ -44,8 +40,6 @@ fun HomeRoute(
         onNavigateToDiagnostics = onNavigateToDiagnostics,
         onNavigateToSupervisor = onNavigateToSupervisor,
         onNavigateToPortable = onNavigateToPortable,
-        pendingPairRequest = pendingPairRequest,
-            onPairRequestConsumed = onPairRequestConsumed,
         )
         // 2026-10-08 走测：PTT 也挂在首页 —— 无需先进入 supervisor 屏即可呼叫 Vox。
         VoiceWidget(

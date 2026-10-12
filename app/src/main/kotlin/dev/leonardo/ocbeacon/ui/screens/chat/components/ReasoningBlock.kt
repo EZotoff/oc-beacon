@@ -44,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +62,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import dev.leonardo.ocbeacon.R
 import dev.leonardo.ocbeacon.ui.components.CardStandardBorder
 import dev.leonardo.ocbeacon.ui.screens.chat.markdown.MarkdownContent
+import dev.leonardo.ocbeacon.ui.screens.chat.markdown.prewarmTerminalParse
 import dev.leonardo.ocbeacon.ui.screens.chat.util.LocalHapticFeedbackEnabled
 import dev.leonardo.ocbeacon.ui.screens.chat.util.halfScreenHeight
 import dev.leonardo.ocbeacon.ui.screens.chat.util.performHaptic
@@ -289,6 +291,22 @@ internal fun ReasoningBlock(
                     // #215 批3：chevron IconButton 移除——本体点击=展开唯一入口
                 }
 
+                // #540 二轮③（裁决 2026-10-11）：收起状态下流完的思考文本离组合
+                // 预热终态解析——文本在收起期从未入组合（无 pilot、#486 账本未标记），
+                // 首开生平第一次走 asyncTerminal：Loading 短高 → 解析落地分档
+                // MDResize =「展开先跳再拖」分档面（journal §22 D1）。预热后首开
+                // 命中 MarkdownParsedStateCache（首测即终高）。展开态不需要
+                // （pilot 在场自持/毕业保持）；幂等；Default 线程。
+                // review 轮收窄（P2）：仅 isStreaming true→false **翻转**才触发——
+                // 挂载即历史完结卡（滚动浏览）不烧 Default 解析、不扰动 LRU32。
+                var prevStreamingForPrewarm by remember { androidx.compose.runtime.mutableStateOf(isStreaming) }
+                LaunchedEffect(isStreaming, expanded) {
+                    val flipped = prevStreamingForPrewarm && !isStreaming
+                    prevStreamingForPrewarm = isStreaming
+                    if (flipped && !expanded) {
+                        prewarmTerminalParse(text, isUser = false)
+                    }
+                }
                 // 批次九(用户裁决 2026-09-22):回归统一高度控制引擎——
                 // CardExpandReveal 已改造为「渲染前计算+反射逐帧设置」双写契约
                 // (高度分数与滚动位同遍 measure 原子生效,配对构造性精确),
@@ -339,6 +357,11 @@ internal fun ReasoningBlock(
                                     // 真机三方定罪:settle H=0×3/dump 无内容节点/像素 8dp 单档)。
                                     // 与正文 PartContent 同语义:流式走 pilot,历史走 #428 分层。
                                     asyncParse = !isStreaming,
+                                    // #540 二轮③（裁决 2026-10-11）：#486 终态账本/缓存穿线
+                                    // （照 Part.Text 先例 PartContent everKey=part.messageId）——
+                                    // 流式中展开的 pilot 终态入 LRU32，收起→再展开命中
+                                    // cachedTerminal 单帧揭示（冷重入不再空 state 僵尸）。
+                                    everKey = pinKey.ifEmpty { null },
                                 )
                             }
                         }

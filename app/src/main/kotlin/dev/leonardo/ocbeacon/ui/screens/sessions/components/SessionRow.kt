@@ -105,6 +105,8 @@ internal fun SessionRow(
     isArchived: Boolean = false,
     archiveSupported: Boolean = false,
     onArchive: () -> Unit = {},
+    // #352 取消归档：已归档行详情动作（能力位沿用归档同判）
+    onUnarchive: () -> Unit = {},
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
     val addColor = DiffAdded
@@ -329,9 +331,10 @@ internal fun SessionRow(
 
     // #353 终型（2026-09-09 用户二次裁决）：长按直接打开「会话详情」对话框——
     // 动作按钮收进详情（去重：不再有独立菜单/sheet 层）；删除优先、归档仅在没有
-    // 删除接口的面顶替（DSH）；已归档行同样直达详情（动作区仅保留复制 ID——
-    // 归档单向契约，无恢复动词）。菜单/sheet 中间形态（DropdownMenu→
+    // 删除接口的面顶替（DSH）；已归档行同样直达详情。菜单/sheet 中间形态（DropdownMenu→
     // ModalBottomSheet）随之退役，sessionRowMenuActions 纯函数一并移除。
+    // #352（2026-10-09 前提重验解封）：上游 0.1.6-alpha.1 起 wire 层有恢复动词，
+    // 已归档行详情在能力位内恢复「取消归档」——「仅保留复制 ID」的单向契约注记废止。
     }
 
     // 带操作按钮的详情对话框
@@ -359,6 +362,10 @@ internal fun SessionRow(
                 showDetailsDialog = false
                 onArchive()
             },
+            onUnarchive = {
+                showDetailsDialog = false
+                onUnarchive()
+            },
             deleteSupported = deleteSupported,
             archiveSupported = archiveSupported,
             isArchived = isArchived,
@@ -383,10 +390,12 @@ private fun SessionDetailsDialog(
     onCopyId: () -> Unit,
     onAssignCategory: () -> Unit,
     onArchive: () -> Unit = {},
+    // #352 取消归档（已归档行动作区；能力位内呈现）
+    onUnarchive: () -> Unit = {},
     deleteSupported: Boolean,
     // #353 终型：归档动作（仅无删除接口的面——DSH；与删除互斥呈现）
     archiveSupported: Boolean = false,
-    // 已归档行：动作区仅保留复制 ID（归档单向契约）
+    // 已归档行：复制 ID + 取消归档（#352；单向契约注记废止）
     isArchived: Boolean = false,
     // UI-B：Agent 预设只读标签（DSH 专属）
     agentPresetSupported: Boolean,
@@ -530,7 +539,22 @@ private fun SessionDetailsDialog(
                     verticalArrangement = Arrangement.spacedBy(SpacingTokens.SM.dp),
                 ) {
                     if (isArchived) {
-                        // #353 终型：已归档行——仅复制 ID（归档单向契约，无恢复动词）
+                        // #352：已归档行——能力位内先出「取消归档」（动词上游
+                        // 0.1.6-alpha.1 起，2026-10-09 现网 0.2.0-rc.2 实证；
+                        // 行去留由 follow 增量驱动，此处不乐观更新）
+                        if (archiveSupported) {
+                            Button(
+                                onClick = {
+                                    onDismiss()
+                                    onUnarchive()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonTokens.filledColors(),
+                                border = ButtonTokens.amoledBorder(),
+                            ) {
+                                Text(stringResource(R.string.session_menu_unarchive))
+                            }
+                        }
                         Button(
                             onClick = { onCopyId() },
                             modifier = Modifier.fillMaxWidth(),
@@ -575,7 +599,7 @@ private fun SessionDetailsDialog(
                         colors = ButtonTokens.filledColors(),
                         border = ButtonTokens.amoledBorder(),
                     ) {
-                        Text(stringResource(R.string.assign_tag))
+                        Text(stringResource(R.string.add_tag))
                     }
                     // 同步动作（#353 打磨并入动作栈）：同步中→「取消同步」可打断；
                     // 已同步→禁用（drain 已全量）；其余→「同步全部历史」可触发

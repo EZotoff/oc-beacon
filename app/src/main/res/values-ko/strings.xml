@@ -73,19 +73,13 @@
     <!-- UI hardcoded strings (i18n) -->
     <string name="favorites_title">즐겨찾기</string>
     <string name="all">전체</string>
-    <string name="no_favorites">아직 즐겨찾는 세션이 없습니다</string>
-    <string name="server_not_connected">서버 연결 안 됨</string>
-    <string name="server_not_connected_desc">%1$s이(가) 연결되지 않았습니다. 연결하여 이 세션을 확인하세요.</string>
     <string name="remove_favorite">즐겨찾기에서 제거</string>
-    <string name="more_actions">추가 작업</string>
-    <string name="offline_suffix">· 연결 안 됨</string>
     <string name="add_tag">태그 추가</string>
     <string name="tag_name">태그 이름</string>
     <string name="color">색상</string>
     <string name="icon">아이콘</string>
     <string name="add">추가</string>
     <string name="draft">초안</string>
-    <string name="assign_tag">태그 추가</string>
     <string name="tag_management_title">태그 관리</string>
     <string name="new_tag">태그 추가</string>
     <string name="edit_tag">태그 편집</string>
@@ -94,7 +88,6 @@
     <string name="no_sessions_with_tag">이 태그의 세션이 없습니다</string>
     <string name="delete_tag_title">태그 삭제</string>
     <string name="delete_tag_message">\"%1$s\"을(를) 삭제할까요? 모든 세션 할당이 제거됩니다.</string>
-    <string name="tag_label">태그</string>
     <string name="no_tags_placeholder">태그가 없습니다. 아래 버튼을 눌러 만드세요</string>
     <string name="quick_navigate">빠른 이동</string>
     <string name="question">질문</string>
@@ -103,7 +96,6 @@
     <string name="source">소스</string>
     <string name="copy_all">모두 복사</string>
     <string name="no_text">(텍스트 없음)</string>
-    <string name="custom_input">사용자 입력</string>
     <string name="input_answer">답변 입력</string>
     <string name="pdf_load_failed">PDF 로드 실패</string>
     <string name="unknown_error">알 수 없는 오류</string>
@@ -121,7 +113,11 @@
     <string name="server_url_example">예: http://192.168.0.10:4199 또는 https://my-server:443</string>
     <string name="server_type_opencode">OpenCode</string>
     <string name="server_type_dsh">DSH</string>
-    <string name="server_type_dsh_hint">사용자 이름과 비밀번호가 필요 없습니다. USB 연결 시 먼저 adb reverse tcp:3080 tcp:3080을 실행하세요</string>
+    <string name="dsh_plugin_hint_icon">비밀번호 플러그인 정보</string>
+    <string name="dsh_plugin_hint_title">비밀번호 플러그인</string>
+    <string name="dsh_plugin_hint_message">DSH 서버에 dsh-password-login 플러그인을 설치하면 액세스 비밀번호로 바로 로그인할 수 있고 서버 로그에서 토큰을 찾을 필요가 없습니다. 설치 단계는 README를 참조하세요.</string>
+    <string name="dsh_plugin_hint_link">설치 가이드(GitHub)</string>
+    <string name="server_type_dsh_hint">선택적 액세스 비밀번호: 비워 두면 연결 후 배너에서 입력할 수 있습니다. USB의 경우 먼저 adb reverse tcp:3080 tcp:3080을 실행하세요</string>
     <string name="server_url_example_dsh">예: http://127.0.0.1:3080 (USB는 adb reverse tcp:3080 tcp:3080 경유)</string>
     <string name="server_add">서버 추가</string>
     <string name="session_rename">세션 이름 변경</string>
@@ -132,29 +128,16 @@
     <string name="session_menu_archive">보관 처리</string>
     <string name="session_archived_section_title">보관됨 (%1$d)</string>
     <string name="session_archive_failed">세션을 보관 처리하지 못했습니다</string>
+    <string name="session_menu_unarchive">보관 해제</string>
+    <string name="session_unarchive_failed">세션을 보관 해제하지 못했습니다</string>
     <string name="chat_stop">중지</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->
-    <string name="pending_sheet_title">대기열</string>
-    <string name="pending_tab_stacked">대기열 %1$d</string>
-    <string name="pending_tab_todo">TODO %1$d/%2$d</string>
     <string name="pending_tab_todo_plain">TODO</string>
-    <string name="pending_continue">계속</string>
-    <string name="pending_clear">지우기</string>
-    <string name="pending_clear_confirm_title">대기열의 메시지를 지우시겠습니까?</string>
-    <string name="pending_clear_confirm_text">대기열의 메시지 %1$d개가 제거됩니다.</string>
-    <string name="pending_edit_dialog_title">대기열의 메시지 편집</string>
-    <string name="pending_item_edit">편집</string>
-    <string name="pending_item_delete">삭제</string>
-    <string name="pending_item_send">지금 보내기</string>
-    <string name="pending_item_sending">전송 중…</string>
     <string name="todo_empty">TODO 항목이 없습니다</string>
     <string name="chat_copy">복사</string>
     <string name="table_copy_cell">셀 복사</string>
     <string name="table_copy_table">표 복사(TSV)</string>
-    <string name="terminal_copy">복사</string>
-    <string name="terminal_paste">붙여넣기</string>
-    <string name="terminal_more">더 보기…</string>
     <string name="chat_compressing_context">컨텍스트 압축 중: %1$s</string>
     <string name="chat_compressing_context_plain">컨텍스트 압축 중…</string>
     <string name="chat_revert">되돌리기</string>
@@ -197,7 +180,6 @@
     <string name="session_pending_approval">승인 대기</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
-    <string name="chat_response">응답</string>
     <plurals name="chat_status_edits_plural">
         <item quantity="one">%1$d개 편집</item>
         <item quantity="other">%1$d개 편집</item>
@@ -215,8 +197,6 @@
     <string name="chat_status_searching">코드베이스 검색 중</string>
     <string name="chat_status_fetching_url">URL 가져오는 중</string>
     <string name="chat_status_running_subagent">서브에이전트 실행 중</string>
-    <string name="chat_task_completed">턴 완료</string>
-    <string name="chat_task_failed">작업 실패</string>
     <string name="chat_event_tool_catalog_changed">도구 카탈로그가 변경되었습니다</string>
     <string name="chat_event_task_completed">하위 에이전트 완료</string>
     <string name="chat_event_task_failed">하위 에이전트 실패</string>
@@ -274,8 +254,6 @@
     <string name="chat_stats_tools">도구</string>
     <string name="chat_stats_expand">턴 세부정보 표시</string>
     <string name="chat_stats_collapse">턴 세부정보 숨기기</string>
-    <string name="chat_subagent_completed_notification">서브에이전트 완료</string>
-    <string name="chat_subagent_failed_notification">서브에이전트 실패</string>
     <string name="chat_status_updating_tasks">작업 업데이트 중</string>
     <string name="chat_status_thinking">생각 중</string>
     <string name="chat_tool_running_command">명령 실행 중…</string>
@@ -299,7 +277,10 @@
     <string name="chat_default_model">기본 모델</string>
     <string name="chat_manage_models">모델 관리</string>
     <string name="chat_output_truncated">서버에서 출력이 잘렸습니다. 전체 출력은 %1$s에 저장되었습니다</string>
-    <string name="chat_question_label">질문</string>
+    <string name="chat_output_truncated_no_path">서버에 의해 출력이 잘렸습니다. 전체 출력은 서버에 있습니다.</string>
+    <string name="chat_output_view_full">전체 출력 보기</string>
+    <string name="chat_output_spilled">서버에서 출력 일부가 생략되었습니다(%1$s). 전체 결과는 다음에 저장됨: %2$s</string>
+    <string name="chat_output_spilled_unknown">서버에서 출력 일부가 생략되었습니다. 전체 결과는 다음에 저장됨: %1$s</string>
     <string name="chat_permission_label">권한: %1$s</string>
     <string name="chat_interrupted">중단됨: %1$s</string>
     <string name="chat_retry">재시도 #%1$d: %2$s</string>
@@ -450,7 +431,9 @@
     <string name="chat_shell_placeholder">셸 명령어를 입력하세요…</string>
     <string name="chat_shell_failed">쉘 명령어 실행 실패</string>
     <string name="chat_shell_empty">먼저 쉘 명령어를 입력하세요</string>
+    <string name="chat_shell_mode_unavailable">이 서버에서는 셸 모드를 사용할 수 없습니다</string>
     <string name="chat_subagent_one_shot_read_only">원샷 서브에이전트 세션: 후속 메시지는 지원되지 않습니다</string>
+    <string name="chat_subagent_read_only_mirror">서브에이전트 세션(읽기 전용): 상위 세션에서 계속하세요</string>
     <string name="chat_shell_attachments_unsupported">쉘 모드에서는 첨부 파일을 지원하지 않습니다</string>
     <string name="chat_command_images_unsupported">슬래시 명령은 이미지 첨부를 지원하지 않습니다</string>
     <string name="chat_terminal_connect_failed">터미널 열기 실패</string>
@@ -477,7 +460,6 @@
     <string name="server_settings_models">모델</string>
     <string name="server_settings_models_desc">모델 표시 및 기본값</string>
     <string name="sessions_create_folder">디렉터리 만들기</string>
-    <string name="sessions_create_folder_title">디렉터리 만들기</string>
     <string name="sessions_create_folder_name_label">디렉터리 이름</string>
     <string name="sessions_create_folder_name_placeholder">my-project</string>
     <string name="sessions_create_folder_invalid_name">유효한 디렉터리 이름을 입력하세요</string>
@@ -492,6 +474,13 @@
     <string name="chat_error_view_page">페이지</string>
     <string name="chat_error_view_code">코드</string>
     <string name="math_block_badge">수식</string>
+    <string name="markdown_a11y_blockquote">인용문</string>
+    <string name="markdown_a11y_code_block">코드 블록</string>
+    <string name="markdown_a11y_code_block_with_language">코드 블록, %1$s</string>
+    <string name="markdown_a11y_code_language">언어: %1$s</string>
+    <string name="markdown_a11y_code_fallback_language">코드</string>
+    <string name="markdown_a11y_copy_code">코드 복사</string>
+    <string name="markdown_a11y_alert">%1$s 경고</string>
     <string name="chat_save_image">이미지 저장</string>
     <string name="chat_image_saved">이미지가 저장되었습니다</string>
     <string name="chat_image_save_failed">이미지 저장에 실패했습니다</string>
@@ -526,7 +515,6 @@
     <string name="session_details_updated">업데이트 시간</string>
     <string name="session_details_diff">Diff</string>
     <string name="session_details_diff_summary">+%1$d −%2$d (파일 %3$d개)</string>
-    <string name="chat_thinking_complete">%1$s 간 생각 완료</string>
     <string name="chat_thinking_complete_unknown">생각 완료</string>
     <string name="chat_token_usage_total">%,d 토큰</string>
     <string name="chat_token_input">입력</string>
@@ -546,7 +534,7 @@
     <string name="permission_reject_button">거부</string>
     <string name="settings_auto_approve_rules">자동 승인 규칙</string>
     <string name="settings_auto_allow_permissions">모든 권한 요청 자동 허용</string>
-    <string name="settings_auto_allow_permissions_desc">모든 권한 요청에 \'항상 허용\'으로 자동 응답합니다. 규칙이 영구 저장됩니다——신뢰하는 서버에서만 사용하세요.</string>
+    <string name="settings_auto_allow_permissions_desc">모든 권한 요청에 \'항상\'으로 자동 응답합니다. 규칙이 영구 저장됩니다——신뢰하는 서버에서만 사용하세요.</string>
     <string name="settings_no_auto_approve_rules">저장된 자동 승인 규칙이 없습니다</string>
     <string name="settings_delete_rule">규칙 삭제</string>
     <string name="settings_expand_reasoning">추론 자동 확장</string>
@@ -556,7 +544,6 @@
     <string name="chat_webfetch_prompt">프롬프트: %s</string>
     <string name="tool_web_search">WebSearch</string>
     <string name="chat_context_usage">컨텍스트: %1$d%%</string>
-    <string name="chat_retry_send">재시도</string>
     <string name="chat_title_placeholder">Chat</string>
     <string name="chat_context_detail_title">컨텍스트 사용 세부</string>
     <string name="a11y_settings_auto_allow_permissions">모든 권한 요청 자동 허용</string>
@@ -593,7 +580,7 @@
     <string name="chat_locate_message_not_found">이 세션에서 메시지를 찾을 수 없습니다</string>
     <string name="a11y_icon_add">추가</string>
     <string name="a11y_icon_share">공유</string>
-    <string name="a11y_icon_unlink">연결 해제</string>
+    <string name="a11y_icon_unlink">공유 해제</string>
     <string name="a11y_icon_terminal">터미널</string>
     <string name="a11y_icon_copy_all">모두 복사</string>
     <string name="a11y_icon_compress">압축</string>
@@ -608,7 +595,6 @@
     <string name="a11y_icon_description">설명</string>
     <string name="a11y_icon_image">이미지</string>
     <string name="a11y_icon_file">파일</string>
-    <string name="a11y_icon_question">에이전트의 질문</string>
     <string name="a11y_icon_collapse">축소</string>
     <string name="a11y_icon_expand">확장</string>
     <string name="a11y_icon_dismiss">닫기</string>
@@ -630,6 +616,9 @@
     <string name="sessions_view_folders">폴더</string>
     <string name="sessions_view_recent">최근</string>
     <string name="sessions_clear_search">검색 지우기</string>
+    <string name="terminal_copy">복사</string>
+    <string name="terminal_paste">붙여넣기</string>
+    <string name="terminal_more">더 보기…</string>
     <string name="terminal_new_tab">새 탭</string>
     <string name="terminal_keyboard">키보드</string>
     <string name="terminal_reconnect_tab">탭 재접속</string>
@@ -639,7 +628,6 @@
     <string name="connection_error_title">서버에 접속할 수 없습니다</string>
     <string name="connection_error_retrying_in">%1$d초 후 재시도…</string>
     <string name="connection_error_switch_server">다른 서버로 전환</string>
-    <string name="chat_thinking_in_progress">생각 중… %1$s</string>
     <string name="mcp_servers_title">MCP 서버</string>
     <string name="mcp_no_servers">구성된 MCP 서버가 없습니다</string>
     <string name="chat_context_composition">컨텍스트 구성 (추정)</string>
@@ -672,7 +660,6 @@
     <string name="settings_chat_font_compact">좁게</string>
     <string name="settings_turn_dividers">턴 구분선</string>
     <string name="settings_turn_dividers_desc">같은 턴의 메시지 사이에 구분선 표시</string>
-    <string name="viewer_loading_progress">로딩 중: %1$d / %2$d줄</string>
     <string name="viewer_large_file_warning">큰 파일 (%1$d줄) — 성능에 영향을 줄 수 있습니다</string>
     <string name="workspace_search_hint">파일 검색어 입력</string>
     <string name="workspace_search_no_results">일치하는 파일 없음</string>
@@ -730,7 +717,6 @@
     <string name="report_attach_full_log">전체 진단 로그 첨부 (비밀 gist, 링크가 있는 사람은 누구나 읽을 수 있음)</string>
     <string name="report_close">닫기</string>
     <string name="diagnostics_title">진단</string>
-    <string name="menu_quick_navigate">빠른 탐색</string>
     <string name="pdf_next_page">다음 페이지</string>
     <string name="pdf_previous_page">이전 페이지</string>
     <string name="server_settings_oauth_failed">OAuth 완료 실패</string>
@@ -774,20 +760,14 @@
     <string name="dsh_job_status_killed">종료됨</string>
     <string name="dsh_job_status_completed">완료</string>
     <string name="dsh_job_status_failed">실패</string>
-    <string name="dsh_jobs_empty">백그라운드 작업 없음</string>
     <string name="shell_status_failed">실패</string>
     <string name="task_toolbar_action">작업을 백그라운드로 이동</string>
-    <string name="task_toolbar_subagents">포그라운드에서 실행 중인 서브에이전트 %1$d개</string>
-    <string name="a11y_icon_tasks">작업 활동</string>
-    <string name="task_sheet_subagents_tab">서브에이전트</string>
-    <string name="task_sheet_shells_tab">셸</string>
+    <plurals name="task_toolbar_subagents">
+        <item quantity="other">하위 에이전트 %1$d개가 포그라운드에서 실행 중</item>
+    </plurals>
     <string name="task_sheet_empty_subagents">실행 중인 서브에이전트 없음</string>
     <string name="task_sheet_empty_shells">셸 명령 없음</string>
-    <string name="task_sheet_title">작업</string>
     <!-- 2026-08-13：任务面板前台/后台标记 -->
-    <string name="task_foreground">포그라운드</string>
-    <string name="task_background">백그라운드</string>
-    <string name="task_sheet_history_tab">기록</string>
     <string name="shell_kill">셸 제거</string>
     <string name="shell_close">닫기</string>
     <string name="shell_no_output">아직 출력 없음</string>
@@ -818,7 +798,6 @@
     <!-- #322：DSH 服务器历史命中（session/search） -->
     <string name="search_server_hits">세션 일치 항목</string>
     <string name="search_server_more">처음 20개 일치만 표시</string>
-    <string name="search_content_coverage_hint">이 세션의 전체 기록이 동기화되지 않았습니다</string>
     <string name="search_content_hit_count">메시지 %1$d개</string>
     <string name="search_filter_role_all">모든 역할</string>
     <string name="search_filter_menu">필터</string>
@@ -852,7 +831,6 @@
     <string name="agent_preset_cards_title">에이전트 프리셋 선택</string>
     <string name="server_settings_default_agent_preset">새 세션 기본 에이전트 프리셋</string>
     <string name="session_details_agent_preset">에이전트 프리셋</string>
-    <string name="a11y_icon_agent_preset">에이전트 프리셋</string>
     <string name="server_settings_defaults_loopback_hint">기본 등급은 루프백 연결에서만 접근할 수 있습니다. 관리하려면 adb reverse(127.0.0.1)로 연결하세요.</string>
     <!-- ============ Goal (backlog #286) / Context pressure ============ -->
     <string name="toolbar_goal">목표</string>
@@ -939,17 +917,13 @@
     <string name="supervisor_notification_root_failing_title">슈퍼바이저: %1$d개 루트 실패</string>
     <string name="supervisor_notification_error_peak_title">슈퍼바이저: 오류 최대치 상승</string>
     <string name="supervisor_notification_error_peak">오류 최대치: %1$d</string>
-    <string name="dsh_token_banner_text">이 서버에는 액세스 토큰이 필요합니다</string>
-    <string name="dsh_token_banner_action">토큰 입력</string>
-    <string name="dsh_token_dialog_title">액세스 토큰 필요</string>
-    <string name="dsh_token_dialog_message">서버 시작 줄에서 토큰 또는 전체 URL을 붙여넣으세요(token=... 포함).</string>
-    <string name="dsh_token_dialog_hint">토큰 또는 URL</string>
+    <string name="dsh_token_banner_text">이 서버에는 액세스 자격 증명이 필요합니다</string>
+    <string name="dsh_token_banner_action">자격 증명 입력</string>
+    <string name="dsh_token_dialog_title">액세스 자격 증명 필요</string>
+    <string name="dsh_token_dialog_message">이 서버의 액세스 비밀번호를 입력하거나, 레거시 서버의 경우 토큰 / 전체 URL(token=…)을 붙여넣으세요.</string>
+    <string name="dsh_token_dialog_hint">비밀번호 또는 토큰</string>
     <string name="dsh_token_dialog_connect">연결</string>
-    <string name="dsh_token_dialog_rejected">서버가 토큰을 거부했습니다. 확인 후 다시 시도하세요.</string>
-    <string name="server_pair_help_title">첫 페어링</string>
-    <string name="server_pair_help_manual">수동: 이 서버를 저장하고 연결한 뒤, 상단 배너의 "토큰 입력"을 눌러 서버 시작 줄의 토큰을 붙여넣으세요</string>
-    <string name="server_pair_help_adb">USB(dev 빌드): 호스트에서 ./scripts/dsh-pair.sh를 실행하면 토큰이 자동 주입됩니다</string>
-    <string name="server_pair_help_deeplink">또는 호스트에서 ./scripts/dsh-pair.sh --lan을 실행하고 ocbeacon:// 링크를 스캔하거나 탭하여 이 양식을 자동으로 채울 수 있습니다</string>
+    <string name="dsh_token_dialog_rejected">서버가 자격 증명을 거부했습니다. 확인하고 다시 시도하세요.</string>
 
     <!-- #324① DSH provider 目录/自定义增删 -->
     <string name="dsh_settings_loopback_required">이 작업에는 루프백 연결(adb reverse로 127.0.0.1)이 필요합니다.</string>

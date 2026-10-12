@@ -307,7 +307,29 @@ internal object MessageMergeEngine {
                     (rt.length <= pt.length && pt.startsWith(rt)) ||
                     (pt.length <= rt.length && rt.startsWith(pt))
                 if (overlaps) {
-                    val winner = if (pt.length > rt.length || (pt.length == rt.length && p.id.isNotBlank())) p else r
+                    val winnerRaw = if (pt.length > rt.length || (pt.length == rt.length && p.id.isNotBlank())) p else r
+                    // #540 四报 SILENT-STATE-RESET 根修（soak4r c9 定罪）：REST
+                    // 权威刷新携真实 part id 与 SSE 派生孪生（`_reasoning_ord_N`）
+                    // 内容重叠时，胜者若换 id → partId 键控的展开状态 map 查无
+                    // 此键 → 思考卡展开态**静默回退收起**（无 toggle 日志，2s 内
+                    // 复现实证 ng_ord_0→bbb657fa）。身份先行、内容权威：胜者采
+                    // **派生契约 id**（流式在册身份；兼防 Room 孤儿行，#266 教义
+                    // 的 dedup 侧对齐）。双侧皆非契约（legacy）保持原胜者语义。
+                    val loser = if (winnerRaw === p) r else p
+                    val idKeep = when {
+                        PartIdContract.isDerived(winnerRaw.id) -> winnerRaw.id
+                        PartIdContract.isDerived(loser.id) -> loser.id
+                        else -> winnerRaw.id
+                    }
+                    val winner = if (idKeep == winnerRaw.id) {
+                        winnerRaw
+                    } else {
+                        when (winnerRaw) {
+                            is Part.Text -> winnerRaw.copy(id = idKeep)
+                            is Part.Reasoning -> winnerRaw.copy(id = idKeep)
+                            else -> winnerRaw
+                        }
+                    }
                     result[i] = winner
                     // 桶成员同步：索引 i 保持在 all 桶；legacy 桶按胜者契约属性增删
                     val winnerIsNew = isNew(winner.id)
@@ -563,6 +585,27 @@ internal object MessageMergeEngine {
         .sortedBy { it.time.created }
 
     /**
+     * #524：消息 created 单调防线（只许更早，不许更晚；0=未知可填充）。
+     *
+     * 根因（DSH 真机 2026-10-07 定罪）：DSH journal 对 user prompt entry 的
+     * 完结 touch 事件（deliverables/turn 关联）信封 time=touch 时刻，mapper
+     * `created = 事件 time` 把 user 行 created 后移到完结时刻（实测 -86 提问
+     * entry 从发送时刻漂到 14:02:06，晚于最终输出 -88 的 14:02:05.683）→
+     * created 升序把提问行翻到输出之下 = 「回复出现在我消息上方」。created
+     * 是固有属性（消息创建时刻），SSE/DSH live 域的后续事件不得后移它。
+     *
+     * **适用边界**：仅 SSE/live 合并域（[dev.leonardo.ocbeacon.data.repository
+     * .handler.MessageEventHandler.handleMessageUpdated]）——REST 合并域
+     * （[mergeMessageMeta]/#485）不适用：V2 SSE 的 created 为客户端钟（早
+     * 0.5-1s），REST 权威值更晚且必须采纳，一刀切「只许更早」会破坏服务端
+     * 真相序（MessageMergeEngineOrderTest 钉死）。DSH 的 journal 历史回放与
+     * 实况同走 SSE dispatch 路径（DshMessageAssembler 同路径契约），不受此
+     * 边界影响。
+     */
+    fun earliestCreated(existing: Long, incoming: Long): Long =
+        if (existing in 1 until incoming) existing else incoming
+
+    /**
      * 合并消息的 SSE 和 REST 版本。
      * SSE 对内容更新（流式传输），但 REST 可能有 SSE 尚未投递的完成信息。
      *
@@ -574,6 +617,12 @@ internal object MessageMergeEngine {
         // 发送路径标记（V2 REST 持久化载荷无 delivery 字段）——保留既有标记，
         // 避免 L3 兜底刷新/分页回补/重进会话后插话徽标丢失。
         if (sse is Message.User) {
+            // #524 边界（评审撤回）：此处不加 created min 防线——V2 真机钟形
+            // （OrderTest fixture 注释：SSE user 信封比 REST 持久化 created 早
+            // 13-50ms）下 min 会把 user 行挤回 agent-switched 信封 Older 侧 =
+            // #485 锚定失序回归。DSH 的 upsert 覆盖面改在数据源修（mapper
+            // promptAdmitTimes 记忆，live/fold 输出统一），重启后 fold 无记忆的
+            // 场景留作已知残余（重进旧会话 ~1s 错位，非 live 主诉面）。
             return if (sse.viaSteer && rest is Message.User) rest.copy(viaSteer = true) else rest
         }
         if (sse !is Message.Assistant) return rest

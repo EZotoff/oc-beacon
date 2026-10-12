@@ -383,7 +383,8 @@ internal class MessageDataDelegate(
             val nv = !( _toolExpandedStates.value[toolId] ?: defaultExpanded)
             AppLogger.w(
                 "RB-EXP",
-                "[DEBUG-rbexp] toggle id=" + toolId.takeLast(8) + " -> " + nv +
+                // #547 N2：完整 id（takeLast(8) 前缀盲——宿主级联换名不可见）
+                "[DEBUG-rbexp] toggle id=" + toolId + " -> " + nv +
                     " from=" + Thread.currentThread().stackTrace
                         .drop(1).take(6).joinToString("<-") { it.methodName }
             )
@@ -393,6 +394,19 @@ internal class MessageDataDelegate(
 
     fun isToolExpanded(toolId: String, autoExpand: Boolean): Boolean {
         return _toolExpandedStates.value[toolId] ?: autoExpand
+    }
+
+    /**
+     * #547：展开态键别名收养——身份键演化（流式增长跨指纹窗/空白直通→首内容）
+     * 时旧键状态单向迁移到新键。幂等：新键已有值（后到的真实 toggle）不覆盖；
+     * 旧键无值（无状态可迁）no-op；from==to no-op。
+     */
+    fun migrateExpandAlias(fromKey: String, toKey: String) {
+        if (fromKey == toKey) return
+        _toolExpandedStates.update { m ->
+            val v = m[fromKey]
+            if (v != null && !m.containsKey(toKey)) m + (toKey to v) else m
+        }
     }
 
     // ============ SSE 观察（由 ChatViewModel + SessionLifecycleDelegate 调用） ============

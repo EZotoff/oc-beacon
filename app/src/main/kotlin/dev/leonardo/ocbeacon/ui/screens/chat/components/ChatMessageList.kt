@@ -205,6 +205,13 @@ private fun BannerReveal(
     /** [#492 检测网] 横幅身份（传出实高探针日志用）——revealed 高度在 CardExpandReveal
      *  层（动画），内层内容 Box 探针量不到；空串=不探。 */
     diagKey: String = "",
+    /**
+     * #540 全量接入：横幅实例稳定内容身份（question.id/permission.id 等）——
+     * 入 #533 进程级终高 floor。**键律**：仅传实例级 id；内容随状态变化的
+     * 瞬态横幅（revert/retry/maxTokens/工具条/步进——无稳定内容身份）显式
+     * 不传（null=不入店）：单调 store 配常量键会把旧实例高度过冲给新实例。
+     */
+    cacheKey: Any? = null,
     content: @Composable () -> Unit,
 ) {
     CompositionLocalProvider(
@@ -217,7 +224,7 @@ private fun BannerReveal(
                 Modifier.bannerHeightDiag(diagKey)
             } else Modifier
         ) {
-            CardExpandReveal(visible = visible) { content() }
+            CardExpandReveal(visible = visible, cacheKey = cacheKey) { content() }
         }
     }
 }
@@ -1754,6 +1761,10 @@ fun ChatMessageList(
                                     dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamShardContent(
                                         markdown = entry.text,
                                         textColor = MaterialTheme.colorScheme.onSurface,
+                                        // #517：末片冻结块以闭合围栏收尾时修剪
+                                        // bottom 外距（片→统计栏间隙对齐 user 侧）
+                                        trimTrailingBlockGap = entry.isLast &&
+                                            dev.leonardo.ocbeacon.ui.screens.chat.markdown.endsWithBlockGapCarrier(entry.text),
                                     )
                                 }
                             }
@@ -1813,6 +1824,8 @@ fun ChatMessageList(
                                                 lastPrefixQ = prefixQ
                                                 dev.leonardo.ocbeacon.ui.screens.chat.components.CardExpandReveal(
                                                     visible = prefixQ != null,
+                                                    // #540 全量接入：前缀提问实例键
+                                                    cacheKey = prefixQ?.id ?: lastPrefixQ?.id,
                                                 ) {
                                                     lastPrefixQ?.let { pq ->
                                                         dev.leonardo.ocbeacon.ui.screens.chat.dialog.QuestionCard(
@@ -2807,6 +2820,8 @@ fun ChatMessageList(
                             streamingActive = turnActive,
                             visible = question != null,
                              diagKey = "question_pending",
+                            // #540 全量接入：提问实例键
+                            cacheKey = question?.id,
                         ) {
                             if (question != null) {
                                 Box(modifier = Modifier.bannerHeightDiag("question_pending").padding(bottom = messageSpacing)) {
@@ -2837,6 +2852,8 @@ fun ChatMessageList(
                             streamingActive = turnActive,
                             visible = permission != null,
                              diagKey = "perm_pending",
+                            // #540 全量接入：权限实例键
+                            cacheKey = permission?.id,
                         ) {
                             if (permission != null) {
                                 Box(modifier = Modifier.bannerHeightDiag("perm_pending").padding(bottom = messageSpacing)) {
@@ -2921,6 +2938,14 @@ fun ChatMessageList(
                                 // #476:链传导解除 autoScroll 武装(嵌套 dispatch 不置
                                 // isScrollInProgress,不解除则 250ms 后 GUARD 吸回底)。
                                 .cardFlingLeakGuard(onUserChain = onExpandDeparture)
+                                // #540 二轮（表述乙）：物主 item 根 root-Y 逐 placement
+                                // 供给——卡侧 toggle 时换算揭示盒距顶偏移（仅帽物主写，
+                                // 键不等守卫防跨 item 互抢）。
+                                .onGloballyPositioned { coords ->
+                                    if (heightReserve.itemKey == entry.key) {
+                                        heightReserve.hostItemTopY = coords.positionInRoot().y
+                                    }
+                                }
                                 .animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = null),
                         ) {
                             CompositionLocalProvider(
@@ -2931,6 +2956,11 @@ fun ChatMessageList(
                                 // 知道 +H 落在哪个 item(宿主=锚永不折叠;宿主在上方
                                 // 按增长后容量向旧侧折算)。
                                 LocalCardExpandHostKey provides entry.key,
+                                // #540:列表级帽状态——流式降级分支的展开配对窗 +
+                                // 机件原子帧的帽×机件单写者抬/落帽。
+                                LocalCardExpandReserve provides heightReserve,
+                                // #540 B:回合级活动（3s 防抖）——统计栏视觉族步间防翻转
+                                dev.leonardo.ocbeacon.ui.screens.chat.util.LocalTurnActive provides turnActive,
                             ) {
                                 val extras = transcriptCardExtras[entry.key]
                                 if (extras == null || extras.isEmpty) {

@@ -275,15 +275,27 @@ sealed class SessionNextEvent {
     data class CompactionDelta(
         @SerialName("sessionID") override val sessionId: String,
         @SerialName("messageID") val messageId: String,
-        val delta: String = ""
-    ) : SessionNextEvent()
+        /** 旧 V1 域事件字段名（部分实现仍用 delta 携带增量）。 */
+        val delta: String = "",
+        /** #539 G2：新核心 schema 增量字段名是 text（opencode-api-reference §21.7.9）——
+         * 此前只映射 delta，新命名服务器解码恒得空串 → handleCompactionDelta 空串
+         * 早退 → 进行中分割线实时摘要恒空白。 */
+        @SerialName("text") val text: String? = null,
+    ) : SessionNextEvent() {
+        /** 双读契约：text 优先、delta 回退（对齐 V2EventParser beta 命名同款）。 */
+        val effectiveDelta: String get() = text ?: delta
+    }
 
     @Serializable
     data class CompactionEnded(
         @SerialName("sessionID") override val sessionId: String,
         @SerialName("messageID") val messageId: String,
         /** #219（2026-08-25）：非空 = 压缩失败（session.compaction.failed 的 error.message）。 */
-        val error: String = ""
+        val error: String = "",
+        /** #539 ①B：ended 成功 payload 携带全文摘要（现网 2.0.26 实证：reason/model/text）。 */
+        val text: String? = null,
+        /** #539 ①B：ended v2 schema 的 recent 字段（最近消息边界标记）。 */
+        val recent: String? = null,
     ) : SessionNextEvent()
 
     // ============ 其他 ============

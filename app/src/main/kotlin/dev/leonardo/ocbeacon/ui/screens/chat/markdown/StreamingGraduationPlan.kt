@@ -32,8 +32,20 @@ internal data class FrozenChunk(val from: Int, val to: Int)
  */
 internal data class StreamingGraduation(val chunks: List<FrozenChunk>, val tailFrom: Int)
 
-/** 毕业积累门槛（新增冻结量不足则继续攒——限制毕业频率与重建成本）。 */
-internal const val GRADUATE_MIN_CHARS = 2000
+/**
+ * 毕业积累门槛（新增冻结量不足则继续攒——限制毕业频率与重建成本）。
+ *
+ * #515 校准（2026-10-06，2000→4000）：fire 换装帧在视口内有结构代价
+ * （hitch ~40-64ms + 渲染器交换沉降，journal 2026-10-06-515 §1.2）——门槛即
+ * 「多少量才值一次换装」。2000 使 2-4k 文档在尾端恰好单发巨批 fire（#515
+ * 定罪形态）。4000 的依据：①#437 S16/S20 实测单容器 ~4000 字时每批组合/
+ * 测量 19-27ms——4k 是 O(总长) 成本的失衡点，≤4k 文档单容器每批 ≤~20ms
+ * 且滚动期 appends 暂缓（#437 R3 ScrollHold）只打静止帧（无可掉动画帧，
+ * 感知无害）；②2-4k 档（#515 类）自此流中零 fire——完结走 pilot 即终态，
+ * 离屏后由既有静态分片接管，类别级消除换装可见件；③4k+ 大文档保留毕业
+ * 保护，fire 频率减半（每 ~4000ch 一次）。
+ */
+internal const val GRADUATE_MIN_CHARS = 4000
 
 /** 单冻结块字符上限（贪心打包界；无内部边界的巨块允许超限独占）。 */
 internal const val GRADUATE_MAX_CHUNK_CHARS = 4000
@@ -64,6 +76,11 @@ internal fun planStreamingGraduation(
  * [from,to) 内按空行块边界贪心打包为 ≤[maxChunkChars] 的块序列。切点只落
  * 空行 run 之后（块不跨块边界被切）；累积超限且已有切点时在最近切点落刀；
  * 无内部边界的巨块允许超限独占（切在块中间 = 两侧布局变，破坏零闪烁前提）。
+ *
+ * #516 围栏原子性（2026-10-05）：切点不落代码围栏内部——围栏内空行不设防
+ * （围栏整体独占一块，走「无内部边界巨块」既有超限豁免）；否则冻结块/尾块
+ * 各持半段围栏独立解析 = 一块代码碎成多段（真机定罪：163 行单围栏被内空行
+ * 切成 3 段）。[from] 是既有边界（顶层，闭栏后空行），起始围栏态恒闭。
  */
 private fun packBlocks(snapshot: String, from: Int, to: Int, maxChunkChars: Int): List<FrozenChunk> {
     if (from >= to) return emptyList()
@@ -71,11 +88,19 @@ private fun packBlocks(snapshot: String, from: Int, to: Int, maxChunkChars: Int)
     var start = from
     var cut = from
     var i = from
+    var fenceChar: Char? = null
     while (i < to) {
+        if (i == from || snapshot[i - 1] == NL) {
+            fenceMarkerAt(snapshot, i, to)?.let { marker ->
+                fenceChar = if (fenceChar == marker) null
+                else if (fenceChar == null) marker
+                else fenceChar // 异型标记行是围栏内容，不翻转
+            }
+        }
         if (snapshot[i] == NL) {
             var j = i
             while (j < to && snapshot[j] == NL) j++
-            if (j - i >= 2) cut = j
+            if (j - i >= 2 && fenceChar == null) cut = j
             i = j
         } else {
             if (i - start >= maxChunkChars && cut > start) {

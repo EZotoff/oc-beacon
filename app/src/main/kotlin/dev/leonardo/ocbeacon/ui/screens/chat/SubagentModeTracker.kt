@@ -21,7 +21,9 @@ private const val TAG = "SubagentModeTracker"
  * - 主会话（无 parentId）或非 DSH → 恒 null，零 RPC；
  * - DSH 子会话 → 先发 null（加载中保守隐藏 composer——防 one-shot 误发），再
  *   懒加载 subagentCatalog(parentId) 取 entries 中本会话 child 行的 mode；
- * - 失败 / 目录无本行 / 非 DSH 端点缺席（null 目录）→ 停留 null + AppLogger.w。
+ * - 失败 / 目录无本行 / 非 DSH 端点缺席（null 目录）→ [SubagentComposerGate.MODE_UNRESOLVED]
+ *   终态（#497 D4：与加载中区分——0.2.x subagents/list 404 时防骨架占位永久化，
+ *   落只读提示行）+ AppLogger.w。
  *
  * sid+parentId+serverType 三元组 distinctUntilChanged——会话列表字段刷新
  * （标题变更等）不重触发 RPC。
@@ -51,14 +53,18 @@ internal class SubagentModeTracker(
                     emit(null)
                     chatRepository.subagentCatalog(serverId, parentId)
                         .onSuccess { catalog ->
+                            // 目录无本行（null 目录/条目缺席）= 续聊无法建立 → 终态哨兵
                             emit(
                                 catalog?.entries
                                     ?.firstOrNull { entry -> entry.isChild && entry.id == sid }
-                                    ?.mode,
+                                    ?.mode
+                                    ?: SubagentComposerGate.MODE_UNRESOLVED,
                             )
                         }
                         .onFailure { e ->
+                            // RPC 失败（0.2.x subagents/list 404 / 网络错）= 同终态哨兵
                             AppLogger.w(TAG, "subagentCatalog load failed for $sid: " + e.message)
+                            emit(SubagentComposerGate.MODE_UNRESOLVED)
                         }
                 }
             }

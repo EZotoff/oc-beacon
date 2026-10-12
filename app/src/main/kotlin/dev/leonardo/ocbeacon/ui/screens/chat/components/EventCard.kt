@@ -143,6 +143,8 @@ internal fun EventCard(
         // #389 三轮c：内容栏 AnimatedVisibility（统一展开/收起动画）。
         // 有描述行＝内容常驻（null，正文走卡内 AV）；无描述行＝随展开态动画。
         contentExpanded = if (description != null) null else (hasBody && expanded),
+        // #540 全量接入：eventKey 即展开态记忆键（消息级稳定身份）
+        expandCacheKey = eventKey,
         onCardClick = if (hasBody) ({ expandedStates[eventKey] = !expanded }) else null,
         labelTrailing = {
             // 跳转箭头（Q4 常驻折叠+展开两态；点击不冒泡到整卡 toggle）
@@ -183,9 +185,11 @@ internal fun EventCard(
         // 展开态两段式（Q11）：分隔线 → 正文(300dp 上限内滚) → 分隔线 → 动作区
         // 2026-08-30 用户裁决：撤销全部展开补偿改造，回归 AnimatedVisibility
         // 出厂默认动画（spring + fade + 默认揭幕方向）
-        CardExpandReveal(
-            visible = hasBody && expanded,
-        ) {
+        // #543 根修（展开引擎唯一所有权）：无描述行分支 contentExpanded 非 null
+        // 已由 MessageBubble 内容栏 reveal 承担动画，此处**不得再嵌套 reveal**——
+        // 嵌套双引擎=同 toggle 双 episode 各锚 +H（三跳瞬态，同 CompactionCard
+        // 判读轮定罪，journal §21）。有描述行分支外层常驻，卡内 reveal 独享。
+        val expandableBody: @Composable () -> Unit = {
             // ★ AnimatedVisibility 内容是 Box 叠放语义（非 Column）——多子级全部
             // 原点重叠：分割线被正文整体盖住（透明 Markdown 时从字底透出、
             // ShellOutputBlock 不透明后彻底消失）——这就是分割线「时隐时现/
@@ -245,6 +249,19 @@ internal fun EventCard(
                 }
             }
             } // ★ 显式 Column 收尾（见上「Box 叠放语义」注释）
+        }
+        if (hasBody) {
+            if (description != null) {
+                CardExpandReveal(
+                    visible = hasBody && expanded,
+                    // #540 全量接入：eventKey 即展开态记忆键（消息级稳定身份）
+                    cacheKey = eventKey,
+                ) {
+                    expandableBody()
+                }
+            } else {
+                expandableBody()
+            }
         }
     }
 }

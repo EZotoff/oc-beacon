@@ -22,7 +22,11 @@
     <string name="server_url_example">misal: http://192.168.0.10:4199 atau https://my-server:443</string>
     <string name="server_type_opencode">OpenCode</string>
     <string name="server_type_dsh">DSH</string>
-    <string name="server_type_dsh_hint">Tidak perlu nama pengguna atau kata sandi. Untuk USB, jalankan dulu adb reverse tcp:3080 tcp:3080</string>
+    <string name="dsh_plugin_hint_icon">Tentang plugin kata sandi</string>
+    <string name="dsh_plugin_hint_title">Plugin kata sandi</string>
+    <string name="dsh_plugin_hint_message">Pasang plugin dsh-password-login di server DSH Anda untuk masuk dengan kata sandi akses — tanpa mencari token dari log server. Langkah instalasi ada di README.</string>
+    <string name="dsh_plugin_hint_link">Panduan instalasi (GitHub)</string>
+    <string name="server_type_dsh_hint">Kata sandi akses opsional: biarkan kosong untuk memasukkannya dari banner setelah terhubung. Untuk USB, jalankan dulu adb reverse tcp:3080 tcp:3080</string>
     <string name="server_url_example_dsh">cth: http://127.0.0.1:3080 lewat USB (adb reverse tcp:3080 tcp:3080)</string>
     <string name="server_username">Username</string>
     <string name="server_username_hint">opencode</string>
@@ -62,6 +66,8 @@
     <string name="session_menu_archive">Arsipkan</string>
     <string name="session_archived_section_title">Diarsipkan (%1$d)</string>
     <string name="session_archive_failed">Gagal mengarsipkan sesi</string>
+    <string name="session_menu_unarchive">Batalkan pengarsipan</string>
+    <string name="session_unarchive_failed">Gagal membatalkan pengarsipan sesi</string>
     <string name="session_pending_question">Menunggu jawaban</string>
     <string name="session_pending_approval">Menunggu persetujuan</string>
     <string name="session_changes_additions">+%1$d</string>
@@ -76,27 +82,12 @@
     <string name="chat_stop">Stop</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->
-    <string name="pending_sheet_title">Antrean</string>
-    <string name="pending_tab_stacked">Antrean %1$d</string>
-    <string name="pending_tab_todo">TODO %1$d/%2$d</string>
     <string name="pending_tab_todo_plain">TODO</string>
-    <string name="pending_continue">Lanjutkan</string>
-    <string name="pending_clear">Hapus</string>
-    <string name="pending_clear_confirm_title">Hapus pesan antrean?</string>
-    <string name="pending_clear_confirm_text">%1$d pesan antrean akan dihapus.</string>
-    <string name="pending_edit_dialog_title">Edit pesan antrean</string>
-    <string name="pending_item_edit">Edit</string>
-    <string name="pending_item_delete">Hapus</string>
-    <string name="pending_item_send">Kirim sekarang</string>
-    <string name="pending_item_sending">Mengirim…</string>
     <string name="todo_empty">Tidak ada item TODO</string>
     <string name="chat_empty">Mulai sesi</string>
     <string name="chat_copy">Salin</string>
     <string name="table_copy_cell">Salin sel</string>
     <string name="table_copy_table">Salin tabel (TSV)</string>
-    <string name="terminal_copy">Salin</string>
-    <string name="terminal_paste">Tempel</string>
-    <string name="terminal_more">Lainnya…</string>
     <string name="chat_compressing_context">Mengompresi konteks: %1$s</string>
     <string name="chat_compressing_context_plain">Mengompresi konteks…</string>
     <string name="chat_revert">Batalkan perubahan</string>
@@ -133,7 +124,6 @@
     <string name="chat_messages_restored">Pesan dipulihkan</string>
     <string name="chat_session_renamed">Sesi diganti nama</string>
     <string name="chat_session_rename_failed">Gagal mengganti nama</string>
-    <string name="chat_response">Respons</string>
     <plurals name="chat_status_edits_plural">
         <item quantity="one">%1$d edit</item>
         <item quantity="other">%1$d edit</item>
@@ -151,8 +141,6 @@
     <string name="chat_status_searching">Mencari basis kode</string>
     <string name="chat_status_fetching_url">Mengambil URL</string>
     <string name="chat_status_running_subagent">Menjalankan subagen</string>
-    <string name="chat_task_completed">Turn selesai</string>
-    <string name="chat_task_failed">Tugas gagal</string>
     <string name="chat_event_tool_catalog_changed">Katalog alat berubah</string>
     <string name="chat_event_task_completed">Subagen selesai</string>
     <string name="chat_event_task_failed">Subagen gagal</string>
@@ -210,8 +198,6 @@
     <string name="chat_stats_tools">Alat</string>
     <string name="chat_stats_expand">Tampilkan detail putaran</string>
     <string name="chat_stats_collapse">Sembunyikan detail putaran</string>
-    <string name="chat_subagent_completed_notification">Subagen selesai</string>
-    <string name="chat_subagent_failed_notification">Subagen gagal</string>
     <string name="chat_status_updating_tasks">Memperbarui tugas</string>
     <string name="chat_status_thinking">Berpikir</string>
     <string name="chat_tool_running_command">Menjalankan perintah…</string>
@@ -235,7 +221,10 @@
     <string name="chat_default_model">Model bawaan</string>
     <string name="chat_manage_models">Kelola model</string>
     <string name="chat_output_truncated">Output dipotong oleh server. Output lengkap disimpan di: %1$s</string>
-    <string name="chat_question_label">Pertanyaan</string>
+    <string name="chat_output_truncated_no_path">Keluaran dipotong oleh server. Keluaran lengkap ada di sisi server.</string>
+    <string name="chat_output_view_full">Lihat keluaran lengkap</string>
+    <string name="chat_output_spilled">Sebagian keluaran dihilangkan oleh server (%1$s). Hasil lengkap disimpan di: %2$s</string>
+    <string name="chat_output_spilled_unknown">Sebagian keluaran dihilangkan oleh server. Hasil lengkap disimpan di: %1$s</string>
     <string name="chat_permission_label">Izin: %1$s</string>
     <string name="chat_interrupted">Dihentikan: %1$s</string>
     <string name="chat_retry">Ulang #%1$d: %2$s</string>
@@ -376,19 +365,13 @@
     <!-- UI hardcoded strings (i18n) -->
     <string name="favorites_title">Favorit</string>
     <string name="all">Semua</string>
-    <string name="no_favorites">Belum ada sesi favorit</string>
-    <string name="server_not_connected">Server tidak terhubung</string>
-    <string name="server_not_connected_desc">%1$s tidak terhubung. Hubungkan untuk melihat sesi ini.</string>
     <string name="remove_favorite">Hapus dari favorit</string>
-    <string name="more_actions">Tindakan lainnya</string>
-    <string name="offline_suffix">· Tidak terhubung</string>
     <string name="add_tag">Tambah tag</string>
     <string name="tag_name">Nama tag</string>
     <string name="color">Warna</string>
     <string name="icon">Ikon</string>
     <string name="add">Tambah</string>
     <string name="draft">Draf</string>
-    <string name="assign_tag">Tambah tag</string>
     <string name="tag_management_title">Manajemen tag</string>
     <string name="new_tag">Tambah tag</string>
     <string name="edit_tag">Edit tag</string>
@@ -397,7 +380,6 @@
     <string name="no_sessions_with_tag">Tidak ada sesi dengan tag ini</string>
     <string name="delete_tag_title">Hapus tag</string>
     <string name="delete_tag_message">Hapus \"%1$s\"? Semua penugasan sesi akan dihapus.</string>
-    <string name="tag_label">Tag</string>
     <string name="no_tags_placeholder">Belum ada tag, ketuk tombol di bawah</string>
     <string name="quick_navigate">Navigasi cepat</string>
     <string name="question">Pertanyaan</string>
@@ -406,7 +388,6 @@
     <string name="source">Sumber</string>
     <string name="copy_all">Salin semua</string>
     <string name="no_text">(tanpa teks)</string>
-    <string name="custom_input">Masukan kustom</string>
     <string name="input_answer">Masukkan jawaban</string>
     <string name="pdf_load_failed">Gagal memuat PDF</string>
     <string name="unknown_error">Kesalahan tidak diketahui</string>
@@ -456,7 +437,9 @@
     <string name="chat_shell_placeholder">Masukkan perintah shell…</string>
     <string name="chat_shell_failed">Gagal menjalankan perintah shell</string>
     <string name="chat_shell_empty">Masukkan perintah shell terlebih dahulu</string>
+    <string name="chat_shell_mode_unavailable">Mode shell tidak tersedia di server ini</string>
     <string name="chat_subagent_one_shot_read_only">Sesi subagen sekali pakai: pesan lanjutan tidak didukung</string>
+    <string name="chat_subagent_read_only_mirror">Sesi subagen (baca-saja): lanjutkan di sesi induk</string>
     <string name="chat_shell_attachments_unsupported">Mode shell tidak mendukung lampiran</string>
     <string name="chat_command_images_unsupported">Perintah slash tidak mendukung lampiran gambar</string>
     <string name="chat_terminal_connect_failed">Gagal membuka terminal</string>
@@ -483,7 +466,6 @@
     <string name="server_settings_models">Model</string>
     <string name="server_settings_models_desc">Visibilitas dan default model</string>
     <string name="sessions_create_folder">Buat direktori</string>
-    <string name="sessions_create_folder_title">Buat direktori</string>
     <string name="sessions_create_folder_name_label">Nama direktori</string>
     <string name="sessions_create_folder_name_placeholder">my-project</string>
     <string name="sessions_create_folder_invalid_name">Masukkan nama direktori yang valid</string>
@@ -498,6 +480,13 @@
     <string name="chat_error_view_page">Halaman</string>
     <string name="chat_error_view_code">Kode</string>
     <string name="math_block_badge">Rumus</string>
+    <string name="markdown_a11y_blockquote">Kutipan</string>
+    <string name="markdown_a11y_code_block">Blok kode</string>
+    <string name="markdown_a11y_code_block_with_language">Blok kode, %1$s</string>
+    <string name="markdown_a11y_code_language">Bahasa: %1$s</string>
+    <string name="markdown_a11y_code_fallback_language">KODE</string>
+    <string name="markdown_a11y_copy_code">Salin kode</string>
+    <string name="markdown_a11y_alert">Peringatan %1$s</string>
     <string name="chat_save_image">Simpan gambar</string>
     <string name="chat_image_saved">Gambar berhasil disimpan</string>
     <string name="chat_image_save_failed">Gagal menyimpan gambar</string>
@@ -532,7 +521,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="session_details_updated">Diperbarui</string>
     <string name="session_details_diff">Diff</string>
     <string name="session_details_diff_summary">+%1$d −%2$d (%3$d file)</string>
-    <string name="chat_thinking_complete">Berpikir selama %1$s</string>
     <string name="chat_thinking_complete_unknown">Berpikir selesai</string>
     <string name="chat_token_usage_total">%,d token</string>
     <string name="chat_token_input">Input</string>
@@ -552,7 +540,7 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="permission_reject_button">Tolak</string>
     <string name="settings_auto_approve_rules">Aturan auto-approve</string>
     <string name="settings_auto_allow_permissions">Izinkan otomatis semua permintaan izin</string>
-    <string name="settings_auto_allow_permissions_desc">Menjawab \'Selalu izinkan\' secara otomatis. Aturan disimpan permanen — hanya untuk server tepercaya.</string>
+    <string name="settings_auto_allow_permissions_desc">Menjawab \'Selalu\' secara otomatis. Aturan disimpan permanen — hanya untuk server tepercaya.</string>
     <string name="settings_no_auto_approve_rules">Tidak ada aturan auto-approve tersimpan</string>
     <string name="settings_delete_rule">Hapus aturan</string>
     <string name="settings_expand_reasoning">Auto-perluas penalaran</string>
@@ -562,7 +550,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="chat_webfetch_prompt">Prompt: %s</string>
     <string name="tool_web_search">WebSearch</string>
     <string name="chat_context_usage">Konteks: %1$d%%</string>
-    <string name="chat_retry_send">Coba lagi</string>
     <string name="chat_title_placeholder">Chat</string>
     <string name="chat_context_detail_title">Detail penggunaan konteks</string>
     <string name="a11y_settings_auto_allow_permissions">Izinkan otomatis semua permintaan izin</string>
@@ -599,7 +586,7 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="chat_locate_message_not_found">Pesan tidak ditemukan di sesi ini</string>
     <string name="a11y_icon_add">Tambah</string>
     <string name="a11y_icon_share">Bagikan</string>
-    <string name="a11y_icon_unlink">Lepas tautan</string>
+    <string name="a11y_icon_unlink">Batalkan berbagi</string>
     <string name="a11y_icon_terminal">Terminal</string>
     <string name="a11y_icon_copy_all">Salin semua</string>
     <string name="a11y_icon_compress">Kompres</string>
@@ -614,7 +601,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="a11y_icon_description">Deskripsi</string>
     <string name="a11y_icon_image">Gambar</string>
     <string name="a11y_icon_file">File</string>
-    <string name="a11y_icon_question">Pertanyaan dari agen</string>
     <string name="a11y_icon_collapse">Perkecil</string>
     <string name="a11y_icon_expand">Perluas</string>
     <string name="a11y_icon_dismiss">Tutup</string>
@@ -636,6 +622,9 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="sessions_view_folders">Folder</string>
     <string name="sessions_view_recent">Terbaru</string>
     <string name="sessions_clear_search">Hapus pencarian</string>
+    <string name="terminal_copy">Salin</string>
+    <string name="terminal_paste">Tempel</string>
+    <string name="terminal_more">Lainnya…</string>
     <string name="terminal_new_tab">Baru</string>
     <string name="terminal_keyboard">Keyboard</string>
     <string name="terminal_reconnect_tab">Hubungkan ulang tab</string>
@@ -645,7 +634,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="connection_error_title">Server tidak dapat dijangkau</string>
     <string name="connection_error_retrying_in">Mencoba ulang dalam %1$ds…</string>
     <string name="connection_error_switch_server">Beralih ke server lain</string>
-    <string name="chat_thinking_in_progress">Berpikir… %1$s</string>
     <string name="mcp_servers_title">Server MCP</string>
     <string name="mcp_no_servers">Tidak ada server MCP dikonfigurasi</string>
     <string name="chat_context_composition">Komposisi konteks (estimasi)</string>
@@ -678,7 +666,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="settings_chat_font_compact">Ringkas</string>
     <string name="settings_turn_dividers">Pembagi turn</string>
     <string name="settings_turn_dividers_desc">Tampilkan pembatas antara pesan dalam turn yang sama</string>
-    <string name="viewer_loading_progress">Memuat: %1$d / %2$d baris</string>
     <string name="viewer_large_file_warning">Berkas besar (%1$d baris) — kinerja mungkin terpengaruh</string>
     <string name="workspace_search_hint">Ketik untuk mencari berkas</string>
     <string name="workspace_search_no_results">Tidak ada berkas yang cocok</string>
@@ -736,7 +723,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="report_attach_full_log">Lampirkan log diagnostik lengkap (gist rahasia; dapat dibaca siapa pun yang memiliki tautannya)</string>
     <string name="report_close">Tutup</string>
     <string name="diagnostics_title">Diagnostik</string>
-    <string name="menu_quick_navigate">Navigasi cepat</string>
     <string name="pdf_next_page">Halaman berikutnya</string>
     <string name="pdf_previous_page">Halaman sebelumnya</string>
     <string name="server_settings_oauth_failed">Gagal menyelesaikan OAuth</string>
@@ -780,20 +766,15 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="dsh_job_status_killed">Dihentikan</string>
     <string name="dsh_job_status_completed">Selesai</string>
     <string name="dsh_job_status_failed">Gagal</string>
-    <string name="dsh_jobs_empty">Tidak ada tugas latar belakang</string>
     <string name="shell_status_failed">Gagal</string>
     <string name="task_toolbar_action">Pindahkan tugas ke latar belakang</string>
-    <string name="task_toolbar_subagents">%1$d subagen berjalan di latar depan</string>
-    <string name="a11y_icon_tasks">Aktivitas tugas</string>
-    <string name="task_sheet_subagents_tab">Subagen</string>
-    <string name="task_sheet_shells_tab">Shell</string>
+    <plurals name="task_toolbar_subagents">
+        <item quantity="one">%1$d subagen berjalan di latar depan</item>
+        <item quantity="other">%1$d subagen berjalan di latar depan</item>
+    </plurals>
     <string name="task_sheet_empty_subagents">Tidak ada subagen yang berjalan</string>
     <string name="task_sheet_empty_shells">Tidak ada perintah shell</string>
-    <string name="task_sheet_title">Tugas</string>
     <!-- 2026-08-13：任务面板前台/后台标记 -->
-    <string name="task_foreground">Latar depan</string>
-    <string name="task_background">Latar belakang</string>
-    <string name="task_sheet_history_tab">Riwayat</string>
     <string name="shell_kill">Hapus shell</string>
     <string name="shell_close">Tutup</string>
     <string name="shell_no_output">Belum ada output</string>
@@ -824,7 +805,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <!-- #322：DSH 服务器历史命中（session/search） -->
     <string name="search_server_hits">Kecocokan sesi</string>
     <string name="search_server_more">Hanya 20 kecocokan pertama yang ditampilkan</string>
-    <string name="search_content_coverage_hint">Riwayat lengkap belum disinkronkan untuk sesi ini</string>
     <string name="search_content_hit_count">%1$d pesan</string>
     <string name="search_filter_role_all">Semua peran</string>
     <string name="search_filter_menu">Filter</string>
@@ -858,7 +838,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="agent_preset_cards_title">Pilih preset agen</string>
     <string name="server_settings_default_agent_preset">Preset agen default sesi baru</string>
     <string name="session_details_agent_preset">Preset agen</string>
-    <string name="a11y_icon_agent_preset">Preset agen</string>
     <string name="server_settings_defaults_loopback_hint">Tingkat bawaan hanya dapat diakses melalui koneksi loopback. Gunakan adb reverse (127.0.0.1) untuk mengelolanya.</string>
     <!-- ============ Goal (backlog #286) / Context pressure ============ -->
     <string name="toolbar_goal">Tujuan</string>
@@ -945,17 +924,13 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_notification_root_failing_title">Supervisor: %1$d root gagal</string>
     <string name="supervisor_notification_error_peak_title">Supervisor: puncak error naik</string>
     <string name="supervisor_notification_error_peak">Puncak error: %1$d</string>
-    <string name="dsh_token_banner_text">Server ini memerlukan token akses</string>
-    <string name="dsh_token_banner_action">Masukkan token</string>
-    <string name="dsh_token_dialog_title">Token akses diperlukan</string>
-    <string name="dsh_token_dialog_message">Tempel token atau URL lengkap dari baris startup server (berisi token=...).</string>
-    <string name="dsh_token_dialog_hint">Token atau URL</string>
+    <string name="dsh_token_banner_text">Server ini memerlukan kredensial akses</string>
+    <string name="dsh_token_banner_action">Masukkan kredensial</string>
+    <string name="dsh_token_dialog_title">Kredensial akses diperlukan</string>
+    <string name="dsh_token_dialog_message">Masukkan kata sandi akses server ini, atau tempel token / URL lengkap (token=…) untuk server lama.</string>
+    <string name="dsh_token_dialog_hint">Kata sandi atau token</string>
     <string name="dsh_token_dialog_connect">Hubungkan</string>
-    <string name="dsh_token_dialog_rejected">Token ditolak oleh server. Periksa dan coba lagi.</string>
-    <string name="server_pair_help_title">Pemasangan pertama</string>
-    <string name="server_pair_help_manual">Manual: simpan dan sambungkan server ini, lalu ketuk "Masukkan token" pada banner dan tempel token dari baris mulai server</string>
-    <string name="server_pair_help_adb">USB (build dev): jalankan ./scripts/dsh-pair.sh di host — token disuntikkan otomatis</string>
-    <string name="server_pair_help_deeplink">Atau jalankan ./scripts/dsh-pair.sh --lan di host lalu pindai atau ketuk tautan ocbeacon:// untuk mengisi formulir ini</string>
+    <string name="dsh_token_dialog_rejected">Kredensial ditolak oleh server. Periksa dan coba lagi.</string>
 
     <!-- #324① DSH provider 目录/自定义增删 -->
     <string name="dsh_settings_loopback_required">Tindakan ini memerlukan koneksi loopback (adb reverse ke 127.0.0.1).</string>

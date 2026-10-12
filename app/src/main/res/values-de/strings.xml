@@ -73,19 +73,13 @@
     <!-- UI hardcoded strings (i18n) -->
     <string name="favorites_title">Favoriten</string>
     <string name="all">Alle</string>
-    <string name="no_favorites">Noch keine Favoriten-Sitzungen</string>
-    <string name="server_not_connected">Server nicht verbunden</string>
-    <string name="server_not_connected_desc">%1$s ist nicht verbunden. Verbinden, um diese Sitzung anzusehen.</string>
     <string name="remove_favorite">Aus Favoriten entfernen</string>
-    <string name="more_actions">Weitere Aktionen</string>
-    <string name="offline_suffix">· Nicht verbunden</string>
     <string name="add_tag">Tag hinzufügen</string>
     <string name="tag_name">Tag-Name</string>
     <string name="color">Farbe</string>
     <string name="icon">Symbol</string>
     <string name="add">Hinzufügen</string>
     <string name="draft">Entwurf</string>
-    <string name="assign_tag">Tag hinzufügen</string>
     <string name="tag_management_title">Tag-Verwaltung</string>
     <string name="new_tag">Tag hinzufügen</string>
     <string name="edit_tag">Tag bearbeiten</string>
@@ -94,7 +88,6 @@
     <string name="no_sessions_with_tag">Keine Sitzungen mit diesem Tag</string>
     <string name="delete_tag_title">Tag löschen</string>
     <string name="delete_tag_message">\"%1$s\" löschen? Alle Sitzungszuordnungen werden entfernt.</string>
-    <string name="tag_label">Tag</string>
     <string name="no_tags_placeholder">Keine Tags, tippe unten auf die Schaltfläche</string>
     <string name="quick_navigate">Schnellnavigation</string>
     <string name="question">Frage</string>
@@ -103,7 +96,6 @@
     <string name="source">Quelle</string>
     <string name="copy_all">Alle kopieren</string>
     <string name="no_text">(kein Text)</string>
-    <string name="custom_input">Eigene Eingabe</string>
     <string name="input_answer">Antwort eingeben</string>
     <string name="pdf_load_failed">PDF konnte nicht geladen werden</string>
     <string name="unknown_error">Unbekannter Fehler</string>
@@ -121,7 +113,11 @@
     <string name="server_url_example">z.B. http://192.168.0.10:4199 oder https://my-server:443</string>
     <string name="server_type_opencode">OpenCode</string>
     <string name="server_type_dsh">DSH</string>
-    <string name="server_type_dsh_hint">Kein Benutzername und kein Passwort erforderlich. Für USB zuerst adb reverse tcp:3080 tcp:3080 ausführen</string>
+    <string name="dsh_plugin_hint_icon">Über das Passwort-Plugin</string>
+    <string name="dsh_plugin_hint_title">Passwort-Plugin</string>
+    <string name="dsh_plugin_hint_message">Installiere das Plugin dsh-password-login auf deinem DSH-Server, um dich mit einem Zugangspasswort anzumelden — kein Token-Suchen in Serverprotokollen. Installationsschritte im README.</string>
+    <string name="dsh_plugin_hint_link">Installationsanleitung (GitHub)</string>
+    <string name="server_type_dsh_hint">Optionales Zugangspasswort: leer lassen, um es nach dem Verbinden über das Banner einzugeben. Für USB zuerst adb reverse tcp:3080 tcp:3080 ausführen</string>
     <string name="server_url_example_dsh">z. B. http://127.0.0.1:3080 über USB (adb reverse tcp:3080 tcp:3080)</string>
     <string name="server_add">Server hinzufügen</string>
     <string name="session_rename">Sitzung umbenennen</string>
@@ -132,29 +128,16 @@
     <string name="session_menu_archive">Archivieren</string>
     <string name="session_archived_section_title">Archiviert (%1$d)</string>
     <string name="session_archive_failed">Sitzung konnte nicht archiviert werden</string>
+    <string name="session_menu_unarchive">Dearchivieren</string>
+    <string name="session_unarchive_failed">Sitzung konnte nicht dearchiviert werden</string>
     <string name="chat_stop">Stoppen</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->
-    <string name="pending_sheet_title">Warteschlange</string>
-    <string name="pending_tab_stacked">In Warteschlange %1$d</string>
-    <string name="pending_tab_todo">TODO %1$d/%2$d</string>
     <string name="pending_tab_todo_plain">TODO</string>
-    <string name="pending_continue">Weiter</string>
-    <string name="pending_clear">Leeren</string>
-    <string name="pending_clear_confirm_title">Nachrichten in der Warteschlange leeren?</string>
-    <string name="pending_clear_confirm_text">%1$d Nachrichten aus der Warteschlange werden entfernt.</string>
-    <string name="pending_edit_dialog_title">Nachricht in der Warteschlange bearbeiten</string>
-    <string name="pending_item_edit">Bearbeiten</string>
-    <string name="pending_item_delete">Löschen</string>
-    <string name="pending_item_send">Jetzt senden</string>
-    <string name="pending_item_sending">Wird gesendet…</string>
     <string name="todo_empty">Keine TODO-Elemente</string>
     <string name="chat_copy">Kopieren</string>
     <string name="table_copy_cell">Zelle kopieren</string>
     <string name="table_copy_table">Tabelle kopieren (TSV)</string>
-    <string name="terminal_copy">Kopieren</string>
-    <string name="terminal_paste">Einfügen</string>
-    <string name="terminal_more">Mehr…</string>
     <string name="chat_compressing_context">Kontext wird komprimiert: %1$s</string>
     <string name="chat_compressing_context_plain">Kontext wird komprimiert…</string>
     <string name="chat_revert">Zurücksetzen</string>
@@ -197,7 +180,6 @@
     <string name="session_pending_approval">Genehmigung ausstehend</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
-    <string name="chat_response">Antwort</string>
     <plurals name="chat_status_edits_plural">
         <item quantity="one">%1$d Änderung</item>
         <item quantity="other">%1$d Änderungen</item>
@@ -215,8 +197,6 @@
     <string name="chat_status_searching">Codebasis wird durchsucht</string>
     <string name="chat_status_fetching_url">URL wird abgerufen</string>
     <string name="chat_status_running_subagent">Subagent wird ausgeführt</string>
-    <string name="chat_task_completed">Turn abgeschlossen</string>
-    <string name="chat_task_failed">Aufgabe fehlgeschlagen</string>
     <string name="chat_event_tool_catalog_changed">Werkzeugkatalog geändert</string>
     <string name="chat_event_task_completed">Subagent abgeschlossen</string>
     <string name="chat_event_task_failed">Subagent fehlgeschlagen</string>
@@ -274,8 +254,6 @@
     <string name="chat_stats_tools">Werkzeuge</string>
     <string name="chat_stats_expand">Rundendetails anzeigen</string>
     <string name="chat_stats_collapse">Rundendetails ausblenden</string>
-    <string name="chat_subagent_completed_notification">Subagent abgeschlossen</string>
-    <string name="chat_subagent_failed_notification">Subagent fehlgeschlagen</string>
     <string name="chat_status_updating_tasks">Aufgaben werden aktualisiert</string>
     <string name="chat_status_thinking">Denkt nach</string>
     <string name="chat_tool_running_command">Befehl wird ausgeführt…</string>
@@ -299,7 +277,10 @@
     <string name="chat_default_model">Standardmodell</string>
     <string name="chat_manage_models">Modelle verwalten</string>
     <string name="chat_output_truncated">Ausgabe vom Server gekürzt. Vollständige Ausgabe gespeichert unter: %1$s</string>
-    <string name="chat_question_label">Frage</string>
+    <string name="chat_output_truncated_no_path">Ausgabe vom Server gekürzt. Die vollständige Ausgabe liegt auf dem Server.</string>
+    <string name="chat_output_view_full">Vollständige Ausgabe anzeigen</string>
+    <string name="chat_output_spilled">Die Ausgabe wurde vom Server teilweise ausgelassen (%1$s). Vollständiges Ergebnis gespeichert unter: %2$s</string>
+    <string name="chat_output_spilled_unknown">Die Ausgabe wurde vom Server teilweise ausgelassen. Vollständiges Ergebnis gespeichert unter: %1$s</string>
     <string name="chat_permission_label">Berechtigung: %1$s</string>
     <string name="chat_interrupted">Unterbrochen: %1$s</string>
     <string name="chat_retry">Wiederholung #%1$d: %2$s</string>
@@ -450,7 +431,9 @@
     <string name="chat_shell_placeholder">Shell-Befehl eingeben…</string>
     <string name="chat_shell_failed">Shell-Befehl konnte nicht ausgeführt werden</string>
     <string name="chat_shell_empty">Bitte zuerst einen Shell-Befehl eingeben</string>
+    <string name="chat_shell_mode_unavailable">Shell-Modus ist auf diesem Server nicht verfügbar</string>
     <string name="chat_subagent_one_shot_read_only">Einmalige Subagent-Sitzung: Folgenachrichten werden nicht unterstützt</string>
+    <string name="chat_subagent_read_only_mirror">Subagent-Sitzung (schreibgeschützt): in der übergeordneten Sitzung fortfahren</string>
     <string name="chat_shell_attachments_unsupported">Shell-Modus unterstützt keine Anhänge</string>
     <string name="chat_command_images_unsupported">Slash-Befehle unterstützen keine Bildanlagen</string>
     <string name="chat_terminal_connect_failed">Terminal konnte nicht geöffnet werden</string>
@@ -477,7 +460,6 @@
     <string name="server_settings_models">Modelle</string>
     <string name="server_settings_models_desc">Modell-Sichtbarkeit und Standardwerte</string>
     <string name="sessions_create_folder">Verzeichnis erstellen</string>
-    <string name="sessions_create_folder_title">Verzeichnis erstellen</string>
     <string name="sessions_create_folder_name_label">Verzeichnisname</string>
     <string name="sessions_create_folder_name_placeholder">my-project</string>
     <string name="sessions_create_folder_invalid_name">Gib einen gültigen Verzeichnisnamen ein</string>
@@ -492,6 +474,13 @@
     <string name="chat_error_view_page">Seite</string>
     <string name="chat_error_view_code">Code</string>
     <string name="math_block_badge">Formel</string>
+    <string name="markdown_a11y_blockquote">Zitat</string>
+    <string name="markdown_a11y_code_block">Codeblock</string>
+    <string name="markdown_a11y_code_block_with_language">Codeblock, %1$s</string>
+    <string name="markdown_a11y_code_language">Sprache: %1$s</string>
+    <string name="markdown_a11y_code_fallback_language">CODE</string>
+    <string name="markdown_a11y_copy_code">Code kopieren</string>
+    <string name="markdown_a11y_alert">%1$s-Hinweis</string>
     <string name="chat_save_image">Bild speichern</string>
     <string name="chat_image_saved">Bild gespeichert</string>
     <string name="chat_image_save_failed">Bild konnte nicht gespeichert werden</string>
@@ -526,7 +515,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="session_details_updated">Aktualisiert</string>
     <string name="session_details_diff">Diff</string>
     <string name="session_details_diff_summary">+%1$d −%2$d (%3$d Dateien)</string>
-    <string name="chat_thinking_complete">%1$s gedacht</string>
     <string name="chat_thinking_complete_unknown">Denken abgeschlossen</string>
     <string name="chat_token_usage_total">%,d Tokens</string>
     <string name="chat_token_input">Eingabe</string>
@@ -546,7 +534,7 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="permission_reject_button">Ablehnen</string>
     <string name="settings_auto_approve_rules">Auto-Genehmigungsregeln</string>
     <string name="settings_auto_allow_permissions">Alle Berechtigungsanfragen automatisch erlauben</string>
-    <string name="settings_auto_allow_permissions_desc">Beantwortet jede Anfrage automatisch mit \'Immer erlauben\'. Regeln werden dauerhaft gespeichert – nur für vertrauenswürdige Server.</string>
+    <string name="settings_auto_allow_permissions_desc">Beantwortet jede Anfrage automatisch mit \'Immer\'. Regeln werden dauerhaft gespeichert – nur für vertrauenswürdige Server.</string>
     <string name="settings_no_auto_approve_rules">Keine gespeicherten Auto-Genehmigungsregeln</string>
     <string name="settings_delete_rule">Regel löschen</string>
     <string name="settings_expand_reasoning">Schlussfolgerung auto-erweitern</string>
@@ -556,7 +544,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="chat_webfetch_prompt">Eingabe: %s</string>
     <string name="tool_web_search">WebSearch</string>
     <string name="chat_context_usage">Kontext: %1$d%%</string>
-    <string name="chat_retry_send">Wiederholen</string>
     <string name="chat_title_placeholder">Chat</string>
     <string name="chat_context_detail_title">Kontextverwendungsdetails</string>
     <string name="a11y_settings_auto_allow_permissions">Alle Berechtigungsanfragen automatisch erlauben</string>
@@ -593,7 +580,7 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="chat_locate_message_not_found">Nachricht in dieser Sitzung nicht gefunden</string>
     <string name="a11y_icon_add">Hinzufügen</string>
     <string name="a11y_icon_share">Teilen</string>
-    <string name="a11y_icon_unlink">Verknüpfung lösen</string>
+    <string name="a11y_icon_unlink">Freigabe aufheben</string>
     <string name="a11y_icon_terminal">Terminal</string>
     <string name="a11y_icon_copy_all">Alles kopieren</string>
     <string name="a11y_icon_compress">Komprimieren</string>
@@ -608,7 +595,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="a11y_icon_description">Beschreibung</string>
     <string name="a11y_icon_image">Bild</string>
     <string name="a11y_icon_file">Datei</string>
-    <string name="a11y_icon_question">Frage vom Agenten</string>
     <string name="a11y_icon_collapse">Einklappen</string>
     <string name="a11y_icon_expand">Ausklappen</string>
     <string name="a11y_icon_dismiss">Schließen</string>
@@ -630,6 +616,9 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="sessions_view_folders">Ordner</string>
     <string name="sessions_view_recent">Letzte</string>
     <string name="sessions_clear_search">Suche löschen</string>
+    <string name="terminal_copy">Kopieren</string>
+    <string name="terminal_paste">Einfügen</string>
+    <string name="terminal_more">Mehr…</string>
     <string name="terminal_new_tab">Neu</string>
     <string name="terminal_keyboard">Tastatur</string>
     <string name="terminal_reconnect_tab">Tab neu verbinden</string>
@@ -639,7 +628,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="connection_error_title">Server nicht erreichbar</string>
     <string name="connection_error_retrying_in">Erneuter Versuch in %1$d…</string>
     <string name="connection_error_switch_server">Zu einem anderen Server wechseln</string>
-    <string name="chat_thinking_in_progress">Denkt nach… %1$s</string>
     <string name="mcp_servers_title">MCP-Server</string>
     <string name="mcp_no_servers">Keine MCP-Server konfiguriert</string>
     <string name="chat_context_composition">Kontextzusammensetzung (geschätzt)</string>
@@ -672,7 +660,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="settings_chat_font_compact">Kompakt</string>
     <string name="settings_turn_dividers">Turn-Trennlinien</string>
     <string name="settings_turn_dividers_desc">Trennlinien zwischen Nachrichten desselben Turns anzeigen</string>
-    <string name="viewer_loading_progress">Laden: %1$d / %2$d Zeilen</string>
     <string name="viewer_large_file_warning">Große Datei (%1$d Zeilen) — die Leistung kann beeinträchtigt sein</string>
     <string name="workspace_search_hint">Tippen, um Dateien zu suchen</string>
     <string name="workspace_search_no_results">Keine passenden Dateien</string>
@@ -730,7 +717,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="report_attach_full_log">Vollständiges Diagnoseprotokoll anhängen (geheimes Gist; für jeden mit dem Link lesbar)</string>
     <string name="report_close">Schließen</string>
     <string name="diagnostics_title">Diagnose</string>
-    <string name="menu_quick_navigate">Schnellnavigation</string>
     <string name="pdf_next_page">Nächste Seite</string>
     <string name="pdf_previous_page">Vorherige Seite</string>
     <string name="server_settings_oauth_failed">OAuth konnte nicht abgeschlossen werden</string>
@@ -774,20 +760,15 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="dsh_job_status_killed">Beendet</string>
     <string name="dsh_job_status_completed">Abgeschlossen</string>
     <string name="dsh_job_status_failed">Fehlgeschlagen</string>
-    <string name="dsh_jobs_empty">Keine Hintergrundaufgaben</string>
     <string name="shell_status_failed">Fehlgeschlagen</string>
     <string name="task_toolbar_action">Aufgabe in den Hintergrund verschieben</string>
-    <string name="task_toolbar_subagents">%1$d Subagent(en) im Vordergrund aktiv</string>
-    <string name="a11y_icon_tasks">Aufgabenaktivitäten</string>
-    <string name="task_sheet_subagents_tab">Subagenten</string>
-    <string name="task_sheet_shells_tab">Shells</string>
+    <plurals name="task_toolbar_subagents">
+        <item quantity="one">%1$d Subagent läuft im Vordergrund</item>
+        <item quantity="other">%1$d Subagents laufen im Vordergrund</item>
+    </plurals>
     <string name="task_sheet_empty_subagents">Keine laufenden Subagenten</string>
     <string name="task_sheet_empty_shells">Keine Shell-Befehle</string>
-    <string name="task_sheet_title">Aufgaben</string>
     <!-- 2026-08-13：任务面板前台/后台标记 -->
-    <string name="task_foreground">Vordergrund</string>
-    <string name="task_background">Hintergrund</string>
-    <string name="task_sheet_history_tab">Verlauf</string>
     <string name="shell_kill">Shell entfernen</string>
     <string name="shell_close">Schließen</string>
     <string name="shell_no_output">Noch keine Ausgabe</string>
@@ -818,7 +799,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <!-- #322：DSH 服务器历史命中（session/search） -->
     <string name="search_server_hits">Sitzungs-Treffer</string>
     <string name="search_server_more">Nur die ersten 20 Treffer werden angezeigt</string>
-    <string name="search_content_coverage_hint">Vollständiger Verlauf für diese Sitzung nicht synchronisiert</string>
     <string name="search_content_hit_count">%1$d Nachrichten</string>
     <string name="search_filter_role_all">Alle Rollen</string>
     <string name="search_filter_menu">Filtern</string>
@@ -852,7 +832,6 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="agent_preset_cards_title">Agent-Preset wählen</string>
     <string name="server_settings_default_agent_preset">Standard-Agent-Preset für neue Sitzungen</string>
     <string name="session_details_agent_preset">Agent-Preset</string>
-    <string name="a11y_icon_agent_preset">Agent-Preset</string>
     <string name="server_settings_defaults_loopback_hint">Standardstufen sind nur über eine Loopback-Verbindung erreichbar. Verwende adb reverse (127.0.0.1), um sie zu verwalten.</string>
     <!-- ============ Goal (backlog #286) / Context pressure ============ -->
     <string name="toolbar_goal">Ziel</string>
@@ -939,17 +918,13 @@ Token: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_notification_root_failing_title">Supervisor: %1$d Root(s) fehlerhaft</string>
     <string name="supervisor_notification_error_peak_title">Supervisor: Fehlerspitze steigt</string>
     <string name="supervisor_notification_error_peak">Fehlerspitze: %1$d</string>
-    <string name="dsh_token_banner_text">Dieser Server erfordert ein Zugriffstoken</string>
-    <string name="dsh_token_banner_action">Token eingeben</string>
-    <string name="dsh_token_dialog_title">Zugriffstoken erforderlich</string>
-    <string name="dsh_token_dialog_message">Fügen Sie das Token oder die vollständige URL aus der Startzeile des Servers ein (enthält token=...).</string>
-    <string name="dsh_token_dialog_hint">Token oder URL</string>
+    <string name="dsh_token_banner_text">Dieser Server erfordert Zugangsdaten</string>
+    <string name="dsh_token_banner_action">Zugangsdaten eingeben</string>
+    <string name="dsh_token_dialog_title">Zugangsdaten erforderlich</string>
+    <string name="dsh_token_dialog_message">Gib das Zugangspasswort dieses Servers ein, oder füge für ältere Server den Token / die vollständige URL (token=…) ein.</string>
+    <string name="dsh_token_dialog_hint">Passwort oder Token</string>
     <string name="dsh_token_dialog_connect">Verbinden</string>
-    <string name="dsh_token_dialog_rejected">Token vom Server abgelehnt. Prüfen Sie es und versuchen Sie es erneut.</string>
-    <string name="server_pair_help_title">Erstkopplung</string>
-    <string name="server_pair_help_manual">Manuell: Speichern und verbinden Sie diesen Server, tippen Sie dann auf „Token eingeben“ im Banner und fügen Sie das Token aus der Server-Startzeile ein</string>
-    <string name="server_pair_help_adb">USB (Dev-Builds): Führen Sie ./scripts/dsh-pair.sh auf dem Host aus — das Token wird automatisch eingefügt</string>
-    <string name="server_pair_help_deeplink">Oder führen Sie ./scripts/dsh-pair.sh --lan auf dem Host aus und scannen oder tippen Sie auf den ocbeacon://-Link, um dieses Formular vorzufüllen</string>
+    <string name="dsh_token_dialog_rejected">Zugangsdaten vom Server abgelehnt. Bitte prüfen und erneut versuchen.</string>
 
     <!-- #324① DSH provider 目录/自定义增删 -->
     <string name="dsh_settings_loopback_required">Diese Aktion erfordert eine Loopback-Verbindung (adb reverse zu 127.0.0.1).</string>

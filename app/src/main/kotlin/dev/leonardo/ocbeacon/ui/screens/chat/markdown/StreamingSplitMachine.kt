@@ -93,6 +93,15 @@ internal class StreamingSplitMachine(
         armedOrigin = -1
     }
 
+    /**
+     * #515（2026-10-06）：武装边界处的 Fire 计划预演——与 [onBatch] 触发分支
+     * 同参求值（released=武装边界，armed append-only 语义），供接线层在 Arm
+     * 期预热解析冻结块文本。武装后新到内容不改变 [origin, armedOrigin) 的切分
+     * （快照前缀稳定），预演块与 Fire 实发块逐字节一致。
+     */
+    fun previewFirePlan(snapshot: String, armed: Int): StreamingGraduation =
+        planStreamingGraduation(snapshot, armed, plan, minFreezeChars)
+
     /** 完结/离树：回 Idle（接线层决定完结路径——spec §1 完结持续性）。 */
     fun reset() {
         plan = StreamingGraduation(emptyList(), 0)

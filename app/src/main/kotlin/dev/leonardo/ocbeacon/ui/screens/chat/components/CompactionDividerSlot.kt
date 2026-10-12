@@ -49,6 +49,18 @@ internal fun CompactionDividerSlot(
     timeMs: Long = 0L,
 ) {
     var showRevertDialog by remember { mutableStateOf(false) }
+    // #543 定罪探针：槽实例进入组合时打一次（expansionKey+宿主 item key）——
+    // 同窗两条同 key = 双宿主实锤（同 item 双实例 or 跨 item 双条目由 hostKey 分辨）。
+    val slotHostKey = dev.leonardo.ocbeacon.ui.screens.chat.components.LocalCardExpandHostKey.current
+    remember(expansionKey) {
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+            dev.leonardo.ocbeacon.logging.AppLogger.d(
+                "CardExpand",
+                "[DEBUG-543] slot-compose key=" + expansionKey + " hostKey=" + slotHostKey,
+            )
+        }
+        true
+    }
     if (revertTargetId != null && showRevertDialog) {
         ConfirmDialog(
             title = stringResource(R.string.chat_revert_title),

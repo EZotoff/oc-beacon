@@ -326,10 +326,142 @@ internal class HeightReserveState {
     /** 帽归属 item key（attach 相登记；换流式项自动重置）。 */
     var itemKey: Any? = null
     /** 对齐策略（用户验收二十二世：底对齐修贴底统计栏、却让阅读态回归推-回闪烁——
-     *  底钉增长=每 append 全块上推 Δ，配对释放才补偿=中间帧闪烁。改为随态切换：
-     *  贴底原点=底对齐（统计栏钉死、溢出朝上裁）；阅读态=顶对齐（原验证几何）。 */
+     * 底钉增长=每 append 全块上推 Δ，配对释放才补偿=中间帧闪烁。改为随态切换：
+     * 贴底原点=底对齐（统计栏钉死、溢出朝上裁）；阅读态=顶对齐（原验证几何）。 */
     var alignBottom: Boolean by androidx.compose.runtime.mutableStateOf(true)
+
+    /**
+     * #540 方向 A：展开配对窗计数（>0 = 物主 item 上有展开/收起集进行中）。
+     * 窗内帽释放/收缩**恒配对**（覆盖贴底原点/读历史免派发格）——流式降级路径
+     * 的展开增长经帽通道逐档原子落地，上推源从构造上消失（#526 事后回锚退役）。
+     * 计数制支持同 item 多卡并发窗。**只由卡侧窗协程配对维护**（开窗 ++/关窗
+     * finally --）——换主 reset 不得清零：在飞窗被外部清零后关窗减成负数，
+     * `>0` 恒配对判据自此永久失效（2026-10-10 review 轮定罪，步边界换主可触）。
+     */
+    var expandPairingWindows: Int = 0
+
+    /**
+     * #540 二轮（表述乙·揭示缘参照，裁决 2026-10-11）：宿主 item 根的 root-Y
+     * （CML item Box onGloballyPositioned 逐 placement 更新；仅帽物主 item 写，
+     * 键不等守卫防跨 item 互抢）。卡侧 toggle 时刻把揭示盒 root-Y 换算成
+     * item 空间几何写入 [expandCollapseStickTop]/[expandCollapseSpanDepth]。
+     */
+    var hostItemTopY: Float = Float.NaN
+
+    /**
+     * #540 二轮：当前窗卡揭示盒顶距 item 顶的偏移（塌缩不变量——盒顶上方
+     * 内容在收起中不动）；-1=无在飞窗/未捕获。flush 负向配对资格判定用。
+     */
+    var expandCollapseStickTop: Int = -1
+
+    /** #540 二轮：toggle 时刻揭示盒高（塌缩区深度，资格判定界）。-1=未捕获。 */
+    var expandCollapseSpanDepth: Int = -1
+
+    /**
+     * #540 三轮：在飞降级驱动（**四报改列表**——同流式 item 多卡并发 toggle 时
+     * 单槽被后卡覆盖、先卡孤儿化瞬跳，四报竞态定罪之一）。flush 每帧遍历步进；
+     * 卡侧 toggle 组合期注册、窗关 finally 注销（仅 !animating）。
+     */
+    val degradeDrives = mutableListOf<DegradeDriveState>()
+
+    /** 便捷判定：存在在飞驱动（flush 早退门用）。 */
+    val anyDriveAnimating: Boolean get() = degradeDrives.any { it.animating }
 }
+
+/**
+ * #540 三轮（用户三报「收起来回震荡」定罪）：降级 toggle 高度驱动态——盒布局
+ * 高由 flush 单事务步进（帽通道），取代 AnimatedVisibility 的帧内自驱尺寸动画。
+ *
+ * 定罪链：shrinkVertically 每帧在 measure 相直改布局高（收缩穿透 `min(child,
+ * reserved)` 帽天花板——帽只遮增长不遮收缩），而滚动修正是 pending 待定位、
+ * 下一遍 measure 才消费 → 每帧 draw 画在「新高度×旧滚动」错位态、下帧回位
+ * =逐帧交替震荡；展开常见几何被揭示缘否决门判零写入（单写者=LazyList 默认
+ * 锚定本就正确）故稳定——与用户三报「展开还好、收起震荡」精确吻合。soak
+ * 日志断言只验写入目标（数学正确），相位错不可见=五小时 13 次收起全绿仍震荡。
+ *
+ * 驱动后：高度步进与滚动写同快照、同遍 measure 原子生效（帽协议增长向的
+ * 对称复刻）；让位/手势帧步进随 plan 丢弃（幂等重算）→ 冻结而非错位。
+ *
+ * 四报竞态修订（2026-10-11 深夜）：**逐卡几何**——stickTop/spanDepth 随驱动走
+ * （单槽 reserve 级字段被后卡覆盖=先卡镜像目标算错坐标，四报竞态定罪之二）。
+ */
+internal class DegradeDriveState(
+    hInitial: Int = 0,
+    /** 终态高：收起=0 / 展开=内容高；-1=展开中等内容测高（挂起相不步进）。 */
+    var hTarget: Int = -1,
+    /** 本卡揭示盒顶距 item 顶偏移（toggle 捕获）；-1=未捕获。 */
+    var stickTop: Int = -1,
+    /** 本卡 toggle 时刻盒高（塌缩区深度界）；-1=未捕获。 */
+    var spanDepth: Int = -1,
+) {
+    /** 盒布局驱动高 px（快照态：flush 单写、布局层读）。 */
+    var h: Int by androidx.compose.runtime.mutableIntStateOf(hInitial)
+
+    /** 本帧待应用步进（reservePhase 算出、applyPairedShift 事务内消费；幂等重算覆盖）。 */
+    var pendingStep: Int = 0
+
+    val animating: Boolean get() = hTarget >= 0 && h != hTarget
+}
+
+/**
+ * 四报多卡滚动分量纯函数：锚在塌缩区内/上方（anchorTop ≤ stick+span）的卡其
+ * 步进需镜像；锚在其下方（新内容侧）的卡零操作。单卡时与旧判定表逐点等价。
+ * 未捕获几何（stick<0）保守计入（镜像兜底）。
+ *
+ * 五报 F2（2026-10-12 定罪修订）：**符号感知**——只有负步进（收起）走塌缩
+ * containment 表。正步进（展开增长）混入净负帧时曾被本表以 span=0 的展开态
+ * 几何误判 outside-span 拒发（r2 取证 39.855/872 两帧 drv=+56/+38 noop），
+ * 高度推进无配对=残差偏移源。正步进的配对资格由
+ * [drivePositivePairedShift] 逐卡判定，不经此表。
+ */
+internal fun driveScrollShift(anchorTop: Int, drives: List<DegradeDriveState>): Int =
+    drives.sumOf { d ->
+        if (d.pendingStep >= 0) {
+            0
+        } else if (d.stickTop < 0 || d.spanDepth < 0 || anchorTop <= d.stickTop + d.spanDepth) {
+            d.pendingStep
+        } else {
+            0
+        }
+    }
+
+/**
+ * 五报 F3：正向步进（展开增长）逐卡配对分量——锚在某卡揭示缘上方
+ * （anchorTop < stickTop，阅读位高于被展开卡）时该卡增长位于锚下方，配对=
+ * 自造位移 → 计 0（否决）；锚在揭示缘及下方（含贴底原点/读位在卡下）恒配对
+ * （离底让位语义）。未捕获几何（stick<0）保守配对（legacy 盲配）。
+ *
+ * 取代 reserve 级单槽镜像（expandCollapseStickTop）在驱动通道上的读法——
+ * 单槽持「最后 toggle」几何，并发/连 toggle 时先卡被后卡几何误判（四报只把
+ * 负向半边逐卡化，本函数补齐正向半边）。
+ */
+internal fun drivePositivePairedShift(anchorTop: Int, drives: List<DegradeDriveState>): Int =
+    drives.sumOf { d ->
+        if (d.pendingStep <= 0) {
+            0
+        } else if (d.stickTop < 0 || anchorTop >= d.stickTop) {
+            d.pendingStep
+        } else {
+            0
+        }
+    }
+
+/** 驱动步进纯函数（指数逼近 ~180ms@60fps，AV spring 观感等价）。0=稳态/等测高。 */
+internal fun degradeDriveStep(hCur: Int, hTarget: Int): Int {
+    if (hTarget < 0) return 0
+    val remaining = hTarget - hCur
+    if (remaining == 0) return 0
+    if (kotlin.math.abs(remaining) <= DEGRADE_DRIVE_SNAP_PX) return remaining
+    val step = (remaining * DEGRADE_DRIVE_FRACTION).toInt()
+    return if (step == 0) {
+        if (remaining > 0) 1 else -1
+    } else {
+        step
+    }
+}
+
+private const val DEGRADE_DRIVE_FRACTION = 0.32f
+private const val DEGRADE_DRIVE_SNAP_PX = 2
 
 /** 帽修饰符：测真高、报帽高；增量越界由外层 clipToBounds 裁剪。 */
 internal fun Modifier.streamingHeightReserve(state: HeightReserveState, itemKey: Any): Modifier {
@@ -363,6 +495,9 @@ private fun HeightReserveState.resetIfOwnerChanged(itemKey: Any) {
         this.itemKey = itemKey
         reserved = -1
         trueHeight = -1
+        // expandPairingWindows 不清零：它是列表级引用计数，所有权归卡侧窗协程
+        // （开窗 ++/关窗 finally -- 严格配对）。此处清零会让在飞窗的关窗减成
+        // 负数 → `>0` 恒配对判据永久失效（review 轮定罪）。
     }
 }
 
@@ -379,7 +514,12 @@ internal fun HeightReserveState.hardReset() {
 }
 
 /** 释放决策（纯函数，单测缝）。null=本帧不释放（未初始化/无增量/手势持帽）。 */
-internal data class ReserveReleasePlan(val delta: Int, val scrollPaired: Boolean)
+internal data class ReserveReleasePlan(
+    val delta: Int,
+    val scrollPaired: Boolean,
+    /** #540 三轮：本帧降级驱动步进量（applyPairedShift 事务内推进盒高+帽预记）。 */
+    val driveStep: Int = 0,
+)
 
 internal fun reserveReleasePlan(
     reserved: Int,
@@ -388,21 +528,130 @@ internal fun reserveReleasePlan(
     firstVisibleOffset: Int,
     isScrollInProgress: Boolean,
     growthIndex: Int?,
+    /** #540：展开配对窗内（物主 item 上展开/收起集进行中）——增长/收缩恒配对。 */
+    expandPaired: Boolean = false,
+    /**
+     * #549 Fix B（2026-10-13）：**正向**窗内配对的独立判据——仅帽负向例外
+     * （收起集帽回落）沿用 [expandPaired] 窗语义；正向（展开增长）额外要求
+     * 存在动画中的驱动。驱动 settle 后窗未关的尾巴里，帽把流式增长持续升格
+     * 「离底让位」→内容短于视口时被框架钳回 (0,0) 的离底写入逐帧重发
+     * （emu-r11/r427 定罪：settle 后 ~900ms 打架）。null=回落 [expandPaired]
+     * （legacy 语义，纯函数可测）。
+     */
+    expandPairedPos: Boolean? = null,
+    /**
+     * #540 二轮修订（用户复测定罪「输出中展开震」）：锚在揭示缘**上方**（阅读位
+     * 高于被展开卡）时，窗内增长发生在锚下方——锚所见内容不动，配对位移反而是
+     * 自造推动。true=否决窗内配对（走免配对释放）。仅窗内消费；未捕获几何恒
+     * false（维持既有盲配=legacy 绿路径）。
+     */
+    anchorAboveReveal: Boolean = false,
 ): ReserveReleasePlan? {
     if (reserved < 0) return null                       // 未初始化（首帧直通由 flush 初始化）
-    if (trueHeight <= reserved) return null             // 无增量（或收缩：帽不回改）
-    if (isScrollInProgress) return null                 // 手势持帽（零位移无豁免）
+    if (isScrollInProgress) return null                 // 手势持帽（零位移无豁免——展开窗同守）
     val delta = trueHeight - reserved
+    if (delta == 0) return null                         // 无增量
+    if (delta < 0 && !expandPaired) return null         // 收缩：帽不回改（存量语义；窗内例外=收起配对）
+    // #549 Fix B：正向配对独立判据（null=回落窗语义——负向例外不受影响）
+    val expandPairedPositive = expandPairedPos ?: expandPaired
     // R1 统一配对谓词（原 z3 锚 index 语义+贴底原点判定合并入 StreamingAnchorRule）：
     // 贴底原点物理跟随免派发；跟随区免双重补偿；锚≤增长源同帧配对；读历史免。
-    val paired = StreamingAnchorRule.pairedDelta(
-        anchorIndex = firstVisibleIndex,
-        anchorOffset = firstVisibleOffset,
-        growthIndex = growthIndex,
-        growthPx = delta.toFloat(),
-    ) != 0f
+    // #540：展开窗内的增长是用户主动揭示意图——锚位格全部让位，恒配对；
+    // 二轮修订：锚在揭示缘上方时增长位于锚下方，配对=自造位移 → 否决。
+    val paired = if (delta > 0 && expandPairedPositive && anchorAboveReveal) {
+        // 仅正向（展开增长）可被否决——负向（收起）走负向分支自己的塌缩几何
+        // 判定（锚在揭示缘上方恰是镜像骑行格，不能在此被掐死导致帽不回放）。
+        false
+    } else if (delta > 0) {
+        // #549 Fix B：正向配对用 Pos 判据（动画门槛）；负向沿用窗语义防结算卡死
+        expandPairedPositive || StreamingAnchorRule.pairedDelta(
+            anchorIndex = firstVisibleIndex,
+            anchorOffset = firstVisibleOffset,
+            growthIndex = growthIndex,
+            growthPx = delta.toFloat(),
+        ) != 0f
+    } else {
+        expandPaired || StreamingAnchorRule.pairedDelta(
+            anchorIndex = firstVisibleIndex,
+            anchorOffset = firstVisibleOffset,
+            growthIndex = growthIndex,
+            growthPx = delta.toFloat(),
+        ) != 0f
+    }
     return ReserveReleasePlan(delta = delta, scrollPaired = paired)
 }
+
+/**
+ * #540 帽×机件单写者（planned 抬帽，纯函数）：机件原子帧（反射待定位 + driveTo
+ * 同遍 measure）落在帽物主 item 上时，抬帽必须与增长**同快照**——否则增长被
+ * min(child, reserved) 钳一帧，反射 (+H) 先消费而布局未长，flush 残差释放与机件
+ * 反射叠成错帧/双注入（§4.1 宽限帽污染面收编）。非物主/未初始化/零增量=不动。
+ */
+internal fun hatPairedRaise(reserved: Int, ownerKey: Any?, hostKey: Any?, delta: Int): Int =
+    if (ownerKey != null && ownerKey == hostKey && reserved >= 0 && delta > 0) reserved + delta else reserved
+
+/** #540 镜像：收起集落帽（reserved 回落）；下界越界归 -1（未初始化哨兵，flush 首帧直通重建）。 */
+internal fun hatPairedLower(reserved: Int, ownerKey: Any?, hostKey: Any?, delta: Int): Int =
+    if (ownerKey != null && ownerKey == hostKey && reserved >= 0 && delta > 0) {
+        (reserved - delta).let { if (it < 0) -1 else it }
+    } else reserved
+
+/**
+ * #540 二轮（表述乙·揭示缘参照，裁决 2026-10-11；同日用户复测定罪修订）：
+ * 窗内负向（收缩）配对决策（纯函数，单测缝）。
+ *
+ * 判定表（锚相对塌缩几何的位置，塌缩区=揭示盒 [stickTop, stickTop+spanDepth]）：
+ * - **锚在揭示盒底以下**（anchorTop > stickTop+spanDepth，即盒下方新内容侧）：
+ *   **零操作（null）**——该侧内容坐标不随塌缩变化（item 底缘与下方内容不动），
+ *   LazyList 默认锚定本就正确；旧 dispatch 盲镜像在此发位移=col4 跳变自造
+ *   （journal §22 D3 修正读法）。
+ * - **锚在盒底及以上**（anchorTop ≤ stickTop+spanDepth：盒内或盒上方旧内容侧）：
+ *   **逐帧镜像**（fiso−|Δ| 钳 item 底）——上方内容与揭示缘的坐标随塌缩逐帧
+ *   下移（item 底不动、总高缩），保持画面固定=视口逐帧跟骑。修订前的「首帧
+ *   跳到揭示缘」在锚位于体内深处时一次性把上半部分拖下一大截（用户复测定罪
+ *   「收起拖动上半部分」①面）；「盒上方走零操作」漏配镜像=上半部分被动被拖
+ *   （②面）——镜像骑行两 face 同除，落位自然（终态 fiso₀−H，越界钳 item 底
+ *   为跨 item 折叠的有界近似：流式物主下方恒为零高横幅群，钳 item 底≈折叠终位）。
+ * - **未捕获几何**（stickTop<0 或 spanDepth<0）：保守纯镜像钳底（兜底）。
+ *
+ * **itemPreH 必须传帧前高度**（帽协议 reserved——评估时刻尚未释放，恰为本帧
+ * 收缩前的值；递归自洽：上帧释放后 reserved=上帧后高=本帧前高）。曾用帧后
+ * 真高使 anchorTop 被低估一个 δ（塌缩初帧 δ 可达数百 px）——盒下方临界锚
+ * 误入镜像侧被拖（根修审计定罪，journal §27）。
+ *
+ * 返回 null=零操作（仅帽回写，无滚动写入）。
+ */
+internal fun shrinkPairedTargetFiso(
+    fiso: Int,
+    itemPreH: Int,
+    delta: Int,
+    stickTop: Int,
+    spanDepth: Int,
+): Int? {
+    require(delta < 0)
+    if (stickTop < 0 || spanDepth < 0) {
+        return (fiso + delta).coerceAtLeast(0)
+    }
+    val anchorTop = itemPreH - fiso
+    return if (anchorTop > stickTop + spanDepth) {
+        null
+    } else {
+        (fiso + delta).coerceAtLeast(0)
+    }
+}
+
+/**
+ * #540 二轮（宽豁免裁决）：窗内让位判定——展开/收起配对窗开启期间，toggle
+ * 本身就是最新显式意图，外部 pending 让位守卫（shouldYieldPairing）对其豁免；
+ * 手势门（isScrollInProgress）在链路上游更硬，不受影响。
+ */
+internal fun shouldYieldPairingWindowed(
+    readFii: Int,
+    readFiso: Int,
+    lastSetFii: Int?,
+    lastSetFiso: Int?,
+    windowOpen: Boolean,
+): Boolean = !windowOpen && shouldYieldPairing(readFii, readFiso, lastSetFii, lastSetFiso)
 
 /**
  * #438 R-1（2026-09-28 null-key 裸 index 通道根修）：配对目标位解析纯函数。
@@ -511,8 +760,10 @@ internal fun streamingGrowFlushTask(
         val fiso = listState.firstVisibleItemScrollOffset
         val infos = listState.layoutInfo.visibleItemsInfo
         // 新bug根修：外部 pending 未消费（读位≠上批目标）→ 让位（配对覆盖写会抵消显式意图）
+        // #540 二轮（宽豁免裁决 2026-10-11）：窗内豁免——塌缩自带的被动锚漂移
+        // 曾被误判为外部意图，收起配对 76 帧饿死（journal §22 D2）；toggle 即意图。
         mem.frameSeq++
-        if (shouldYieldPairing(fii, fiso, mem.lastSetFii, mem.lastSetFiso)) {
+        if (shouldYieldPairingWindowed(fii, fiso, mem.lastSetFii, mem.lastSetFiso, windowOpen = (reserve?.expandPairingWindows ?: 0) > 0)) {
             if (shouldAdoptExternalPosition(fii, fiso, mem.prevFii, mem.prevFiso, mem.frameSeq - mem.lastSetFrame)) {
                 // #502：静止且 lastSet 陈旧 = 已定居的外部位置（非待消费 pending）——
                 // 采纳为配对基线，落回正常求值（帽释放计划当帧生效，防永久让位）
@@ -602,10 +853,53 @@ private fun reservePhase(listState: LazyListState, reserve: HeightReserveState?)
         // 导致锚键误判（该配对的释放落 paired=false）——按 index 反查锚键。
         growthIndex = listState.layoutInfo.visibleItemsInfo
             .firstOrNull { it.key == reserve.itemKey }?.index,
+        // #540：物主 item 上的展开/收起集窗内恒配对（覆盖贴底原点/读历史格）。
+        // 五报 F4（2026-10-12 ep2 定罪）：窗内配对资格排除「**全部驱动悬垂**」的窗
+        //——空内容卡 toggle 开窗但驱动永不动画（tgt 恒 -1），窗把普通贴底流式
+        // 增长误升格「离底让位」→ 引擎上拉与零高横幅带回贴底逐帧互搏（fiso
+        // 391↔0 拉锯，真机 log 实证）。全悬垂窗回落 StreamingAnchorRule（贴底
+        // 原点免派发）= 拉锯消失；无驱动窗（纯帽/legacy）与正常窗（任一驱动
+        // 已知终态）维持恒配对原语义。
+        expandPaired = reserve.expandPairingWindows > 0 &&
+            !(reserve.degradeDrives.isNotEmpty() && reserve.degradeDrives.none { it.hTarget >= 0 }),
+        // #549 Fix B：正向窗内配对须有**动画中的驱动**——settle 后窗尾巴里帽把
+        // 流式增长继续升格离底让位，内容短于视口时被钳回 (0,0) 的写入逐帧重发
+        //（emu-r11/r427 定罪 settle 后 ~900ms 打架）。无驱动（legacy/纯帽）与
+        // 全悬垂（F4''）分别维持原语义/回落；负向例外不受影响（收起集帽回落
+        // 仍走 expandPaired 窗语义，防结算卡死）。
+        expandPairedPos = if (reserve.degradeDrives.isEmpty()) null
+        else reserve.degradeDrives.any { it.animating },
+        // #540 二轮修订：锚在揭示缘上方（阅读位高于被展开卡）——正增长在锚
+        // 下方，配对=自造位移，否决。未捕获几何（span=-1）不否决（legacy 盲配）。
+        // 锚位用帧前高度（reserved）与负向判定同源无偏（§27）。
+        anchorAboveReveal = reserve.expandPairingWindows > 0 &&
+            reserve.expandCollapseStickTop >= 0 && reserve.expandCollapseSpanDepth >= 0 &&
+            (reserve.reserved - listState.firstVisibleItemScrollOffset) < reserve.expandCollapseStickTop,
     )
     // [R1-A2] 单出口：帽 plan 延后与 ledger 配对合并为同帧单次滚动 set——
     // 原先帽 set 先落、ledger set 覆盖（requestPosition 覆盖写非叠加），同帧
     // 双补偿只活一笔；合并后两笔叠加一次原子生效。
+    // #540 三轮：降级驱动步进并入同一计划（步进与滚动配对同源同帧）。手势期
+    // 在下方 626 早退丢弃（幂等重算），驱动冻结而非错位。四报：多驱动 Σ
+    // （逐卡 pendingStep）。
+    // 五报 F3：驱动的**正向配对资格逐卡化**（[drivePositivePairedShift]，消费点
+    // applyPairedShift 两分支按 anchorTop 现算）——原单布尔 drivePaired 读
+    // reserve 级单槽镜像（最后 toggle 几何），并发/连 toggle 时先卡被误判；
+    // plan.scrollPaired 回归**纯帽通道**语义（帽增量=流式内容增长，镜像=最新
+    // toggle 意图，对帽通道是正确归属）。
+    var dStepSum = 0
+    for (d in reserve.degradeDrives) {
+        val s = degradeDriveStep(d.h, d.hTarget)
+        d.pendingStep = s
+        dStepSum += s
+    }
+    if (dStepSum != 0) {
+        return ReserveReleasePlan(
+            delta = (plan?.delta ?: 0) + dStepSum,
+            scrollPaired = plan?.scrollPaired ?: false,
+            driveStep = dStepSum,
+        )
+    }
     if (plan != null) {
         return plan
     }
@@ -660,6 +954,116 @@ private fun applyPairedShift(
     total: Float,
 ): Boolean {
     if (total != 0f || pendingPlan != null) {
+        // 五报 F2/F3：驱动滚动分量逐卡现算（两分支共用）——负步进走塌缩
+        // containment（driveScrollShift），正步进走揭示缘逐卡否决
+        // （drivePositivePairedShift）；净符号不再决定分量的规则归属。
+        val anchorTop0 = reserve?.reserved?.minus(listState.firstVisibleItemScrollOffset) ?: -1
+        val driveNegScrollV = if (reserve != null) driveScrollShift(anchorTop0, reserve.degradeDrives) else 0
+        val drivePosScrollV = if (reserve != null) drivePositivePairedShift(anchorTop0, reserve.degradeDrives) else 0
+        val dStepTotalV = pendingPlan?.driveStep ?: 0
+        if (total < 0f || dStepTotalV < 0) {
+            // #540 三轮（表述乙·揭示缘参照，裁决 2026-10-11）：负向收缩弃
+            // dispatchRawDelta 镜像——底缘钳制缺口（col4 capd=-3655 consumed=-277）
+            // 与「锚在塌缩区外时位移本不需发，盲镜像自造跳变」双重定罪（journal
+            // §22 D3 及其修正读法）。改走与正向对称的反射位置写：资格判定见
+            // [driveScrollShift]——锚在塌缩区内/上方的卡其步进镜像骑行；区外的卡
+            // 零操作（LazyList 默认锚定保持本就正确）；未捕获 → 保守镜像钳底。
+            //
+            // review 轮两加固（2026-10-11）：
+            // ①混合帧拆账（P1）：total = 塌缩分量 + ledger 增长——决策只用塌缩
+            //   分量，ledger 增长折加到所选目标。noop 格 ledger 非零时仍写
+            //   fiso+ledger。四报：塌缩分量=逐卡 containment Σ（driveScrollShift）
+            //   + 非驱动负余量保守镜像。
+            // ②物主守卫（P2）：fiso 属别的 item 时 anchorTop 是跨 item 垃圾值，
+            //   fii≠物主（或物主不可见）一律按区外处理。
+            val reserveShift = pendingPlan?.delta?.toFloat() ?: 0f
+            val dStepV = pendingPlan?.driveStep ?: 0
+            val ownerIdx = listState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.key == reserve?.itemKey }?.index
+            val anchorIsOwner = reserve != null && ownerIdx != null &&
+                ownerIdx == listState.firstVisibleItemIndex
+            // 逐卡滚动分量：锚位用帧前高度（reserved）无偏（§27）
+            val anchorTopV = anchorTop0
+            val driveScrollV = driveNegScrollV
+            // 非驱动负余量（罕见：非 toggle 的 item 收缩）沿用 reserve 级几何判定
+            //（锚在最新塌缩区下方=零操作；未捕获=保守镜像）——盲镜像会在锚下方
+            // 格自造跳变（review 混合帧拆账测试锁定语义）。
+            val nonDriveNegV = minOf(0, reserveShift.toInt() - dStepV)
+            val rStickV = reserve?.expandCollapseStickTop ?: -1
+            val rSpanV = reserve?.expandCollapseSpanDepth ?: -1
+            val nonDriveMirror = nonDriveNegV != 0 &&
+                (rStickV < 0 || rSpanV < 0 || anchorTopV <= rStickV + rSpanV)
+            // 五报 F2：正步进分量（混合帧中与塌缩共存）逐卡折加——线性叠加，
+            // 各分量按各自规则判定后求和即净位移
+            val collapseShiftV = driveScrollV + drivePosScrollV + (if (nonDriveMirror) nonDriveNegV else 0)
+            val stickFiso: Int? = when {
+                reserveShift > -1f && collapseShiftV == 0 -> {
+                    // 亚像素负余量（|reserveShift|<1）且无驱动塌缩量：只走 ledger 折加
+                    //（五报 F2：纯驱动收起帧 reserveShift=0，塌缩分量在此判——
+                    // 原次序会把它误吞成零操作）
+                    null
+                }
+                reserve == null -> {
+                    // 无 reserve（宿主未挂）：保守净镜像钳底（total 已含 ledger，勿再折）
+                    (listState.firstVisibleItemScrollOffset + total.toInt()).coerceAtLeast(0)
+                }
+                !anchorIsOwner -> {
+                    // 锚不在物主 item：按区外零操作（塌缩在锚下方，默认锚定本就正确）
+                    null
+                }
+                collapseShiftV == 0 -> {
+                    // 全部驱动在锚下方（新内容侧）：零操作
+                    null
+                }
+                else -> {
+                    (listState.firstVisibleItemScrollOffset + collapseShiftV)
+                        .coerceAtLeast(0) + ledgerTotal.toInt()
+                }
+            }
+            var writtenReserve = false
+            var wroteScroll = false
+            var targetFii = listState.firstVisibleItemIndex
+            var targetFiso = listState.firstVisibleItemScrollOffset
+            androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
+                // #540 三轮：驱动步进与滚动写同快照（同遍 measure 原子消费）
+                if (dStepV != 0) reserve?.degradeDrives?.forEach { if (it.pendingStep != 0) it.h += it.pendingStep }
+                if (pendingPlan != null && reserve != null) {
+                    // 三轮：驱动帧帽预记步进——下一 measure 盒高落地后恰好追平；
+                    // 旧 `= trueHeight` 会让残差帧再释放一步=重复记账
+                    reserve.reserved = reserve.trueHeight + dStepV
+                    writtenReserve = true
+                }
+                // noop 格的 ledger 折加：塌缩零操作，但同帧增长配对义务仍履行
+                val effectiveTarget = stickFiso
+                    ?: (if (ledgerTotal != 0f && anchorIsOwner)
+                        (listState.firstVisibleItemScrollOffset + ledgerTotal.toInt()).coerceAtLeast(0)
+                    else null)
+                if (effectiveTarget != null) {
+                    targetFiso = effectiveTarget
+                    wroteScroll = true
+                    LazyListReflection.requestScrollToItemNoCancel(listState, targetFii, targetFiso)
+                    mem.lastSetFii = targetFii
+                    mem.lastSetFiso = targetFiso
+                    mem.lastSetFrame = mem.frameSeq
+                } else {
+                    // 零操作：以当下读位回写 lastSet，yield 守卫保持一致
+                    mem.lastSetFii = targetFii
+                    mem.lastSetFiso = targetFiso
+                    mem.lastSetFrame = mem.frameSeq
+                }
+            }
+            if (BuildConfig.DEBUG) {
+                AppLogger.d(
+                    "SGR-435",
+                    "release-ref t=" + android.os.SystemClock.elapsedRealtime() +
+                        " capd=" + (pendingPlan?.delta ?: 0) + " drv=" + dStepV + " led=" + ledgerTotal.toInt() +
+                        (if (wroteScroll) " set(fii=" + targetFii + ",fiso=" + targetFiso + ")" else " noop(outside-span)") +
+                        (if (!anchorIsOwner) " anchor-not-owner" else "") +
+                        " h->" + (if (writtenReserve) reserve?.trueHeight.toString() else "-"),
+                )
+            }
+            return true // 反射待定位下一遍 measure 原子消费
+        }
         // #437 验收五轮（用户裁决，对齐 #427 引擎先例）：渲染前计算目标位+
         // 反射 requestPosition 写入待定区，由下一遍 measure 原子消费——与
         // dispatchRawDelta（渲染后滚动修正=先画增长态再跳位，整屏闪烁）的
@@ -667,21 +1071,33 @@ private fun applyPairedShift(
         // 目标位=用户公式 scrollPos+Δ：fiso += total（锚 item 内偏移推大），
         // 溢出沿可见 items 向 index 增大换算（reverseLayout 视觉向上）。
         // #438 R-1：换用纯函数（越窗 dataKeyAt 兜底；行为=旧逻辑+投影扩展）
+        //
+        // 五报 F3（C3 三通道先行）：正向滚动目标=帽通道（plan 门控增量）+
+        // 驱动通道（逐卡揭示缘否决）+ ledger，各自按各自规则判定后求和——
+        // 原净和 total 把未配对资格的驱动步进一并折入（连 ledger 免派发格
+        // 也被净和淹没），单帧错发=概率性上向跳变源。
+        val hatDeltaP = (pendingPlan?.delta ?: 0) - dStepTotalV
+        val hatScrollP = if (pendingPlan?.scrollPaired == true) hatDeltaP else 0
+        val scrollTotalP = hatScrollP + drivePosScrollV
+        val totalP = scrollTotalP.toFloat() + ledgerTotal
         val (targetFii, targetFiso, targetKey) = resolvePairedTarget(
             fii = listState.firstVisibleItemIndex,
             fiso = listState.firstVisibleItemScrollOffset,
-            total = total.toInt(),
+            total = totalP.toInt(),
             visible = listState.layoutInfo.visibleItemsInfo,
             dataKeyAt = dataKeyAt,
         )
         var writtenReserve = false
+        val dStepP = pendingPlan?.driveStep ?: 0
         androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
             // 帽释放（若有）：与滚动待定位同一事务——高度扩展与位移下一遍 measure 同 pass 消费
+            // #540 三轮：驱动步进同快照推进 + 帽预记（负向分支同款，见上）
+            if (dStepP != 0) reserve?.degradeDrives?.forEach { if (it.pendingStep != 0) it.h += it.pendingStep }
             if (pendingPlan != null && reserve != null) {
-                reserve.reserved = reserve.trueHeight
+                reserve.reserved = reserve.trueHeight + dStepP
                 writtenReserve = true
             }
-            if (total != 0f) {
+            if (totalP != 0f) {
                 LazyListReflection.requestScrollToItemNoCancel(listState, targetFii, targetFiso, targetKey)
                 mem.lastSetFii = targetFii
                 mem.lastSetFiso = targetFiso
@@ -690,11 +1106,11 @@ private fun applyPairedShift(
                 mem.lastSetFrame = mem.frameSeq
             }
         }
-        if (BuildConfig.DEBUG && (total != 0f || writtenReserve)) {
+        if (BuildConfig.DEBUG && (totalP != 0f || writtenReserve)) {
             // [#492 检测网 2026-10-01] total==0 时下方 guard 不派发滚动——旧日志恒打印
             // set(fii=7,fiso=0)（resolvePairedTarget 穿零高横幅落到的幻影目标）曾误导
             // 两轮定罪；nodis 标记后判读可直接区分「算了没派」与「真派发」。
-            val setPart = if (total != 0f) {
+            val setPart = if (totalP != 0f) {
                 "set(fii=" + targetFii + ",fiso=" + targetFiso + ")"
             } else {
                 "(nodis target-fii=" + targetFii + ")"
@@ -702,7 +1118,8 @@ private fun applyPairedShift(
             AppLogger.d(
                 "SGR-435",
                 "release t=" + android.os.SystemClock.elapsedRealtime() +
-                    " capd=" + (pendingPlan?.delta ?: 0) + " led=" + ledgerTotal.toInt() +
+                    " capd=" + (pendingPlan?.delta ?: 0) + " dpos=" + drivePosScrollV +
+                    " led=" + ledgerTotal.toInt() +
                     " " + setPart +
                     " h->" + (if (writtenReserve) reserve?.trueHeight.toString() else "-"),
             )

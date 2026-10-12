@@ -288,7 +288,7 @@ internal fun OpenProjectDialog(
             ) {
                 Column(modifier = Modifier.padding(SpacingTokens.XL.dp)) {
                     Text(
-                        text = stringResource(R.string.sessions_create_folder_title),
+                        text = stringResource(R.string.sessions_create_folder),
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Spacer(Modifier.height(16.dp))

@@ -106,6 +106,18 @@ import androidx.compose.ui.draw.alpha
 import kotlin.math.sin
 
 /**
+ * #540 B 视觉族门（纯函数，单测缝）：回合级 turnActive 防抖是否点亮本 turn
+ * 的流式视觉（计时器/徽标/反馈钮）。防抖的目的域只有**当前（最后）轮**统计栏
+ * ——DSH 步间空窗的组判据闪断由它桥接；历史轮必须保持完成态固定时长，否则
+ * 会话任一回活期间所有历史尾部计时器复活跳动（review 轮定罪收窄）。
+ */
+internal fun turnTailVisualStreaming(
+    entryStreaming: Boolean,
+    sessionTurnActive: Boolean,
+    isTurnLast: Boolean,
+): Boolean = entryStreaming || (sessionTurnActive && isTurnLast)
+
+/**
  * 智能体消息（v2 两段式：正文 + 尾部统计栏）——扁平，无气泡容器、无头部标签栏。
  * 正文 = renderItems（文本 / 推理 / 工具卡片 / 分隔线）+ 错误展示；
  * 尾部 = 逐消息 agent 标签 / 提供商·模型 / 时长 + 复制 + 「详情」入口（时间
@@ -159,7 +171,15 @@ internal fun MessageCardAssistant(
     // D2-L22：原 if(isAmoled) 两分支相同（死条件）——直接取 onSurface
     val textColor = MaterialTheme.colorScheme.onSurface
 
-    if (renderableTurn.isEmpty) return
+    // #523 击1 取证：空 turn 早退此前无日志——「无日志空帧」假说（renderItems
+    // 瞬空 → PartContent key 槽位消失 → MC remember 域销灭 → 完结塌缩）的
+    // 唯一盲区。DEBUG-only，正常路径零成本。
+    if (renderableTurn.isEmpty) {
+        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+            android.util.Log.w("GapDiag", "items[0]=EMPTY turn=" + currentMessage.message.id.takeLast(12))
+        }
+        return
+    }
 
     val compact = LocalChatDensity.current == ChatDensity.Compact
     val hapticView = LocalView.current
@@ -178,6 +198,17 @@ internal fun MessageCardAssistant(
     // turn 级流式判定：turn 内任一消息仍在流式即视为流式（多消息 turn 的
     // 代表消息是 oldest 可能已完成，仅看自身会漏判 → 统计栏延迟出现）。
     val isStreaming = isStreamingTurn || (assistantMsg?.time?.completed == null)
+    // #540 B：视觉族判据——DSH 工具宿主 step 边界回填 completed 后，组判据在
+    // 步间空窗翻非流式；统计栏计时器/流式徽标/反馈钮门并上回合级活动（3s 防抖）
+    // 整 turn 恒稳。**防抖只许作用于当前（最后）轮**（review 轮收窄：会话级
+    // turnActive 直接并会让所有历史轮尾部计时器复活跳动）。parse 族（下方
+    // asyncParse）仍吃 isStreaming——完结即终态解析（#428 防线/#509 毕业不切
+    // 渲染器）是既定语义，不吃防抖。
+    val visualStreaming = turnTailVisualStreaming(
+        entryStreaming = isStreaming,
+        sessionTurnActive = dev.leonardo.ocbeacon.ui.screens.chat.util.LocalTurnActive.current,
+        isTurnLast = isTurnLast,
+    )
 
     // 预计算的元数据
     val copyText = renderableTurn.copyText
@@ -201,12 +232,23 @@ internal fun MessageCardAssistant(
     // 1300→1096→346），SSE part 完成回写后再 +120px 出现 Asked 卡——两个
     // 无动画突变即用户报告的「提问卡片往下跳」。修复 = 槽位动画化：
     // ① 锚点记忆——pendingQuestion 消失后保留最后一次锚 part id，exit 动画
-    //   期间 QuestionCard 仍在锚位置组合；
+    // 期间 QuestionCard 仍在锚位置组合；
     // ② 实例记忆——AV exit 期间 content 以最后一次非空 question 渲染。
     // 到达方向（null→非 null）走同一 AV 的 expandVertically enter =
     // 「向下展开」（用户 2026-08-30 裁决方向），到达时 +346px 一帧突变同治。
+    // #517②（2026-10-05）：锚点记忆从**永久**改为**有界退出窗**——原实现
+    // retainedAnchorId 一经写入永不清空，锚 part 后的零高折叠槽位常驻；
+    // 外层 Column(spacedBy(sectionGap)) 对零高子项照样计距（#456 定罪机制），
+    // 提问过后正文→统计栏永久多吃一档 SM=8dp（#456「已知残差」实锤面）。
+    // 窗口取 800ms：覆盖 CardExpand 收起动画全程，播完即卸载零高槽位。
     var retainedAnchorId by remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     if (questionAnchorPartId != null) retainedAnchorId = questionAnchorPartId
+    androidx.compose.runtime.LaunchedEffect(questionAnchorPartId, retainedAnchorId) {
+        if (questionAnchorPartId == null && retainedAnchorId != null) {
+            kotlinx.coroutines.delay(800)
+            retainedAnchorId = null
+        }
+    }
     val effectiveAnchorId = questionAnchorPartId ?: retainedAnchorId
     var lastQuestion by remember { androidx.compose.runtime.mutableStateOf<SseEvent.QuestionAsked?>(null) }
     if (pendingQuestion != null) lastQuestion = pendingQuestion
@@ -236,7 +278,7 @@ internal fun MessageCardAssistant(
                     renderableTurn = renderableTurn,
                     assistantMsg = assistantMsg,
                     isTurnLast = isTurnLast,
-                    isStreaming = isStreaming,
+                    isStreaming = visualStreaming,
                     agents = agents,
                     onAgentClick = onAgentClick,
                     onCopy = onCopy,
@@ -252,6 +294,25 @@ internal fun MessageCardAssistant(
 
         ) {
             // 渲染预计算项 —— 组合期间零过滤/零分组。
+            // #517 GapDiag：全路径 renderItems 倾倒（DEBUG-only 探针）
+            // #523：item 签名打**全量 part.id**（takeLast(6) 掩盖了前缀差异——
+            // 完结击1 取证需要确认权威 part 是否换代 id/顺序）
+            if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                val sig = renderableTurn.renderItems.joinToString(" | ") { it ->
+                    when (it) {
+                        is RenderItem.TurnDivider -> "DIVIDER"
+                        is RenderItem.RepeatingTool -> "REP{" + it.part.id + "x" + it.count + "}"
+                        is RenderItem.SyntheticNotice -> "NOTICE"
+                        is RenderItem.GroupedParts -> when (val g = it.group) {
+                            is PartGroup.Single -> "S{" + g.part.id + ":" + g.part.javaClass.simpleName + "}"
+                            is PartGroup.Context -> "CTX{" + g.parts.size + "}"
+                            else -> "GRP{" + it.group.javaClass.simpleName + "}"
+                        }
+                        else -> it.javaClass.simpleName
+                    }
+                }
+                android.util.Log.w("GapDiag", "items[" + renderableTurn.renderItems.size + "]=" + sig)
+            }
             for (item in renderableTurn.renderItems) {
                 when (item) {
                     is RenderItem.TurnDivider -> {
@@ -411,6 +472,9 @@ internal fun MessageCardAssistant(
                                     CardExpandReveal(
                                         visible = qEntered && pendingQuestion != null &&
                                             item.group.part.id == effectiveAnchorId,
+                                        // #540 全量接入：锚 part id（#2024-09 语义：提问卡
+                                        // 锚定 part 槽位——part.id 稳定身份）
+                                        cacheKey = item.group.part.id,
                                     ) {
                                         val avQuestion = pendingQuestion ?: lastQuestion
                                         if (avQuestion != null &&
@@ -464,21 +528,37 @@ internal fun MessageCardAssistant(
             // tool/part 锚（questionAnchorPartId=null 且无 retained 锚）——气泡尾
             // fallback 槽位：卡渲染在本 turn 内容之后、错误展示之前，与 OpenCode
             // 锚定路径同一 QuestionCard 组件/动画语言（样式统一）；随消息流滚动。
-            CardExpandReveal(
-                visible = qEntered && pendingQuestion != null && effectiveAnchorId == null,
-            ) {
-                val avQuestion = pendingQuestion ?: lastQuestion
-                if (avQuestion != null) {
-                    QuestionCard(
-                        question = avQuestion,
-                        onSubmit = { answers ->
-                            onQuestionSubmit?.invoke(avQuestion.id, answers)
-                        },
-                        onReject = {
-                            onQuestionReject?.invoke(avQuestion.id)
-                        },
-                        answersStore = questionAnswersCache,
-                    )
+            // #517②：槽位按需组合——折叠态零高 AnimatedVisibility 仍是外层
+            // spacedBy(sectionGap) 的直接子项、照样计一档间距（#456 机制，
+            // 真机定罪：无提问 turn 的正文→统计栏恒多 SM=8dp）。激活条件与
+            // visible 对齐，消失后经 800ms 退出窗（同锚点记忆窗口）卸载。
+            var fallbackSlotActive by remember { androidx.compose.runtime.mutableStateOf(false) }
+            if (pendingQuestion != null && effectiveAnchorId == null) fallbackSlotActive = true
+            androidx.compose.runtime.LaunchedEffect(fallbackSlotActive, pendingQuestion) {
+                if (fallbackSlotActive && pendingQuestion == null) {
+                    kotlinx.coroutines.delay(800)
+                    fallbackSlotActive = false
+                }
+            }
+            if (fallbackSlotActive) {
+                CardExpandReveal(
+                    visible = qEntered && pendingQuestion != null && effectiveAnchorId == null,
+                    // #540 全量接入：兜底槽的提问实例键（q.id 稳定身份）
+                    cacheKey = pendingQuestion?.id ?: lastQuestion?.id,
+                ) {
+                    val avQuestion = pendingQuestion ?: lastQuestion
+                    if (avQuestion != null) {
+                        QuestionCard(
+                            question = avQuestion,
+                            onSubmit = { answers ->
+                                onQuestionSubmit?.invoke(avQuestion.id, answers)
+                            },
+                            onReject = {
+                                onQuestionReject?.invoke(avQuestion.id)
+                            },
+                            answersStore = questionAnswersCache,
+                        )
+                    }
                 }
             }
 
@@ -689,6 +769,11 @@ internal fun ChunkedAssistantMessage(
                     blockRange = range,
                     // #246 时序排序：锚点重定位（详见 MarkdownChunking.rangeAnchors）
                     blockAnchor = chunk.plan.rangeAnchors.getOrNull(chunk.chunkIndex),
+                    // #517：末片且全内容末块为代码/公式载体——bottom 外距修剪
+                    trimTrailingBlockGap = chunk.isLast &&
+                        dev.leonardo.ocbeacon.ui.screens.chat.markdown.endsWithBlockGapCarrier(
+                            chunk.plan.state.content,
+                        ),
                 )
             }
             // ④ 末段：巨型 part 之后的 renderItems + 统计栏 + error

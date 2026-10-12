@@ -158,6 +158,8 @@ internal fun TodoListCard(
             // Todo items（2026-08-30 用户裁决：统一顶边垂直揭幕，见 CardExpandTransitions.kt）
             CardExpandReveal(
                 visible = expanded,
+                // #540 全量接入：todo part 域 local（PartContent 供给 part.id）
+                cacheKey = dev.leonardo.ocbeacon.ui.screens.chat.components.LocalCardExpandCacheKey.current,
             ) {
                     Column(
                         modifier = Modifier.padding(top = SpacingTokens.XS.dp),

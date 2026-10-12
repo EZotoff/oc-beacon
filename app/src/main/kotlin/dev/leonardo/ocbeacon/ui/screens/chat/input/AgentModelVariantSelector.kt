@@ -181,7 +181,7 @@ internal fun AgentModelVariantSelector(
             ) {
                 Icon(
                     Icons.Filled.Place,
-                    contentDescription = stringResource(R.string.menu_quick_navigate),
+                    contentDescription = stringResource(R.string.quick_navigate),
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AlphaTokens.MEDIUM)
                 )

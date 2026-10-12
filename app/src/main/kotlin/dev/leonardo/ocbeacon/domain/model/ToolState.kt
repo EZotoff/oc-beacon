@@ -65,7 +65,11 @@ sealed class ToolState {
         val title: String? = null,
         val metadata: Map<String, JsonElement>? = null,
         val time: Time? = null,
-        val attachments: List<Attachment>? = null
+        val attachments: List<Attachment>? = null,
+        /** #539 ⑤A：输出超阈值截断时的全文落盘路径（上游 tool-output-store 统一
+         * 限幅 2000 行/50KiB，超限落盘返回路径；2.x core 的 state.outputPaths，
+         * V1/DSH 无此字段=null——消费侧判缺失回退文本约定）。 */
+        val outputPaths: List<String>? = null,
     ) : ToolState() {
         @Serializable
         data class Time(val start: Long, val end: Long, val compacted: Long? = null)

@@ -30,15 +30,16 @@ class DefaultToolCardResolver @Inject constructor() : ToolCardResolver {
         turnAgentName: String?,
         onOpenFile: ((filePath: String) -> Unit)?
     ) -> @Composable () -> Unit> = mapOf(
-        "bash" to { tool, expanded, toggle, _, _, _ ->
-            { BashToolCard(tool = tool, isExpanded = expanded, onToggleExpand = toggle) }
+        "bash" to { tool, expanded, toggle, _, _, openFile ->
+            // #539 ⑤B：截断提示「查看全文」→ FileViewer 拉服务器落盘全文
+            { BashToolCard(tool = tool, isExpanded = expanded, onToggleExpand = toggle, onOpenFile = openFile) }
         },
         // V2 工具名为 "shell"（V1 为 "bash"）——都映射到 BashToolCard
         //（2 行布局：$ 命令 + 状态·摘要，2026-08-11 用户要求视觉统一）。
         // 此前 "shell" 无映射 → fallback 默认单行渲染（"Shell" 标题）——
         // 用户反馈"shell 卡片还是一行"的根因。
-        "shell" to { tool, expanded, toggle, _, _, _ ->
-            { BashToolCard(tool = tool, isExpanded = expanded, onToggleExpand = toggle) }
+        "shell" to { tool, expanded, toggle, _, _, openFile ->
+            { BashToolCard(tool = tool, isExpanded = expanded, onToggleExpand = toggle, onOpenFile = openFile) }
         },
         "edit" to { tool, expanded, toggle, _, _, openFile ->
             { EditToolCard(tool = tool, isExpanded = expanded, onToggleExpand = toggle, onOpenFile = openFile) }

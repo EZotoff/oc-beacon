@@ -35,8 +35,9 @@ internal object HighlightBuilder {
         append(content)
         val maxIndex = content.length
         highlightsResult.getHighlights().forEach { h ->
+            // end 为 exclusive 语义（与 #488 聊天域 HighlightedCode 同款）；coerceAtMost 防引擎产出越界区间
             val start = h.location.start
-            val end = (h.location.end + 1).coerceAtMost(maxIndex)
+            val end = h.location.end.coerceAtMost(maxIndex)
             if (start >= maxIndex || end <= start) return@forEach
             when (h) {
                 is ColorHighlight -> addStyle(

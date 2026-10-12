@@ -24,9 +24,11 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.LayoutModifier
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.MeasureResult
 import androidx.compose.ui.layout.MeasureScope
@@ -98,10 +100,31 @@ internal val LocalInStreamingTurn = staticCompositionLocalOf { false }
  */
 internal val LocalCardExpandHostKey = compositionLocalOf<Any?> { null }
 
+/**
+ * #540：列表级 [HeightReserveState]（CML 逐 item 供给；null=宿主未挂/横幅/单测/
+ * 预览——降级路径维持裸 AV 现状）。两处消费：流式降级分支的开合「展开配对窗」
+ * （窗内帽释放恒配对=消除上推源）；机件原子帧的帽×机件单写者抬/落帽。
+ */
+internal val LocalCardExpandReserve = compositionLocalOf<HeightReserveState?> { null }
+
+/**
+ * #540 全量接入（用户裁决：所有展开卡统一入 #533 进程级终高 floor）：part 域
+ * 展开卡的默认缓存键——[PartContent] 逐 part 供给 `part.id`；[ToolCardScaffold]
+ * 等以 `显式参数 ?: 本 local` 取键。
+ *
+ * **键律（竞态稳定性承重，违反即单调 store 跨内容污染=过冲族）**：
+ * 1. 键 = 稳定内容身份（part.id / 消息级 eventKey / 对象 id）——part id 跨毕业
+ *    稳定（#509 宿主前缀）、msgId 跨换名稳定（MessageIdSwapped 原地改名）；
+ * 2. 禁止类型级常量键——内容随状态变化的瞬态卡（状态横幅族）无稳定身份，
+ *    显式不入店并以注释声明排除理由；
+ * 3. floor 语义集中在 [CardExpandGeometryNode]（1.5s 稳定释放/宽度键控/LRU），
+ *    接入只供键，机制全卡一致。
+ */
+internal val LocalCardExpandCacheKey = compositionLocalOf<Any?> { null }
+
 /** 展开位移离开贴底区(补偿后)判定阈值,对齐 isAtBottom 的 100px 判据。 */
 private const val DEPARTURE_THRESHOLD_PX = 100f
 
-private const val GEOMETRY_TWEEN_MS = 240
 private const val FADE_TWEEN_MS = 300
 
 /**
@@ -148,24 +171,6 @@ private const val PREWARM_IDLE_MS = 1_200L
 private const val STEADY_RETRY_WINDOW_NS = 2_000_000_000L
 
 
-/**
- * #423 批次十一(#262 applyTapShift 复活):渲染前位移——measure 块外施加,
- * 下一遍 measure 与布局终态同帧原子落地。
- * 贴底(fii==0 且 fiso<120)=反射 request-position(下方无余量,上方内容固定);
- * mid-list=dispatchRawDelta(同步消费、跨 item、无残量)。
- */
-internal fun applyPreRenderShift(ls: androidx.compose.foundation.lazy.LazyListState, deltaPx: Float) {
-    // 批次十一校准(真机 DRAW 定案):request-position 在贴底态(0,0)方向反——
-    // 实测 +H 写入把内容推上屏外(topY −3540)后框架 10 帧自愈。展开正向位移
-    // 恒走 dispatchRawDelta:滚动位 0 即起点,向旧侧永远有空间、同步消费精确
-    // (真机反复实证 consumed==d)。反射 request-position 保留给负向不可消费域。
-    try {
-        ls.dispatchRawDelta(deltaPx)
-    } catch (t: Throwable) {
-        // 降级:预移失败=退化为渲染后推挤一帧,绝不崩溃(宁推挤不卡渲染)
-        dev.leonardo.ocbeacon.logging.AppLogger.w("CardExpand", "pre-shift failed: " + t.message)
-    }
-}
 
 /**
  * #427 收起位移终局根因修复：配对派发的残差重试参数（纯决策，JVM 可单测）。
@@ -193,7 +198,7 @@ internal object PairedDispatch {
 }
 
 /**
- * #427：配对派发执行器——applyPreRenderShift 的全额版（残差重试至目标）。
+ * #427：配对派发执行器（渲染前位移全额版——残差重试至目标）。
  * 展开/收起的原子位移共用；全消费路径与旧行为逐字节一致（首轮即全额）。
  */
 internal fun applyPairedPreRenderShift(ls: androidx.compose.foundation.lazy.LazyListState, deltaPx: Float): Float {
@@ -221,14 +226,6 @@ internal fun applyPairedPreRenderShift(ls: androidx.compose.foundation.lazy.Lazy
     return consumedTotal
 }
 
-/** #423 批次四d:hold 呼吸阀——连续拒绘上限(真机证实坐标回调在拒绘遍历中照常
- * 派发,无死锁;阀值仅兜底「贴底残量物理不可约」类永不收敛场景)。 */
-private const val HOLD_VENT_FRAMES = 30
-
-/** #423 批次五b:确认后静默守望窗(ms)——rep 无变更持续此时长才允许修正器解散
- * (迟到增长在窗内自动重进确认环被修正)。 */
-private const val PIN_QUIET_MS = 1800f
-
 /**
  * #422:settle 判稳帧数——连续 N 帧节点 measure 计数不增即认为内容驱动
  * 的重测已静止。表格 containerWidth(onSizeChanged 回写)两拍收敛、async
@@ -241,6 +238,17 @@ private const val SETTLE_STABLE_FRAMES = 2
  * 当前 H 进入 tween,迟到增量由 episode 末强制复测 + 残差补偿兜底。
  */
 private const val MAX_SETTLE_MS = 600f
+
+/**
+ * #529:锚点捕获静止门——指纹计稳帧数(同 settle 判稳约定:连续 N 帧不变)。
+ */
+private const val ANCHOR_QUIESCE_STABLE_FRAMES = 2
+
+/**
+ * #529:锚点捕获静止门墙钟上限(ms)。回收重组合后 item 异步内容落地风暴
+ * 有界;超时按现状捕获(E3+ 恒稳,零感知不受影响)。
+ */
+private const val ANCHOR_QUIESCE_MAX_MS = 200f
 
 /**
  * 纯时钟状态(可单测):fraction 驱动 + 上报高度记账 + δ 计算。
@@ -522,6 +530,25 @@ internal class CardExpandClock(initialFraction: Float) {
 }
 
 /**
+ * #540 三轮：驱动盒布局——内容按自然高无约束测高（高度不受盒驱动值压缩），
+ * 盒布局高=hProvider()（读快照态，flush 写入即失效重测），顶锚放置+外层
+ * clipToBounds=shrinkTowards/expandFrom Top 语义。
+ */
+private fun Modifier.degradeRevealHeight(hProvider: () -> Int): Modifier =
+    this then object : LayoutModifier {
+        override fun MeasureScope.measure(
+            measurable: Measurable,
+            constraints: Constraints,
+        ): MeasureResult {
+            val child = measurable.measure(
+                constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity),
+            )
+            val h = hProvider().coerceIn(0, child.height)
+            return layout(constraints.maxWidth, h) { child.place(0, 0) }
+        }
+    }
+
+/**
  * 卡片展开面统一包装(#420):原地揭示 + 同帧位移配对。
  * drop-in 替换各卡片的 AnimatedVisibility(CardExpandEnter/Exit);
  * 无作用域限定(任意父容器可用)。
@@ -551,15 +578,254 @@ internal fun CardExpandReveal(
     val departure = LocalCardExpandDeparture.current
     // #508:宿主 item 身份在组合层读取(LaunchedEffect 协程内不可读 CompositionLocal)
     val hostItemKey = LocalCardExpandHostKey.current
+    // #543 探针：组合期捕获（episode 块非组合上下文，不能现场读 local）。
+    val cacheKeyAtComposition = LocalCardExpandCacheKey.current
+    // #540:列表级帽状态（机件原子帧单写者抬/落帽用；组合层读取同上）
+    val hatReserve = LocalCardExpandReserve.current
     if (listState == null || LocalInStreamingTurn.current) {
-        // 降级:出厂过渡(与 2026-08-30 终局一致)
-        AnimatedVisibility(
-            visible = visible,
-            enter = CardExpandEnterTransition,
-            exit = CardExpandExitTransition,
-            modifier = modifier,
+        // #526 定罪探针：降级路径（无 listState=非会话列表场景 / 流式 turn）不
+        // 走反射锚定——DSH 展开方向不稳定疑涉此路径，toggle 时打点判别。
+        if (BuildConfig.DEBUG) {
+            val prevVis = remember { androidx.compose.runtime.mutableStateOf(visible) }
+            if (prevVis.value != visible) {
+                AppLogger.d(
+                    "CardExpand",
+                    "[DEBUG-526] degrade toggle visible=" + visible +
+                        " reason=" + (if (listState == null) "no-list-state" else "in-streaming-turn") +
+                        " host=" + hostItemKey.toString().take(24),
+                )
+                prevVis.value = visible
+            }
+        }
+        // #540 方向 A 根修（取代 #526 事后回锚）：流式降级路径的展开/收起增长改经
+        // 帽协议 flush 单事务「恒配对」释放——toggle 时开「展开配对窗」（计数制，
+        // 同 item 多卡并发共容），尺寸稳定后关窗。窗内每档增量（含并发流式
+        // 增长——展开语义=离底让位，与机件路径 departure 同向）原子配对落地，
+        // 上推源从构造上消失；#526 的「先上推、稳定后一次性反射回锚」瞬态随之
+        // 退役。无 reserve 供给（横幅/预览/宿主未挂/单测）维持裸 AV 现状。
+        // #540 三轮（用户三报「收起来回震荡」定罪，2026-10-11）：AV 尺寸动画在
+        // 流式场景退役——shrinkVertically 在 measure 相直改布局高（收缩穿透
+        // min(child,reserved) 帽天花板），滚动修正却 pending 下一遍 measure →
+        // 每帧画「新高度×旧滚动」错位态=震荡（展开常见格被否决门判零写入故稳，
+        // 与三报「展开还好、收起震荡」吻合）。驱动盒：布局高=drive.h（flush 单
+        // 事务步进，与滚动写同遍 measure 原子消费）；内容常驻组合按自然高测高、
+        // 顶锚裁剪=shrinkTowards/expandFrom Top 语义；淡入淡出由 alpha 派生。
+        val degradeH = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+        val pairingReserve = LocalCardExpandReserve.current
+        // #540 二轮（表述乙）：揭示盒顶 root-Y——toggle 时刻换算 item 空间几何
+        //（stickTop/spanDepth）供 flush 负向配对资格判定（粘揭示缘/区外零操作）。
+        val revealTopRootY = remember { androidx.compose.runtime.mutableFloatStateOf(Float.NaN) }
+        // #540 三轮：内容自然高（内侧盒无约束测得；-1=未测）与驱动态。
+        val contentH = remember { androidx.compose.runtime.mutableIntStateOf(-1) }
+        val drive = remember { DegradeDriveState() }
+        // #549 Fix A（2026-10-13，r400 slam 定罪）：降级路径终高种子——mech 路径
+        // #423 批次十一 finalHCache 的同源语义（rememberSaveable(cacheKey)，跨路径
+        // 共存共享）。重展开时 markdown 分期重组（staged 起步小）会把测高拽低 →
+        // hTarget 被拽低 → 驱动反步进收盒 → 视口重锚下砸（实测 −931px slam）。
+        // 种子使驱动直奔已知终高，分期在裁剪下追平（mech 预移同款 UX）。
+        val finalHSeed = androidx.compose.runtime.saveable.rememberSaveable(cacheKey) {
+            androidx.compose.runtime.mutableStateOf(-1)
+        }
+        // 展开相单调护栏时钟：toggle 时刻起 600ms 内 hTarget 只升不降（分期重组
+        // 的暂态矮化不得反拽驱动；流式真增长不受限）。600ms 后自由跟踪（重排
+        // 收缩=合法补偿，r731 判例）。
+        val lastExpandAtMs = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+        val driven = listState != null && pairingReserve != null
+        if (driven) {
+            val pr = pairingReserve!!
+            // 同值守卫（二轮④）：**收起态挂载**不开窗（避免每个折叠卡 mount 都效应）；
+            // **展开态挂载**（重组重建槽位 while expanded）与真 toggle 一样开窗——
+            // 重挂帧的 +H 全高入组合必须配对。
+            //
+            // #540 三轮修订（真机 19:02 竞态定罪）：翻转检测+驱动注册+开窗必须在
+            // **组合期同步**完成——LaunchedEffect 在本帧布局后才执行，visible 翻转
+            // 的重组当帧 contentActive/hProvider 先读到未注册态（driveOwned=false）
+            // → 收起内容瞬时 dispose（h0=0）、展开瞬时满高（h0=tgt），驱动动画被
+            // 完全旁路成单帧裸落。同步注册后同帧布局即读 driveOwned=true → 盒高
+            // 钉在驱动态，塌缩/展开全程走 flush 步进（动画相走帽通道原义）。
+            val toggled = remember { androidx.compose.runtime.mutableStateOf(false) }
+            // prevVis 初值 false：挂载即展开读作翻转（二轮④语义）；挂载折叠无翻转。
+            val prevVis = remember { androidx.compose.runtime.mutableStateOf(false) }
+            val toggleSeq = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+            if (visible != prevVis.value) {
+                prevVis.value = visible
+                if (visible || toggled.value) {
+                    toggled.value = visible
+                    // 驱动注册——四报修订：列表制（多卡并发不互逐）+ 权威续值
+                    //（快速重向时 drive.h 是本帧已 pending 的高度真值，degradeH
+                    // 是上一放置值滞后一步——覆盖会把动画往回拨一步=连点抖动源）。
+                    val mineAlready = pr.degradeDrives.any { it === drive }
+                    drive.h = if (mineAlready && drive.animating) drive.h else degradeH.intValue
+                    if (visible) lastExpandAtMs.longValue = android.os.SystemClock.elapsedRealtime()
+                    drive.hTarget = if (visible) {
+                        // #549 Fix A：终高种子优先（重展开已知高度零延迟追靶）；
+                        // 未知（首次）维持等测高 -1 语义
+                        val staged = if (contentH.intValue >= 0) contentH.intValue else -1
+                        val seed = finalHSeed.value
+                        when {
+                            seed > 0 && seed >= staged -> seed
+                            staged > 0 -> staged
+                            else -> -1
+                        }
+                    } else {
+                        0
+                    }
+                    if (!mineAlready) pr.degradeDrives.add(drive)
+                    pr.expandPairingWindows++
+                    // 表述乙几何捕获（塌缩不变量：盒顶上方内容收起中不动）——距 item
+                    // 顶偏移=盒顶 root-Y − 物主 item 根 root-Y（CML 逐 placement 供给）。
+                    // 四报：几何**随卡走**（drive.stickTop/spanDepth）——reserve 级
+                    // 镜像字段只服务正向否决门（最新 toggle 意图），负向滚动分量
+                    // 已逐卡判定（driveScrollShift），不再被后卡覆盖。
+                    val stickTop: Int
+                    val spanDepth: Int
+                    val itemTop = pr.hostItemTopY
+                    val itemH = pr.trueHeight
+                    if (!itemTop.isNaN() && itemH >= 0 && !revealTopRootY.value.isNaN()) {
+                        stickTop = (revealTopRootY.value - itemTop).toInt().coerceAtLeast(0)
+                        spanDepth = degradeH.intValue
+                        drive.stickTop = stickTop
+                        drive.spanDepth = spanDepth
+                        pr.expandCollapseStickTop = stickTop
+                        pr.expandCollapseSpanDepth = spanDepth
+                    } else {
+                        stickTop = -1
+                        spanDepth = -1
+                        drive.stickTop = -1
+                        drive.spanDepth = -1
+                    }
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.d(
+                            "CardExpand",
+                            "[DEBUG-540] pairing-window open host=" + hostItemKey.toString().take(24) +
+                                " windows=" + pr.expandPairingWindows +
+                                " reveal-geo stickTop=" + stickTop + " span=" + spanDepth +
+                                " itemH=" + itemH + " boxY=" +
+                                (if (revealTopRootY.value.isNaN()) "na" else revealTopRootY.value.toInt().toString()) +
+                                " drive h0=" + drive.h + " tgt=" + drive.hTarget,
+                        )
+                    }
+                    toggleSeq.intValue++
+                }
+            }
+            LaunchedEffect(toggleSeq.intValue) {
+                if (toggleSeq.intValue == 0) return@LaunchedEffect // 挂载折叠：无窗
+                try {
+                    // E2E 边界定罪（540-fix-w1-r2）：静默期 toggle 时空卡时 AV 内容可
+                    // 迟到（实测 +63ms）——toggle 时刻盒高与稳定值同值会让「3 帧稳定」
+                    // 在内容落地前触发（窗 211ms 早闭，增量落窗外免配对）。守卫：
+                    // 盒高必须**相对 toggle 时刻发生过变化**才允许计稳；零净变化
+                    // （空输出卡）由 40 帧上限收窗（窗内无增长=配对零操作，无害）。
+                    // 展开态挂载（sawChange 系初值 atToggle=盒高）同守卫适用。
+                    val atToggle = degradeH.intValue
+                    var sawChange = false
+                    var last = -1
+                    var stable = 0
+                    var waited = 0
+                    while (stable < 3 && waited < 40) { // 驱动 ~180ms；上限 ~650ms
+                        withFrameNanos { }
+                        waited++
+                        val s = degradeH.intValue
+                        if (s != atToggle) sawChange = true
+                        if (!sawChange) continue
+                        if (s == last) stable++ else {
+                            stable = 0
+                            last = s
+                        }
+                    }
+                } finally {
+                    pr.expandPairingWindows--
+                    if (pr.expandPairingWindows <= 0) {
+                        pr.expandCollapseStickTop = -1
+                        pr.expandCollapseSpanDepth = -1
+                    }
+                    // 三轮：驱动完结注销（四报列表制）；未完结（40 帧上限早闭/手势
+                    // 冻结）保留在列表给 flush 续步（稳态步进=0 无害）。
+                    if (!drive.animating) {
+                        pr.degradeDrives.removeAll { it === drive }
+                    }
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.d(
+                            "CardExpand",
+                            "[DEBUG-540] pairing-window close host=" + hostItemKey.toString().take(24) +
+                                " windows=" + pr.expandPairingWindows,
+                        )
+                    }
+                }
+            }
+        }
+        if (!driven) {
+            Box(
+                modifier = modifier
+                    .onSizeChanged { degradeH.intValue = it.height }
+                    .onGloballyPositioned { coords ->
+                        revealTopRootY.value = coords.positionInRoot().y
+                    },
+            ) {
+                AnimatedVisibility(
+                    visible = visible,
+                    enter = CardExpandEnterTransition,
+                    exit = CardExpandExitTransition,
+                ) {
+                    content()
+                }
+            }
+            return
+        }
+        // 三轮：驱动盒。高度唯一写者=flush（drive.h 仅在 applyPairedShift 事务内
+        // 推进）；孤儿回落（列表中被逐，罕见面）=稳态快照（visible?内容高:0）。
+        // 五报 F1：**已注册未接管**（hTarget 悬挂等测高）窗口同样走 drive.h——
+        // 旧回退读 contentH，而 contentH 由内侧 onSizeChanged 在放置后才写，其
+        // 失效触发的布局相重测会经**陈旧 driveOwned 捕获**把全高闪挂一帧
+        // （真机定罪：+260 全高挂载配对上跳 → 重组钳回 drive.h 未配对收缩
+        // −121 → 框架过滚纠正 fiso 回跳 −178 =「向上展开再跳回」三段式，
+        // 2026-10-12 五报 r2）。driveRegistered 在组合期同步注册后恒真、
+        // drive.h 为快照态活读——两窗口（等靶/动画中）合一，闪挂源消除。
+        val driveRegistered = pairingReserve?.degradeDrives?.contains(drive) == true
+        val driveOwned = driveRegistered && drive.animating
+        Box(
+            modifier = modifier
+                .onSizeChanged { degradeH.intValue = it.height }
+                .onGloballyPositioned { coords ->
+                    revealTopRootY.value = coords.positionInRoot().y
+                },
         ) {
-            content()
+            if (visible || driveOwned) {
+                Box(
+                    androidx.compose.ui.Modifier
+                        .degradeRevealHeight {
+                            if (driveRegistered) drive.h else if (visible) contentH.intValue.coerceAtLeast(0) else 0
+                        }
+                        .clipToBounds()
+                        .graphicsLayer {
+                            val full = contentH.intValue
+                            alpha = if (full > 0) {
+                                (if (driveRegistered) drive.h else if (visible) full else 0)
+                                    .toFloat() / full.toFloat()
+                            } else {
+                                1f
+                            }
+                        },
+                ) {
+                    Box(
+                        androidx.compose.ui.Modifier.onSizeChanged { sz ->
+                            contentH.intValue = sz.height
+                            if (sz.height > finalHSeed.value) finalHSeed.value = sz.height
+                            // #549 Fix A：展开相单调护栏——toggle 后 600ms 内 hTarget
+                            // 不因分期暂态矮化而下调（r400 slam 根源）；此后自由跟踪
+                            //（流式增长恒升格、重排收缩=合法补偿）
+                            if (visible) {
+                                val desired = if (
+                                    android.os.SystemClock.elapsedRealtime() - lastExpandAtMs.longValue < 600
+                                ) maxOf(sz.height, drive.hTarget) else sz.height
+                                if (drive.hTarget != desired) drive.hTarget = desired
+                            }
+                        },
+                    ) {
+                        content()
+                    }
+                }
+            }
         }
         return
     }
@@ -569,6 +835,9 @@ internal fun CardExpandReveal(
     // #424 闭环位置恢复:reveal 盒顶缘(=折叠行底缘)窗口坐标实测 Y。episode 末
     // 以实测对账修正开环 δ 账本累积的视口漂移(边缘残量/锚点翻转会计误差)。
     val revealTopY = remember { androidx.compose.runtime.mutableFloatStateOf(Float.NaN) }
+
+    /** #526b 取证：reveal 盒实占高度（onSizeChanged 写入；PLACED 探针读）。 */
+    val revealBoxH = remember { androidx.compose.runtime.mutableIntStateOf(0) }
 
     /**
      * #423 批次十:绘制真值(在 drawWithContent 内采样——该时刻读到的布局值
@@ -617,108 +886,10 @@ internal fun CardExpandReveal(
     val drawFraction = remember { androidx.compose.runtime.mutableFloatStateOf(if (visible) 1f else 0f) }
 
     /**
-     * #426 A 阶段排干标志:置位期间布局回调(onGloballyPositioned)补发配对位移。
-     */
-    val phaseADrain = remember { androidx.compose.runtime.mutableStateOf(false) }
-
-    /**
-     * #423 批次三:实测钉位状态(rememberSaveable——LEAP 触发 item 回收时,episode
-     * 协程随组合销毁被取消,钉位须由重组合后的新集续跑)。pinAnchor=本集折叠行
-     * 目标屏位;pinPending=true 表示钉位闭环未收敛。
-     */
-    val pinPending = androidx.compose.runtime.saveable.rememberSaveable {
-        androidx.compose.runtime.mutableStateOf(false)
-    }
-    val pinAnchor = androidx.compose.runtime.saveable.rememberSaveable {
-        androidx.compose.runtime.mutableFloatStateOf(Float.NaN)
-    }
-
-    /**
      * #423 观测:episode 序号(每集递增;PLACED/DRAW/排干日志共用,帧级对账用)。
      * 仅 DEBUG 且仅动画窗口输出——常态滚动零行,杜绝日志膨胀。
      */
     val episodeSeq = remember { androidx.compose.runtime.mutableIntStateOf(0) }
-
-    /**
-     * #423 批次四c:修正防双发守卫(放置回调派发点与 FLUSH 实测阶段共享)。
-     * 坐标回调与 pre-draw 读数各滞后一拍(真机两轮取证),两处都可能对同一
-     * 新鲜坐标开火——只允许「坐标自上次派发后刷新过」的第一见者开火。
-     */
-    val guardCur = remember { androidx.compose.runtime.mutableFloatStateOf(Float.NaN) }
-
-    /**
-     * #423 批次四e:坐标同源戳——坐标回调写入 revealTopY 时记录当时 lastReportedH。
-     * 坐标回调为绘制驱动(真机三轮定案),增长帧 pre-draw 读到的坐标必属旧布局;
-     * 旧坐标恰等于钉锚时构成「假确认」(v3.1 最后一帧漏点)。确认必须要求
-     * coordStamp == 当前 rep(坐标与本帧报告同源=坐标属于当前布局)。
-     */
-    val coordStamp = remember { androidx.compose.runtime.mutableIntStateOf(-1) }
-
-    /**
-     * #423 批次四e:账本共享账——Δreport 配对的全局会计。放置回调(pin-placed)、
-     * 账本(pin-ledger)、实测(pin-flush)三处 dispatch 的 consumed 全部入账,
-     * errLedger = (rep − 基线) − 已派发。防 e6 实证的两路对同一位移双发。
-     */
-    val pinLedgerBase = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    val pinDispatchedTotal = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-
-    /**
-     * #423 批次五:泵帧武装(放置回调派发点 → 修正器消费)。pin-placed 派发后
-     * 下一帧放行(该帧为修正后布局)驱动坐标回调盖戳——否则须等呼吸阀第 30 帧,
-     * 顶开态可见窗被无谓拉长(收起「顶一下再复位」观感的成分之一)。
-     */
-    val pumpArm = remember { androidx.compose.runtime.mutableStateOf(false) }
-
-    /**
-     * #426 同帧配对排干:增长落地当帧(布局完成、draw 之前)补发配对位移。
-     *
-     * 真机定案([DEBUG-425] 逐帧取证 + 录屏条带):动画相首帧 dispatch 在增长
-     * 落地前无法消费——布局里尚无对应空间,consumed=0 → 增长落地帧成为
-     * 「内容上顶」闪跳帧(上方内容 -H 持续 1-2 帧后归零),下一帧重试才复位。
-     * 本钩子改在 onGloballyPositioned(放置完成、同帧 draw 前)触发:此时本帧
-     * 布局已含增长 → dispatchRawDelta 有空间可消费 → 消费即失效重排(仍在本
-     * 帧 draw 前)→ 同帧净位移为零,瞬态从构造上消失。
-     */
-    fun drainPhaseA(cause: String) {
-        var tries = 0
-        while (tries < 8) {
-            // 配对基准=已上报高度(f·H,布局已落地部分)而非实侧全高:两路径统一——
-            // A 阶段(f=1)二者相等;小卡逐帧路径 f<1 时只配对本帧已落地增量。
-            // 若用全高,逐帧路径首拍会在布局未增长时全额配对(实测:fraction=0.004
-            // 即 dispatch 146px)→ 无配对滚动 → LazyList 锚点乱斗 ±H 震荡。
-            val pending = clock.lastReportedH - clock.absorbedPx
-            if (abs(pending) < 1) {
-                // #431:配对完成的落地帧(pre-draw)跳跃起始 B 阶段——高度与首批
-                // 内容同帧出现,空白拍从构造上消失。maxOf 防倒放(收起向无 drain)。
-                drawFraction.floatValue = maxOf(drawFraction.floatValue, PHASE_B_JUMP_START)
-                phaseADrain.value = false
-                return
-            }
-            val consumed = try {
-                listState.dispatchRawDelta(pending.toFloat())
-            } catch (t: Throwable) {
-                if (BuildConfig.DEBUG) AppLogger.e("CardExpand", "[DEBUG-426] dispatch threw", t)
-                0f
-            }
-            clock.absorb(consumed)
-            clock.recordDisplacement(consumed)
-            if (BuildConfig.DEBUG) {
-                AppLogger.d(
-                    "CardExpand",
-                    "[DEBUG-426] " + cause + " pending=" + pending + " consumed=" + consumed.toInt() +
-                        " topY=" + revealTopY.floatValue.toInt() + " H=" + clock.lastMeasuredH +
-                        " abs=" + clock.absorbedPx + " fii=" + listState.firstVisibleItemIndex +
-                        " fiso=" + listState.firstVisibleItemScrollOffset,
-                )
-            }
-            if (!clock.departureFired && abs(clock.episodeDisplacement) > DEPARTURE_THRESHOLD_PX) {
-                clock.departureFired = true
-                departure?.invoke()
-            }
-            if (abs(consumed) < 0.5f) return // 本帧已消费不动,等下一次布局回调
-            tries++
-        }
-    }
 
     /**
      * visible 转换 → 手写帧循环驱动(冷组合初值即目标,不动画)。
@@ -749,6 +920,16 @@ internal fun CardExpandReveal(
                 onExpandComputing?.invoke(true)
                 withFrameNanos { }
             }
+            // #543 定罪探针：episode 起点=hostItemKey+cacheKey 身份对——双宿主
+            // （同 item 双实例 / 跨 item 双条目）在此一次分辨。
+            if (BuildConfig.DEBUG) {
+                AppLogger.d(
+                    "CardExpand",
+                    "[DEBUG-543] episode-start hostKey=" + hostItemKey +
+                        " cacheKey=" + cacheKeyAtComposition +
+                        " target=" + target,
+                )
+            }
             // 批次九(用户裁决 2026-09-22):统一高度控制——渲染前计算 + 反射逐帧
             // 设置。钉位武装/FLUSH 修正环/两阶段揭示全部退役:高度分数与滚动位
             // 在同一遍 measure 原子生效,配对从构造上精确(零补偿、零修正环)。
@@ -773,6 +954,12 @@ internal fun CardExpandReveal(
                     // exit-CANCELLED 定案)。缓存的真正价值=跨回收高度预知(floor)。
                     clock.warmup()
                     settleUntilContentStable(clock)
+                    // #529:锚点捕获静止门——E1(回收重组合后首个展开集)恰逢滚动
+                    // 余尾+item 异步内容跨测量遍落地,捕获基在「捕获→待定区消费」
+                    // 窗内漂移=反射绝对位双计/半计(真机两脏样本 topY+H/+H/2)。
+                    // settle 只管本卡内容;此处把静止契约扩到整列基(滚动+全部可见
+                    // item 尺寸),随后才读 H 与锚点(基静后读数即最新)。
+                    awaitAnchorQuiescence(listState)
                     // #430:派发目标=**落地高度**(lastMeasuredH),不再 maxOf 缓存——
                     // v4 分批下落地≠缓存终值,按缓存超额派发=中位伪滚动(前向容量被
                     // 提前吃掉)+ 边缘重试白跑;窗外增量由稳态配对(#430)逐帧接管。
@@ -855,6 +1042,14 @@ internal fun CardExpandReveal(
                         clock.tweening = true
                         androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
                             clock.driveTo(1f)
+                            // #540 帽×机件单写者：宿主=帽物主（#440 宽限窗，turn 刚完结
+                            // 帽未卸）时，抬帽与增长同快照——反射 (fii,fiso+H) 不被
+                            // min(child,reserved) 钳一帧，flush 亦无残差二次释放。
+                            hatReserve?.let { r ->
+                                if (r.itemKey == hostItemKey) {
+                                    r.reserved = hatPairedRaise(r.reserved, r.itemKey, hostItemKey, H)
+                                }
+                            }
                         }
                         clock.tweening = false
                         if (!anchored) {
@@ -923,6 +1118,10 @@ internal fun CardExpandReveal(
                     }
                     // ② 单步原子闭合(镜像展开的 withMutableSnapshot+dispatch:
                     //   首个放置即含塌缩+位移,中间态从构造上不存在)
+                    // #529:收起锚点解析同走静止门——回收重组合实例的首收起集与
+                    // 2026-09-28 已修的回收竞态(close-anchor consumed=0 兜底)同族;
+                    // 向后折叠链消费的 item 尺寸谱同样要求静止基。rep 在门后读取。
+                    awaitAnchorQuiescence(listState)
                     val rep = clock.lastReportedH
                     if (BuildConfig.DEBUG) {
                         AppLogger.d(
@@ -990,6 +1189,15 @@ internal fun CardExpandReveal(
                     clock.tweening = false
                     androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
                         clock.driveTo(0f)
+                        // #540 镜像：物主 item 上的收起塌缩同快照落帽——防 reserved
+                        // 残留旧高使后续增长绕过一帧缓冲（帽协议失效=裸落地）。
+                        hatReserve?.let { r ->
+                            if (r.itemKey == hostItemKey) {
+                                r.reserved = hatPairedLower(
+                                    r.reserved, r.itemKey, hostItemKey, mirrorConsumed.toInt(),
+                                )
+                            }
+                        }
                     }
                     if (!anchorKnown && !clock.userScrollCancelled) {
                         // 用户滚动打断路径不再派发(取消相已反射恢复锚点;fling 中
@@ -1026,7 +1234,7 @@ internal fun CardExpandReveal(
                     AppLogger.e(
                         "CardExpand",
                         "[DEBUG-423] episode exit-" + (if (t is CancellationException) "CANCELLED" else "THREW") +
-                            " f=" + "%.3f".format(clock.fraction) + " pinPending=" + pinPending.value,
+                            " f=" + "%.3f".format(clock.fraction),
                         t,
                     )
                 }
@@ -1035,7 +1243,6 @@ internal fun CardExpandReveal(
                 // #429:任何退出路径(取消/异常)都不得悬挂 loading
                 onExpandComputing?.invoke(false)
                 clock.tweening = false
-                phaseADrain.value = false
                 // #426 追修复(不变量):任何退出路径上,布局占位(fraction>0)必须
                 // 配可见内容——纯绘制分数只在 A→B 正常走完时才回到 1;取消/
                 // 异常/竞态在此兜底,杜绝「占位不显示」的空白卡死态。
@@ -1065,29 +1272,16 @@ internal fun CardExpandReveal(
                 } catch (_: CancellationException) {
                     // 取消(snap)路径:落位已由 snap 完成,无需补偿
                 }
-                // #424 闭环位置恢复——批次九轮2 退役:迟沉降窗的 revealTopY 报
-                // 多遍瞬态幻影坐标(视频实锤:屏面稳定时它报 −230→1426 爬升),
-                // 基于它的修正必过冲并制造可见终端抖动;中段双写数学已被视频
-                // dy≈0 与终态滚动位≈钉稳态双证。episodeEndCorrection 保留供单测。
-                if (completed && !LazyListReflection.probesResolved) {
-                    val err = episodeEndCorrection(anchorY, revealTopY.floatValue, clock.userScrollCancelled)
-                    if (err != null && err != 0f) {
-                        val consumed = runCatching { listState.dispatchRawDelta(err) }.getOrDefault(0f)
-                        clock.recordDisplacement(consumed)
-                        if (BuildConfig.DEBUG) {
-                            AppLogger.d(
-                                "CardExpand",
-                                "[DEBUG-424] end-restore err=" + err.toInt() + " consumed=" + consumed.toInt(),
-                            )
-                        }
-                    }
-                }
+                // #540 事后回锚清剿：#424 end-restore（episode 终态上屏 2 帧后
+                // dispatchRawDelta 纠偏）删除——反射降级（Compose 升级破坏私有成员）
+                // 时改走「降级即弃配」：dispatch fallback 本身全额重试（PairedDispatch），
+                // 残差不再以上屏后修正兜底（用户裁决：消除位移源，不留事后补偿）。
                 if (BuildConfig.DEBUG) {
                     AppLogger.d(
                         "CardExpand",
                         "[DEBUG-422] episode done f=" + "%.3f".format(clock.fraction) +
                             " totalMs=" + ((System.nanoTime() - episodeStart) / 1_000_000f).toInt() +
-                            " completed=" + completed + " pinPending=" + pinPending.value,
+                            " completed=" + completed,
                     )
                 }
                 // #425 锚点携带:重定向取消(未正常完成且非用户滚动)→ 携带原锚,
@@ -1250,252 +1444,53 @@ internal fun CardExpandReveal(
             }
     }
 
-    // #423 批次三(终):FLUSH 相实测钉位修正器——增长落地帧在 draw 前测量
-    // err=钉锚−折叠行屏位,分段 dispatch(±2000/帧)修正,残差未闭拒绘(≤2/帧);
-    // 收敛(连续 3 次|err|<1)或超时(1.5s)清 pinPending 自灭。中间态从不上屏;
-    // 无预测 LEAP→无 item 回收→修正循环全程存活(预测配对退役原因见展开分支)。
-    // 降级:无 FLUSH 宿主(预览/单测)→ 不置 pinPending,零滚动参与。
-    LaunchedEffect(pinPending.value) {
-        if (!pinPending.value || !PreRenderCoordinator.isFlushHostAttached) return@LaunchedEffect
-        var stableFlushes = 0
-        // 批次四d:钉位确认(hold)——分数已到目标但未经「新鲜坐标核销」确认前,
-        // 恒拒绘:LEAP/塌陷帧构造性不上屏,屏面冻结在增长前帧,重组卡顿不可见。
-        // 真机三轮定案:坐标回调与 pre-draw 读数各滞后一拍,「修好再画」不可达;
-        // 账本(Δreport)读数同样滞后且与实测双发——唯一可靠契约是「确认前不画」。
-        // 确认的唯一证据 = 新鲜坐标(|err|<1);陈旧/静止坐标不得确认(批次四c 教训:
-        // 等值陈旧坐标被当确认 → hold 提前放行 → LEAP 帧上屏)。
-        var confirmedSinceTarget = false
-        var holdRefusals = 0 // 呼吸阀:连续拒绘上限(防回调若为绘制驱动时的死锁)
-        // 泵帧:dispatch 后的下一帧放行——该帧已是修正后布局(dispatch 同步滚动),
-        // 绘制即驱动坐标回调盖同源戳,下一 pre-draw 即可确认。破解「确认依赖回调、
-        // 回调依赖绘制、hold 拒绘制」的死锁环(批次四e)。
-        var pumpPending = false
-        // 批次四f:确认时的报告读数——迟到增长(rep 变更)即刻作废确认,重进确认环
-        var repAtConfirm = -1
-        // 批次五:hold 起算时刻——超时预算不再计入武装→增长间的冻结/settle 窗
-        // (真机 red1 定案:冷启首展冻结~700ms+重组~620ms 吃光 1.5s 预算,超时比
-        // 修正回调早 68ms 触发 → 修正器阵亡 → 后续漂移无人管 = 用户「顶开不复位」)
-        var holdStartNs = 0L
-        // 批次五b:静默守望——真机矩阵定案(B/C 红):episode 结束数秒后仍有迟到增长
-        // (表格 containerWidth 多拍收敛/asyncParse 等,+61~+78px 实测),修正器若在
-        // 稳定后即刻解散则无人接管 → 视口被顶走直到下次收起才被配对顺手修回
-        // = 用户「展开顶开不复位/收起顶一下又复位」的统一根因。确认后须等
-        // [PIN_QUIET_MS] 无 rep 变更才允许解散;窗内增长自动重进确认环。
-        var lastRepSeen = clock.lastReportedH
-        var lastRepChangeNs = System.nanoTime()
-        val tStart = System.nanoTime()
-        val task = PreDrawFlushTask {
-            val tgt = pinAnchor.floatValue
-            var allow = true
-            if (clock.lastReportedH != lastRepSeen) {
-                lastRepSeen = clock.lastReportedH
-                lastRepChangeNs = System.nanoTime()
-            }
-            // 批次四f 定案(三轮取证的最终拼图):增长 measure 在 pre-draw 之后、
-            // draw 之前执行——pre-draw 读到的 rep 必属旧布局(账本在增长帧永不可
-            // 见增长);而 fraction 是 driveTo 同步内存写,pre-draw 时已到位。
-            // 「分数已到 ∧ 报告未追」= 增长正在本帧落地 → 恰是必须拒绘的帧。
-            // 故:hold 只认分数到位(报告未追的错位帧更须拒);确认认
-            // 分数到位 ∧ 报告已追上 ∧ 坐标同源戳——三层防假确认。
-            val fractionAtTarget = abs(clock.fraction - clock.pinTargetFraction) < 0.001f
-            val reportCaughtUp = clock.lastReportedH == (clock.fraction * clock.lastMeasuredH).toInt()
-            val geometryAtTargetNow = fractionAtTarget && reportCaughtUp
-            if (confirmedSinceTarget && clock.lastReportedH != repAtConfirm) {
-                confirmedSinceTarget = false // 迟到增长:确认作废,重进确认环
-            }
-            if (BuildConfig.DEBUG) {
-                AppLogger.d(
-                    "CardExpand",
-                    "[DEBUG-423] flush-entry rep=" + clock.lastReportedH +
-                        " f=" + "%.3f".format(clock.fraction) +
-                        " topY=" + revealTopY.floatValue.toInt() +
-                        " guard=" + guardCur.floatValue.toInt() +
-                        " conf=" + confirmedSinceTarget + " geo=" + geometryAtTargetNow,
-                )
-            }
-            if (clock.userScrollCancelled) {
-                // 用户滚动优先权铁律——用户已接管,立即自灭不与手指互搏
-                pinPending.value = false
-            } else when {
-                tgt.isNaN() -> stableFlushes = 3 // 无锚,放弃
-                // ===== 账本阶段:rep 于 measure 相写,pre-draw 必新鲜——增长落地帧
-                // 即时全额修正(坐标回调绘制驱动,等坐标必晚一帧=v3.1 漏点)。
-                // 共享会计:三路 dispatch 全部入账,杜绝 e6 实证的双发。=====
-                (clock.lastReportedH - pinLedgerBase.floatValue).let { abs(it - pinDispatchedTotal.floatValue) >= 1f } -> {
-                    val errLedger = (clock.lastReportedH - pinLedgerBase.floatValue) - pinDispatchedTotal.floatValue
-                    val consumed = runCatching { listState.dispatchRawDelta(errLedger) }.getOrDefault(0f)
-                    pinDispatchedTotal.floatValue += errLedger
-                    clock.recordDisplacement(consumed)
-                    if (!clock.departureFired && abs(clock.episodeDisplacement) > DEPARTURE_THRESHOLD_PX) {
-                        clock.departureFired = true
-                        departure?.invoke()
-                    }
-                    stableFlushes = 0
-                    if (BuildConfig.DEBUG) {
-                        AppLogger.d(
-                            "CardExpand",
-                            "[DEBUG-423] pin-ledger d=" + errLedger.toInt() + " consumed=" + consumed.toInt() +
-                                " rep=" + clock.lastReportedH,
-                        )
-                    }
-                    allow = false // 拒绘一拍:修正后的重排落地再画(该帧必为已修正态)
-                    pumpPending = true
-                }
-                revealTopY.floatValue.isNaN() -> { /* 未放置,等下一 pre-draw */ }
-                // ===== 实测阶段:新鲜坐标核销残差 + 唯一确认来源 =====
-                revealTopY.floatValue == guardCur.floatValue -> {
-                    // 坐标静止(放置回调已开火待重排)——计稳定但不确认:
-                    // 陈旧等值 ≠ 钉稳证据(批次四c 教训);只认 guardCur(dispatch
-                    // 前值)——修正后「回到原位」同值坐标是新鲜证据(批次四d 教训)。
-                    stableFlushes++
-                }
-                else -> {
-                    val cur = revealTopY.floatValue
-                    val err = tgt - cur
-                    val sameEpoch = coordStamp.intValue == clock.lastReportedH
-                    if (abs(err) >= 1f && cur != guardCur.floatValue) {
-                        // 坐标新鲜才开火(陈旧重复开火 = ±684 振荡,#425 同族)
-                        guardCur.floatValue = cur
-                        val consumed = runCatching { listState.dispatchRawDelta(err) }.getOrDefault(0f)
-                        pinDispatchedTotal.floatValue += consumed
-                        clock.recordDisplacement(consumed)
-                        if (!clock.departureFired && abs(clock.episodeDisplacement) > DEPARTURE_THRESHOLD_PX) {
-                            clock.departureFired = true
-                            departure?.invoke()
-                        }
-                        stableFlushes = 0
-                        if (BuildConfig.DEBUG) {
-                            AppLogger.d(
-                                "CardExpand",
-                                "[DEBUG-423] pin-flush err=" + err.toInt() + " consumed=" + consumed.toInt() +
-                                    " cur=" + cur.toInt() + "/" + tgt.toInt(),
-                            )
-                        }
-                        allow = false
-                        pumpPending = true
-                    } else if (abs(err) < 1f && sameEpoch && reportCaughtUp) {
-                        // 新鲜 + 无残差 + 坐标同源 + 报告已追上——钉稳确认
-                        confirmedSinceTarget = true
-                        repAtConfirm = clock.lastReportedH
-                        holdRefusals = 0
-                        stableFlushes++
-                    } else {
-                        // err<1 但坐标属旧布局(不同源)——等待坐标刷新,不确认
-                        stableFlushes++
-                    }
-                }
-            }
-            // 灭钉门控:稳定×3 且几何分数到位(settle 期报告恒 ε,不得灭钉)且
-            // 已经确认;超时 1.5s 兜底(亦解 hold)。confirmed=false 的超时退场
-            // 意味着钉位失败——episode 末 end-restore 兜底修正。
-            val quietMs = (System.nanoTime() - lastRepChangeNs) / 1_000_000f
-            if ((stableFlushes >= 3 && geometryAtTargetNow && (confirmedSinceTarget || tgt.isNaN()) &&
-                quietMs > PIN_QUIET_MS) ||
-                (holdStartNs != 0L && (System.nanoTime() - holdStartNs) / 1_000_000f > 2000f) ||
-                (System.nanoTime() - tStart) / 1_000_000f > 6000f
-            ) {
-                if (BuildConfig.DEBUG) {
-                    AppLogger.d(
-                        "CardExpand",
-                        "[DEBUG-423] pin done stable=" + stableFlushes +
-                            " ms=" + ((System.nanoTime() - tStart) / 1_000_000f).toInt() +
-                            " confirmed=" + confirmedSinceTarget,
-                    )
-                }
-                pinPending.value = false
-            }
-            // hold:分数到位但未确认钉稳 → 拒绘(屏面冻结在增长前帧);呼吸阀:
-            // 连续 HOLD_VENT_FRAMES 次拒绘后放行一帧(若坐标回调为绘制驱动,
-            // 该帧驱动回调刷新——至多一帧错误态闪现,远优于恒顶开)。
-            if (fractionAtTarget && !confirmedSinceTarget && pinPending.value) {
-                if (holdStartNs == 0L) holdStartNs = System.nanoTime()
-                if (pumpPending || pumpArm.value) {
-                    // 泵帧放行:修正后布局上屏,驱动坐标回调盖戳(pin-placed 亦武装)
-                    pumpPending = false
-                    pumpArm.value = false
-                } else if (holdRefusals < HOLD_VENT_FRAMES) {
-                    allow = false
-                    holdRefusals++
-                } else {
-                    holdRefusals = 0
-                }
-            } else {
-                holdStartNs = 0L // 不持时重置(重定向后再持有重新计时)
-            }
-            allow
-        }
-        PreRenderCoordinator.registerFlushTask(task)
-        try {
-            snapshotFlow { pinPending.value }.first { !it }
-        } finally {
-            PreRenderCoordinator.unregisterFlushTask(task)
-        }
-    }
-
+    // #540 事后回锚清剿：#423 钉位修正器（pinPending 永假的死设备——批次九
+    // 「渲染前计算+反射」已使其退役）整体删除；#430 稳态账本（pre-draw 同帧）
+    // 是迟到增长的唯一接管者。
     // 冷组合抬底数据源:finalHCache(rememberSaveable)跨回收存活,-1=无缓存
     // (抬底条件 floor>measured 自然失效)。remember(finalHCache) 稳定引用,
     // lambda 闭包读 state=布局相订阅,缓存更新自动失效重测。
+    // #533:saveable 只覆盖 LazyList item 级回收;SliceHost 槽位出窗即弃时
+    // 随槽位销毁——进程级 CardExpandFinalHStore((cacheKey,width) 键控)补位,
+    // 节点测量相融合取 max 并回写真实内容高。
     val floorProvider = remember(finalHCache) { { finalHCache.value } }
-    Box(
+        Box(
         modifier = modifier
             .clipToBounds()
-            .cardExpandGeometry(clock, floorProvider)
+            .cardExpandGeometry(clock, floorProvider, cacheKey?.toString())
+            .onSizeChanged { revealBoxH.intValue = it.height }
             .onPlaced {
                 // #423 批次四:布局相写入。真机取证(09-22):onGloballyPositioned 实测
-                // 在绘制期才派发——晚于 pre-draw,FLUSH 修正器在增长落地帧只能读到陈旧值
-                // (LEAP 帧 pre-draw 读 1144、绘制期才见 -3536 → 顶开帧上屏;err=4 的
-                // 小修正同样晚 44ms)。onPlaced 在放置相派发(先于 pre-draw),FLUSH 相
-                // 读到的即本帧地面真值。onGloballyPositioned 保留(兜底 + PLACED 日志)。
+                // 在绘制期才派发——晚于 pre-draw。onPlaced 在放置相派发(先于 pre-draw)。
+                // #528:isAttached 守卫——压缩/换装等批量移除窗口内,LazyList 对已在
+                // 拆除途中的节点仍会派发放置回调,此刻 positionInRoot 抛
+                // IllegalStateException(真机 19:21:41 FATAL,压缩报错后 40s 复现)。
+                // 已脱离节点的坐标无意义,跳过写入(episode 协程随组合销毁同归于尽)。
                 if (it.isAttached) {
                     revealTopY.floatValue = it.positionInRoot().y
-                    coordStamp.intValue = clock.lastReportedH
                 }
             }
             .onGloballyPositioned {
                 if (it.isAttached) {
                     revealTopY.floatValue = it.positionInRoot().y
-                    coordStamp.intValue = clock.lastReportedH
-                }
-                // #423 批次四c:放置回调即时修正——坐标回调虽晚于 measure,但早于
-                // 下一 pre-draw(真机:LEAP 帧 .377 回调/.380 绘制,而 pre-draw 读数
-                // 滞后到 .887)。回调到达即 dispatch,把修正提前整整一个卡顿窗;
-                // guardCur 保证与 FLUSH 实测阶段不双发(同一坐标只许一个开火)。
-                if (pinPending.value && clock.animating && !clock.userScrollCancelled) {
-                    val cur2 = revealTopY.floatValue
-                    val tgt2 = pinAnchor.floatValue
-                    if (!tgt2.isNaN() && !cur2.isNaN() && abs(tgt2 - cur2) >= 1f && cur2 != guardCur.floatValue) {
-                        guardCur.floatValue = cur2
-                        val consumed2 = runCatching { listState.dispatchRawDelta(tgt2 - cur2) }.getOrDefault(0f)
-                        pinDispatchedTotal.floatValue += consumed2
-                        pumpArm.value = true
-                        clock.recordDisplacement(consumed2)
-                        if (!clock.departureFired && abs(clock.episodeDisplacement) > DEPARTURE_THRESHOLD_PX) {
-                            clock.departureFired = true
-                            departure?.invoke()
-                        }
-                        if (BuildConfig.DEBUG) {
-                            AppLogger.d(
-                                "CardExpand",
-                                "[DEBUG-423] pin-placed err=" + (tgt2 - cur2).toInt() +
-                                    " consumed=" + consumed2.toInt() + " cur=" + cur2.toInt() + "/" + tgt2.toInt(),
-                            )
-                        }
-                    }
                 }
                 if (BuildConfig.DEBUG && clock.animating) {
+                    // #526b 取证增补：boxH（reveal 盒实占高）+ host（宿主 item 尺寸）——
+                    // E1 脏样本（回收后首展开 topY+H）解码需要分清「盒高漂移」还是
+                    // 「item 内其它增长」还是「滚动双算」。
                     AppLogger.d(
                         "PRD",
                         "E" + episodeSeq.intValue + " PLACED t=" + System.nanoTime() +
                             " topY=" + revealTopY.floatValue.toInt() +
+                            " boxH=" + revealBoxH.intValue +
                             " rep=" + clock.lastReportedH + " abs=" + clock.absorbedPx +
                             " f=" + "%.3f".format(clock.fraction) +
                             " fii=" + listState.firstVisibleItemIndex +
-                            " fiso=" + listState.firstVisibleItemScrollOffset,
+                            " fiso=" + listState.firstVisibleItemScrollOffset +
+                            " host=" + (listState.layoutInfo.visibleItemsInfo
+                                .firstOrNull { it.key == hostItemKey }?.size ?: -1),
                     )
                 }
-                // 批次二:FLUSH 宿主在场时排干由 pre-draw 单点执行(placed 触发
-                // 的重排来不及同帧 draw 前生效=瞬态根源);降级路径才走此触发。
-                if (phaseADrain.value && !PreRenderCoordinator.isFlushHostAttached) drainPhaseA("placed")
             }
     ) {
         // #420 追诊:content 组合生命周期归几何时钟统一拥有(fraction>0 即组合)。
@@ -1545,33 +1540,6 @@ internal fun CardExpandReveal(
 }
 
 /**
- * #424 闭环位置恢复判定(纯函数可单测):episode 末把 reveal 盒顶缘(=折叠行
- * 底缘)拉回本集起点所需的位移 δ;不可恢复(用户滚动取消/坐标缺失)返回
- * null,偏差 <1px 返回 0(免无意义 dispatch)。
- *
- * 背景:开环 δ 配对账本只记「指令」不记「实际消费」——列表边缘 residual、
- * LazyList 锚点翻转的会计误差都会累积为视口净漂移(真机实测小组一个
- * 展开+收起循环净漂 −366px:展开末 −98(边缘残量) + 收起过程 −268)。
- * 闭环以实测位置对账,episode 末单次修正回起点。
- */
-internal fun episodeEndCorrection(
-    anchorY: Float,
-    currentY: Float,
-    userScrollCancelled: Boolean,
-): Float? {
-    if (userScrollCancelled) return null
-    if (anchorY.isNaN() || currentY.isNaN()) return null
-    val err = anchorY - currentY
-    return if (abs(err) >= 1f) err else 0f
-}
-
-/** 虚拟时刻 vt(ms) 对应的缓动分数。 */
-private fun easedFraction(startF: Float, target: Float, vt: Float): Float {
-    val p = (vt / GEOMETRY_TWEEN_MS.toFloat()).coerceIn(0f, 1f)
-    return startF + (target - startF) * FastOutSlowInEasing.transform(p)
-}
-
-/**
  * #425 渲染前指令(纯函数可单测):本帧 dispatch 量 = 目标 − 已吸收账本。
  *
  * 两轮真机教训:
@@ -1584,51 +1552,6 @@ private fun easedFraction(startF: Float, target: Float, vt: Float): Float {
  */
 internal fun closedLoopCommand(targetRep: Int, absorbed: Int): Int =
     (targetRep - absorbed).coerceIn(-MAX_CLOSED_LOOP_DELTA_PX, MAX_CLOSED_LOOP_DELTA_PX)
-
-/**
- * #425 单帧配对(吸收驱动):指令含反馈项 → dispatchRawDelta → 账本只记
- * consumed → 揭示高度=账本。上帧误差在本帧渲染前算进指令——折叠行按
- * 构造钉住;未消费部分留在「目标−账本」差值里,下帧自动重试(不丢失)。
- */
-private fun dispatchClosedLoop(
-    listState: LazyListState,
-    clock: CardExpandClock,
-    departure: (() -> Unit)?,
-    targetFraction: Float,
-    anchorY: Float,
-    currentTopY: Float,
-    unclamped: Boolean = false,
-) {
-    // 崩溃修复(真机收起末 IllegalState: LayoutNode should be attached):
-    // fraction→0 会移除 content,必须先关 placeable 缓存窗口,否则同一帧
-    // 布局仍会放置已离树的缓存 placeable。
-    if (targetFraction <= 0.001f) clock.tweening = false
-    clock.driveTo(targetFraction)
-    val cmd = closedLoopCommand(
-        targetRep = (targetFraction * clock.lastMeasuredH).toInt(),
-        absorbed = clock.absorbedPx,
-    )
-    val d = (if (unclamped) cmd else cmd.coerceIn(-MAX_CLOSED_LOOP_DELTA_PX, MAX_CLOSED_LOOP_DELTA_PX)).toFloat()
-    if (d == 0f) return
-    val consumed = runCatching { listState.dispatchRawDelta(d) }.getOrDefault(0f)
-    clock.absorb(consumed)
-    clock.recordDisplacement(consumed)
-    if (BuildConfig.DEBUG) {
-        AppLogger.d(
-            "CardExpand",
-            "[DEBUG-425] cmd d=" + d.toInt() + " consumed=" + consumed.toInt() +
-                " topY=" + currentTopY.toInt() + "/" + anchorY.toInt() +
-                " absorbed=" + clock.absorbedPx + " rep=" + clock.lastReportedH + " H=" + clock.lastMeasuredH,
-        )
-    }
-    if (abs(d - consumed) > 0.5f) {
-        AppLogger.w("CardExpand", "[DEBUG-425] residual=" + (d - consumed).toInt() + " (retry next frame)")
-    }
-    if (!clock.departureFired && abs(clock.episodeDisplacement) > DEPARTURE_THRESHOLD_PX) {
-        clock.departureFired = true
-        departure?.invoke()
-    }
-}
 
 /**
  * #432 贴底免派发判定(纯函数可单测):严格贴底=最新 item 锚定(fii==0 ∧ offset==0)。
@@ -1721,6 +1644,17 @@ internal fun settleFrameAdvances(measures: Int, lastMeasures: Int, measuredH: In
     measures > 0 && measures == lastMeasures && measuredH > 0
 
 /**
+ * #529 soak 根修(纯函数可单测,2026-10-08 04:42 单帧定罪):冷抬底资格。
+ * 窗口 = 经典冷窗(measureCount≤2)∨ **内容未组合(measuredH==0)**——重内容
+ * 异步组合可逾经典冷窗(真机实测 ~150ms/count3+ 仍 measured=0),floor 过期
+ * →盒上报 0→item −H 手势中塌缩→落地 +H 回长(RESIZE 15982→11492→15982)。
+ * 零高绝不可能是 finalHCache>0 展开卡的合法终态,故零高续抬无陈旧风险
+ * (内容合法变矮≠内容为零,变矮仍由 count>2 真测接管走 steady 配对)。
+ */
+internal fun coldFloorEligible(fraction: Float, animating: Boolean, measureCount: Int, measuredH: Int): Boolean =
+    fraction >= 1f && !animating && (measureCount <= 2 || measuredH == 0)
+
+/**
  * #422 内容沉降:展开 tween 前等待「内容驱动的重测」静止。
  *
  * 为什么必须:placeable 缓存只在 tween 窗口生效,而首测往往不是终测——
@@ -1755,6 +1689,71 @@ private suspend fun settleUntilContentStable(clock: CardExpandClock) {
 }
 
 /**
+ * #529 锚点捕获静止门判定(纯函数可单测):本帧基指纹与上帧一致即计稳一帧。
+ * null=首帧(无基线,不得计稳——防「未观测≠静止」的假稳,同 settle 判稳语义)。
+ */
+internal fun anchorQuiesceAdvances(currentFp: String, lastFp: String?): Boolean =
+    lastFp != null && currentFp == lastFp
+
+/**
+ * #529:锚点基指纹——fii/fiso + 可见 item 尺寸谱。
+ * 反射目标 (fii,fiso±H) 的绝对位语义(=捕获位±H,同遍 measure 原子消费)建立在
+ * 「捕获→待定区消费之间该基不变」上:任何可见 item 的尺寸变化或锚位漂移都会
+ * 使同一 (idx,off) 请求的绝对落点漂移——正是 E1 脏样本(回收重组合后首个
+ * 展开集,真机 topY+H 整额双计/+H/2 半计)的竞态面。settle 只保证**本卡**
+ * 内容静止;item 内其它部分(同轮其余卡/文本/图片)与滚动余尾不在其管辖。
+ */
+internal fun anchorBasisFingerprint(fii: Int, fiso: Int, itemSizes: List<Pair<Int, Int>>): String {
+    val sb = StringBuilder(24 + itemSizes.size * 10)
+    sb.append(fii).append(':').append(fiso).append('|')
+    for ((idx, size) in itemSizes) sb.append(idx).append('=').append(size).append(',')
+    return sb.toString()
+}
+
+private fun LazyListState.anchorBasisFingerprint(): String = anchorBasisFingerprint(
+    firstVisibleItemIndex,
+    firstVisibleItemScrollOffset,
+    layoutInfo.visibleItemsInfo.map { it.index to it.size },
+)
+
+/**
+ * #529:锚点捕获静止门——展开/收起的反射锚点捕获前等待布局基静止:
+ * 滚动余尾(isScrollInProgress)期间基恒漂,直接重置计稳;之后要求基指纹
+ * 连续 [ANCHOR_QUIESCE_STABLE_FRAMES] 帧不变。有界([ANCHOR_QUIESCE_MAX_MS]):
+ * 超时按现状捕获,不回退任何既有行为(同实例后续集 E3+ 恒稳,典型代价
+ * 2-3 帧 ≈17-50ms,被 computing 过渡/幕布吸收不可感知)。
+ */
+private suspend fun awaitAnchorQuiescence(listState: LazyListState) {
+    val t0 = System.nanoTime()
+    var lastFp: String? = null
+    var stableFrames = 0
+    while (stableFrames < ANCHOR_QUIESCE_STABLE_FRAMES) {
+        if ((System.nanoTime() - t0) / 1_000_000f >= ANCHOR_QUIESCE_MAX_MS) break
+        withFrameNanos { }
+        if (listState.isScrollInProgress) {
+            // 滚动余尾/兄弟卡稳态派发(dispatchRawDelta 亦置位):基恒在漂,不计稳
+            stableFrames = 0
+            lastFp = null
+            continue
+        }
+        val fp = listState.anchorBasisFingerprint()
+        if (anchorQuiesceAdvances(fp, lastFp)) {
+            stableFrames++
+        } else {
+            stableFrames = 0
+            lastFp = fp
+        }
+    }
+    if (BuildConfig.DEBUG) {
+        AppLogger.d(
+            "CardExpand",
+            "[DEBUG-529] anchor-quiesce stable=" + stableFrames +
+                " ms=" + ((System.nanoTime() - t0) / 1_000_000f).toInt(),
+        )
+    }
+}
+
+/**
  * #422 几何上报节点:无界测量 → 上报 f·H(未揭示部分被外层 clip 裁掉)。
  *
  * **性能根因修复**:lambda 版 `Modifier.layout` 每帧 fraction 写都重测整棵
@@ -1777,6 +1776,10 @@ private suspend fun settleUntilContentStable(clock: CardExpandClock) {
 private class CardExpandGeometryNode(
     var clock: CardExpandClock,
     var floorProvider: () -> Int = { 0 },
+    /** #533:槽位键（cacheKey 字符串化;null=不入进程店——工具卡等无键卡维持现状）。 */
+    var storeKey: String? = null,
+    /** #533:欠测桥接（measured<floor 落地期持有;注入时钟可单测）。 */
+    var floorBridge: CardExpandFloorBridge = CardExpandFloorBridge(),
 ) : Modifier.Node(), LayoutModifierNode {
 
     private var cachedPlaceable: Placeable? = null
@@ -1834,8 +1837,26 @@ private class CardExpandGeometryNode(
         // (rememberSaveable)跨回收存活:冷首测(measureCount≤2)以已知终高占位,
         // 迟到内容落地时高度已正确=零增量零弃配;陈旧 floor(内容变矮)由 count>2
         // 真测接管,差值走 steady 正常配对。animating 期不抬(episode 独占)。
-        val floorH = if (clock.measureCount <= 2 && clock.fraction >= 1f && !clock.animating) {
-            floorProvider()
+        // #529 soak 定罪(2026-10-08 04:42 单帧):重内容异步组合可逾 count≤2 窗
+        // (~150ms,measured 恒 0 至 count3+)——floor 过期→盒上报 0→item −H 塌缩
+        // →内容落地 +H 回长(RESIZE 15982→11492→15982,147ms)=手势中可见闪跳。
+        // 根修:内容未组合(measured==0)期间 floor 持续有效——零高绝不可能是
+        // finalHCache>0 展开卡的合法终态,无陈旧抬底风险(内容变矮≠内容为零)。
+        // #533 soak 定罪(2026-10-08 05:32:55 三帧):SliceHost 槽位出窗即弃
+        // (subcompose 无 SaveableStateHolder)→槽内 finalHCache 随槽位销毁→抬底
+        // 在切片域被缴械,展开卡重入窗盒瞬态欠测→与片高账本稳态落差=−H 塌缩
+        // 脉冲(86ms-83s 回长族,5h 13 次);部分高欠测(分段落地)为另一族级联。
+        // 根修①:floorProvider 融合进程级 CardExpandFinalHStore((cacheKey,width)
+        // 键控,槽位销毁/回收全存活);②floor 持有经 CardExpandFloorBridge 扩到
+        // 整个 measured<floor 落地期(1.5s 稳定释放=合法收缩,差异走引擎配对)。
+        val storeFloor = storeKey?.let { CardExpandFinalHStore.get(it, width) } ?: -1
+        val saveableFloor = floorProvider()
+        val floorCandidate = maxOf(storeFloor, saveableFloor)
+        val floorH = if (floorCandidate > 0 && floorBridge.holds(
+                clock.fraction, clock.animating, clock.measureCount, placeable.height, floorCandidate
+            )
+        ) {
+            floorCandidate
         } else {
             0
         }
@@ -1846,6 +1867,11 @@ private class CardExpandGeometryNode(
                 "[DEBUG-FLOOR] cold-floor effH=" + effH + " measured=" + placeable.height +
                     " count=" + clock.measureCount,
             )
+        }
+        // #533:真实内容高回写进程店(只升不降)——重入窗/回收重组合时 floor 由此存活。
+        val sk = storeKey
+        if (sk != null && placeable.height > 0) {
+            CardExpandFinalHStore.record(sk, width, placeable.height)
         }
         val report = clock.onMeasure(effH)
         // #430:稳态记账(measure 相;基线/rebase 协议见 CardExpandClock)——
@@ -1872,25 +1898,33 @@ private class CardExpandGeometryNode(
 /**
  * #422:Element 包装——clock 以身份相等 remember 期内稳定,节点与缓存
  * 跨重组存活(lambda 版每帧新建 element 正是缓存无法附着的原因)。
+ * #533:storeKey 入相等(键变化=换卡身份,节点须重建以重置桥接态)。
  */
 private class CardExpandGeometryElement(
     private val clock: CardExpandClock,
     private val floorProvider: () -> Int,
+    private val storeKey: String?,
 ) : ModifierNodeElement<CardExpandGeometryNode>() {
-    override fun create(): CardExpandGeometryNode = CardExpandGeometryNode(clock, floorProvider)
+    override fun create(): CardExpandGeometryNode =
+        CardExpandGeometryNode(clock, floorProvider, storeKey)
 
     override fun update(node: CardExpandGeometryNode) {
         node.clock = clock
         node.floorProvider = floorProvider
+        node.storeKey = storeKey
     }
 
     override fun equals(other: Any?): Boolean =
         other is CardExpandGeometryElement && other.clock === clock &&
-            other.floorProvider === floorProvider
+            other.floorProvider === floorProvider && other.storeKey == storeKey
 
     override fun hashCode(): Int =
-        System.identityHashCode(clock) * 31 + System.identityHashCode(floorProvider)
+        System.identityHashCode(clock) * 31 + System.identityHashCode(floorProvider) * 7 +
+            (storeKey?.hashCode() ?: 0)
 }
 
-private fun Modifier.cardExpandGeometry(clock: CardExpandClock, floorProvider: () -> Int): Modifier =
-    this.then(CardExpandGeometryElement(clock, floorProvider))
+private fun Modifier.cardExpandGeometry(
+    clock: CardExpandClock,
+    floorProvider: () -> Int,
+    storeKey: String?,
+): Modifier = this.then(CardExpandGeometryElement(clock, floorProvider, storeKey))

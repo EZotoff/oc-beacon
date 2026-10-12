@@ -99,3 +99,68 @@
 ## 批 ③ 验收（2026-10-01）
 
 用户验收通过（「可以 我觉得可以暂时用这样的效果」）——③ 数学降级+标注升级就此收口；批 2（观察精修）/批 3（可选）维持挂卡，随观察窗推进。
+
+## 批 2 观察精修——完结/冷看色 pop 根修（2026-10-10 晨，3056fcbc + 1859ef22 + review 修复）
+
+**观察证据（pop 实存）**：批 1 遗留「初值纯文本→异步着色 1-2 帧纯色 pop」在冷滚动回看路径每次重付（组合位销毁→produceState 重建→再异步）。模拟器实证（修复前基线）：同块冷看 CodeHL 日志 len=112 ms=8（异步作业可见）。
+
+**测量定参（HighlightedCodeSyncCapProbeTest，JVM）**：引擎 ~1.3µs/char 线性——459c=0.67ms / 1883c=2.5ms / 4763c=7ms / 29567c=30ms。Android ×3 折算对 ~4ms 帧预算 → **同步阈值 CAP=400 字符**（研究文档预想的「immediate=true 覆盖 <2000c」被实测否决：1883c JVM 2.5ms → Android ~7.5ms 超帧）。
+
+**机制（双保险）**：
+1. 同步初值（≤400c 且首组合，`initialHighlightedFor` 纯函数）——小块首帧即着色；
+2. 进程级 `CodeHighlightCache`（LRU32/单条 64KB 上限/theme 身份入键）——任意大小块重看零成本（异步作业/同步产物均回写）；
+3. >400c 首看维持异步（1-2 帧纯色后着色落缓存）——接受面：400-2000c 冷看首帧仍 pop 一次（研究文档「chunk <2000c 主线程 1-3ms」假设被基准证伪，400 是帧预算内的诚实上限）。
+
+**code-review 双轴回执**：Standards 轴抓到真回归一处——skip 守卫初版用「文本相等」判定，主题切换（文本不变）会误跳过冻结旧色（批 1 的「key 含 theme 重启换新色」行为回归）；已改**同一性判定**（value===initialHighlighted——re-key 必产生新初值实例）+ SideEffect 后置 consumed + cacheKey 单源提取。Spec 轴确认缓存为「等效+」机制（研究处方 immediate 的合理替代，多覆盖冷回看），流式首批 ≤400c 同步属有据拓宽（48ms 批节奏节流 ≈4% 主线程）。
+
+**验证链**：单测 16 例新增（缓存 5+初值策略 6+探针 1，全绿）；仪器化新增冻帧回归测（同消息/同 part id 追加改写不冻结——mainClock 语义等价流式批）；全量 JVM 3969/0；lint 门禁绿（含 #536 SpillNotice 正名去 Dsh 前缀修复——B1 遗留 5 errors 会挡 CI）；模拟器 live 实证：冷看 python 块 CodeHL=0（同步路径）+ 着色视觉确认（关键字蓝/f-string 紫/PYTHON 顶栏）+ 三屏离开回看 0 增量（缓存命中）。
+
+**批 2 余项状态**：大块流式 CPU 量化（§2.j 真机面）/metadata·mark 视觉试验/AMOLED 真机面板目检/Bold advance 宽度测量——挂真机空闲窗（夜跑基建已死于无线 adb 闪断 02:47，见 B2 journal）。400-2000c 冷看首帧 pop 残余接受面 + §2.j 量化合并留观。
+
+## 批 2 §2.j 量化——模拟器腿（2026-10-10 晨，真机腿挂设备回归）
+
+- **流式重启成本（解析模型 + 基准）**：作业线性 1.3µs/char（JVM）× ≤20 作业/s（48ms 批节流）× 作业均长随流增长——9KB 大块全程重高亮总功 ≈300ms（Android 折算）摊在数十秒流上，且全在 Default 线程；主线程新增仅首批 ≤400c 同步（~2ms/批，节流后 ≈4%）。
+- **live 实证两条**：① 200 行 Kotlin 聊天块冷组合 **CodeHL=0**——模型先经 Write 工具产出同内容（工具卡渲染面已高亮入缓存），聊天块跨渲染面缓存命中（缓存面覆盖 8 调用面的意外红利）；② 同块滚走 4 屏回看 **CodeHL delta=0**——>CAP 大块冷重入零成本，缓存设计目标在 7KB 级实测成立。
+- **残余（真机腿，设备回归后补）**：simpleperf/CPU profiler 的 Default 线程占比实测 + 流式期间真机滚动 MDResize 单调性复查（本轮模拟器流中未滚动，buffer 已轮换无探针数据）。
+
+## 批 2 真机空闲窗批三腿收官（2026-10-10 晨，小米 houji 无线复连后）
+
+- **Bold advance：PASS，剔除映射的触发条件不成立**。big-pickle 真流式「Kotlin Flow 讲解」回复 5449 字符含 **342 对 `**`**（加粗极限压测）——流式期间 MDResize 56 次全正单调（96→…→5178），无宽度扰动、无负 d（唯一 d=-5082 为完结换装收尾，#515/#523 既有接受面）。
+- **§2.j 真机腿：大块流式 CPU 可接受定案**。150 行 Kotlin 直出聊天（3699 字符）流式 35 个重高亮作业：单作业 2→27ms、全程总功 **586ms**（摊在 ~100s 流上 ≈0.6% 单核 Default 线程）；设备侧 8.4µs/char（ARM）vs JVM 1.3µs/char——**CAP=400 实测 ≈3.4ms，帧预算内验证成立**（当初 ×3 折算实际偏保守 6.5×）。
+- **顺带观测（非本批面）**：流中一次 REST backfill（9.4KB 轮全量重拉 → 173 分片条目主线程重组）触发 Skipped 59 帧（~490ms）——#515/#523 域既有重组合面实例，与高亮改动无关（本批主线程新增 ≤3.4ms/块），留档为该域真机样本。
+- **AMOLED 真机面板：仪器腿 PASS**。app 内主题=深色 + AMOLED 开（系统设置未动——in-app 开关）→ 聊天页角落纯黑 (0,0,0) 实测；面板体感面（V6）留人工：当前设备已停在 AMOLED 深色聊天页，可直接过目（dev 包 e2e-v1-4299 → Count 会话；看完在设置-外观里可切回）。
+
+**批 2 五项至此全部有证据收口**（量化两项仪器定案 / Bold advance 不触发 / AMOLED 仪器腿+人工面 / metadata·mark 视觉试验留观感窗随 V6 一并）。
+
+
+## 批 2 AMOLED 面板体感验收（2026-10-10 晨）
+
+用户真机过目「可以」——V6 人工面收口。#488 批 2 全项闭环（色 pop 根修 + 量化两项 + Bold advance + AMOLED 仪器腿/人工面）；metadata/mark 视觉试验与 400-2000c 首帧残余观感并入观感窗随后续 V6 顺带，不再单独挂起。
+
+## 已完结卡片迁入（2026-10-10）
+
+### **#488 markdown 能力补齐批次：块内HTML隐形+代码语法高亮+真数学渲染+setext stage-2（远期清单正式立卡）** `markdown` `render`
+  - 2026-09-30 #487 后续深调定罪三项能力缺口：①块内 HTML 渲染为空（mikepenz v0.45.0 基础+m3 AAR 零 HTML 组件，二进制 grep 实证；整消息 HTML 走 looksLikeHtmlPayload 预览通道但混排块隐形）②代码块无语法高亮（走库默认 code renderer，build.gradle.kts:249 注释明示）③\begin/\[/712321 数学均降级为文本或围栏（transformMathFallback 文本降级 + \begin 无变换字面流）
+  - setext stage-2（升格行级定案）维持 accepted-gap 备查（spec 2026-09-30-471-3 §3.6）；此前散落 handoff 未立卡，2026-09-30 正式收编
+  - 实现方向：覆写 markdownComponents html 钩子（原文呈现或接预览同款）；高亮评估 league/ prism 类纯 Kotlin 方案（M3 禁引入额外 UI 依赖库红线内评估）；真数学需渲染层 KaTeX 级能力或维持降级+标注
+  - 2026-09-30 代码高亮子项可行性调研完结（docs/research/2026-09-30-code-syntax-highlighting-feasibility.md）：有条件可行，推荐引入 mikepenz 官方同族 multiplatform-markdown-renderer-code:0.45.0——版本零升级（pin 的 0.45.0 即最新，-code POM 与现状逐项一致）、零新第三方实体（语法引擎 dev.snipme:highlights 1.1.0 已因 FileViewer 在 APK，R8 keep 就位）、净增 17KB；fence 语言 v0.45.0 已解析只差消费（markdownComponents codeFence 正门接入，「league/prism 类纯 Kotlin 方案」评估答案即此库）
+  - 落地条件与风险：user 气泡豁免（primary 背景预设色板不可读）+自建 M3 令牌 SyntaxTheme（键控动态色/AMOLED）+span 区间防御（官方 issue #415 反向区间崩溃先例，移植 HighlightBuilder 写法）；流式期大块高亮作业整块重启→快速流下停留纯色到 EOF（降级优雅不卡主线程）+完结换装一次纯色→着色 pop（#472 语义需评估）；json/yaml/html/sql 不在引擎语言表→静默纯色（不劣于现状）
+  - 2026-09-30 影响面分析完结（docs/research/2026-09-30-code-syntax-highlighting-impact-analysis.md）：路线修正——不引 -code 依赖（span 防御/M3 主题/打点三处定制全落其 v0.45.0 private 区，可见性直证），改仓库内自建组件（core public API MarkdownCodeFence + 已在依赖树的 highlights，~120 行 fork + CodeSyntaxTheme 映射纯函数 ~50 行）→ 零新依赖，UI 依赖禁令裁决面消失；user 气泡豁免是伪问题（用户消息走纯 Text 不进 MarkdownContent，PartContent.kt:144-154）
+  - 影响面总评：小切口多波及——必改 2 文件（build.gradle.kts 注释 + MarkdownContent.kt 三点位 ~40 行）+ 新增 2-3 文件 + 测试 2（~120 行），但 components 单例使高亮一次性波及 8 调用面（assistant 双路径/Reasoning 流式/工具卡×2/通知卡/压缩卡/预览对话框），与流式重启节律/高度引擎 Bold advance/主题 remember 键三套承重机制交叉；实施三批（S/S-M/M），批 1 真机判据复用 #487「50 行 Kotlin」高度单调性；顺带发现 FileViewer HighlightBuilder.kt:39 end+1 多染一字符存量偏差（#489 另立）
+  - 2026-09-30 阶段三处置：①块内 HTML 原文呈现已落地（custom 钩子覆写+真机 E2E 实证原文可见）④setext 维持 accepted-gap（卡原文语义，技术论证入 journal）②③方案文档 docs/research/2026-09-30-488-syntax-math-options.md——两裁决点待用户：②高亮走官方 renderer-code+highlights（新增两依赖）还是自写 top-5 lexer；③数学走降级+着色/标注升级还是维持现状
+  - 2026-09-30 ①块内 HTML 原文呈现用户验收通过（模块 C 演示『这算是对代码块的修复吧…没啥问题』——效果确认：HTML 内容以代码块样式展示原文，修复前整块隐形）；①就此收口，卡整体待 ②③两裁决点拍板后一并收尾
+  - 2026-09-30 用户裁决（②③双双拍板）：②代码高亮走仓库自建渲染壳——零新依赖（core 公共 API MarkdownCodeFence + 已在依赖树的 highlights 引擎，~170 行自建 + CodeSyntaxTheme M3 映射纯函数）；官方 -code 库因三处必需定制（span 越界防御/M3 令牌主题/流式观测打点）全落 v0.45.0 private 区被否，澄清要点=两路线同一引擎只差渲染壳
+  - ③数学渲染走方案 c：降级+标注升级（「公式」徽标明示局限 + 可选 \命令/花括号/上下标轻着色），零新依赖零架构变更，真排版留远期观察 KMM 生态；②③裁决既定，卡转回 [ ] 开工——实施按影响面分析三批（S/S-M/M），③可并入批 1 或随后小步
+  - 2026-10-01 批 1（最小着色）落地：自建壳 HighlightedCode.kt（fork -code v0.45.0，theme 入 produceState 键/每作业新建 Builder/区间守卫/CodeHL 打点四差异）+ CodeSyntaxTheme.kt（M3→SyntaxTheme 9 角色）+ MarkdownContent 三点位 + 单测 14 例；全量 3764 绿；真机 E2E 全判据过（流式逐批着色 ms≤27/MDResize 全正单调/守卫零触发/主题三态无残留/json 静默 spans=0）——journal 2026-10-01-488-syntax-highlight-shell 批 1 节；②余批 2（观察精修）/批 3（可选），③（数学标注）未开工
+  - 2026-10-01 批 1 用户验收通过（「ok 可以」）——②最小着色收口；同会话续开 ③数学降级+标注升级（方案 c：降级块「公式」徽标+可选轻着色）
+  - 2026-10-01 ③数学降级+标注升级落地：transform 产物围栏 tex→math（专属识别位，不误伤手写 tex 围栏）+ SafeHighlightedMathBlock（「公式」徽标 math_block_badge×15 语言 + \命令tertiary/花括号onSurfaceVariant/上下标secondary 手写轻着色，静态完结内容 remember 同步构建）+ 单测 12 例新增/transform 断言改标，全量绿+i18n 917 keys PASSED；真机 E2E（big-pickle 会话）：Code block, math 徽标块+dual族像素+vision 三色判读+亮色重建无残留+单美元守卫——journal 2026-10-01-488-syntax-highlight-shell ③节；环境坑：v1 无 zhipuai 凭据（新会话默认模型 401，改用既有 big-pickle 会话）；③ 就此收口待用户验收
+  - 2026-10-01 ③用户验收通过（「可以 我觉得可以暂时用这样的效果」）——降级+标注形态就此定局；批 2（观察精修）/批 3（可选语言标签+复制）维持挂卡随观察窗推进，不阻塞
+  - 2026-10-09 排程裁决：B3 收尾批（B2 狩猎批之后）；批 2 的 CodeHL 量化数据可从 B2 soak 日志白捡（mockllm code-long 语料 200 行 Kotlin 正好触发）；批 3① showHeader+a11y 本地化独立可做
+  - 2026-10-10 批 2 主体落地（色 pop 根修）：完结/冷看初值纯色→异步着色 pop 消除——同步初值（CAP 400，JVM 基准 1.3µs/char 实测定参）+ 进程级 CodeHighlightCache（LRU32，重看零成本）+ >400c 首看异步落缓存；code-review 抓回主题换色冻结真回归（skip 守卫同一性判定修复）。批 3① showHeader 仪器化三连测+live 定罪收口（含视口裁剪假阴性勘误）。验证链：JVM 3969/0 + lint 绿（顺带修 B1 遗留 #536 SpillNotice 正名 5 errors）+ 仪器化冻帧回归 + 模拟器 live（CodeHL=0 同步路径/重看 0 增量）。余项挂真机：§2.j 大块流式 CPU 量化、metadata/mark 视觉试验、AMOLED 真机面板、Bold advance 宽度、400-2000c 冷看首帧残余 pop 观感——journal 2026-10-01-488 §批2
+  - 2026-10-10 真机三腿收官：Bold advance 342 对加粗压测零扰动（不触发剔除映射）；§2.j 真机定案（35 作业总功 586ms≈0.6% 单核，ARM 8.4µs/char，CAP=400 帧预算内验证）；AMOLED 仪器腿 PASS（纯黑 0,0,0），面板体感留 V6 人工（设备已停在该页）。metadata/mark 视觉试验 + 400-2000c 首帧残余观感随 V6 观感窗一并
+  - 迁入依据：全项闭环：①块内HTML原文呈现+②语法高亮（批1最小着色/批2色pop根修+量化两项+Bold advance零扰动+AMOLED双面/批3①showHeader仪器化三连+live定罪含视口裁剪勘误/批3③语言覆盖维持现状）+③数学降级标注，均实现+验证+用户验收（最后一块=2026-10-10晨AMOLED面板体感'可以'）；setext stage-2 维持 accepted-gap 备查随卡归档；两观感余项转 #538 观察卡。验证链：JVM 3969/0、lint绿、仪器化子集全过、模拟器+真机双端live实证。（backlog.sh migrate 2026-10-10）
+
+### **#538 #488 观感窗顺带：metadata/mark 角色视觉 + 400-2000c 首帧残余 pop 观感** `markdown`
+  - 源自 #488 批2 收官余项（非缺陷）：① CodeSyntaxTheme 中 @注解 metadata 与 mark 两角色暂映射 tertiary，设计时标注'批2 视觉试验'——观感窗顺带过目是否有更优色；② 400-2000 字符代码块冷看首帧仍有一次纯色→着色 pop（同步阈值 CAP=400 为帧预算所限，JVM/ARM 基准证伪了研究文档 2000c 假设），重看已被缓存消除——观感可接受度顺带确认。无排期：下次用户过屏时顺带，不单独开工。
+  - 2026-10-10 演示材料就绪（用户「演示」口令，真机 houji+V2/GLM-4.6V）：双 KOTLIN 顶栏+复制（d538_04_top.png）；@注解×7 tertiary 观感（d538_05_annotations.png）；3734c 块冷看纯色窗~150ms（d538_pop.mp4 t1.95→2.10 + pop_1/pop_2 对比帧；CodeHL len=3734 lang=kotlin spans=496 ms=93；重看零新增=缓存命中）。证据 human-sim-10h/evidence/demo538/。待用户过目拍板①②观感
+  - 迁入依据：用户观感验收通过（2026-10-10 演示：双 KOTLIN 顶栏/tertiary 注解观感无异议；3734c 大块冷看纯色窗~150ms 可接受，400-2000c 带内更短；重看缓存命中零成本）——两项顺带观感均过，无后续动作（backlog.sh migrate 2026-10-10）

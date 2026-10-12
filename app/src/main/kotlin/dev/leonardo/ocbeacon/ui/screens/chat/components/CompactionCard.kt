@@ -145,6 +145,9 @@ internal fun CompactionNoticeCard(
         // #389 三轮c：内容栏 AnimatedVisibility（统一展开/收起动画）。
         // 有支持行＝内容常驻（null，正文走卡内 AV）；无支持行＝随展开态动画。
         contentExpanded = if (hasSupportRows) null else expanded,
+        // #540 全量接入：认领消息时间戳=稳定内容身份（0=尾部兜底无时间源——
+        // 瞬态卡不入店，键律禁常量键）
+        expandCacheKey = if (timeMs > 0) "compact-$timeMs" else null,
     ) {
         // 支持行：失败原因（排障优先）＋ #384 吸收的源命令结算
         if (!errorText.isNullOrBlank()) {
@@ -168,29 +171,44 @@ internal fun CompactionNoticeCard(
             )
         }
         // 展开体：Markdown 摘要，240dp 限高内滚（对齐思考卡 #2026-08-16 定档）
-        if (canExpand) {
-            CardExpandReveal(
-                visible = expanded,
+        // #543 根修（展开引擎唯一所有权）：无支持行分支 contentExpanded=expanded
+        // 已由 MessageBubble 内容栏 reveal 承担动画，此处**不得再嵌套 reveal**——
+        // 嵌套双引擎=同 toggle 双 episode 各锚 +H（同 H 双 LEAP=三跳瞬态，
+        // 判读轮真机定罪：6/6 toggle 恒成对 episode-start，journal §21）。
+        // 有支持行分支外层常驻（null），卡内 reveal 独享。
+        val expandableBody: @Composable () -> Unit = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 240.dp)
+                    .clipToBounds()
+                    .verticalScroll(rememberScrollState()),
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 240.dp)
-                        .clipToBounds()
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    androidx.compose.foundation.text.selection.SelectionContainer {
-                        MarkdownContent(
-                            markdown = body,
-                            textColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                                alpha = AlphaTokens.MUTED,
-                            ),
-                            isUser = false,
-                            // #461 同款防御:压缩卡 body 为静态文本(折叠展开区内,同 ε 窗竞态面)
-                            asyncParse = true,
-                        )
-                    }
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    MarkdownContent(
+                        // canExpand 建立的非空智能转换不进 lambda 赋值点——orEmpty 恒等
+                        markdown = body.orEmpty(),
+                        textColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                            alpha = AlphaTokens.MUTED,
+                        ),
+                        isUser = false,
+                        // #461 同款防御:压缩卡 body 为静态文本(折叠展开区内,同 ε 窗竞态面)
+                        asyncParse = true,
+                    )
                 }
+            }
+        }
+        if (canExpand) {
+            if (hasSupportRows) {
+                CardExpandReveal(
+                    visible = expanded,
+                    // #540 全量接入：同 expandCacheKey 源（认领消息时间戳）
+                    cacheKey = if (timeMs > 0) "compact-$timeMs" else null,
+                ) {
+                    expandableBody()
+                }
+            } else {
+                expandableBody()
             }
         }
     }

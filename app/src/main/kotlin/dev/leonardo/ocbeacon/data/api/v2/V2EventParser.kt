@@ -150,7 +150,12 @@ class V2EventParser(private val json: Json) : SseEventParser {
         // 与"服务器真实完成"混为一谈（后者才是 snackbar 的正确触发时机）。
         if (eventType == "session.compaction.ended") {
             val sid = sessionIdOrNull(props) ?: return null
-            return SseEvent.SessionCompacted(sessionId = sid)
+            // #539 ①B：现网 2.0.26 ended 成功 payload 含全文摘要 text——随事件透传
+            //（消费链现仍走 REST 刷新；建模锁契约供未来分割线直连）。
+            return SseEvent.SessionCompacted(
+                sessionId = sid,
+                summary = props["text"]?.jsonPrimitive?.contentOrNull,
+            )
         }
         // 2026-08-19：压缩文本流式增量——映射 CompactionDelta（handler 无状态
         // 变更已跟踪；消灭 Unhandled 日志噪音，保持事件可观察 + 心跳计数）。

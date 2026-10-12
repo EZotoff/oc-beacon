@@ -75,9 +75,8 @@ private val V2_IGNORABLE: Map<String, String> = mapOf(
     "team/member" to DshIgnoreReason.PLUGIN_DOMAIN,
     "team/message/delivered" to DshIgnoreReason.PLUGIN_DOMAIN,
     "team/message/queued" to DshIgnoreReason.PLUGIN_DOMAIN,
-    // tool-workflow 阶段明细（run-start/end 已映射为 synthetic 卡）
-    "tool-workflow/agent-start" to DshIgnoreReason.WORKFLOW_AGENT,
-    "tool-workflow/agent-end" to DshIgnoreReason.WORKFLOW_AGENT,
+    // tool-workflow 四事件 2026-10-09（#288）起全部消费（run 级聚合卡）——
+    // agent-start/end 的已知忽略声明随之退役（载荷缺 runId/seq 时由 mapper 判 MALFORMED）
     // Mux 帧类型混入历史行（B.4 防御）
     "session/projection" to DshIgnoreReason.PROJECTION,
     "session/jobs" to DshIgnoreReason.JOBS,

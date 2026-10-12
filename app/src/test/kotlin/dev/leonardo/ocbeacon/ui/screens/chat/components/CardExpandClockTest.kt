@@ -259,39 +259,6 @@ class CardExpandClockTest {
         assertEquals(0f, c.advance(c.fraction))
     }
 
-    // ===== #424 闭环位置恢复判定 =====
-
-    /** 上漂(实测高于锚)→ 正向修正 δ(与展开 dispatch 同号:内容下移回锚)。 */
-    @Test
-    fun endCorrectionPositiveWhenContentDriftedUp() {
-        assertEquals(98f, episodeEndCorrection(934f, 836f, userScrollCancelled = false)!!, 0.01f)
-    }
-
-    /** 下漂 → 负向修正。 */
-    @Test
-    fun endCorrectionNegativeWhenContentDriftedDown() {
-        assertEquals(-120f, episodeEndCorrection(800f, 920f, userScrollCancelled = false)!!, 0.01f)
-    }
-
-    /** 偏差 <1px → 0(免无意义 dispatch),非 null。 */
-    @Test
-    fun endCorrectionZeroBelowThreshold() {
-        assertEquals(0f, episodeEndCorrection(934f, 934.5f, userScrollCancelled = false)!!, 0.01f)
-    }
-
-    /** 用户滚动取消 → 不修(阅读位置优先权铁律)。 */
-    @Test
-    fun endCorrectionSkippedWhenUserScrolled() {
-        assertNull(episodeEndCorrection(934f, 500f, userScrollCancelled = true))
-    }
-
-    /** 坐标缺失(首组合同帧未挂位置)→ 不修。 */
-    @Test
-    fun endCorrectionSkippedWhenCoordinatesMissing() {
-        assertNull(episodeEndCorrection(Float.NaN, 500f, userScrollCancelled = false))
-        assertNull(episodeEndCorrection(934f, Float.NaN, userScrollCancelled = false))
-    }
-
     /**
      * #424 连点竞态:反向 toggle 中途重定向(tween 未完即回摆再展开)——
      * 账本 telescoping 不变量 Σδ == 终report − 初report 必须成立,

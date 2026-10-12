@@ -516,6 +516,9 @@ class SseConnectionManager @Inject constructor(
                 // recoverMessages（REST 全量重拉）而走 DSH reconciler（subscribed
                 // 基线 → seq 缺口 → session.history 精确回填，§1.6-5）。
                 val strategy = adapters.connectionStrategy(conn)
+                // #512+#534：凭据源每轮刷新沉入 strategy 连接前钩子（默认 no-op，
+                // DSH 实现刷新密码提示）——通用连接壳不再见服务器类型
+                strategy.onConnectPrepare(conn, server.password)
                 // #391 切片6：两种线面统一先做一次握手——OpenCode 为投影型（ApiVersionDetector
                 // 双探结果已在健康检查持久化，此处恒 ONLINE，仅 degraded 态可观测），
                 // DSH 为 0.1.2 双形态探测（版本×鉴权），其 AUTH_REQUIRED/UNREACHABLE 在下方分派。
@@ -527,9 +530,10 @@ class SseConnectionManager @Inject constructor(
                     when (handshake.status) {
                         dev.leonardo.ocbeacon.data.adapter.ConnectionStatus.AUTH_REQUIRED -> {
                             updateServerConnected(server.id, false)
-                            // #436：持久化 token 自动重交换——服务器重启/cookie 失效零人工恢复
+                            // #436+#512：凭据自愈回落链——免密/密码铸票 → 持久化 token
+                            // 重交换（服务器重启/cookie 失效/密码轮换零人工恢复）
                             if (dshConnectionRegistry.recoverAuth(conn.baseUrl)) {
-                                AppLogger.i(TAG, "DSH auth required — persisted token re-exchanged: " + server.displayName)
+                                AppLogger.i(TAG, "DSH auth required — fallback chain recovered: " + server.displayName)
                                 if (!connections.containsKey(server.id)) break
                                 continue
                             }

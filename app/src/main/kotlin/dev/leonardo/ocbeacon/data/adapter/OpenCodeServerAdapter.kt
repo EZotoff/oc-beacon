@@ -83,8 +83,11 @@ class OpenCodeServerAdapter @Inject constructor(
         add(ServerFeatures.MESSAGE_DELETE)
         if (conn.apiVersion.isV2) {
             add(ServerFeatures.SESSION_BACKGROUND)
+            // V2 beta 无 todo 路由（404 实测）——TODOS 静态缺席，由 ChatViewModel
+            // 端点探测成功后折入（V2 dev 分支已重新实现 todo，静态判不了）。
         } else {
             add(ServerFeatures.SESSION_SHARE)
+            add(ServerFeatures.TODOS)
         }
     }
 

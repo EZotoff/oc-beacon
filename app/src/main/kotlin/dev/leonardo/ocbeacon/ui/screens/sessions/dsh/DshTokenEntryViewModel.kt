@@ -50,19 +50,38 @@ class DshTokenEntryViewModel @Inject constructor(
     private val _exchange = MutableStateFlow<ExchangeState>(ExchangeState.Idle)
     val exchange: StateFlow<ExchangeState> = _exchange.asStateFlow()
 
-    /** 用户提交粘贴内容（URL/启动行/裸 token 三形态）→ 解析 → 交换。 */
+    /**
+     * 用户提交输入（访问密码 / 启动行 / URL / 裸 token 四形态）→ 交换。
+     *
+     * #512 验收补口（2026-10-07 干跑定罪）：插件密码**优先**——Bearer=<输入> 铸票
+     * 成功即 cookie 入注册表（连接循环 awaitCookie 轮询自动续行）并把密码落
+     * ServerConfig.password（回落链后续重连的持久凭据源；插件密码不 trim，精确
+     * 字节提交）；失败回落 legacy 令牌交换（无插件服务器仍走 token/URL 提取）。
+     */
     fun submit(raw: String) {
         val token = extractDshToken(raw)
-        if (token == null) {
+        if (token == null && raw.isBlank()) {
             _exchange.value = ExchangeState.Rejected
             return
         }
         _exchange.value = ExchangeState.Exchanging
         viewModelScope.launch {
-            val base = serverRepository.getServer(serverId)
-                ?.let { ServerConnection.from(it).baseUrl }
-                ?.takeIf { it.isNotBlank() }
+            val server = serverRepository.getServer(serverId)
+            val base = server?.let { ServerConnection.from(it).baseUrl }?.takeIf { it.isNotBlank() }
             if (base == null) {
+                _exchange.value = ExchangeState.Rejected
+                return@launch
+            }
+            // ① 插件密码铸票（dsh-password-login /session，Bearer=密码）
+            if (dshConnectionRegistry.mintSessionWithPassword(base, raw)) {
+                if (server != null && server.password != raw) {
+                    serverRepository.updateServer(server.copy(password = raw))
+                }
+                _exchange.value = ExchangeState.Idle
+                return@launch
+            }
+            // ② 回落：legacy 令牌交换（/?token= 303 握手）
+            if (token == null) {
                 _exchange.value = ExchangeState.Rejected
                 return@launch
             }

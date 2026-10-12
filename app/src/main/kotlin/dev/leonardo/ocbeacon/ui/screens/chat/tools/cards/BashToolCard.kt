@@ -1,5 +1,6 @@
 package dev.leonardo.ocbeacon.ui.screens.chat.tools.cards
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +31,9 @@ import dev.leonardo.ocbeacon.domain.model.Part
 import dev.leonardo.ocbeacon.domain.model.ToolState
 import dev.leonardo.ocbeacon.ui.components.AmoledDefaultBorder
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.extractToolInput
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpillNotice
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpillNoticeMatcher
+import dev.leonardo.ocbeacon.ui.screens.chat.tools.SpillNoticeBanner
 import dev.leonardo.ocbeacon.ui.screens.chat.tools.extractToolOutput
 import dev.leonardo.ocbeacon.ui.screens.chat.util.codeHorizontalScroll
 import dev.leonardo.ocbeacon.ui.screens.chat.util.halfScreenHeight
@@ -47,8 +51,7 @@ import dev.leonardo.ocbeacon.ui.screens.chat.tools.timingStartMs
 /** #135（D2-L43）：ANSI 转义序列剥离正则——顶层预编译（原每次重组现场编译）。 */
 private val ANSI_ESCAPE_REGEX = Regex("\u001B\\[[0-9;]*[a-zA-Z]")
 
-/** #106-4（#8 提示条）：截断路径提取正则——顶层预编译（原 remember(displayText) 内现场编译）。 */
-private val OUTPUT_TRUNCATION_PATH_REGEX = Regex("""output truncated[\s\S]*?(?:saved to|Full output saved to:)\s*(\S+)""")
+/** #539 ⑤A：截断路径提取正则迁 TruncationSignal.kt（纯函数，单测覆盖）。 */
 
 /**
  * Bash 工具卡片 —— 显示 $ 命令 + 输出（2 行布局，2026-08-11 用户要求：
@@ -64,13 +67,20 @@ private val OUTPUT_TRUNCATION_PATH_REGEX = Regex("""output truncated[\s\S]*?(?:s
 internal fun BashToolCard(
     tool: Part.Tool,
     isExpanded: Boolean,
-    onToggleExpand: () -> Unit
+    onToggleExpand: () -> Unit,
+    /** #539 ⑤B：截断提示「查看全文」→ ChatScreen FileViewer 拉服务器落盘全文
+     *（V2 /api/fs/read 双斜杠绝对路径 200 实证；V1 /file/content 项目外 500 →
+     * viewer 既有错误提示兜底；DSH 无路径信号自然无按钮）。null 时隐藏动作。 */
+    onOpenFile: ((filePath: String) -> Unit)? = null,
 ) {
     val isAmoled = isAmoledTheme()
     val input = extractToolInput(tool)
     val command = input["command"]?.jsonPrimitive?.contentOrNull ?: ""
     val output = extractToolOutput(tool)
-    val cleanedOutput = output.replace(ANSI_ESCAPE_REGEX, "")
+    // #536：DSH spill 通知——展示层剥离尾部通知块（数据保真不动），横幅另行提示；
+    // 与下方 OpenCode 截断约定（output truncated…saved to）并存，两服务器拼写不同。
+    val spillNotice = remember(output) { SpillNoticeMatcher.match(output) }
+    val cleanedOutput = SpillNoticeMatcher.previewOf(output).replace(ANSI_ESCAPE_REGEX, "")
     val displayText = buildString {
         if (command.isNotBlank()) {
             append("$ $command")
@@ -170,25 +180,71 @@ internal fun BashToolCard(
             }
         }
     ) {
+        // #536 E2E 定罪修正：scaffold 的 expandedContent 容器是 Box（竖线 drawBehind
+        // 宿主）——横幅×2 + Surface 作为 Box 子元素会 top-start 叠放（横幅画在正文
+        // 首行之上，2026-10-09 /tmp/536-e2e/08 实证）。本卡多子元素须自带 Column
+        // 纵向排布（其余三卡 WebFetch/Search/Glob 展开内容已有 Column，无此问题）。
+        Column {
         val halfScreenHeight = halfScreenHeight()
         val scrollState = rememberScrollState()
         // 2026-08-16（#8 根治呈现）：服务器对 shell/bash 输出有意保尾截头
         //（官方 shell.ts：progress 超 30K 字符 slice(-30000)；终态超 2000 行/
-        // 50KB 加 "...output truncated...\n\nFull output saved to: <path>"）。
-        // 检测该前缀显示提示条——把截断事实告知用户而非静默缺开头。
-        val truncationPath = remember(displayText) {
-            val m = OUTPUT_TRUNCATION_PATH_REGEX.find(displayText)
-            m?.groupValues?.get(1)
+        // 50KB 截断）。#539 ⑤A（2026-10-10）：信号源三层优先——结构化
+        // outputPaths > metadata.truncated 旗标（现网 2.0.26 在席实证）> 文本
+        // 约定（现网尾行 "… of N; full output saved to <path>"——旧前缀拼写
+        // 在现网从不出现，只走文本匹配时提示条从不触发）。
+        val completedState = tool.state as? ToolState.Completed
+        val structuredPaths = completedState?.outputPaths
+        val truncationPath = remember(displayText, structuredPaths) {
+            TruncationSignal.path(structuredPaths, displayText)
         }
-        val isTruncated = remember(displayText) {
-            displayText.contains("output truncated") || displayText.startsWith("...")
+        // #536：spill 通知在席时抑制本横幅——DSH 预览正文内层还带子进程级
+        // "output truncated; full output: <path>" 标记，会误触发本约定（其路径
+        // 正则不匹配该拼写→空 %1$s），双横幅叠加且一条空路径；spill 横幅语义
+        // 已覆盖「输出被服务器截断」事实，内层标记留在正文原样呈现。
+        val isTruncated = remember(displayText, spillNotice, structuredPaths, completedState) {
+            TruncationSignal.isTruncated(
+                structuredPaths,
+                completedState?.metadata,
+                displayText,
+                spillNotice != null,
+            )
         }
         if (isTruncated) {
-            Text(
-                text = stringResource(dev.leonardo.ocbeacon.R.string.chat_output_truncated, truncationPath ?: ""),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.tertiary,
-                modifier = Modifier.padding(top = SpacingTokens.XS.dp, start = SpacingTokens.XS.dp, end = SpacingTokens.XS.dp)
+            // #539：路径不可解析（冷恢复 Room 500c 预览不含服务器尾行/outputPaths
+            // 未随 part 落库）→ 无路径变体文案，避免「已保存至：」悬空冒号。
+            // ⑤B：路径在手且 onOpenFile 可用 → 「查看全文」动作（FileViewer 全文）。
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = SpacingTokens.XS.dp, start = SpacingTokens.XS.dp, end = SpacingTokens.XS.dp),
+            ) {
+                Text(
+                    text = if (truncationPath != null) {
+                        stringResource(dev.leonardo.ocbeacon.R.string.chat_output_truncated, truncationPath)
+                    } else {
+                        stringResource(dev.leonardo.ocbeacon.R.string.chat_output_truncated_no_path)
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.weight(1f),
+                )
+                val path = truncationPath
+                if (path != null && onOpenFile != null) {
+                    Text(
+                        text = stringResource(dev.leonardo.ocbeacon.R.string.chat_output_view_full),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier
+                            .clickable { onOpenFile.invoke(path) }
+                            .padding(start = SpacingTokens.SM.dp, top = 2.dp, bottom = 2.dp),
+                    )
+                }
+            }
+        }
+        if (spillNotice != null) {
+            SpillNoticeBanner(
+                notice = spillNotice,
+                modifier = Modifier.padding(top = SpacingTokens.XS.dp),
             )
         }
         Surface(
@@ -209,6 +265,7 @@ internal fun BashToolCard(
                         .codeHorizontalScroll()
                 )
             }
+        }
         }
     }
 }

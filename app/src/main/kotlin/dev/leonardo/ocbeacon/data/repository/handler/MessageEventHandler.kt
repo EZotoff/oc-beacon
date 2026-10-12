@@ -541,10 +541,30 @@ class MessageEventHandler @Inject constructor(
         // 线面 block-start 空种子被 #230 零信息丢弃后，part 只能由下方 applyDelta
         // idx<0 兜底在热视图出生——出生是结构事实（列表条目新增），与纯文本
         // 增长（走 bus，结构性静默）必须区分对待。
+        // #513 补充基准：空种子**已注册**族（V1 part.updated 以空文本种子直接
+        // 注册，#230 不弃）的首次落文本——渲染条目从「无内容可渲染」（装配/
+        // PartContent 的 isNotBlank 门）到「存在」同为结构事实；不桥则该 part
+        // 整个流式期无渲染条目，完结 part.updated 全文才砸出（真机三层定罪：
+        // bus live 流转正常而 liveFor 订阅迟至完结才建立）。
+        val busEnabled = dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled
+        val touchedMessages = effective.map { it.messageId }.toSet()
         val birthBaseline: Map<String, Set<String>> =
-            if (dev.leonardo.ocbeacon.ui.screens.chat.components.StreamingDeltaBus.enabled) {
-                effective.map { it.messageId }.toSet().associateWith { id ->
+            if (busEnabled) {
+                touchedMessages.associateWith { id ->
                     _parts.value[id]?.mapTo(mutableSetOf()) { it.id } ?: mutableSetOf()
+                }
+            } else emptyMap()
+        val firstTextBaseline: Map<String, Set<String>> =
+            if (busEnabled) {
+                touchedMessages.associateWith { id ->
+                    _parts.value[id]?.mapNotNullTo(mutableSetOf()) { p ->
+                        val blank = when (p) {
+                            is Part.Text -> p.text.isBlank()
+                            is Part.Reasoning -> p.text.isBlank()
+                            else -> false
+                        }
+                        if (blank) p.id else null
+                    } ?: mutableSetOf()
                 }
             } else emptyMap()
 
@@ -584,10 +604,27 @@ class MessageEventHandler @Inject constructor(
             // assistant/message 前看不到该 part——正文整段流式期不可见、完结才
             // 整段砸出（真机定罪 2026-10-02）。出生每 part 一次（低频），纯文本
             // 增长仍只走 bus——「delta 批结构性静默」不变量不破。
+            // #513（2026-10-05）：first-text 过桥——V1 空种子注册族（part.updated
+            // 空文本出生、非 #230 丢弃族）首块文本落位时桥一次：渲染条目的存在
+            // 性在此刻才翻转（isNotBlank 门），与 part-birth 同语义低频结构事实；
+            // 其后纯文本增长仍只走 bus，静默不变量不破。
             val born = birthBaseline.any { (id, before) ->
                 _parts.value[id]?.any { it.id !in before } == true
             }
-            if (born) publishStructural("part-birth")
+            if (born) {
+                publishStructural("part-birth")
+            } else {
+                val firstText = firstTextBaseline.any { (id, blanks) ->
+                    _parts.value[id]?.any { p ->
+                        p.id in blanks && when (p) {
+                            is Part.Text -> p.text.isNotBlank()
+                            is Part.Reasoning -> p.text.isNotBlank()
+                            else -> false
+                        }
+                    } == true
+                }
+                if (firstText) publishStructural("first-text")
+            }
         }
 
         // SSE 双写：#97（H-6）增量落盘——本批 delta 只追加到对应 part 行
@@ -687,6 +724,26 @@ class MessageEventHandler @Inject constructor(
                         event.info,
                         MessageMergeEngine.mergeAssistantMeta(existing, event.info),
                     )
+                } else if (existing is Message.User && event.info is Message.User) {
+                    // #524：user 行 created 单调防线（SSE/DSH live 域）——DSH journal
+                    // 对 prompt entry 的完结 touch 事件信封 time=touch 时刻（deliverables/
+                    // turn 关联），原整替换把 created 后移到完结时刻 → 提问行翻到输出
+                    // 之下（「回复出现在我消息上方」真机定罪）。REST 合并域不设此防线
+                    // （#485 V2 须采纳更晚的 REST 权威值）——见 earliestCreated KDoc
+                    // 的适用边界。
+                    val kept = MessageMergeEngine.earliestCreated(existing.time.created, event.info.time.created)
+                    if (kept != event.info.time.created) {
+                        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                            AppLogger.w(
+                                TAG,
+                                "[524-guard] block created backshift " + event.info.id.takeLast(14) +
+                                    " " + existing.time.created + "<-" + event.info.time.created,
+                            )
+                        }
+                        event.info.copy(time = event.info.time.copy(created = kept))
+                    } else {
+                        event.info
+                    }
                 } else {
                     event.info
                 }
@@ -982,7 +1039,41 @@ class MessageEventHandler @Inject constructor(
             if (fromIdx < 0) return@update current  // 幂等 no-op（已换/从未在场）
             if (msgs.any { it.id == event.toId }) {
                 // 双源并入：toId 行保留（Room 权威种子），fromId 行撤下
+                val fromRow = msgs[fromIdx]
                 msgs.removeAt(fromIdx)
+                // #524：并入保发送时刻——fromId 为 pending-*（乐观播种，created=
+                // 客户端发送时刻）时，权威行 created 取 min：DSH journal 的 prompt
+                // entry 信封 time=落盘时刻，原生晚于 turn 首输出（实测 -23 晚
+                // 0.65s），原并入直接采纳会把提问行排到首段输出之下（「回复出现
+                // 在我消息上方」的次级形态）。created 变早时按序移位（列表
+                // created 升序不变量）。V2（#485）方向相反（REST 权威更早），min
+                // 语义下权威早值照常采纳，不受影响。
+                val toIdx = msgs.indexOfFirst { it.id == event.toId }
+                val toRow = msgs.getOrNull(toIdx)
+                if (toRow is Message.User && fromRow is Message.User &&
+                    fromRow.id.startsWith("pending-") && fromRow.time.created > 0
+                ) {
+                    val kept = MessageMergeEngine.earliestCreated(fromRow.time.created, toRow.time.created)
+                    if (kept != toRow.time.created) {
+                        if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                            AppLogger.w(
+                                TAG,
+                                "[524-swap] keep send-time created " + event.toId.takeLast(14) +
+                                    " " + toRow.time.created + "->" + kept,
+                            )
+                        }
+                        val fixed = toRow.copy(time = toRow.time.copy(created = kept))
+                        msgs.removeAt(toIdx)
+                        val key = fixed.time.created
+                        var lo = 0
+                        var hi = msgs.size
+                        while (lo < hi) {
+                            val mid = (lo + hi) ushr 1
+                            if (msgs[mid].time.created <= key) lo = mid + 1 else hi = mid
+                        }
+                        msgs.add(lo, fixed)
+                    }
+                }
             } else {
                 val row = msgs[fromIdx]
                 msgs[fromIdx] = when (row) {
@@ -1212,6 +1303,22 @@ class MessageEventHandler @Inject constructor(
         //（本 update 已携全量累积）经 structuralParts 发布（dispatch 尾），
         // live 让位防陈旧覆盖。
         clearTerminalLiveParts(messageId)
+        // #518②（2026-10-05）：终态 part 权威落盘——text/reasoning 的 ended 全量
+        // 值（V2 session.text.ended / V1 完结 part.updated 携累积全文）此前只进
+        // 内存+bus，Room 停在增量追加链断点（真机 V2 定罪：1334/3122 截断）。
+        // 「ended 时全量覆盖」自 #97 H-6 设计以来未接线（updatePartText 死码）。
+        // 经 persistSseUpdate 全量 upsert 落盘（骨架+parts 同事务）；仅终态
+        //（time.end 非空）触发——V1 流中快照 part.updated 高频且 end 为空，
+        // 增量链零写放大。
+        val endedPart = event.part
+        val partEnded = when (endedPart) {
+            is Part.Text -> endedPart.time?.end != null
+            is Part.Reasoning -> endedPart.time?.end != null
+            else -> false
+        }
+        if (partEnded) {
+            persistSseUpdate(endedPart.sessionId, listOf(messageId))
+        }
     }
 
     /**

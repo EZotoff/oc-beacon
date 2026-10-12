@@ -17,6 +17,9 @@ class DshWorkspacePort(
     override suspend fun archiveSession(conn: ServerConnection, sessionId: String): List<String> =
         dsh.archiveSession(conn, sessionId)
 
+    override suspend fun unarchiveSession(conn: ServerConnection, sessionId: String): List<String> =
+        dsh.unarchiveSession(conn, sessionId)
+
     override suspend fun listSessionsIncludingBlank(conn: ServerConnection): List<Session> =
         dsh.listSessionsIncludingBlank(conn)
 }

@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -105,18 +106,25 @@ internal fun PartContent(
     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
         android.os.Trace.beginSection(partTraceName(part))
     }
-    PartContentInner(
-        part = part,
-        textColor = textColor,
-        isUser = isUser,
-        onViewSubSession = onViewSubSession,
-        turnAgentName = turnAgentName,
-        onOpenFile = onOpenFile,
-        onViewTool = onViewTool,
-        markdownStateOverride = markdownStateOverride,
-        preParsedState = preParsedState,
-        asyncParse = asyncParse,
-    )
+    // #540 全量接入：part 域展开卡的默认缓存键（part.id 跨毕业稳定——#509 宿主
+    // 前缀）。ToolCardScaffold/直调 reveal 的 part 域卡以「显式参数 ?: 本 local」
+    // 取键入 #533 进程级 floor；键律见 LocalCardExpandCacheKey KDoc。
+    androidx.compose.runtime.CompositionLocalProvider(
+        dev.leonardo.ocbeacon.ui.screens.chat.components.LocalCardExpandCacheKey provides part.id,
+    ) {
+        PartContentInner(
+            part = part,
+            textColor = textColor,
+            isUser = isUser,
+            onViewSubSession = onViewSubSession,
+            turnAgentName = turnAgentName,
+            onOpenFile = onOpenFile,
+            onViewTool = onViewTool,
+            markdownStateOverride = markdownStateOverride,
+            preParsedState = preParsedState,
+            asyncParse = asyncParse,
+        )
+    }
     if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
         android.os.Trace.endSection()
     }
@@ -178,9 +186,38 @@ private fun PartContentInner(
                             dev.leonardo.ocbeacon.logging.AppLogger.d(
                                 "B3",
                                 "text live " + (if (liveText != null) "override" else "fallback") +
-                                    " part=" + part.id.takeLast(14) + " — bus 快通道/参数对账源切换事实",
+                                    " part=" + part.id + " — bus 快通道/参数对账源切换事实",
                             )
                         }
+                    }
+                    // #517 GapDiag：终态旗标运行时取证（DEBUG-only 探针）
+                    val gapCarrier = dev.leonardo.ocbeacon.ui.screens.chat.markdown
+                        .endsWithBlockGapCarrier(part.text)
+                    // #518①：内容终态推导——①bus 覆盖曾建立后消失（流经本进程、
+                    // 完结让位）②会话空闲且无覆盖（冷组合的已完结 part——
+                    // shardHold 冷续 pilot 同样存在扣留尾）。两者任一即终态。
+                    // #523 G2（终态判定的数据源修正）：③数据层终态（time.end 非空
+                    //——完结权威已落位，end 后无合法增量，#266 终态守卫同语义）
+                    // 优先于 ①②——①② 依赖 liveText/会话投影的组合时序，重建实例
+                    // 首帧（collectAsState initial=null 尚未发射、idle 投影未传播）
+                    // 会误判 false → pilot 首跑走限速慢铺而非 #518① 单帧追平
+                    //（真机 r1：734+400+332 三帧 196ms 爬升）。part 对象在组合帧
+                    // 即携带权威 time.end，不依赖时序。
+                    val dataTerminal = part.time?.end != null
+                    val liveSeen = remember(part.id) { androidx.compose.runtime.mutableStateOf(false) }
+                    if (liveText != null) liveSeen.value = true
+                    val contentTerminal = dataTerminal || (liveText == null &&
+                        (liveSeen.value || !LocalSessionStreaming.current))
+                    if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                        dev.leonardo.ocbeacon.logging.AppLogger.d(
+                            "GapDiag",
+                            "part=" + part.id.takeLast(8) +
+                                " live=" + (liveText != null) +
+                                " carrier=" + gapCarrier +
+                                " trim=" + (liveText == null && gapCarrier) +
+                                " terminal=" + contentTerminal +
+                                " len=" + part.text.length,
+                        )
                     }
                     SelectionContainer {
                         MarkdownContent(
@@ -191,6 +228,14 @@ private fun PartContentInner(
                             preParsedState = preParsedState,
                             asyncParse = asyncParse,
                             shardCtl = shardCtl,
+                            // #517：终态（live 覆盖退场）且末块为代码/公式载体时
+                            // 修剪块 bottom 外距——内容→统计栏间隙与 user 侧对齐
+                            trimTrailingBlockGap = liveText == null && gapCarrier,
+                            // #518①：终态全量揭示旗标（pilot gate 拒绝即放行）
+                            contentTerminal = contentTerminal,
+                            // #486 根修：msgId 级曾流式账本键——组合位销毁后
+                            // 冷重入再入 pilot（coldReveal 单帧），消除 Loading 空窗
+                            everKey = part.messageId,
                         )
                     }
                 }
@@ -222,14 +267,41 @@ private fun PartContentInner(
                 val toolStatesFlow = LocalToolExpandedStates.current
                 val onToggleToolExpanded = LocalOnToggleToolExpanded.current
                 val expandReasoningDefault = LocalExpandReasoning.current
-                val rbExpanded = toolExpandedOrDefault(part.id, expandReasoningDefault)
-                androidx.compose.runtime.LaunchedEffect(part.id, rbExpanded) {
-                    dev.leonardo.ocbeacon.logging.AppLogger.w(
-                        "RB-EXP",
-                        "[DEBUG-rbexp] RB id=" + part.id.takeLast(8) + " expanded=" + rbExpanded +
-                            " mapHit=" + (toolStatesFlow.value[part.id] != null) +
-                            " default=" + expandReasoningDefault
-                    )
+                // #547：展开态稳定键（派生 id 内嵌宿主前缀，多消息 turn 重组换宿主
+                // 即漂移 → map 脱靶静默收起）；读/写同键，跨重组/跨流式增长恒等。
+                val rbStateKey = dev.leonardo.ocbeacon.ui.screens.chat.util.ExpandStateKeys.forPart(part.id, part.text)
+                // #547 别名收养：键演化（增长跨指纹窗/空白直通→首内容）时旧键状态
+                // 单向迁移到新键——组合期同步执行（LaunchedEffect 晚一帧=一帧假塌缩，
+                // #540 四报组合期同步注册同款先例）。幂等（新键有值不覆盖）。
+                val onMigrateExpandAlias = dev.leonardo.ocbeacon.ui.screens.chat.util.LocalOnMigrateExpandAlias.current
+                var rbLastKey by androidx.compose.runtime.remember(part.id) {
+                    androidx.compose.runtime.mutableStateOf(rbStateKey)
+                }
+                val rbKeyJustChanged = rbLastKey != rbStateKey
+                if (rbKeyJustChanged) {
+                    onMigrateExpandAlias(rbLastKey, rbStateKey)
+                    rbLastKey = rbStateKey
+                }
+                // 键切换帧读 StateFlow 权威值（migrate 同步写已完成；collectAsState
+                // 镜像下一帧才跟上——读镜像=一帧假塌缩，驱动盒方向翻转的复活入口）。
+                val rbExpanded = if (rbKeyJustChanged) {
+                    toolStatesFlow.value[rbStateKey] ?: expandReasoningDefault
+                } else {
+                    toolExpandedOrDefault(rbStateKey, expandReasoningDefault)
+                }
+                // #540 身份稳定性探针（勘察轮纠偏：原无条件 W 级违「探针 DEBUG-only」
+                // 裁决且 release 泄漏）——降 D 级并加守卫。
+                if (dev.leonardo.ocbeacon.BuildConfig.DEBUG) {
+                    androidx.compose.runtime.LaunchedEffect(part.id, rbStateKey, rbExpanded) {
+                        dev.leonardo.ocbeacon.logging.AppLogger.d(
+                            "RB-EXP",
+                            // #547 N2：完整 id（takeLast(8) 前缀盲——r13 靠 mapHit 塌缩才定罪）
+                            "[DEBUG-rbexp] RB id=" + part.id + " key=" + rbStateKey +
+                                " expanded=" + rbExpanded +
+                                " mapHit=" + (toolStatesFlow.value[rbStateKey] != null) +
+                                " default=" + expandReasoningDefault
+                        )
+                    }
                 }
                 // #442 B案（B4）：推理流式同走 bus 快通道——重组收敛到本块
                 //（combine/ChatMessageList 静默后块内 Text 重排版=必要工作面）。
@@ -254,7 +326,7 @@ private fun PartContentInner(
                 ReasoningBlock(
                     text = liveReasoning ?: part.text,
                     isExpanded = rbExpanded,
-                    onToggleExpand = { onToggleToolExpanded(part.id, expandReasoningDefault) },
+                    onToggleExpand = { onToggleToolExpanded(rbStateKey, expandReasoningDefault) },
                     durationMs = reasoningDuration,
                     isStreaming = isStreaming,
                     startTimeMs = startTimeMs,

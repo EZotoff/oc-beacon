@@ -50,4 +50,13 @@ class ServerActionRegistryTest {
         assertEquals(setOf(ServerActionSurface.CHAT_FAB), registry.registeredSurfaces())
         assertTrue(registry.actions(ServerActionSurface.CHAT_FAB, caps(emptySet())).isNotEmpty())
     }
+
+    /** #495：真实模块接线钉死——TODO 入口不再两面通用，需 TODOS 能力位。 */
+    @Test
+    fun `chat FAB TODO contribution requires TODOS capability`() {
+        val todo = dev.leonardo.ocbeacon.ui.screens.chat.ChatFabActionsModule.chatFabTodo()
+        assertEquals(ServerActionSurface.CHAT_FAB, todo.surface)
+        assertEquals("TODO", todo.actionId)
+        assertEquals(ServerFeatures.TODOS, todo.requiredFeature)
+    }
 }

@@ -4,7 +4,7 @@
     
     <!-- Home Screen -->
     <string name="home_title">OC Beacon</string>
-    <string name="home_add_server">Add Server</string>
+    <string name="home_add_server">Add server</string>
     <string name="home_no_servers">No servers configured</string>
     <string name="home_server_health_good">Connected</string>
     <string name="home_connect">Connect</string>
@@ -17,14 +17,18 @@
     <string name="home_battery_message">Background connections may be killed. Tap to disable optimization.</string>
     
     <!-- Server Management -->
-    <string name="server_name">Server Name</string>
+    <string name="server_name">Server name</string>
     <string name="server_name_hint">My OpenCode Server</string>
     <string name="server_url">Server URL</string>
     <string name="server_url_hint">http://192.168.1.100:4199</string>
     <string name="server_url_example">e.g. http://192.168.0.10:4199 or https://my-server:443</string>
     <string name="server_type_opencode">OpenCode</string>
     <string name="server_type_dsh">DSH</string>
-    <string name="server_type_dsh_hint">No username or password needed. For a USB connection, run adb reverse tcp:3080 tcp:3080 first</string>
+    <string name="dsh_plugin_hint_icon">About the password plugin</string>
+    <string name="dsh_plugin_hint_title">Password plugin</string>
+    <string name="dsh_plugin_hint_message">Install the dsh-password-login plugin on your DSH server to log in with an access password — no token fishing from server logs. See the README for installation steps.</string>
+    <string name="dsh_plugin_hint_link">Installation guide (GitHub)</string>
+    <string name="server_type_dsh_hint">Optional access password: leave empty to enter it from the banner after connecting. For USB, run adb reverse tcp:3080 tcp:3080 first</string>
     <string name="server_url_example_dsh">e.g. http://127.0.0.1:3080 via USB (adb reverse tcp:3080 tcp:3080)</string>
     <string name="server_username">Username</string>
     <string name="server_username_hint">opencode</string>
@@ -32,7 +36,7 @@
     <string name="server_save">Save</string>
     <string name="server_cancel">Cancel</string>
     <string name="server_delete">Delete</string>
-    <string name="server_add">Add Server</string>
+    <string name="server_add">Add server</string>
     <string name="server_invalid_url">Invalid URL format</string>
     <string name="server_auto_connect">Auto-connect on app launch</string>
     <string name="server_auto_connect_desc">Automatically connect when the app starts</string>
@@ -40,9 +44,8 @@
     <!-- Session Screen -->
     <string name="sessions_title">Sessions</string>
     <string name="search_sessions">Search sessions…</string>
-    <string name="sessions_new">New Session</string>
+    <string name="sessions_new">New session</string>
     <string name="sessions_create_folder">Create directory</string>
-    <string name="sessions_create_folder_title">Create directory</string>
     <string name="sessions_create_folder_name_label">Directory name</string>
     <string name="sessions_create_folder_name_placeholder">my-project</string>
     <string name="sessions_create_folder_invalid_name">Enter a valid directory name</string>
@@ -59,7 +62,7 @@
     <string name="sessions_retrying">Retrying</string>
     <string name="session_pending_question">Pending answer</string>
     <string name="session_pending_approval">Pending approval</string>
-    <string name="sessions_create_session">Create Session</string>
+    <string name="sessions_create_session">Create session</string>
     <string name="session_status_idle">Idle</string>
     <string name="session_status_busy">Working…</string>
     <string name="session_status_retry_countdown">Retrying in %1$d s</string>
@@ -71,18 +74,20 @@
     <string name="command_feedback_completed">Completed</string>
     <string name="command_feedback_failed">Failed</string>
     <string name="command_feedback_a11y_running">Command execution in progress</string>
-    <string name="session_rename">Rename Session</string>
+    <string name="session_rename">Rename session</string>
     <string name="session_rename_title">Title</string>
     <string name="session_rename_button">Rename</string>
-    <string name="session_delete">Delete Session</string>
+    <string name="session_delete">Delete session</string>
     <string name="session_delete_confirm">Delete \"%1$s\"? This cannot be undone.</string>
     <string name="session_menu_archive">Archive</string>
     <string name="session_archived_section_title">Archived (%1$d)</string>
     <string name="session_archive_failed">Failed to archive session</string>
+    <string name="session_menu_unarchive">Unarchive</string>
+    <string name="session_unarchive_failed">Failed to unarchive session</string>
     <string name="session_changes_additions">+%1$d</string>
     <string name="session_changes_deletions">-%1$d</string>
-    <string name="session_directory_details">Directory Details</string>
-    <string name="session_session_details">Session Details</string>
+    <string name="session_directory_details">Directory details</string>
+    <string name="session_session_details">Session details</string>
     <string name="session_details_name">Name</string>
     <string name="session_untitled">Untitled session</string>
     <string name="session_unknown_error">Unknown error</string>
@@ -103,7 +108,7 @@
     <string name="session_details_diff_summary">+%1$d −%2$d (%3$d files)</string>
 
     <!-- #271：会话历史同步（drain）状态——唯一展示面=长按菜单（2026-08-30 四轮定稿） -->
-    <string name="session_sync_section">History Sync</string>
+    <string name="session_sync_section">History sync</string>
     <string name="session_sync_state_none">Not synced</string>
     <string name="session_sync_state_syncing">Syncing…</string>
     <string name="session_sync_state_synced">Synced</string>
@@ -125,28 +130,13 @@
     <string name="chat_stop">Stop</string>
     <!-- 堆积消息（busy 发送气泡菜单，2026-08-20 设计定稿） -->
     <!-- 堆积/TODO 面板（2026-08-20 设计定稿） -->
-    <string name="pending_sheet_title">Queued</string>
-    <string name="pending_tab_stacked">Queued %1$d</string>
-    <string name="pending_tab_todo">TODO %1$d/%2$d</string>
     <!-- 2026-08-22 抽屉 segment 常显版（数量进 Badge 角标，不进文案） -->
     <string name="pending_tab_todo_plain">TODO</string>
-    <string name="pending_continue">Continue</string>
-    <string name="pending_clear">Clear</string>
-    <string name="pending_clear_confirm_title">Clear queued messages?</string>
-    <string name="pending_clear_confirm_text">%1$d queued messages will be removed.</string>
-    <string name="pending_edit_dialog_title">Edit queued message</string>
-    <string name="pending_item_edit">Edit</string>
-    <string name="pending_item_delete">Delete</string>
-    <string name="pending_item_send">Send now</string>
-    <string name="pending_item_sending">Sending…</string>
     <string name="todo_empty">No TODO items</string>
     <string name="chat_empty">Start a session</string>
     <string name="chat_copy">Copy</string>
     <string name="table_copy_cell">Copy cell</string>
     <string name="table_copy_table">Copy table (TSV)</string>
-    <string name="terminal_copy">Copy</string>
-    <string name="terminal_paste">Paste</string>
-    <string name="terminal_more">More…</string>
     <!-- #120（D2-10）：压缩中提示（原硬编码英文，绕过 i18n） -->
     <string name="chat_compressing_context">Compressing context: %1$s</string>
     <string name="chat_compressing_context_plain">Compressing context…</string>
@@ -184,7 +174,6 @@
     <string name="chat_messages_restored">Messages restored</string>
     <string name="chat_session_renamed">Session renamed</string>
     <string name="chat_session_rename_failed">Failed to rename</string>
-    <string name="chat_response">Response</string>
     <plurals name="chat_status_edits_plural">
         <item quantity="one">%1$d edit</item>
         <item quantity="other">%1$d edits</item>
@@ -202,8 +191,6 @@
     <string name="chat_status_searching">Searching codebase</string>
     <string name="chat_status_fetching_url">Fetching URL</string>
     <string name="chat_status_running_subagent">Running subagent</string>
-    <string name="chat_task_completed">Turn completed</string>
-    <string name="chat_task_failed">Task failed</string>
     <string name="chat_event_tool_catalog_changed">Tool catalog changed</string>
     <string name="chat_event_task_completed">Subagent completed</string>
     <string name="chat_event_task_failed">Subagent failed</string>
@@ -263,11 +250,8 @@
     <string name="chat_stats_expand">Expand turn details</string>
     <string name="chat_stats_collapse">Collapse turn details</string>
     <string name="a11y_message_detail">Message details</string>
-    <string name="chat_subagent_completed_notification">Subagent completed</string>
-    <string name="chat_subagent_failed_notification">Subagent failed</string>
     <string name="chat_status_updating_tasks">Updating tasks</string>
     <string name="chat_status_thinking">Thinking</string>
-    <string name="chat_thinking_complete">Thought for %1$s</string>
     <string name="chat_thinking_complete_unknown">Thought complete</string>
     <string name="chat_tool_running_command">Running command…</string>
     <string name="chat_hint_ask">Ask a question…</string>
@@ -279,7 +263,6 @@
     <string name="chat_type_message">Type a message below</string>
     <string name="chat_messages_reverted">Messages reverted</string>
     <string name="chat_tap_restore">Tap to restore, or use /redo</string>
-    <string name="chat_thinking_in_progress">Thinking… %1$s</string>
     <string name="chat_edit_label">Edit</string>
     <string name="chat_write_label">Write</string>
     <string name="chat_tasks_label">Tasks</string>
@@ -291,13 +274,23 @@
     <string name="chat_default_model">Default model</string>
     <string name="chat_manage_models">Manage models</string>
     <string name="chat_output_truncated">Output truncated by server. Full output saved to: %1$s</string>
-    <string name="chat_question_label">Question</string>
+    <string name="chat_output_truncated_no_path">Output truncated by server. Full output is on the server side.</string>
+    <string name="chat_output_view_full">View full output</string>
+    <string name="chat_output_spilled">Output partially omitted by server (%1$s). Full result saved to: %2$s</string>
+    <string name="chat_output_spilled_unknown">Output partially omitted by server. Full result saved to: %1$s</string>
     <string name="chat_permission_label">Permission: %1$s</string>
     <string name="chat_interrupted">Interrupted: %1$s</string>
     <string name="chat_retry">Retry #%1$d: %2$s</string>
     <string name="chat_error_view_page">Page</string>
     <string name="chat_error_view_code">Code</string>
     <string name="math_block_badge">Formula</string>
+    <string name="markdown_a11y_blockquote">Quote</string>
+    <string name="markdown_a11y_code_block">Code block</string>
+    <string name="markdown_a11y_code_block_with_language">Code block, %1$s</string>
+    <string name="markdown_a11y_code_language">Language: %1$s</string>
+    <string name="markdown_a11y_code_fallback_language">CODE</string>
+    <string name="markdown_a11y_copy_code">Copy code</string>
+    <string name="markdown_a11y_alert">%1$s alert</string>
     <string name="chat_save_image">Save image</string>
     <string name="chat_image_saved">Image saved</string>
     <string name="chat_image_save_failed">Failed to save image</string>
@@ -322,7 +315,6 @@
     <string name="dsh_job_status_killed">Killed</string>
     <string name="dsh_job_status_completed">Completed</string>
     <string name="dsh_job_status_failed">Failed</string>
-    <string name="dsh_jobs_empty">No background jobs</string>
     <!-- 2026-09-01 QueueDock：排队收件箱条（session/queue） -->
     <string name="queue_edit">Edit queued message</string>
     <string name="queue_remove">Remove queued message</string>
@@ -334,17 +326,13 @@
     <string name="queue_action_failed">Queue action failed</string>
     <string name="shell_status_failed">Failed</string>
     <string name="task_toolbar_action">Move task to background</string>
-    <string name="task_toolbar_subagents">%1$d subagent(s) running in foreground</string>
-    <string name="a11y_icon_tasks">Task activities</string>
-    <string name="task_sheet_subagents_tab">Subagents</string>
-    <string name="task_sheet_shells_tab">Shells</string>
+    <plurals name="task_toolbar_subagents">
+        <item quantity="one">%1$d subagent running in foreground</item>
+        <item quantity="other">%1$d subagents running in foreground</item>
+    </plurals>
     <string name="task_sheet_empty_subagents">No running subagents</string>
     <string name="task_sheet_empty_shells">No shell commands</string>
-    <string name="task_sheet_title">Tasks</string>
     <!-- 2026-08-13：任务面板前台/后台标记（子代理阻塞主会话 = 前台） -->
-    <string name="task_foreground">Foreground</string>
-    <string name="task_background">Background</string>
-    <string name="task_sheet_history_tab">History</string>
     <string name="shell_kill">Remove shell</string>
     <string name="shell_close">Close</string>
     <string name="shell_no_output">No output yet</string>
@@ -390,7 +378,9 @@
     <string name="chat_shell_placeholder">Enter shell command…</string>
     <string name="chat_shell_failed">Failed to run shell command</string>
     <string name="chat_shell_empty">Enter a shell command first</string>
+    <string name="chat_shell_mode_unavailable">Shell mode is not available on this server</string>
     <string name="chat_subagent_one_shot_read_only">One-shot subagent session: follow-up messages are not supported</string>
+    <string name="chat_subagent_read_only_mirror">Subagent session (read-only): continue in the parent session</string>
     <string name="chat_shell_attachments_unsupported">Shell mode does not support attachments</string>
     <string name="chat_command_images_unsupported">Slash commands do not support image attachments</string>
     <string name="chat_terminal_connect_failed">Failed to open terminal</string>
@@ -398,7 +388,7 @@
     <!-- Patch File Actions -->
     
     <!-- Permissions -->
-    <string name="permission_title">Permission Required</string>
+    <string name="permission_title">Permission required</string>
     <string name="permission_allow_once">Once</string>
     <string name="permission_allow_always">Always</string>
     <string name="permission_deny">Reject</string>
@@ -412,14 +402,14 @@
     <string name="permission_reject_button">Reject</string>
     <string name="settings_auto_approve_rules">Auto-approve rules</string>
     <string name="settings_auto_allow_permissions">Auto-allow all permission requests</string>
-    <string name="settings_auto_allow_permissions_desc">Automatically reply \'Always allow\' to every permission request. Rules are saved persistently — use with trusted servers only.</string>
+    <string name="settings_auto_allow_permissions_desc">Automatically reply \'Always\' to every permission request. Rules are saved persistently — use with trusted servers only.</string>
     <string name="settings_no_auto_approve_rules">No saved auto-approve rules</string>
     <string name="settings_delete_rule">Delete rule</string>
     
     <!-- Questions -->
     <string name="question_submit">Submit</string>
-    <string name="question_single_choice">SINGLE</string>
-    <string name="question_multi_choice">MULTI</string>
+    <string name="question_single_choice">Single</string>
+    <string name="question_multi_choice">Multi</string>
     <string name="question_next">Next</string>
     <string name="question_unanswered_title">Unanswered questions</string>
     <string name="question_unanswered_confirm">Questions %1$s have not been answered yet.</string>
@@ -455,8 +445,8 @@
     <string name="settings_confirm_send_desc">Show confirmation dialog before sending a message</string>
     <string name="settings_section_general">General</string>
     <string name="settings_section_appearance">Appearance</string>
-    <string name="settings_section_chat_display">Chat Display</string>
-    <string name="settings_section_chat_behavior">Chat Behavior</string>
+    <string name="settings_section_chat_display">Chat display</string>
+    <string name="settings_section_chat_behavior">Chat behavior</string>
     <string name="settings_section_notifications">Notifications</string>
     <string name="settings_section_advanced">Advanced</string>
     <string name="settings_confirm_send_title">Send message?</string>
@@ -548,7 +538,7 @@
     <string name="dialog_select_reconnect_mode">Select reconnect mode</string>
 
     <!-- Server Settings -->
-    <string name="server_settings_title">Server Settings</string>
+    <string name="server_settings_title">Server settings</string>
     <string name="server_settings_providers">Providers</string>
     <string name="server_settings_providers_desc">Enable or disable providers for this server</string>
     <string name="server_settings_providers_connected">Connected</string>
@@ -584,24 +574,24 @@
     <string name="loading">Loading…</string>
     
     <!-- Dialogs -->
-    <string name="dialog_select_theme">Select Theme</string>
-    <string name="dialog_select_language">Select Language</string>
+    <string name="dialog_select_theme">Select theme</string>
+    <string name="dialog_select_language">Select language</string>
     
     <!-- Notifications -->
     <string name="notification_channel_connection">OpenCode Connection</string>
     <string name="notification_channel_connection_desc">Persistent connection to OpenCode server</string>
-    <string name="notification_channel_tasks">Turn Notifications</string>
+    <string name="notification_channel_tasks">Turn notifications</string>
     <string name="notification_channel_tasks_desc">Notifications when a turn completes</string>
     <string name="notification_channel_tasks_silent">Turn Notifications (Silent)</string>
     <string name="notification_channel_tasks_silent_desc">Silent notifications when a turn completes</string>
-    <string name="notification_channel_permissions">Permission Requests</string>
+    <string name="notification_channel_permissions">Permission requests</string>
     <string name="notification_channel_permissions_desc">Notifications when OpenCode needs permissions</string>
-    <string name="notification_channel_questions">Question Requests</string>
+    <string name="notification_channel_questions">Question requests</string>
     <string name="notification_channel_questions_desc">Notifications when OpenCode asks a question</string>
     <string name="notification_connected">Connected to %1$s</string>
     <string name="notification_connecting">Connecting to %1$s…</string>
     <string name="notification_connected_count">Connected to %1$d of %2$d servers</string>
-    <string name="notification_disconnect_all">Disconnect All</string>
+    <string name="notification_disconnect_all">Disconnect all</string>
     <string name="notification_inbox_title">OC Beacon — %1$d/%2$d connected</string>
     <string name="notification_status_connected">Connected</string>
     <string name="notification_status_connecting">Connecting…</string>
@@ -628,13 +618,8 @@
     <!-- UI hardcoded strings (i18n) -->
     <string name="favorites_title">Favorites</string>
     <string name="all">All</string>
-    <string name="no_favorites">No favorite sessions yet</string>
-    <string name="server_not_connected">Server not connected</string>
-    <string name="server_not_connected_desc">%1$s is not connected. Connect to view this session.</string>
     <string name="remove_favorite">Remove from favorites</string>
-    <string name="more_actions">More actions</string>
-    <string name="offline_suffix">· Not connected</string>
-    <string name="add_tag">Add Tag</string>
+    <string name="add_tag">Add tag</string>
     <string name="tag_name">Tag name</string>
     <string name="color">Color</string>
     <string name="icon">Icon</string>
@@ -649,8 +634,6 @@
     <string name="delete_tag_title">Delete tag</string>
     <string name="delete_tag_message">Delete \"%1$s\"? All session assignments will be removed.</string>
     <string name="draft">Draft</string>
-    <string name="assign_tag">Add Tag</string>
-    <string name="tag_label">Tag</string>
     <string name="quick_navigate">Quick navigate</string>
     <string name="question">Question</string>
     <string name="no_questions">No questions</string>
@@ -658,7 +641,6 @@
     <string name="source">Source</string>
     <string name="copy_all">Copy all</string>
     <string name="no_text">(no text)</string>
-    <string name="custom_input">Custom input</string>
     <string name="input_answer">Enter answer</string>
     <string name="pdf_load_failed">PDF load failed</string>
     <string name="unknown_error">Unknown error</string>
@@ -686,8 +668,7 @@
     <string name="chat_moved_to_background">Moved to background</string>
 
     <!-- Chat menu actions -->
-    <string name="chat_menu_open_workspace">View Workspace</string>
-    <string name="menu_quick_navigate">Quick navigate</string>
+    <string name="chat_menu_open_workspace">View workspace</string>
     <string name="menu_fork_session">Fork session</string>
     <string name="menu_compact_session">Compact session</string>
     <string name="menu_review_changes">Review changes</string>
@@ -700,7 +681,6 @@ Size: %2$s -&gt; %3$s
 Tokens: ~%4$d -&gt; ~%5$d</string>
 
     <!-- Chat subagent features -->
-    <string name="chat_retry_send">Retry</string>
     <string name="chat_title_placeholder">Chat</string>
     <string name="chat_context_detail_title">Context usage details</string>
 
@@ -736,10 +716,10 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="update_available">Update available: v%1$s</string>
     <string name="update_download_install">Download &amp; Install</string>
     <string name="update_downloading">Downloading… %1$d%%</string>
-    <string name="update_ready_to_install">Install Now</string>
+    <string name="update_ready_to_install">Install now</string>
     <string name="update_error">Update check failed</string>
     <string name="update_installer_launch_failed">Unable to launch installer</string>
-    <string name="update_view_release">View Release</string>
+    <string name="update_view_release">View release</string>
 
     <!-- Accessibility: contentDescription for decorative icons in settings -->
     <string name="a11y_settings_language">Language</string>
@@ -778,7 +758,7 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="chat_locate_message_not_found">Message not found in this session</string>
     <string name="a11y_icon_add">Add</string>
     <string name="a11y_icon_share">Share</string>
-    <string name="a11y_icon_unlink">Unlink</string>
+    <string name="a11y_icon_unlink">Unshare</string>
     <string name="a11y_icon_terminal">Terminal</string>
     <string name="a11y_icon_copy_all">Copy all</string>
     <string name="a11y_icon_compress">Compress</string>
@@ -793,7 +773,6 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="a11y_icon_description">Description</string>
     <string name="a11y_icon_image">Image</string>
     <string name="a11y_icon_file">File</string>
-    <string name="a11y_icon_question">Question from agent</string>
     <string name="a11y_icon_collapse">Collapse</string>
     <string name="a11y_icon_expand">Expand</string>
     <string name="a11y_icon_dismiss">Dismiss</string>
@@ -828,7 +807,6 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <!-- #322：DSH 服务器历史命中（session/search） -->
     <string name="search_server_hits">Session matches</string>
     <string name="search_server_more">First 20 matches shown</string>
-    <string name="search_content_coverage_hint">Full history not synced for this session</string>
     <string name="search_content_hit_count">%1$d messages</string>
     <string name="search_filter_role_all">All roles</string>
     <string name="search_filter_menu">Filter</string>
@@ -841,6 +819,9 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="search_filter_time_30d">Last 30 days</string>
     <string name="search_content_no_hits">No message matches</string>
     <!-- Terminal tabs -->
+    <string name="terminal_copy">Copy</string>
+    <string name="terminal_paste">Paste</string>
+    <string name="terminal_more">More…</string>
     <string name="terminal_new_tab">New</string>
     <string name="terminal_keyboard">Keyboard</string>
     <string name="terminal_reconnect_tab">Reconnect tab</string>
@@ -859,7 +840,6 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="viewer_binary_not_supported">Binary file, preview not supported</string>
     <string name="viewer_binary_mime">MIME type: %1$s</string>
     <string name="viewer_empty_file">File is empty</string>
-    <string name="viewer_loading_progress">Loading: %1$d / %2$d lines</string>
     <string name="viewer_large_file_warning">Large file (%1$d lines) — performance may be affected</string>
     <string name="a11y_icon_hunk_previous">Previous hunk</string>
     <string name="a11y_icon_hunk_next">Next hunk</string>
@@ -913,8 +893,8 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="terminal_tab_title">Tab %1$d</string>
     <string name="pdf_previous_page">Previous page</string>
     <string name="pdf_next_page">Next page</string>
-    <string name="tool_search_pattern">pattern: %1$s</string>
-    <string name="tool_search_path">path: %1$s</string>
+    <string name="tool_search_pattern">Pattern: %1$s</string>
+    <string name="tool_search_path">Path: %1$s</string>
 
     <string name="server_settings_config_update_failed">Failed to update config</string>
     <string name="server_settings_providers_load_failed">Failed to load providers</string>
@@ -943,7 +923,6 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="agent_preset_cards_title">Choose Agent preset</string>
     <string name="server_settings_default_agent_preset">New session default Agent preset</string>
     <string name="session_details_agent_preset">Agent preset</string>
-    <string name="a11y_icon_agent_preset">Agent preset</string>
     <!-- #298：默认档非 loopback 连接（Host 栅栏 403）标注 -->
     <string name="server_settings_defaults_loopback_hint">Default tiers are only accessible over a loopback connection. Use adb reverse (127.0.0.1) to manage them.</string>
     <!-- ============ Goal（backlog #286） ============ -->
@@ -1024,17 +1003,13 @@ Tokens: ~%4$d -&gt; ~%5$d</string>
     <string name="supervisor_notification_root_failing_title">Supervisor: %1$d root(s) failing</string>
     <string name="supervisor_notification_error_peak_title">Supervisor: error peak rising</string>
     <string name="supervisor_notification_error_peak">Error peak: %1$d</string>
-    <string name="dsh_token_banner_text">This server requires an access token</string>
-    <string name="dsh_token_banner_action">Enter token</string>
-    <string name="dsh_token_dialog_title">Access token required</string>
-    <string name="dsh_token_dialog_message">Paste the token or the full URL from the server startup line (it contains token=...).</string>
-    <string name="dsh_token_dialog_hint">Token or URL</string>
+    <string name="dsh_token_banner_text">This server requires an access credential</string>
+    <string name="dsh_token_banner_action">Enter credential</string>
+    <string name="dsh_token_dialog_title">Access credential required</string>
+    <string name="dsh_token_dialog_message">Enter this server\'s access password, or paste the token / full URL (token=…) for legacy servers.</string>
+    <string name="dsh_token_dialog_hint">Password or token</string>
     <string name="dsh_token_dialog_connect">Connect</string>
-    <string name="dsh_token_dialog_rejected">Token rejected by the server. Check it and try again.</string>
-    <string name="server_pair_help_title">First-time pairing</string>
-    <string name="server_pair_help_manual">Manual: save and connect this server, then tap "Enter token" on the banner and paste the token from the server startup line</string>
-    <string name="server_pair_help_adb">USB (dev builds): run ./scripts/dsh-pair.sh on the host — the token is injected automatically</string>
-    <string name="server_pair_help_deeplink">Or run ./scripts/dsh-pair.sh --lan on the host and scan or tap the ocbeacon:// link to pre-fill this form</string>
+    <string name="dsh_token_dialog_rejected">Credential rejected by the server. Check it and try again.</string>
     <!-- #324① DSH provider 目录/自定义增删 -->
     <string name="dsh_settings_loopback_required">This action needs a loopback connection (adb reverse to 127.0.0.1).</string>
     <string name="dsh_providers_section_title">DSH provider directory</string>

@@ -1,16 +1,20 @@
 package dev.leonardo.ocbeacon.ui.screens.home.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
@@ -90,7 +94,6 @@ private fun deriveServerNameFromUrl(normalizedUrl: String): String {
 internal fun ServerDialog(
     server: ServerConfig?,
     // #325②：配对深链预填（DSH 地址；非 null 时新建对话框默认选中 DSH 类型）
-    prefillUrl: String? = null,
     onDismiss: () -> Unit,
     onSave: (name: String, url: String, username: String, password: String, autoConnect: Boolean, serverType: ServerType) -> Unit,
     /**
@@ -101,20 +104,22 @@ internal fun ServerDialog(
 ) {
     // #115（D2-L25）：服务器名输入 saveable
     var name by rememberSaveable { mutableStateOf(server?.name ?: "") }
-    // #325②：深链预填优先于 "http://" 占位（编辑态沿用条目现值）
-    var url by remember { mutableStateOf(server?.url ?: prefillUrl ?: "http://") }
+    var url by remember { mutableStateOf(server?.url ?: "http://") }
     var username by remember { mutableStateOf(server?.username ?: "opencode") }
     var password by remember { mutableStateOf(server?.password ?: "") }
     var autoConnect by remember { mutableStateOf(server?.autoConnect ?: false) }
-    // #276：服务器类型（enum 是 Serializable，rememberSaveable 原生支持）；
-    // #325②：配对深链预填 → 默认 DSH
+    // #276：服务器类型（enum 是 Serializable，rememberSaveable 原生支持）
     var serverType by rememberSaveable {
-        mutableStateOf(server?.serverType ?: if (prefillUrl != null) ServerType.Dsh else ServerType.OpenCode)
+        mutableStateOf(server?.serverType ?: ServerType.OpenCode)
     }
     val isDsh = serverType == ServerType.Dsh
 
     var urlError by remember { mutableStateOf<String?>(null) }
 
+    // #532：DSH 密码插件安装说明弹窗（tab 上 ℹ️ 图标入口）
+    var showPluginHint by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
     val urlRequiredText = stringResource(R.string.server_url)
     val urlInvalidText = stringResource(R.string.server_invalid_url)
     val dialogMaxHeight = LocalConfiguration.current.screenHeightDp.dp * 0.9f
@@ -163,7 +168,24 @@ internal fun ServerDialog(
                                     onClick = { serverType = type },
                                     shape = SegmentedButtonDefaults.itemShape(index = index, count = serverTypes.size)
                                 ) {
-                                    Text(stringResource(serverTypeLabel(type)))
+                                    // #532：DSH tab 提示小图标——点开密码插件安装说明（GitHub）。
+                                    // SegmentedButton 内容不聚合间距：显式 Row + startPadding
+                                    // 保证图标与文字有可见分离（16dp 图标在窄段内与文字相叠）。
+                                    if (type == ServerType.Dsh) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(stringResource(serverTypeLabel(type)))
+                                            Icon(
+                                                imageVector = Icons.Outlined.Info,
+                                                contentDescription = stringResource(R.string.dsh_plugin_hint_icon),
+                                                modifier = Modifier
+                                                    .padding(start = 6.dp)
+                                                    .size(14.dp)
+                                                    .clickable { showPluginHint = true },
+                                            )
+                                        }
+                                    } else {
+                                        Text(stringResource(serverTypeLabel(type)))
+                                    }
                                 }
                             }
                         }
@@ -213,44 +235,6 @@ internal fun ServerDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // #325：DSH 首次配对辅助区（三通道指引——粘贴手动[现状]/
-                    // adb 注入[dev]/深链填表；轻量自有形态，无新增依赖）
-                    if (isDsh) {
-                        Surface(
-                            shape = ShapeTokens.medium,
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = AlphaTokens.FAINT),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = AlphaTokens.FAINT)),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                                verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp),
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.server_pair_help_title),
-                                    style = MaterialTheme.typography.titleSmall,
-                                )
-                                Text(
-                                    text = stringResource(R.string.server_pair_help_manual),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    text = stringResource(R.string.server_pair_help_adb),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    text = stringResource(R.string.server_pair_help_deeplink),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-
                     // #276：DSH 无鉴权（§2.1）——用户名/密码字段隐藏
                     if (!isDsh) {
                         OutlinedTextField(
@@ -261,17 +245,20 @@ internal fun ServerDialog(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
-
-                        OutlinedTextField(
-                            value = password,
-                            onValueChange = { password = it },
-                            label = { Text(stringResource(R.string.server_password)) },
-                            visualTransformation = PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
                     }
+
+                    // #512 补口：DSH 密码框放开（可留空）——插件服务器的访问密码
+                    // 可在建站/编辑时直接填好（回落链 PasswordMint 消费，免横幅一步）；
+                    // 留空则保持横幅输入流程。OpenCode 分支维持原状。
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text(stringResource(R.string.server_password)) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     Surface(
                         shape = ShapeTokens.medium,
@@ -326,9 +313,10 @@ internal fun ServerDialog(
                                 onSave(
                                     finalName,
                                     normalizedUrl,
-                                    // DSH 无鉴权：字段已隐藏，恒定占位值（DSH 传输层忽略 auth）
+                                    // DSH 无用户名语义（传输层忽略 auth 用户名）：恒定占位
                                     if (isDsh) "opencode" else username.ifBlank { "opencode" },
-                                    if (isDsh) "" else password,
+                                    // #512：DSH 密码不再强制清空——插件访问密码可选预填
+                                    password,
                                     autoConnect,
                                     serverType
                                 )
@@ -339,4 +327,36 @@ internal fun ServerDialog(
             }
         }
     }
+
+    // #532：DSH 密码插件安装说明（ℹ️ 图标入口；安装步骤详见插件 README）
+    if (showPluginHint) {
+        AlertDialog(
+            onDismissRequest = { showPluginHint = false },
+            title = { Text(stringResource(R.string.dsh_plugin_hint_title)) },
+            text = { Text(stringResource(R.string.dsh_plugin_hint_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(DSH_PLUGIN_REPO_URL),
+                            )
+                        )
+                    }
+                    showPluginHint = false
+                }) {
+                    Text(stringResource(R.string.dsh_plugin_hint_link))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPluginHint = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 }
+
+/** #532：DSH 密码插件仓库（安装说明 = README；发布后如有迁移只改此处）。 */
+private const val DSH_PLUGIN_REPO_URL = "https://github.com/LeoNardo-LB/dsh-password-login"

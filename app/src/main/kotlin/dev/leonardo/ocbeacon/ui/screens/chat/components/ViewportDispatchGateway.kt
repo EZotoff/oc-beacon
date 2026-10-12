@@ -18,7 +18,6 @@ import dev.leonardo.ocbeacon.logging.AppLogger
  * | 引擎配对/帽释放 | LazyListReflection.requestScrollToItemNoCancel（单出口事务） | 引擎本体（ScrollCompensation 单出口） |
  * | 卡片展开 episode | dispatchRawDelta / requestScrollToItemNoCancel | 引擎配对机器（CardExpandReveal） |
  * | 跳转族 | JumpNavigationController / QuickNavigateSheet scrollToItem | 用户显式意图（位置神圣铁律） |
- * | snapToBottom 强推 | ChatScrollUtils scrollBy ×3 | 显式意图的钉底兜底（首跳已打点） |
  * | ScrollIsland 手势分块 | dispatchRawDelta | 手势通道（巨帧重整形） |
  *
  * 新增网关外写入必须在本表登记并给出豁免依据（review 检查项）；强制化

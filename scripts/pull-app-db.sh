@@ -10,12 +10,22 @@ SERIAL="${1:?usage: pull-app-db.sh <serial> <out-prefix> [max-tries]}"
 PREFIX="${2:?missing out-prefix}"
 MAX_TRIES="${3:-6}"
 PKG="dev.leonardo.ocbeacon.dev"
+# 2026-10-09（B1 批 #288 E2E 定罪）：PATH 裸 adb 在无 adb 环境静默失败 → 0 字节库
+# 而 sqlite 对空文件 integrity_check 返回 ok（假阳）。固定 SDK 路径兜底 + 空库门槛。
+ADB_BIN="$(command -v adb || true)"
+[ -n "$ADB_BIN" ] || ADB_BIN="$HOME/android-sdk/platform-tools/adb"
+[ -x "$ADB_BIN" ] || { echo "ERROR: adb not found (PATH nor ~/android-sdk)" >&2; exit 1; }
 
 for i in $(seq 1 "$MAX_TRIES"); do
   rm -f "$PREFIX.db" "$PREFIX.db-wal" "$PREFIX.db-shm"
-  adb -s "$SERIAL" exec-out "run-as $PKG cat databases/ocbeacon.db" > "$PREFIX.db" 2>/dev/null || true
-  adb -s "$SERIAL" exec-out "run-as $PKG cat databases/ocbeacon.db-wal" > "$PREFIX.db-wal" 2>/dev/null || true
-  adb -s "$SERIAL" exec-out "run-as $PKG cat databases/ocbeacon.db-shm" > "$PREFIX.db-shm" 2>/dev/null || true
+  "$ADB_BIN" -s "$SERIAL" exec-out "run-as $PKG cat databases/ocbeacon.db" > "$PREFIX.db" 2>/dev/null || true
+  "$ADB_BIN" -s "$SERIAL" exec-out "run-as $PKG cat databases/ocbeacon.db-wal" > "$PREFIX.db-wal" 2>/dev/null || true
+  "$ADB_BIN" -s "$SERIAL" exec-out "run-as $PKG cat databases/ocbeacon.db-shm" > "$PREFIX.db-shm" 2>/dev/null || true
+  if [ ! -s "$PREFIX.db" ]; then
+    echo "pull#$i db=0bytes (pull failed) — retrying" >&2
+    sleep 2
+    continue
+  fi
   verdict=$(sqlite3 "$PREFIX.db" 'PRAGMA integrity_check;' 2>/dev/null | head -1 || true)
   echo "pull#$i integrity=[$verdict]" >&2
   if [ "$verdict" = "ok" ]; then

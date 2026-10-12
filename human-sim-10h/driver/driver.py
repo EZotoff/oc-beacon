@@ -35,6 +35,12 @@ BLOCKLIST = re.compile(
     r"附件|attachment|安全访问|文件选择|选择文件"
     r"导出|导入|备份|还原全部|注销账户", re.I)
 
+# debug 通道服务器类型(driver-529 三端腿参数化覆写;默认 v1 语义不变)
+DEBUG_SERVER_TYPE = "opencode"
+# Basic Auth 凭据(v1 免密时空串=不传 extras,10h/5h soak 语义不变;v2 腿需要)
+DEBUG_USERNAME = ""
+DEBUG_PASSWORD = ""
+
 PROMPTS = [
     "give me the big table", "show me the long code", "more", "again", "ok",
     "hello", "give me the nested list", "explain", "continue please",
@@ -175,7 +181,9 @@ def entry():
     sh("shell", "am", "start", "-n", ACT,
        "--es", "debug_url", f"http://127.0.0.1:{PORT}",
        "--es", "debug_name", "e2e-v1-4299",
-       "--es", "debug_server_type", "opencode")
+       "--es", "debug_server_type", DEBUG_SERVER_TYPE,
+       *(["--es", "debug_username", DEBUG_USERNAME] if DEBUG_USERNAME else []),
+       *(["--es", "debug_password", DEBUG_PASSWORD] if DEBUG_PASSWORD else []))
     def marker_or_ui_ok():
         r = sh("logcat", "-d")
         if "NavGraph: Debug channel → SessionList" in (r.stdout or ""):
@@ -193,7 +201,9 @@ def entry():
     sh("shell", "am", "start", "-n", ACT,
        "--es", "debug_url", f"http://127.0.0.1:{PORT}",
        "--es", "debug_name", "e2e-v1-4299",
-       "--es", "debug_server_type", "opencode")
+       "--es", "debug_server_type", DEBUG_SERVER_TYPE,
+       *(["--es", "debug_username", DEBUG_USERNAME] if DEBUG_USERNAME else []),
+       *(["--es", "debug_password", DEBUG_PASSWORD] if DEBUG_PASSWORD else []))
     for _ in range(10):
         time.sleep(1)
         if marker_or_ui_ok():

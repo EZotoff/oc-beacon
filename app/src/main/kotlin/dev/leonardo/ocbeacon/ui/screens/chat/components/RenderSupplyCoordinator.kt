@@ -215,6 +215,13 @@ internal class RenderSupplyCoordinator(
             if (turnKey in _recentStreamedTurnKeys.value) continue
             // 旧路径优先：已有 MdChunkPlan 提交 part 的 turn 不再分段。
             if (turnMsgs.any { cm -> cm.parts.any { it.id in chunkPlanPartIds } }) continue
+            // #523 F1（计划侧互斥）：流式分片（StreamChunk）在场的 turn 不分段
+            //（#s 键族同 #c——换血即整树重建；#442 spec 完结持续性）。
+            if (turnMsgs.any { cm ->
+                    cm.parts.any { it.id in dev.leonardo.ocbeacon.ui.screens.chat
+                        .markdown.StreamingShardBroker.shards }
+                }
+            ) continue
             val turn = world.renderableTurns.getOrNull(di) ?: continue
             val skeleton = computeTurnSegments(
                 turnKey = turnKey,
@@ -402,6 +409,17 @@ internal class RenderSupplyCoordinator(
                                 // #422:多消息 turn(非末消息内容在 StepGroup 分组内,
                                 // 统一树平铺)不入 MdChunkPlan——分片条目绕过 turn
                                 // renderable(组结构失效+内容双渲染);巨型末消息交 Stage B。
+                                // #523 F1（计划侧互斥）：该 part 已有流式分片发布
+                                //（StreamChunk 在场）→ 静态 MdChunkPlan 永不接管——
+                                // #442 spec 完结持续性（StreamChunk 保留不迁静态计划）
+                                // 的计划侧落地。原缺口：渲染侧 turnShards 分支优先
+                                // 压住了 #c 键族，但计划仍产出并提交（CHUNK
+                                // commit 后 #g 撤除/换血即整树重建——完结第三击）。
+                                if (dev.leonardo.ocbeacon.ui.screens.chat.markdown
+                                        .StreamingShardBroker.shards.containsKey(key)
+                                ) {
+                                    return@preParse
+                                }
                                 if (textForParse.length >= CHUNK_MIN_CHARS && !multiMsgTurn) {
                                     computeChunkPlan(key, st, CHUNK_MIN_CHARS, CHUNK_TARGET_CHARS)
                                         ?.let { plan ->
@@ -518,6 +536,15 @@ internal class RenderSupplyCoordinator(
             val committed = HashMap<String, MdChunkPlan>()
             val staleDropped = mutableListOf<String>()
             for ((partId, planAndLegacyDi) in pendingChunkPlans) {
+                // #523 F1（计划侧互斥）：流式分片发布在场的 part——pending 计划
+                // 真正丢弃（不提交）。fire 可能发生在计划入队之后（解析 30-80ms
+                // 与流式增长并发），提交前必须复查。
+                if (dev.leonardo.ocbeacon.ui.screens.chat.markdown
+                        .StreamingShardBroker.shards.containsKey(partId)
+                ) {
+                    staleDropped += partId
+                    continue
+                }
                 val freshDi = resolveTurnDisplayIndex(partId)
                 if (freshDi < 0) {
                     // 所属 turn 已不在当前列表（被过滤/会话切换）——真正丢弃

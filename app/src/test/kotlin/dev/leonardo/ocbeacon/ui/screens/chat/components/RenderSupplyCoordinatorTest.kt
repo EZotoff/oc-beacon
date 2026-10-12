@@ -296,6 +296,70 @@ class RenderSupplyCoordinatorTest {
         assertEquals(emptySet<String>(), env.coordinator.recentStreamedTurnKeys.value)
     }
 
+    // ---- #523 F1：计划侧互斥（流式分片在场 → 静态计划永不接管）----
+
+    /** broker 发布态搭建：register + fire 一个冻结块（PublishedShards 入快照）。 */
+    private fun publishShardFor(partId: String) {
+        dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.register("t_x", partId) { }
+        dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker
+            .controllerFor(partId)!!
+            .fire(
+                listOf(dev.leonardo.ocbeacon.ui.screens.chat.markdown.FrozenChunk(0, 100)),
+                listOf(chunkableText()),
+                100,
+            )
+    }
+
+    @Test
+    fun `T17_流式分片在场不产CHUNK计划`() = runBlocking {
+        // 双臂纪律：守卫读 broker.shards 与旗标无关，但 publishShardFor 依赖
+        // controllerFor（旗标开语义）——旗标关臂显式跳过
+        org.junit.Assume.assumeTrue(
+            dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardPilot.enabled
+        )
+        val env = Env()
+        val partId = "p523a"
+        publishShardFor(partId)
+        try {
+            val vp = 2 * 15 + 1
+            val partFor = targetPartWorld(20, partId, 15)
+            // 窗口盖住目标 → 预解析照常发生（终态文本预热无害），但解析回调的
+            // 计划计算被 F1 守卫拦下
+            env.coordinator.onViewportChanged(vp, vp, env.world(20, partFor = partFor))
+            awaitParsedBlocking(env, partId)
+            // 确定性等一小段：若守卫失效，计划会在 Parsed 后的同回调内入队
+            delay(200)
+            assertEquals("流式分片在场（#g 已发布）→ 静态计划不产出", 0, env.coordinator.pendingChunkPlanCount)
+            assertTrue(env.coordinator.chunkPlans.value.isEmpty())
+        } finally {
+            dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.resetForTest()
+        }
+    }
+
+    @Test
+    fun `T18_pending计划在分片发布后提交时丢弃`() = runBlocking {
+        org.junit.Assume.assumeTrue(
+            dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardPilot.enabled
+        )
+        val env = Env()
+        val partId = "p523b"
+        // ① 计划先行入队（解析完成早于 fire 的现实竞态）
+        seedPendingPlan(env, 20, 15, partId)
+        assertTrue(env.coordinator.pendingChunkPlanCount == 1)
+        // ② fire 后 shards 在场 → 提交循环按 staleDropped 真正丢弃
+        publishShardFor(partId)
+        try {
+            val vp = 2 * 15 + 1
+            val partFor = targetPartWorld(20, partId, 15)
+            // 出带（视口远离）驱动提交巡检
+            env.coordinator.onViewportChanged(0, 0, env.world(20, partFor = partFor))
+            assertTrue("分片在场 → pending 计划丢弃不提交", env.coordinator.chunkPlans.value.isEmpty())
+            assertEquals("pending 应清空", 0, env.coordinator.pendingChunkPlanCount)
+        } finally {
+            dev.leonardo.ocbeacon.ui.screens.chat.markdown.StreamingShardBroker.resetForTest()
+        }
+    }
+
     // ---- #246 五轮反馈根治：分片计划陈旧自愈 + 防锁死 ----
 
     @Test

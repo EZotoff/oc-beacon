@@ -1,6 +1,7 @@
 package dev.leonardo.ocbeacon.data.api.dsh
 
 import dev.leonardo.ocbeacon.domain.model.DshMessageId
+import dev.leonardo.ocbeacon.BuildConfig
 import dev.leonardo.ocbeacon.domain.model.Message
 import dev.leonardo.ocbeacon.domain.model.Part
 import dev.leonardo.ocbeacon.domain.model.PartIdContract
@@ -82,6 +83,78 @@ object DshEventMapper {
      * 上界保护：>128 条整体清空（防御性，正常在途步个位数）。
      */
     private val stepStartTimes = HashMap<String, Long>()
+
+    /**
+     * #525：轮内注入族排序台账（key = sessionId）。journal 实证（session-7300b09e）：
+     * runtime-context 注入（user/message，source.kind≠user）写在提问**之后**（+1ms），
+     * agent 指令（system/message）与提问**同毫秒**——#524 把提问 created 回拨到真实
+     * 发送时刻后，注入族信封时刻恒晚于提问 → 整体落到提问气泡下方。修法：注入族
+     * 必须整体钉在提问上方——提问落位或新注入到达时 repack，按首见序分配
+     * created = T_prompt−n … T_prompt−1（首见者最高），值变小者补发 MessageUpdated
+     * 校正事件（消费端 #524-guard earliestCreated 取 min，旧值无害；校正载荷复用
+     * 已发射消息副本，role/injectionKind 不丢）。turn/start|turn/end 清台账。
+     */
+    private class TurnInjectionLedger {
+        val order = ArrayList<String>()
+        val emitted = HashMap<String, Message.User>()
+        var promptCreated: Long? = null
+    }
+
+    private val turnInjections = HashMap<String, TurnInjectionLedger>()
+
+    /** #525：登记轮内 user 族消息（提问记时刻；注入记序）并 repack 出校正事件。
+     * 台账为 turn/start 武装制（DSH 每轮必发 turn/start——journal 实证；未见轮
+     * 边界的流保持原行为，测试与中途接入的降级路径天然隔离）。 */
+    private fun noteTurnUserMessage(sessionId: String, message: Message.User): List<DshMappedEvent> {
+        val ledger = turnInjections[sessionId] ?: return emptyList()
+        if (message.injectionKind == null) {
+            ledger.promptCreated = message.time.created
+        } else {
+            if (!ledger.emitted.containsKey(message.id)) ledger.order.add(message.id)
+            ledger.emitted[message.id] = message
+        }
+        val tp = ledger.promptCreated ?: return emptyList()
+        val n = ledger.order.size
+        if (n == 0) return emptyList()
+        val corrections = mutableListOf<DshMappedEvent>()
+        ledger.order.forEachIndexed { i, id ->
+            val target = tp - (n - i)
+            val emitted = ledger.emitted[id] ?: return@forEachIndexed
+            if (target < emitted.time.created) {
+                ledger.emitted[id] = emitted.copy(time = TimeInfo(created = target))
+                corrections += DshMappedEvent.Sse(
+                    SseEvent.MessageUpdated(ledger.emitted[id]!!)
+                )
+                if (BuildConfig.DEBUG) {
+                    AppLogger.d(TAG, "[525-inject-repack] " + id.takeLast(12) + " " +
+                        emitted.time.created + "->" + target + " slot=" + (n - i) + "/" + n)
+                }
+            }
+        }
+        return corrections
+    }
+
+    /**
+     * #524：prompt 发送时刻记忆（rpcId → 客户端播种时刻）。DSH journal 的
+     * user/message entry 事件信封 time=落盘时刻（实测晚于真实发送 ~1s，journal
+     * 协议无创建时刻字段——session.v4.jsonl 实证 data 仅 content/id/role/source），
+     * 直接作 created 会把提问行排到同 turn 首个输出之下（「回复出现在我消息
+     * 上方」）。ChatRepositoryImpl 播种 pending-<rpcId> 时登记；mapUserMessage
+     * 对 source.rpcId 命中者取 min(信封 time, 发送时刻)——live 事件与 journal
+     * fold 输出同 mapper，两路统一修正。上界同 stepStartTimes 防御清空。
+     */
+    private val promptAdmitTimes = HashMap<String, Long>()
+
+    fun notePromptAdmitted(rpcId: String, admittedAtMillis: Long) {
+        if (promptAdmitTimes.size > 128) promptAdmitTimes.clear()
+        promptAdmitTimes[rpcId] = admittedAtMillis
+    }
+
+    private fun promptCreatedTime(rpcId: String?, envelopeTime: Long): Long {
+        if (rpcId == null) return envelopeTime
+        val admitted = promptAdmitTimes[rpcId] ?: return envelopeTime
+        return if (admitted in 1 until envelopeTime) admitted else envelopeTime
+    }
 
     /**
      * #507 块级起止时刻（key = "sid:turn:step|ordinal"）：实况 block-start 记
@@ -399,6 +472,24 @@ object DshEventMapper {
                         else -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
                     }
                 }
+                "todos" -> {
+                    // #521：todos 投影（dsh-tool-todo 注册 wire 整值）= 服务端权威
+                    // 现值——冷进补灌主通道是 session/control baseline（WS onOpen 全量
+                    // 携带），live 与 todo/write 事件映射同值幂等。null tombstone =
+                    // 服务端 turn/start 清空语义（apply: turn/start → null），映射
+                    // 空表（同 goal/permissions/plan 键语义）。
+                    when (val value = payload["value"]) {
+                        is JsonNull -> listOf(
+                            DshMappedEvent.Sse(SseEvent.TodoUpdated(sessionId = sid, todos = emptyList()))
+                        )
+                        is JsonArray -> listOf(
+                            DshMappedEvent.Sse(
+                                SseEvent.TodoUpdated(sessionId = sid, todos = mapTodoItems(value))
+                            )
+                        )
+                        else -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+                    }
+                }
                 // 其余投影键（title…）：本任务不消费
                 else -> listOf(DshMappedEvent.Ignored(DshIgnoreReason.PROJECTION))
             }
@@ -675,6 +766,11 @@ object DshEventMapper {
             // #411：step/start 另记起始时刻（逐轮 TTFT 派生；权威语义 =
             // dsh-session-stats openStep 折叠——step/start 开步、assistant/message 结算）。
             "turn/start", "step/start" -> {
+                // #525：turn/start 武装轮内注入台账（上限防御：并发会话个位数）
+                if (type == "turn/start") {
+                    if (turnInjections.size > 32) turnInjections.clear()
+                    turnInjections[sessionId] = TurnInjectionLedger()
+                }
                 val turnNo = data.long("turn")
                 val stepNo = data.long("step")
                 if (turnNo != null && stepNo != null) {
@@ -716,6 +812,7 @@ object DshEventMapper {
                 // #507：块起止时刻同域清理（|ordinal 后缀不参与前缀匹配）
                 blockStartTimes.keys.removeAll { it.startsWith("$sessionId:") }
                 blockEndTimes.keys.removeAll { it.startsWith("$sessionId:") }
+                turnInjections.remove(sessionId) // #525 轮界清台账
                 val idle = DshMappedEvent.Sse(SseEvent.SessionIdle(sessionId, time.takeIf { it > 0 }))
                 val reason = data.obj("reason")
                 when (reason?.str("kind")) {
@@ -919,11 +1016,14 @@ object DshEventMapper {
             // V3 新增忽略词汇（assistant/attempt、feedback/message-*、subagent/catalog）、
             // durable 审批面、插件域、llm/failover 等统一见 DshEventVocabulary（V3 表；
             // subagent/catalog 双源裁定与 feedback 取证状态见该文件注释）。
-            // 2026-09-01（Task 3b 卡片缺口）：workflow-run 降级卡——run-start/run-end
-            // 映射为 synthetic 任务信封（同 runId 同宿主消息 id → 原位更新：running →
-            // completed/error 单卡）；agent-start/end 是阶段明细（防逐成员刷卡），
-            // 已在 DshEventVocabulary 按代声明为已知忽略。
+            // 2026-09-01（Task 3b）：run-start/run-end 映射为 synthetic 任务信封（同
+            // runId 同宿主消息 id → 原位更新：running → completed/error 单卡）。
+            // 2026-10-09（#288 冒烟解封）：agent-start/end 收编为 run 级聚合——账本
+            // 折叠进同一张卡（防逐成员刷卡的设计不变），进度期滚动 N agents · M done
+            // 摘要 + 阶段分组正文；样本载荷事实见 journal 2026-10-09 b1 批。
             "tool-workflow/run-start" -> mapWorkflowRunStart(sessionId, time, data)
+            "tool-workflow/agent-start" -> mapWorkflowAgentStart(sessionId, time, data)
+            "tool-workflow/agent-end" -> mapWorkflowAgentEnd(sessionId, time, data)
             "tool-workflow/run-end" -> mapWorkflowRunEnd(sessionId, time, data)
 
             // ---- 已知忽略词汇（按代声明）+ 未知降级 ----
@@ -976,18 +1076,27 @@ object DshEventMapper {
                 .joinToString("") { it.str("text") ?: "" }
                 .takeIf { it.isNotBlank() && SystemInjection.isPureReminder(it) }
                 ?.let { "context" }
+        val userMessage = Message.User(
+                id = id,
+                sessionId = sessionId,
+                // #524：rpcId 命中发送时刻记忆 → 取 min（journal 信封 time=
+                // 落盘时刻，晚于真实发送；live 事件与 journal fold 输出
+                // 同 mapper，两路统一）
+                time = TimeInfo(created = promptCreatedTime(
+                    data.obj("source")?.str("rpcId")?.takeIf { it.isNotBlank() },
+                    time,
+                )),
+                injectionKind = injectionKind,
+            )
         val events = mutableListOf<DshMappedEvent>(
             DshMappedEvent.Sse(
                 SseEvent.MessageUpdated(
-                    Message.User(
-                        id = id,
-                        sessionId = sessionId,
-                        time = TimeInfo(created = time),
-                        injectionKind = injectionKind,
-                    )
+                    userMessage
                 )
             )
         )
+        // #525：注入族 repack 校正（提问到达时把同轮注入钉到提问上方）
+        events += noteTurnUserMessage(sessionId, userMessage)
         // #356 echo→持久原子换装：RPC 提交的持久回显（source=user-rpc.rpccdId，
         // MessageSourceMap 契约）把本地 pending-<rpcId> echo 气泡**原地换名**为持久
         // 消息（#509：MessageIdSwapped 替代 MessageRemoved 拆除——行不离开列表，
@@ -1087,17 +1196,21 @@ object DshEventMapper {
         val sourceKind = message.obj("source")?.str("kind")
         val injectionKind = sourceKind?.takeIf { it.isNotBlank() } ?: "system"
         val events = mutableListOf<DshMappedEvent>()
-        events += DshMappedEvent.Sse(
-            SseEvent.MessageUpdated(
-                Message.User(
+        val systemUserMessage = Message.User(
                     id = id,
                     sessionId = sessionId,
                     role = "system",
                     time = TimeInfo(created = time),
                     injectionKind = injectionKind,
                 )
+        events += DshMappedEvent.Sse(
+            SseEvent.MessageUpdated(
+                systemUserMessage
             )
         )
+        // #525：agent 指令同为轮内注入族（journal 实证与提问同毫秒甚至更晚，
+        // 需 repack 钉到提问上方）
+        events += noteTurnUserMessage(sessionId, systemUserMessage)
         content.forEachIndexed { i, el ->
             val block = el as? JsonObject ?: return@forEachIndexed
             when (block.str("type")) {
@@ -1348,6 +1461,20 @@ object DshEventMapper {
             )
         }
         return listOf(
+            // #540 B：tool/result 边界给宿主回填 completed（服务器信封时刻，与 created
+            // 腿同域——时间契约 §2.3）。此前工具宿主恒 null 至 turn/end→markSessionIdle
+            // 兜底，「组内任一 completed==null」判据把整 turn 条目钉在流式（展开走
+            // 降级路径）——步间/输出后窗由此关闭。merge created=min 保 #453 计时锚。
+            DshMappedEvent.Sse(
+                SseEvent.MessageUpdated(
+                    Message.Assistant(
+                        id = hostId,
+                        sessionId = sessionId,
+                        time = TimeInfo(created = time, completed = time),
+                        parentId = "",
+                    )
+                )
+            ),
             DshMappedEvent.Sse(
                 SseEvent.MessagePartUpdated(
                     Part.Tool(
@@ -1495,13 +1622,15 @@ object DshEventMapper {
             )
         }
         return listOf(
-            // 宿主重申（幂等 upsert）：防实况/回放边界上 start 帧缺席导致孤儿 part
+            // 宿主重申（幂等 upsert）：防实况/回放边界上 start 帧缺席导致孤儿 part；
+            // #540 B：本分支即终态帧（Completed/Error）——重申携带 completed（同
+            // tool/result 腿的步边界回填语义，关闭 subagent 宿主的降级窗尾巴）。
             DshMappedEvent.Sse(
                 SseEvent.MessageUpdated(
                     Message.Assistant(
                         id = toolHostMessageId(key),
                         sessionId = sessionId,
-                        time = TimeInfo(created = time),
+                        time = TimeInfo(created = time, completed = time),
                         parentId = "",
                     )
                 )
@@ -1604,6 +1733,96 @@ object DshEventMapper {
     /** workflow 卡宿主消息 id（runId 键控——start/end 原位更新同一卡）。 */
     private fun workflowMessageId(runId: String): String = "dsh-workflow-" + runId
 
+    // ============ #288 run 级聚合账本 ============
+
+    /**
+     * #288：workflow run 账本（runId → name + 成员表）。agent-start 建档
+     * （label/phase/childId），agent-end 按 seq 回填 outcome——现网样本实证
+     * （journal 2026-10-09 b1 批）：end 只带 (runId,seq)+outcome 且 **end 序与
+     * start 序无关**（并行执行），成员身份只能从 start 建档、end 乱序回填；
+     * journal 冷回放按序全量重放，(runId,seq) upsert 天然幂等。软上限 64 run
+     * 防长跑进程无界增长（run 稀疏；逐出后该 run 降级回 runId 摘要）。
+     */
+    private class WorkflowMemberState(
+        val seq: Int,
+        var label: String? = null,
+        var phase: String? = null,
+        var childId: String? = null,
+        var outcome: String? = null,
+    )
+
+    private class WorkflowRunState(val runId: String, var name: String? = null) {
+        val members = LinkedHashMap<Int, WorkflowMemberState>()
+    }
+
+    private val workflowRuns = object : LinkedHashMap<String, WorkflowRunState>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, WorkflowRunState>?): Boolean = size > 64
+    }
+
+    private fun workflowRunOf(runId: String): WorkflowRunState =
+        workflowRuns[runId] ?: WorkflowRunState(runId).also { workflowRuns[runId] = it }
+
+    /** 成员正文：按 phase 分组（保持 start 序），状态符 ✓/✗/▸ + 非 completed outcome 标注。 */
+    private fun renderWorkflowMembers(run: WorkflowRunState): String {
+        val lines = ArrayList<String>()
+        run.members.values.groupBy { it.phase }.forEach { (phase, list) ->
+            if (!phase.isNullOrBlank()) lines.add("[" + phase + "]")
+            list.forEach { m ->
+                val mark = when {
+                    m.outcome == null -> "▸"
+                    m.outcome == "completed" -> "✓"
+                    else -> "✗"
+                }
+                val label = m.label ?: ("agent #" + m.seq)
+                val suffix = if (!m.outcome.isNullOrEmpty() && m.outcome != "completed") " (" + m.outcome + ")" else ""
+                lines.add(mark + " " + label + suffix)
+            }
+        }
+        return lines.joinToString("\n")
+    }
+
+    /** 进度卡（agent 事件驱动）：滚动摘要 N agents · M done + 阶段分组正文，原位刷新。 */
+    private fun workflowProgressCard(sessionId: String, time: Long, run: WorkflowRunState): List<DshMappedEvent> {
+        val members = run.members.values.toList()
+        val done = members.count { !it.outcome.isNullOrEmpty() }
+        val summary = "workflow: " + (run.name ?: run.runId) +
+            " · " + members.size + " agents" +
+            if (done < members.size) " · " + done + " done" else ""
+        val text = "<task state=\"running\"><summary>" + xmlEscape(summary) + "</summary>" +
+            "<task_result>" + xmlEscape(renderWorkflowMembers(run)) + "</task_result></task>"
+        return syntheticNotificationEvents(sessionId, workflowMessageId(run.runId), time, text)
+    }
+
+    /**
+     * tool-workflow/agent-start {runId, seq, label, phase?, childId} → 账本建档 +
+     * 进度卡原位刷新（#288）。childId=子会话 id，留档不渲染——synthetic 卡不给
+     * 会话箭头（#242 守卫），导航是后续增强。
+     */
+    private fun mapWorkflowAgentStart(sessionId: String, time: Long, data: JsonObject): List<DshMappedEvent> {
+        val runId = data.str("runId")
+            ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+        val seq = data.long("seq")?.toInt()
+            ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+        val run = workflowRunOf(runId)
+        val member = run.members.getOrPut(seq) { WorkflowMemberState(seq) }
+        member.label = data.str("label") ?: member.label
+        member.phase = data.str("phase") ?: member.phase
+        member.childId = data.str("childId") ?: member.childId
+        return workflowProgressCard(sessionId, time, run)
+    }
+
+    /** agent-end {runId, seq, outcome} → 账本回填（乱序容忍；start 未见则骨架建档）+ 进度卡。 */
+    private fun mapWorkflowAgentEnd(sessionId: String, time: Long, data: JsonObject): List<DshMappedEvent> {
+        val runId = data.str("runId")
+            ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+        val seq = data.long("seq")?.toInt()
+            ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
+        val run = workflowRunOf(runId)
+        val member = run.members.getOrPut(seq) { WorkflowMemberState(seq) }
+        member.outcome = data.str("outcome") ?: member.outcome
+        return workflowProgressCard(sessionId, time, run)
+    }
+
     /**
      * #323：command/run {commandId, name, args?, source} → [SseEvent.CommandRunStarted]。
      *
@@ -1662,6 +1881,8 @@ object DshEventMapper {
         val runId = data.str("runId")
             ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
         val name = data.str("name") ?: ""
+        // #288：登记/重置账本（重放幂等——重复 run-start 清成员重计）
+        workflowRuns[runId] = WorkflowRunState(runId, name.ifBlank { null })
         val summary = if (name.isBlank()) "workflow: " + runId else "workflow: " + name
         val text = "<task state=\"running\"><summary>" + xmlEscape(summary) + "</summary></task>"
         return syntheticNotificationEvents(sessionId, workflowMessageId(runId), time, text)
@@ -1676,8 +1897,12 @@ object DshEventMapper {
             ?: return listOf(DshMappedEvent.Ignored(DshIgnoreReason.MALFORMED))
         val stopReason = data.str("stopReason") ?: "completed"
         val state = if (stopReason == "completed") "completed" else "error"
-        val text = "<task state=\"" + state + "\"><summary>workflow: " + xmlEscape(runId) + "</summary>" +
-            "<task_result>" + xmlEscape(stopReason) + "</task_result></task>"
+        // #288：优先账本名（run-start 已见时）；终态正文附成员终局
+        val run = workflowRuns[runId]
+        val summary = "workflow: " + (run?.name ?: runId)
+        val body = stopReason + (run?.takeIf { it.members.isNotEmpty() }?.let { "\n" + renderWorkflowMembers(it) } ?: "")
+        val text = "<task state=\"" + state + "\"><summary>" + xmlEscape(summary) + "</summary>" +
+            "<task_result>" + xmlEscape(body) + "</task_result></task>"
         return syntheticNotificationEvents(sessionId, workflowMessageId(runId), time, text)
     }
 
@@ -1856,7 +2081,13 @@ object DshEventMapper {
 
     /** todo/write → TodoUpdated（整快照 last-wins 直配）；DSH 无优先级 → medium。 */
     private fun mapTodoWrite(sessionId: String, data: JsonObject): List<DshMappedEvent> {
-        val todos = (data.arr("todos") ?: emptyList()).mapNotNull { el ->
+        val todos = mapTodoItems(data.arr("todos") ?: emptyList())
+        return listOf(DshMappedEvent.Sse(SseEvent.TodoUpdated(sessionId = sessionId, todos = todos)))
+    }
+
+    /** todos 条目行 → Todo（todo/write 事件与 todos 投影值同形，单源映射）。 */
+    private fun mapTodoItems(elements: List<JsonElement>): List<SseEvent.TodoUpdated.Todo> =
+        elements.mapNotNull { el ->
             (el as? JsonObject)?.let {
                 SseEvent.TodoUpdated.Todo(
                     content = it.str("content") ?: "",
@@ -1865,8 +2096,6 @@ object DshEventMapper {
                 )
             }
         }
-        return listOf(DshMappedEvent.Sse(SseEvent.TodoUpdated(sessionId = sessionId, todos = todos)))
-    }
 
     /** session/title → SessionUpdated（title + 事件时刻驱动排序位；其余字段最小占位）。 */
     private fun mapSessionTitle(sessionId: String, time: Long, data: JsonObject): List<DshMappedEvent> =
@@ -2199,9 +2428,6 @@ object DshIgnoreReason {
 
     /** 插件域事件（hook/team——known-49 收尾）。 */
     const val PLUGIN_DOMAIN = "plugin-domain"
-
-    /** tool-workflow agent-start/end 阶段明细（阶段卡后续增强，防逐成员刷卡）。 */
-    const val WORKFLOW_AGENT = "workflow-agent"
 
     /** 未知类型但信封带 ignorable:true（旗标权威，E2E 后兑现）。 */
     const val IGNORABLE_FLAG = "ignorable-flag"
