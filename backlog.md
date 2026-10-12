@@ -123,6 +123,7 @@
   - 五报根修（2026-10-12，cc1a71dc4，journal §37）：①思考卡高度偏移+②贴底普通卡概率性上向——定罪两报一源（布局相活读×陈旧捕获=首帧全高闪挂→钳回未配对收缩→过滚纠正回跳三段式）+两独立缺陷（混合符号帧正步进误拒发；空卡窗劫持贴底跟随 391↔0 拉锯）；四刀 F1-F4 落地
   - 验证：单测 27/27+全量 4050 零失败；真机四包 A/B FLASH/FIGHT/OSC 三签名 1→0/1→0/2→0；114fps 相位相关视频零符号翻转；70min soak 验证中（/home/leonardo/.cache/540r5/）；竞态矩阵 C1-C10 全覆盖落 journal §37
   - 五报随机扰动战役收官（journal §38）：fuzz 基建沉淀（随机驱动器+六版扫描器+ACT 裁决协议）；双平台长跑——真机 fuzz 25 轮 24 PASS+模拟器 subagent 11 轮 10 PASS，四主判据（FLASH/FIGHT/windows 负/release-dis）全净；残余族三脸（重向 slam/贴底不累积/动画尾往返）跨设备定罪 → #549（P1，C3 负向半边完成载体）；主报两缺陷根修确认不受影响
+  - code-review 双轴回执（2026-10-12 深夜）：Standards 零硬违规（SSE 铁律未触碰且 F4 向其收敛；组合期写与 #540 先例一致；命名贴域词汇）；Spec 六点核查全符（F1 双窗合一/孤儿回落、F2 正步进完全出表、F3 三通道正交+拒绘契约原样、F4 无驱动窗不误伤、#547 权威帧读 else 仍走派生读、migrate 幂等）——两处 §37 未明说的合理延伸补记：负分支 drivePosScrollV 折入 collapseShiftV 与首臂 collapseShiftV==0 条件；一处回归关注点：正向派发判据 total→totalP 后 scrollPaired=false 纯帽帧不再净和滚动（C3 门控语义收紧，读历史格帽释放留意）
 
 - [ ] **#522 B案升 stable 后余留装备清扫——JankHoldGate A/B 开关 + STREAM_DELTA_BUS 旗标退役（#499 余留范围）** `chore` `refactor`
   - 前置：STREAM_SHARD_PILOT / STREAM_DELTA_BUS 升 stable 并观察一批——当前 stable 均 false，JankHold 冻结链在 stable 仍是承重活体（B案开=旁路），现退役会回归 stable 流式滚动组合风暴。
