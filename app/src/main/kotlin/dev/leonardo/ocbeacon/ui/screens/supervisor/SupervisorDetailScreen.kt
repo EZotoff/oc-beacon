@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -78,6 +79,9 @@ internal fun SupervisorDetailScreen(
     onReply: (String) -> Unit,
 ) {
     Scaffold(
+        // 键盘弹出时整体上移（2026-10-12 操作员报告）：adjustResize+edge-to-edge 下，
+        // 无 imePadding 时内容仍延伸到 IME 之下，Answer 输入被键盘遮挡。
+        modifier = Modifier.fillMaxSize().imePadding(),
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.supervisor_title)) },
