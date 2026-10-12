@@ -531,6 +531,15 @@ internal fun reserveReleasePlan(
     /** #540：展开配对窗内（物主 item 上展开/收起集进行中）——增长/收缩恒配对。 */
     expandPaired: Boolean = false,
     /**
+     * #549 Fix B（2026-10-13）：**正向**窗内配对的独立判据——仅帽负向例外
+     * （收起集帽回落）沿用 [expandPaired] 窗语义；正向（展开增长）额外要求
+     * 存在动画中的驱动。驱动 settle 后窗未关的尾巴里，帽把流式增长持续升格
+     * 「离底让位」→内容短于视口时被框架钳回 (0,0) 的离底写入逐帧重发
+     * （emu-r11/r427 定罪：settle 后 ~900ms 打架）。null=回落 [expandPaired]
+     * （legacy 语义，纯函数可测）。
+     */
+    expandPairedPos: Boolean? = null,
+    /**
      * #540 二轮修订（用户复测定罪「输出中展开震」）：锚在揭示缘**上方**（阅读位
      * 高于被展开卡）时，窗内增长发生在锚下方——锚所见内容不动，配对位移反而是
      * 自造推动。true=否决窗内配对（走免配对释放）。仅窗内消费；未捕获几何恒
@@ -543,14 +552,24 @@ internal fun reserveReleasePlan(
     val delta = trueHeight - reserved
     if (delta == 0) return null                         // 无增量
     if (delta < 0 && !expandPaired) return null         // 收缩：帽不回改（存量语义；窗内例外=收起配对）
+    // #549 Fix B：正向配对独立判据（null=回落窗语义——负向例外不受影响）
+    val expandPairedPositive = expandPairedPos ?: expandPaired
     // R1 统一配对谓词（原 z3 锚 index 语义+贴底原点判定合并入 StreamingAnchorRule）：
     // 贴底原点物理跟随免派发；跟随区免双重补偿；锚≤增长源同帧配对；读历史免。
     // #540：展开窗内的增长是用户主动揭示意图——锚位格全部让位，恒配对；
     // 二轮修订：锚在揭示缘上方时增长位于锚下方，配对=自造位移 → 否决。
-    val paired = if (delta > 0 && expandPaired && anchorAboveReveal) {
+    val paired = if (delta > 0 && expandPairedPositive && anchorAboveReveal) {
         // 仅正向（展开增长）可被否决——负向（收起）走负向分支自己的塌缩几何
         // 判定（锚在揭示缘上方恰是镜像骑行格，不能在此被掐死导致帽不回放）。
         false
+    } else if (delta > 0) {
+        // #549 Fix B：正向配对用 Pos 判据（动画门槛）；负向沿用窗语义防结算卡死
+        expandPairedPositive || StreamingAnchorRule.pairedDelta(
+            anchorIndex = firstVisibleIndex,
+            anchorOffset = firstVisibleOffset,
+            growthIndex = growthIndex,
+            growthPx = delta.toFloat(),
+        ) != 0f
     } else {
         expandPaired || StreamingAnchorRule.pairedDelta(
             anchorIndex = firstVisibleIndex,
@@ -843,6 +862,13 @@ private fun reservePhase(listState: LazyListState, reserve: HeightReserveState?)
         // 已知终态）维持恒配对原语义。
         expandPaired = reserve.expandPairingWindows > 0 &&
             !(reserve.degradeDrives.isNotEmpty() && reserve.degradeDrives.none { it.hTarget >= 0 }),
+        // #549 Fix B：正向窗内配对须有**动画中的驱动**——settle 后窗尾巴里帽把
+        // 流式增长继续升格离底让位，内容短于视口时被钳回 (0,0) 的写入逐帧重发
+        //（emu-r11/r427 定罪 settle 后 ~900ms 打架）。无驱动（legacy/纯帽）与
+        // 全悬垂（F4''）分别维持原语义/回落；负向例外不受影响（收起集帽回落
+        // 仍走 expandPaired 窗语义，防结算卡死）。
+        expandPairedPos = if (reserve.degradeDrives.isEmpty()) null
+        else reserve.degradeDrives.any { it.animating },
         // #540 二轮修订：锚在揭示缘上方（阅读位高于被展开卡）——正增长在锚
         // 下方，配对=自造位移，否决。未捕获几何（span=-1）不否决（legacy 盲配）。
         // 锚位用帧前高度（reserved）与负向判定同源无偏（§27）。

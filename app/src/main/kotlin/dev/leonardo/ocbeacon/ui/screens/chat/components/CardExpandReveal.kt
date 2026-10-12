@@ -618,6 +618,18 @@ internal fun CardExpandReveal(
         // #540 三轮：内容自然高（内侧盒无约束测得；-1=未测）与驱动态。
         val contentH = remember { androidx.compose.runtime.mutableIntStateOf(-1) }
         val drive = remember { DegradeDriveState() }
+        // #549 Fix A（2026-10-13，r400 slam 定罪）：降级路径终高种子——mech 路径
+        // #423 批次十一 finalHCache 的同源语义（rememberSaveable(cacheKey)，跨路径
+        // 共存共享）。重展开时 markdown 分期重组（staged 起步小）会把测高拽低 →
+        // hTarget 被拽低 → 驱动反步进收盒 → 视口重锚下砸（实测 −931px slam）。
+        // 种子使驱动直奔已知终高，分期在裁剪下追平（mech 预移同款 UX）。
+        val finalHSeed = androidx.compose.runtime.saveable.rememberSaveable(cacheKey) {
+            androidx.compose.runtime.mutableStateOf(-1)
+        }
+        // 展开相单调护栏时钟：toggle 时刻起 600ms 内 hTarget 只升不降（分期重组
+        // 的暂态矮化不得反拽驱动；流式真增长不受限）。600ms 后自由跟踪（重排
+        // 收缩=合法补偿，r731 判例）。
+        val lastExpandAtMs = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
         val driven = listState != null && pairingReserve != null
         if (driven) {
             val pr = pairingReserve!!
@@ -644,8 +656,17 @@ internal fun CardExpandReveal(
                     // 是上一放置值滞后一步——覆盖会把动画往回拨一步=连点抖动源）。
                     val mineAlready = pr.degradeDrives.any { it === drive }
                     drive.h = if (mineAlready && drive.animating) drive.h else degradeH.intValue
+                    if (visible) lastExpandAtMs.longValue = android.os.SystemClock.elapsedRealtime()
                     drive.hTarget = if (visible) {
-                        if (contentH.intValue >= 0) contentH.intValue else -1
+                        // #549 Fix A：终高种子优先（重展开已知高度零延迟追靶）；
+                        // 未知（首次）维持等测高 -1 语义
+                        val staged = if (contentH.intValue >= 0) contentH.intValue else -1
+                        val seed = finalHSeed.value
+                        when {
+                            seed > 0 && seed >= staged -> seed
+                            staged > 0 -> staged
+                            else -> -1
+                        }
                     } else {
                         0
                     }
@@ -789,8 +810,16 @@ internal fun CardExpandReveal(
                     Box(
                         androidx.compose.ui.Modifier.onSizeChanged { sz ->
                             contentH.intValue = sz.height
-                            // 展开相终高随内容高追踪（流式增长中展开=追靶）
-                            if (visible && drive.hTarget != sz.height) drive.hTarget = sz.height
+                            if (sz.height > finalHSeed.value) finalHSeed.value = sz.height
+                            // #549 Fix A：展开相单调护栏——toggle 后 600ms 内 hTarget
+                            // 不因分期暂态矮化而下调（r400 slam 根源）；此后自由跟踪
+                            //（流式增长恒升格、重排收缩=合法补偿）
+                            if (visible) {
+                                val desired = if (
+                                    android.os.SystemClock.elapsedRealtime() - lastExpandAtMs.longValue < 600
+                                ) maxOf(sz.height, drive.hTarget) else sz.height
+                                if (drive.hTarget != desired) drive.hTarget = desired
+                            }
                         },
                     ) {
                         content()

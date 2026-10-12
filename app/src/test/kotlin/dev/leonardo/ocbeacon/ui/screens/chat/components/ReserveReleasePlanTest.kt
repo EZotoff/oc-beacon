@@ -19,7 +19,8 @@ class ReserveReleasePlanTest {
         growthIndex: Int? = 7,
         expandPaired: Boolean = false,
         anchorAboveReveal: Boolean = false,
-    ) = reserveReleasePlan(reserved, trueHeight, fii, fiso, scrolling, growthIndex, expandPaired, anchorAboveReveal)
+        expandPairedPos: Boolean? = null,
+    ) = reserveReleasePlan(reserved, trueHeight, fii, fiso, scrolling, growthIndex, expandPaired, expandPairedPos, anchorAboveReveal)
 
     @Test
     fun `未初始化不释放`() {
@@ -146,5 +147,31 @@ class ReserveReleasePlanTest {
             ReserveReleasePlan(delta = 66, scrollPaired = true),
             plan(reserved = 1000, trueHeight = 1066, expandPaired = true, anchorAboveReveal = false),
         )
+    }
+    // ============ #549 Fix B：正向窗配对动画门槛 ============
+
+    @Test
+    fun `549B settle 后窗尾巴正向回落锚规则 - 贴底原点免派发`() {
+        // emu-r11/r427 定罪：驱动全 settle（窗未关）时帽把流式增长升格离底让位，
+        // 内容短于视口被钳回 (0,0) 逐帧重发。expandPairedPos=false → 贴底原点
+        //（fii=0, fiso=5）免派发（回流 StreamingAnchorRule 语义）。
+        val p = plan(reserved = 1000, trueHeight = 1066, fii = 0, fiso = 5,
+            expandPaired = true, expandPairedPos = false)
+        assertEquals(ReserveReleasePlan(delta = 66, scrollPaired = false), p)
+    }
+
+    @Test
+    fun `549B 动画中驱动正向恒配对 - 离底让位保持`() {
+        val p = plan(reserved = 1000, trueHeight = 1066, fii = 0, fiso = 5,
+            expandPaired = true, expandPairedPos = true)
+        assertEquals(ReserveReleasePlan(delta = 66, scrollPaired = true), p)
+    }
+
+    @Test
+    fun `549B 负向例外不受 expandPairedPos 影响 - 收起集帽回落仍走窗语义`() {
+        // delta<0 的窗内例外只看 expandPaired（防收起结算卡死）——expandPairedPos=false 不得掐死
+        val p = plan(reserved = 1066, trueHeight = 1000,
+            expandPaired = true, expandPairedPos = false)
+        assertEquals(ReserveReleasePlan(delta = -66, scrollPaired = true), p)
     }
 }
