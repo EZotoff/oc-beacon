@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.leonardo.ocbeacon.R
+import dev.leonardo.ocbeacon.domain.model.SupervisorAttentionItem
 import dev.leonardo.ocbeacon.ui.theme.SpacingTokens
 import dev.leonardo.ocbeacon.util.copyToClipboard
 import java.time.Duration
@@ -147,16 +148,20 @@ private fun DetailContent(
         } else {
             MaterialTheme.colorScheme.onSurface
         }
-        Section(title = R.string.supervisor_detail_section_what_happened, copyText = item.reasonText) {
-            // 长按可选中文本（2026-10-12 操作员报告）；作用域限于 Text。
-            SelectionContainer {
-                Text(
-                    item.reasonText,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = contentColor,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+        Section(title = R.string.supervisor_detail_section_what_happened, copyText = item.headline ?: item.reasonText) {
+            // What happened = 状态标题（headline）；旧镜像无 headline 时绝不重复 reasonText ——
+            // 只展示元信息行（2026-10-12：同文双节渲染问题）。
+            item.headline?.let { headline ->
+                // 长按可选中文本（2026-10-12 操作员报告）；作用域限于 Text。
+                SelectionContainer {
+                    Text(
+                        headline,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = contentColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Text(
                 "${projectLabel(item.project)} · ${item.sessionLabel} · ${age(item.createdAt)}",
@@ -165,15 +170,38 @@ private fun DetailContent(
             )
         }
 
-        Section(title = R.string.supervisor_detail_section_judgment, copyText = item.reasonText) {
-            Text(
-                stringResource(R.string.supervisor_detail_summary_label),
-                style = MaterialTheme.typography.labelMedium,
-                color = contentColor,
-            )
-            // 长按可选中文本（2026-10-12 操作员报告）。
+        Section(title = R.string.supervisor_detail_section_judgment, copyText = judgmentBody(item)) {
+            // What needs your judgment = 待决问（ask）+ 可选选项 + 建议；
+            // 旧镜像回退 reasonText（仅此一节展示，不再双节重复）。“Supervisor summary
+            // (may be truncated)” 标签退役——不再为截断道歉，改为正确的体裁。
             SelectionContainer {
-                Text(item.reasonText, style = MaterialTheme.typography.bodyMedium, color = contentColor)
+                Text(
+                    item.ask ?: item.reasonText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = contentColor,
+                )
+            }
+            if (item.options.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(SpacingTokens.XS.dp)) {
+                    item.options.forEachIndexed { index, option ->
+                        SelectionContainer {
+                            Text(
+                                "${index + 1}) $option",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = contentColor,
+                            )
+                        }
+                    }
+                }
+            }
+            item.recommendation?.let { rec ->
+                SelectionContainer {
+                    Text(
+                        "→ $rec",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
         }
 
@@ -293,6 +321,14 @@ private fun Section(title: Int, copyText: String? = null, content: @Composable (
         }
     }
 }
+
+/** Judgment 节的可复制正文：ask（或旧镜像回退）+ 选项 + 建议，拼为一段纯文本。 */
+private fun judgmentBody(item: SupervisorAttentionItem): String =
+    buildList {
+        add(item.ask ?: item.reasonText)
+        item.options.forEachIndexed { index, option -> add("${index + 1}) $option") }
+        item.recommendation?.let { add("→ $it") }
+    }.joinToString("\n")
 
 @Composable
 private fun projectLabel(value: String): String =

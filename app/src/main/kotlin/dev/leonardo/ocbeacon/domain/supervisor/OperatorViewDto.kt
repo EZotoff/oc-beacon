@@ -40,4 +40,13 @@ data class OperatorViewCardDto(
     val actionClass: String? = null,
     /** 升级类别 DECISION/INFORMATION/APPROVAL（增补字段，TS optional；缺省=非升级）。 */
     val escalationKind: String? = null,
+    /** 结构化操作卡字段（contract Amendment 2026-10-11，多体裁决策输出）： */
+    /** 状态标题 ≤60 字符 —— glance/AR 层首选文本。 */
+    val headline: String? = null,
+    /** 待决问题 ≤140 字符（问句）—— judgment 节首选。 */
+    val ask: String? = null,
+    /** 2–4 个可点选回复选项。 */
+    val options: List<String>? = null,
+    /** 监督者建议（≤100 字符）。 */
+    val recommendation: String? = null,
 )

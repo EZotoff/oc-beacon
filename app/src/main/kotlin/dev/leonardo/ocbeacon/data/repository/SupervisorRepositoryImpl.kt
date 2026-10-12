@@ -100,6 +100,10 @@ class SupervisorRepositoryImpl @Inject constructor(
             premiseTexts = premiseTexts,
             severity = severity,
             sessionLabel = sessionLabel,
+            headline = headline,
+            ask = ask,
+            options = options.orEmpty(),
+            recommendation = recommendation,
         )
 
     override suspend fun sendReply(serverId: String, root: String, reply: BeaconReply): Result<Unit> =
